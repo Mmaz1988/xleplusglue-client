@@ -1,0 +1,16 @@
+import { Component, Input, Output, EventEmitter } from '@angular/core';
+
+@Component({
+  selector: 'app-rule-list-element',
+  templateUrl: './rule-list-element.component.html',
+  styleUrls: ['./rule-list-element.component.css']
+})
+export class RuleListElementComponent {
+  @Input() data: any;
+  @Output() delete: EventEmitter<any> = new EventEmitter();
+
+  onDelete() {
+    this.delete.emit(this.data);
+  }
+}
+

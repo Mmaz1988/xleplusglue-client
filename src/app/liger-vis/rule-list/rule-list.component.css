@@ -1,0 +1,17 @@
+div {
+  width: 800px;
+  border: 2px solid #00a9e0;
+  margin: 5px;
+}
+
+div.rule-container {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%; /* Adjust the width as needed */
+  column-gap: 20px;
+  padding: 5px;
+  border: 2px solid #00a9e0;
+  align-items: flex-start;
+}
+
+

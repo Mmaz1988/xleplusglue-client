@@ -1,0 +1,25 @@
+
+.cm-rule_separator {
+  color: #0900ff;
+  font-weight: bold;
+}
+
+.cm-liger_node_var
+{
+  color: #00c4ff;
+}
+
+.cm-liger_val_var
+{
+  color: #08d700;
+}
+
+.cm-liger_conjunction
+{
+  color: #ff0000;
+}
+
+.cm-angular_brackets
+{
+  color: #d100ff;
+}

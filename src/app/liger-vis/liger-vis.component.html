@@ -1,0 +1,13 @@
+Test sentence: <br>
+<textarea [value]="defaultValue" #textareaElement></textarea> <br>
+
+<button (click)="analyzeSentence(textareaElement.value)">Analyze</button>
+<br>
+Input rules:<br>
+<editor-container>
+  <app-editor #edit1 [mode]="'liger'" ></app-editor>
+</editor-container> <br>
+
+<app-graph-vis #cy1></app-graph-vis>
+
+<app-rule-list #rl1> </app-rule-list>

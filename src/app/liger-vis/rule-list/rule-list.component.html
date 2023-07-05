@@ -1,0 +1,6 @@
+<div>
+  <div class="rule-container" *ngFor="let element of elements; let i = index">
+    <app-rule-list-element [data]="element" (delete)="removeElement(i)">
+   </app-rule-list-element>
+  </div>
+</div>
