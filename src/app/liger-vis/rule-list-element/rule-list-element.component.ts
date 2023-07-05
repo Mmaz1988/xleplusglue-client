@@ -8,9 +8,15 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 export class RuleListElementComponent {
   @Input() data: any;
   @Output() delete: EventEmitter<any> = new EventEmitter();
+  @Output() calculateFromRule: EventEmitter<any> = new EventEmitter();
 
   onDelete() {
     this.delete.emit(this.data);
   }
+
+  calculate() {
+    this.calculateFromRule.emit(this.data);
+  }
+
 }
 

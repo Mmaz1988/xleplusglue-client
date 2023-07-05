@@ -1,13 +1,16 @@
-Test sentence: <br>
+<h3> Test sentence: </h3>
+
 <textarea [value]="defaultValue" #textareaElement></textarea> <br>
 
-<button (click)="analyzeSentence(textareaElement.value)">Analyze</button>
+<button (click)="analyzeSentence(textareaElement.value, edit1.getContent())">Analyze</button>
 <br>
-Input rules:<br>
+<h3> Input rules: </h3>
 <editor-container>
   <app-editor #edit1 [mode]="'liger'" ></app-editor>
 </editor-container> <br>
 
+<h3> Graph visualization: </h3>
 <app-graph-vis #cy1></app-graph-vis>
 
-<app-rule-list #rl1> </app-rule-list>
+<h3> Rule list: </h3>
+<app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>

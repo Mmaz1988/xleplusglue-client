@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, EventEmitter, Output } from '@angular/core';
 import { RuleListElementComponent } from '../rule-list-element/rule-list-element.component';
 
 
@@ -10,13 +10,24 @@ import { RuleListElementComponent } from '../rule-list-element/rule-list-element
 export class RuleListComponent {
   elements: any[] = [];
 
-  addElement(rule: string) {
-    this.elements.push({ rule: rule });
+  @Output() delete: EventEmitter<any> = new EventEmitter();
+  @Output() calculateFromRule: EventEmitter<any> = new EventEmitter();
+
+  addElement(rule: any) {
+    this.elements.push(rule);
   }
 
   removeElement(index: number) {
     if (index >= 0 && index < this.elements.length) {
       this.elements.splice(index, 1);
     }
+  }
+
+  calculateFromRuleList(event: any)
+    {
+      this.calculateFromRule.emit(event);
+    }
+  clearList() {
+    this.elements = [];
   }
 }

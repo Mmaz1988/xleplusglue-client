@@ -90,16 +90,16 @@ export class GraphVisComponent implements OnInit {
   }
 
   makePopper(ele: any): void {
-    console.log("Element: ",ele);
-    console.log("popper: ",ele.popperRef());
+ //   console.log("Element: ",ele);
+ //   console.log("popper: ",ele.popperRef());
     const ref = ele.popperRef()
-    console.log("Ref value:",ref)
+ //   console.log("Ref value:",ref)
     ele.tippy = tippy(ref, { // tippy options:
       content: () => {
         let content = document.createElement('div');
 
         var attributes = ele._private.data;
-        console.log(attributes);
+       // console.log(attributes);
 
         if (attributes.hasOwnProperty("avp")) {
           for (var key in attributes.avp) {
@@ -113,7 +113,7 @@ export class GraphVisComponent implements OnInit {
       },
       trigger: 'manual' // probably want manual mode
     });
-    console.log("Tippy: ",ele.tippy);
+  //  console.log("Tippy: ",ele.tippy);
   }
 
   createAndBindPoppers(): void {
@@ -122,9 +122,9 @@ export class GraphVisComponent implements OnInit {
       const data = ele.data();
 
       if (data.hasOwnProperty('avp')) {
-        console.log("Making popper for: ", data);
+      //  console.log("Making popper for: ", data);
         this.makePopper(ele);
-         console.log("Element with tippy: ",data);
+      //   console.log("Element with tippy: ",data);
 
         ele.bind('mouseover', (event) => event.target.tippy.show());
         ele.bind('mouseout', (event) => event.target.tippy.hide());
