@@ -4,6 +4,7 @@ import { SemComponent } from './sem/sem.component';
 import { LogComponent } from './log/log.component';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
+import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 
 
 @Component({
@@ -15,7 +16,7 @@ import { DataService } from '../data.service';
 
 export class GswbVisComponent {
   @ViewChild('edit1') editor1: EditorComponent;
-  @ViewChild('edit2') editor2: EditorComponent;
+  @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
   @ViewChild('sem1') sem: SemComponent;
   @ViewChild('log1') log: LogComponent;
 
@@ -68,12 +69,37 @@ export class GswbVisComponent {
           this.sem.setContent(solutions);
         }
 
+        if (data.hasOwnProperty('log'))
+        {
+          this.log.setContent(data.log)
+        }
+
         if (data.hasOwnProperty('derivation')) {
           console.log(data.derivation)
-          this.editor2.updateContent(data.derivation)
 
-          this.log.setContent(data.derivation)
-          // Update your component's property bound to your logContainerElement here...
+          //check if derivation is a string or an object
+
+
+     if (data.derivation.hasOwnProperty('graphElements'))
+          {
+            console.log(data.derivation.graphElements);
+            this.derivationContainer.showEditor = false;
+            this.derivationContainer.showGraph = true;
+            const graphElements = data.derivation.graphElements;
+            // Using setTimeout to enqueue the function call after the current execution context
+            setTimeout(() => {
+              this.derivationContainer.graphVisUpdateContent(graphElements);
+            }, 0);
+          } else
+          {
+            this.derivationContainer.showGraph = false;
+            this.derivationContainer.showEditor = true;
+            // Using setTimeout to enqueue the function call after the current execution context
+            setTimeout(() => {
+              this.derivationContainer.editorVisUpdateContent(data.derivation.toString());
+            }, 0);
+          }
+                  // Update your component's property bound to your logContainerElement here...
         }
       },
       error => {

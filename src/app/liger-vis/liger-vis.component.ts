@@ -1,7 +1,7 @@
 import { Component, ViewChild, EventEmitter, ElementRef } from '@angular/core';
 import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
-import {GraphVisComponent} from "./graph-vis/graph-vis.component";
+import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import { DataService } from '../data.service';
 import {FormBuilder} from "@angular/forms";
 

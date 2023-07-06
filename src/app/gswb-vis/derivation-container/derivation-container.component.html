@@ -1,0 +1,13 @@
+<div>
+  <h3>Derivation:</h3>
+  <div *ngIf="showEditor">
+    <editor-container>
+      <app-editor #editorVis [mode]="'glue'">
+      </app-editor>
+    </editor-container>
+
+  </div>
+  <div *ngIf="showGraph">
+    <app-gswb-graph-vis #graphVis></app-gswb-graph-vis>
+  </div>
+</div>

@@ -1,6 +1,4 @@
 import { Component, EventEmitter, Output } from '@angular/core';
-import { RuleListElementComponent } from '../rule-list-element/rule-list-element.component';
-
 
 @Component({
   selector: 'app-rule-list',

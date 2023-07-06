@@ -14,7 +14,13 @@ import { GlueInterfaceComponent } from './glue-interface/glue-interface.componen
 import { RuleListComponent } from './liger-vis/rule-list/rule-list.component';
 import { RuleListElementComponent } from './liger-vis/rule-list-element/rule-list-element.component';
 import { FormsModule } from '@angular/forms';
-import { GraphVisComponent } from './liger-vis/graph-vis/graph-vis.component';
+import { GraphVisComponent } from './liger-vis/liger-graph-vis/graph-vis.component';
+import {CommonModule} from "@angular/common";
+import { GswbGraphVisComponent } from './gswb-vis/gswb-graph-vis/gswb-graph-vis.component';
+import { DerivationContainerComponent } from './gswb-vis/derivation-container/derivation-container.component';
+import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+
+
 
 @NgModule({
   declarations: [
@@ -28,14 +34,18 @@ import { GraphVisComponent } from './liger-vis/graph-vis/graph-vis.component';
     GlueInterfaceComponent,
     RuleListComponent,
     RuleListElementComponent,
-    GraphVisComponent
+    GraphVisComponent,
+    GswbGraphVisComponent,
+    DerivationContainerComponent,
+
   ],
   imports: [
     BrowserModule,
     ReactiveFormsModule,
-    BrowserModule,
     HttpClientModule,
-    FormsModule
+    FormsModule,
+    CommonModule,
+    BrowserAnimationsModule
   ],
   providers: [],
   bootstrap: [AppComponent]
