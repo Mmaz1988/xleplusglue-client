@@ -5,6 +5,7 @@ import { LogComponent } from './log/log.component';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
+import {DialogComponent} from "./dialog/dialog.component";
 
 
 @Component({
@@ -19,6 +20,7 @@ export class GswbVisComponent {
   @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
   @ViewChild('sem1') sem: SemComponent;
   @ViewChild('log1') log: LogComponent;
+  @ViewChild('dialog') dialog: DialogComponent;
 
   gswbPreferencesForm: FormGroup;
 
@@ -90,6 +92,9 @@ export class GswbVisComponent {
             setTimeout(() => {
               this.derivationContainer.graphVisUpdateContent(graphElements);
             }, 0);
+
+            this.dialog.setContent(graphElements)
+
           } else
           {
             this.derivationContainer.showGraph = false;
@@ -98,6 +103,7 @@ export class GswbVisComponent {
             setTimeout(() => {
               this.derivationContainer.editorVisUpdateContent(data.derivation.toString());
             }, 0);
+            this.dialog.setContent(data.derivation.toString());
           }
                   // Update your component's property bound to your logContainerElement here...
         }

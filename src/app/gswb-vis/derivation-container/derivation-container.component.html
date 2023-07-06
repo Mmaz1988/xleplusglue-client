@@ -8,6 +8,8 @@
 
   </div>
   <div *ngIf="showGraph">
-    <app-gswb-graph-vis #graphVis></app-gswb-graph-vis>
-  </div>
+    <app-gswb-graph-vis #graphVis [graphID]="'gswbCy1'"></app-gswb-graph-vis>
+    <app-sub-graph-dialog #subGraphDialog>
+  </app-sub-graph-dialog>
+</div>
 </div>
