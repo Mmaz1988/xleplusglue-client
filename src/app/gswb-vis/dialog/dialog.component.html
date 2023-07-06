@@ -1,0 +1,20 @@
+<dialog class="center-dialog" #dialog>
+  <div>
+    <h3>Derivation:</h3>
+    <div *ngIf="showEdit">
+      <editor-container>
+        <app-editor #editorVis [mode]="'glue'">
+        </app-editor>
+      </editor-container>
+
+    </div>
+    <div *ngIf="showGraph">
+      <app-gswb-graph-vis #graphVis [graphID]="'gswbCy2'"></app-gswb-graph-vis>
+    </div>
+  </div>
+
+  <button (click)="dialog.close()">
+    OK
+  </button>
+</dialog>
+<button (click)="showDialog()">Show dialog</button>
