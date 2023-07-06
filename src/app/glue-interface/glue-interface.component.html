@@ -1,11 +1,33 @@
-<div style="display: flex; flex-wrap: wrap;">
-  <div style="flex: 1;">
-<app-liger-vis #l1>
-</app-liger-vis>
-</div>
-<div style="flex: 1;">
-  <app-gswb-vis #g1>
+<style>
+  .container {
+    display: flex;
+    flex-wrap: nowrap;
+  }
+  .scrollable-div {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 100vh;
+    flex-basis: 50%;
+  }
 
-  </app-gswb-vis>
+  /* This will trigger when the window width is less than 800px */
+  @media (max-width: 1400px) {
+    .container {
+      flex-direction: column;
+    }
+    .scrollable-div {
+      max-height: none;
+      overflow-y: initial;
+    }
+  }
+</style>
+
+<div class="container">
+  <div class="scrollable-div">
+    <app-liger-vis #l1></app-liger-vis>
+  </div>
+  <div class="scrollable-div">
+    <app-gswb-vis #g1></app-gswb-vis>
+  </div>
 </div>
-</div>
+
