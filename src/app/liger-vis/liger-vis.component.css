@@ -5,3 +5,8 @@ textarea {
   display: block;
   resize: none;
 }
+
+div.ligergraphcontainer{
+  max-width: 800px;
+  height: 650px;
+}

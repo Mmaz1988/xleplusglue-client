@@ -1,3 +1,8 @@
 div.rule {
-  flex: 0 auto;
+  width: 100%
+}
+
+textarea {
+  width: 100%;
+  resize: none;
 }

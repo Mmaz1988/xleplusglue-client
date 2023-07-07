@@ -1,6 +1,6 @@
 import { Component,ViewChild, ElementRef } from '@angular/core';
-import {GswbGraphVisComponent} from "../gswb-graph-vis/gswb-graph-vis.component";
-import {EditorComponent} from "../../editor/editor.component";
+import {GswbGraphVisComponent} from "../gswb-vis/gswb-graph-vis/gswb-graph-vis.component";
+import {EditorComponent} from "../editor/editor.component";
 
 @Component({
   selector: 'app-dialog',

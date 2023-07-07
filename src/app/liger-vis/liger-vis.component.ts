@@ -18,6 +18,7 @@ export class LigerVisComponent {
   defaultValue: string = 'Every man loves a woman.';
   meaningConstructors: string;
   changeDetector: EventEmitter<any> = new EventEmitter();
+  graphElements: any
 
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
@@ -40,6 +41,7 @@ export class LigerVisComponent {
           if (data.graph.hasOwnProperty("graphElements")) {
          //   console.log(data.graph.graphElements);
             this.cy1.renderGraph(data.graph.graphElements);
+            this.graphElements = data.graph.graphElements;
           }
         }
         if (data.hasOwnProperty("appliedRules")) {
@@ -93,6 +95,11 @@ export class LigerVisComponent {
     this.analyzeSentence(this.textarea.nativeElement.value, ruleString);
   }
 
+  showDialog(){
+
+    this.cy1.subgraphDialog.setContent(this.graphElements)
+    this.cy1.subgraphDialog.showDialog()
+  }
 
 }
 

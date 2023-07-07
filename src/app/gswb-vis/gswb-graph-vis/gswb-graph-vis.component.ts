@@ -1,7 +1,8 @@
-import {Component, Input, OnChanges, AfterViewInit, ViewChild} from '@angular/core';
+import {Component, Input, OnChanges, AfterViewInit, ViewChild, ElementRef} from '@angular/core';
 import cytoscape, {Core} from 'cytoscape';
 import dagre from 'cytoscape-dagre';
-import {SubGraphDialogComponent} from "../sub-graph-dialog/sub-graph-dialog.component";
+import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
+import tippy from "tippy.js";
 
 cytoscape.use(dagre);
 
@@ -89,9 +90,13 @@ const styleArray = [
 })
 export class GswbGraphVisComponent {
 
+  @ViewChild('graphContainer') graphContainer: ElementRef;
   @ViewChild('subgraphDialog') subgraphDialog: SubGraphDialogComponent;
   @Input() graphID!: string;
   private cy: Core;
+
+  defaultWidth = '800px';
+  defaultHeight = '600px';
 
 
   ngAfterViewInit(): void {
@@ -135,6 +140,9 @@ export class GswbGraphVisComponent {
       // Additional Cytoscape configuration options
 
     });
+
+    this.createAndBindPoppers()
+
     this.cy.on('dblclick', 'node', (event) => {
       let node = event.target;
       let nodeId = node.id(); // Get the ID of the double-clicked node
@@ -148,5 +156,53 @@ export class GswbGraphVisComponent {
     });
   }
 
+  makePopper(ele: any): void {
+    //   console.log("Element: ",ele);
+    //   console.log("popper: ",ele.popperRef());
+    const ref = ele.popperRef()
+    //   console.log("Ref value:",ref)
+    ele.tippy = tippy(ref, { // tippy options:
+      content: () => {
+        let content = document.createElement('div');
+
+        var attributes = ele._private.data;
+
+        if (attributes.hasOwnProperty("solutions")) {
+          //iterate through array attributes.solutions
+          for (var solution of attributes.solutions) {
+            content.innerHTML = content.innerHTML + solution + "<br>";
+          }
+        }
+
+        //content.innerHTML = ele.id();
+
+        return content;
+      },
+      trigger: 'manual' // probably want manual mode
+    });
+    //  console.log("Tippy: ",ele.tippy);
+  }
+
+  createAndBindPoppers(): void {
+    this.cy.nodes().forEach((ele) => {
+
+      const data = ele.data();
+
+      if (data.hasOwnProperty('solutions')) {
+        //  console.log("Making popper for: ", data);
+        this.makePopper(ele);
+        //   console.log("Element with tippy: ",data);
+
+        ele.bind('mouseover', (event) => event.target.tippy.show());
+        ele.bind('mouseout', (event) => event.target.tippy.hide());
+      }
+    });
+  }
+
+  resizeToDefault(): void {
+    const graphContainer = this.graphContainer.nativeElement;
+    graphContainer.style.width = this.defaultWidth;
+    graphContainer.style.height = this.defaultHeight;
+  }
 
 }

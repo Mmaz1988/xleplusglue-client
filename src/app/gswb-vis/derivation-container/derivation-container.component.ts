@@ -1,7 +1,7 @@
 import { Component, ViewChild } from '@angular/core';
 import { EditorComponent } from "../../editor/editor.component";
 import { GswbGraphVisComponent } from "../gswb-graph-vis/gswb-graph-vis.component";
-import {SubGraphDialogComponent} from "../sub-graph-dialog/sub-graph-dialog.component";
+import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
 
 @Component({
   selector: 'app-derivation-container',

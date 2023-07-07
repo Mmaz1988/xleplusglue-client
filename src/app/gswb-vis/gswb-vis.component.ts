@@ -5,7 +5,7 @@ import { LogComponent } from './log/log.component';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
-import {DialogComponent} from "./dialog/dialog.component";
+import {DialogComponent} from "../dialog/dialog.component";
 
 
 @Component({
@@ -35,7 +35,7 @@ export class GswbVisComponent {
   }
 
   onSubmit(): void {
-    const editorContent = this.editor1.getContent(); // or this.editor2 depending on which one you want.
+    const editorContent = this.editor1.getContent();
     console.log(editorContent);
 
     const gswbPreferences = {

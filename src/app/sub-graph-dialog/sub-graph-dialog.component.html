@@ -1,8 +1,9 @@
 <dialog class="center-dialog" #subGraphDialog>
   <div>
-      <app-sub-graph #subgraphVis [graphID]="subgraphID"></app-sub-graph>
+      <app-sub-graph #subgraphVis [graphID]="subgraphID" [graphStyle]="subgraphStyle"></app-sub-graph>
     </div>
   <button (click)="subGraphDialog.close()">
     OK
   </button>
 </dialog>
+

@@ -7,9 +7,7 @@ div {
 }
 
 div.rule-container {
-  display: flex;
-  flex-wrap: wrap;
-  width: 100%; /* Adjust the width as needed */
+  width: 100%;
   column-gap: 20px;
   padding: 5px;
   border: 2px solid #00a9e0;

@@ -13,6 +13,7 @@ export class SubGraphDialogComponent {
  // private subgraphID: string
 
   @Input() subgraphID!: string;
+  @Input() subgraphStyle!: string;
 
   setContent(content: any)
   {
@@ -25,4 +26,5 @@ export class SubGraphDialogComponent {
   showDialog(){
     this.subGraphDialog.nativeElement.show();
   }
+
 }

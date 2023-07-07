@@ -10,7 +10,11 @@
 </editor-container> <br>
 
 <h3> Graph visualization: </h3>
+
+<div class="ligergraphcontainer">
 <app-graph-vis #cy1></app-graph-vis>
+<button (click)="showDialog()">Show dialog</button>
+</div>
 
 <h3> Rule list: </h3>
 <app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>

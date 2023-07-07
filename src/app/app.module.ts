@@ -19,9 +19,9 @@ import {CommonModule} from "@angular/common";
 import { GswbGraphVisComponent } from './gswb-vis/gswb-graph-vis/gswb-graph-vis.component';
 import { DerivationContainerComponent } from './gswb-vis/derivation-container/derivation-container.component';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { DialogComponent } from './gswb-vis/dialog/dialog.component';
-import { SubGraphDialogComponent } from './gswb-vis/sub-graph-dialog/sub-graph-dialog.component';
-import { SubGraphComponent } from './gswb-vis/sub-graph/sub-graph.component';
+import { DialogComponent } from './dialog/dialog.component';
+import { SubGraphDialogComponent } from './sub-graph-dialog/sub-graph-dialog.component';
+import { SubGraphComponent } from './sub-graph/sub-graph.component';
 
 
 
