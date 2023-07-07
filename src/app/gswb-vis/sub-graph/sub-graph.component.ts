@@ -1,8 +1,8 @@
 import {Component, Input} from '@angular/core';
 import cytoscape, {Core} from "cytoscape";
-import cola from "cytoscape-cola";
+import cise from "cytoscape-cise";
 
-cytoscape.use(cola);
+cytoscape.use(cise);
 
 const styleArray = [
   {
@@ -54,6 +54,22 @@ const styleArray = [
     }
   },
   {
+    selector: 'node[color="green"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'black',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      "background-fill": "linear-gradient",
+      "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
+      "background-gradient-stop-positions": "0 30 60",
+      'width': 'label',  // Set the width based on the label size
+      'height': 'label',  // Set the height based on the label size
+      'padding' : '10px' // Set the padding value as desired
+    }
+  },
+  {
     selector: 'edge',
     style: {
       'width': 3,
@@ -80,12 +96,12 @@ export class SubGraphComponent {
       container: document.getElementById(this.graphID),
       style: styleArray as cytoscape.Stylesheet[],
       layout: {
-        name: 'cola'
+        name: 'cise' // Adjust alignment as needed
       }
     });
 
     this.cy.on('layoutstop', (event) => {
-      if (event.layout.options.name === 'cola') {
+      if (event.layout.options.name === 'cise') {
         // Check if any errors occurred during the layout
         if (event.layout.failed) {
           console.log('Error applying layout!');
@@ -104,9 +120,8 @@ export class SubGraphComponent {
         elements: graphData,
         style: styleArray as cytoscape.Stylesheet[],
         layout: {
-          name: 'cola'
+          name: 'cise'
         }
-        // Additional Cytoscape configuration options
       }
     );
     console.log("Container of the subgraph: ",this.cy.container().id);
