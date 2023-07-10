@@ -13,6 +13,7 @@ export class RuleListComponent {
 
   addElement(rule: any) {
     this.elements.push(rule);
+    console.log(rule);
   }
 
   removeElement(index: number) {

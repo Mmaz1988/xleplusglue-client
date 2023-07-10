@@ -16,6 +16,6 @@ export class DataService {
   }
 
   ligerAnnotate(ligerRequest): Observable<any> {
-    return this.http.post<any>(`${this.ligerpage}/apply_rule_xle_test`, ligerRequest);
+    return this.http.post<any>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
   }
 }

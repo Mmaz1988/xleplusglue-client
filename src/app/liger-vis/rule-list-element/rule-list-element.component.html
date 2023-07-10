@@ -1,5 +1,5 @@
 <div class="rule">
-<textarea [(ngModel)]="data.rule"> </textarea>
-  <button (click)="calculate()"> Calculate graph at rule: {{data.index}} </button>
+<textarea [(ngModel)]="data.rule.rule"> </textarea>
+  <button (click)="calculate()"> Calculate graph at rule: {{data.rule.index}} (line {{data.rule.lineNumber}}) </button>
   <button (click)="onDelete()">Delete</button>
 </div>

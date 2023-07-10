@@ -23,12 +23,10 @@ input[type="submit"] {
   margin-right: 5px;
 }
 
+.editor-restr {
+  max-width: 800px;
 
-
-
-
-
-
+}
 
 
 

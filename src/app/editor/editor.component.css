@@ -1,3 +1,7 @@
+.CodeMirror {
+  overflow: auto;
+  resize: both;
+}
 
 .cm-rule_separator {
   color: #0900ff;

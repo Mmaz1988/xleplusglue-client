@@ -465,12 +465,15 @@ export class EditorComponent implements AfterViewInit {
     console.log("mode is " + this.mode);
 
     this.codeMirror = CodeMirror.fromTextArea(this.host.nativeElement, {
-      mode: this.mode
+      mode: this.mode,
+      viewPortMargin: Infinity
     });
 
     if (this.mode == "liger") {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
+      this.codeMirror.setOption("lineNumbers", true);
     }
+
   }
 
 
