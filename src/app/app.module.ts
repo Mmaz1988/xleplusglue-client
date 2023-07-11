@@ -7,7 +7,6 @@ import { SemComponent } from './gswb-vis/sem/sem.component';
 import { EditorComponent } from './editor/editor.component';
 import { LogComponent } from './gswb-vis/log/log.component';
 import { ReactiveFormsModule } from '@angular/forms';
-import { EditorContainerComponent } from './editor-container/editor-container.component';
 import { HttpClientModule } from '@angular/common/http';
 import { LigerVisComponent } from './liger-vis/liger-vis.component';
 import { GlueInterfaceComponent } from './glue-interface/glue-interface.component';
@@ -32,7 +31,6 @@ import { SubGraphComponent } from './sub-graph/sub-graph.component';
     SemComponent,
     EditorComponent,
     LogComponent,
-    EditorContainerComponent,
     LigerVisComponent,
     GlueInterfaceComponent,
     RuleListComponent,

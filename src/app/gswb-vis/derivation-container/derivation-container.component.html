@@ -1,13 +1,9 @@
-<div>
   <h3>Derivation:</h3>
   <div class="viscontainer" *ngIf="showEditor">
-    <editor-container>
       <app-editor #editorVis [mode]="'glue'">
       </app-editor>
-    </editor-container>
-
   </div>
   <div class="viscontainer" *ngIf="showGraph">
     <app-gswb-graph-vis #graphVis [graphID]="'gswbCy1'"></app-gswb-graph-vis>
 </div>
-</div>
+

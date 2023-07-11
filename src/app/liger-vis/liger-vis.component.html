@@ -5,9 +5,11 @@
 <button (click)="analyzeSentence(textareaElement.value, edit1.getContent())">Analyze</button>
 <br>
 <h3> Input rules: </h3>
-<editor-container>
+
+<div class="ligereditorcontainer">
   <app-editor #edit1 [mode]="'liger'" ></app-editor>
-</editor-container> <br>
+<br>
+</div>
 
 <h3> Graph visualization: </h3>
 

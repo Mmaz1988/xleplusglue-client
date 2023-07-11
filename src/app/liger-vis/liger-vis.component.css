@@ -10,3 +10,7 @@ div.ligergraphcontainer{
   max-width: 800px;
   height: 650px;
 }
+
+div.ligereditorcontainer {
+  max-width: 800px;
+}

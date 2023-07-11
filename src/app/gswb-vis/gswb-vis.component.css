@@ -25,7 +25,7 @@ input[type="submit"] {
 
 .editor-restr {
   max-width: 800px;
-
+  overflow: hidden;
 }
 
 
