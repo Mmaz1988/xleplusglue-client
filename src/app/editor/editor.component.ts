@@ -459,6 +459,9 @@ export class EditorComponent implements AfterViewInit {
   @Input() id: string;
   @Input() mode: string;
 
+  defaultWidth = '800px';
+  defaultHeight = '300px';
+
   private codeMirror: CodeMirror.EditorFromTextArea;
 
   ngAfterViewInit() {
@@ -485,6 +488,10 @@ export class EditorComponent implements AfterViewInit {
 
   public getContent(): string {
     return this.codeMirror.getValue();
+  }
+
+  resizeToDefault(): void {
+    this.codeMirror.setSize(this.defaultWidth, this.defaultHeight);
   }
   }
 

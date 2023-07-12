@@ -72,7 +72,33 @@ const styleArray = [
     }
   },
   {
+    selector: 'node[color="orange"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'black',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      "background-fill": "linear-gradient",
+      "background-gradient-stop-colors": "orange white", // get data from data.color in each node
+      "background-gradient-stop-positions": "0 30 60",
+      'width': 'label',  // Set the width based on the label size
+      'height': 'label',  // Set the height based on the label size
+      'padding' : '10px' // Set the padding value as desired
+    }
+  },
+  {
     selector: 'edge',
+    style: {
+      'width': 3,
+      'line-color': '#ccc',
+      'target-arrow-color': '#ccc',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier'
+    }
+  },
+  {
+    selector: 'edge[edge_type="parent"]',
     style: {
       'width': 3,
       'line-color': '#ccc',

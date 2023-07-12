@@ -30,7 +30,8 @@ export class GswbVisComponent {
       outputstyle: [0, Validators.required], // Default value is 0
       parseSem: [false], // Default value is false
       explain: [false], // Default value is false
-      debugging: [false] // Default value is false
+      debugging: [false],
+      ndstyle: [0, Validators.required]// Default value is false
     });
   }
 
@@ -46,9 +47,10 @@ export class GswbVisComponent {
       glueOnly: false,
       meaningOnly: false,
       explainFail: this.gswbPreferencesForm.value.explain,
-      debugging: this.gswbPreferencesForm.value.debugging
+      debugging: this.gswbPreferencesForm.value.debugging,
+      naturalDeductionStyle: this.gswbPreferencesForm.value.ndstyle
     };
-    console.log(gswbPreferences);
+    console.log("Gswb preferences: ",gswbPreferences);
 
     const gswbRequest = {
       premises: editorContent,

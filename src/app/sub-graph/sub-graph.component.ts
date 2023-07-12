@@ -132,6 +132,22 @@ const gswbStyle = [
     }
   },
   {
+    selector: 'node[color="orange"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'black',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      "background-fill": "linear-gradient",
+      "background-gradient-stop-colors": "orange white", // get data from data.color in each node
+      "background-gradient-stop-positions": "0 30 60",
+      'width': 'label',  // Set the width based on the label size
+      'height': 'label',  // Set the height based on the label size
+      'padding' : '10px' // Set the padding value as desired
+    }
+  },
+  {
     selector: 'edge[edge_type="default"]',
     style: {
       'width': 3,
@@ -148,6 +164,16 @@ const gswbStyle = [
       'line-color': '#ccc',
       'target-arrow-color': '#ccc',
       'line-style': 'dashed',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier'
+    }
+  },
+  {
+    selector: 'edge[edge_type="parent"]',
+    style: {
+      'width': 3,
+      'line-color': '#ccc',
+      'target-arrow-color': '#ccc',
       'target-arrow-shape': 'triangle',
       'curve-style': 'bezier'
     }
@@ -202,9 +228,16 @@ export class SubGraphComponent {
     );
     console.log("Container of the subgraph: ",this.cy.container().id);
     console.log("Cy element with data:", this.cy)
+
+    if (this.graphStyle == 'liger'){
+      this.createAndBindLigerPoppers()
+    } else if (this.graphStyle == 'glue'){
+      this.createAndBindGswbPoppers()
+    }
+
   }
 
-  makePopper(ele: any): void {
+  makeLigerPopper(ele: any): void {
     //   console.log("Element: ",ele);
     //   console.log("popper: ",ele.popperRef());
     const ref = ele.popperRef()
@@ -231,14 +264,14 @@ export class SubGraphComponent {
     //  console.log("Tippy: ",ele.tippy);
   }
 
-  createAndBindPoppers(): void {
+  createAndBindLigerPoppers(): void {
     this.cy.nodes().forEach((ele) => {
 
       const data = ele.data();
 
       if (data.hasOwnProperty('avp')) {
         //  console.log("Making popper for: ", data);
-        this.makePopper(ele);
+        this.makeLigerPopper(ele);
         //   console.log("Element with tippy: ",data);
 
         ele.bind('mouseover', (event) => event.target.tippy.show());
@@ -246,6 +279,51 @@ export class SubGraphComponent {
       }
     });
   }
+
+
+  makeGswbPopper(ele: any): void {
+    //   console.log("Element: ",ele);
+    //   console.log("popper: ",ele.popperRef());
+    const ref = ele.popperRef()
+    //   console.log("Ref value:",ref)
+    ele.tippy = tippy(ref, { // tippy options:
+      content: () => {
+        let content = document.createElement('div');
+        content.style.backgroundColor = 'black';
+        var attributes = ele._private.data;
+
+        if (attributes.hasOwnProperty("solutions")) {
+          //iterate through array attributes.solutions
+          for (var solution of attributes.solutions) {
+            content.innerHTML = content.innerHTML + solution + "<br>";
+          }
+        }
+
+        //content.innerHTML = ele.id();
+
+        return content;
+      },
+      trigger: 'manual' // probably want manual mode
+    });
+    //  console.log("Tippy: ",ele.tippy);
+  }
+
+  createAndBindGswbPoppers(): void {
+    this.cy.nodes().forEach((ele) => {
+
+      const data = ele.data();
+
+      if (data.hasOwnProperty('solutions')) {
+        //  console.log("Making popper for: ", data);
+        this.makeGswbPopper(ele);
+        //   console.log("Element with tippy: ",data);
+
+        ele.bind('mouseover', (event) => event.target.tippy.show());
+        ele.bind('mouseout', (event) => event.target.tippy.hide());
+      }
+    });
+  }
+
 
 /*
   renderGraph(graphData): void {
