@@ -482,6 +482,8 @@ export class EditorComponent implements AfterViewInit {
 
   updateContent(value: string): void {
     if (this.codeMirror) {
+      this.codeMirror.setValue("");
+      this.codeMirror.clearHistory();
       this.codeMirror.setValue(value);
     }
   }
