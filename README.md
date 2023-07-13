@@ -13,4 +13,6 @@ Run `ng build` to build the project. The build artifacts will be stored in the `
 ## Running locally
 
 Download code from github, navigate to the directory, run "npm install" to install dependencies, then run "ng serve" to start the server.  Navigate to "http://localhost:4200/
+To run npm install you need to have node.js installed on your machine.  You can download it from https://nodejs.org/en/download/.
+
 
