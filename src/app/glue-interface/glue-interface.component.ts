@@ -12,6 +12,9 @@ export class GlueInterfaceComponent {
   @ViewChild('l1') liger: LigerVisComponent;
   @ViewChild('g1') glue: GswbVisComponent;
 
+  isFirstDivMinimized = false;
+  isSecondDivMinimized = false;
+
 
   ngAfterViewInit() {
     this.liger.changeDetector.subscribe(newValue => {

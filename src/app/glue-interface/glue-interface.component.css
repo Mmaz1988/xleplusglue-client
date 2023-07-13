@@ -1,0 +1,36 @@
+.toggle-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50px;
+  height: 100%;
+  background-color: white;
+  border: none;
+  cursor: pointer;
+  opacity: 0; /* Hide the button */
+  transition: opacity 0.3s; /* Smooth transition */
+  font-weight: bold;
+}
+
+.toggle-button:hover {
+  opacity: 0.8;
+  background: #00a9e0;
+  color: white;
+  border-radius: 10px;
+}
+
+.toggle-button-max {
+  width: 50px;
+  height: 100vh;
+  font-weight: bold;
+  background-color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.toggle-button-max:hover {
+  opacity: 0.2;
+  background: #00a9e0;
+  color: white;
+  border-radius: 10px;
+}
