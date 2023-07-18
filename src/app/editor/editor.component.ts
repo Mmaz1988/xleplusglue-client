@@ -464,6 +464,9 @@ export class EditorComponent implements AfterViewInit {
 
   private codeMirror: CodeMirror.EditorFromTextArea;
 
+  filename: string; // to hold the input filename
+
+
   ngAfterViewInit() {
     console.log("mode is " + this.mode);
 
@@ -495,5 +498,22 @@ export class EditorComponent implements AfterViewInit {
   resizeToDefault(): void {
     this.codeMirror.setSize(this.defaultWidth, this.defaultHeight);
   }
+
+  downloadFile(filename: string) {
+    let content = this.codeMirror.getValue();
+    let blob = new Blob([content], { type: 'text/plain' });
+    let url = window.URL.createObjectURL(blob);
+
+    // Create a link and programmatically click it:
+    let link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'default.txt'; // If filename is not provided, use 'default.txt'
+    link.click();
+
+    // Remember to revoke the blob URL after a while to save memory:
+    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+  }
+
+
   }
 
