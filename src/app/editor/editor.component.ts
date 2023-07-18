@@ -475,10 +475,15 @@ export class EditorComponent implements AfterViewInit {
       viewPortMargin: Infinity
     });
 
-    if (this.mode == "liger") {
+    if (this.mode == "liger" ) {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
+
+    }
+    if (!(this.mode == "glue"))
+    {
       this.codeMirror.setOption("lineNumbers", true);
     }
+
 
   }
 

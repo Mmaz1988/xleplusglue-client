@@ -18,4 +18,8 @@ export class DataService {
   ligerAnnotate(ligerRequest): Observable<any> {
     return this.http.post<any>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
   }
+
+  ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {
+    return this.http.post<any>(`${this.ligerpage}/apply_rules_to_batch`, ligerMultipleRequest);
+  }
 }

@@ -21,6 +21,9 @@ import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { DialogComponent } from './dialog/dialog.component';
 import { SubGraphDialogComponent } from './sub-graph-dialog/sub-graph-dialog.component';
 import { SubGraphComponent } from './sub-graph/sub-graph.component';
+import { NavigationComponent } from './navigation/navigation.component';
+import { RegressionTestingInterfaceComponent } from './regression-testing-interface/regression-testing-interface.component';
+import {AppRoutingModule} from "./app-routing.module";
 
 
 
@@ -41,6 +44,8 @@ import { SubGraphComponent } from './sub-graph/sub-graph.component';
     DialogComponent,
     SubGraphDialogComponent,
     SubGraphComponent,
+    NavigationComponent,
+    RegressionTestingInterfaceComponent,
 
   ],
   imports: [
@@ -49,8 +54,7 @@ import { SubGraphComponent } from './sub-graph/sub-graph.component';
     HttpClientModule,
     FormsModule,
     CommonModule,
-    BrowserAnimationsModule
-  ],
+    AppRoutingModule],
   providers: [],
   bootstrap: [AppComponent]
 })
