@@ -1,4 +1,4 @@
-import {Component, ViewChild} from '@angular/core';
+import {Component, ViewChild, ElementRef} from '@angular/core';
 import {DataService} from "../data.service";
 import {GraphVisComponent} from "../liger-vis/liger-graph-vis/graph-vis.component";
 import { LigerBatchParsingAnalysis, LigerRule, LigerRuleAnnotation, LigerWebGraph, LigerGraphComponent } from '../models/models';
@@ -15,6 +15,7 @@ export class RegressionTestingInterfaceComponent {
 
 
   @ViewChild('arcy') cy1: GraphVisComponent;
+  @ViewChild('report') report: ElementRef;
 
   batchParse(sentences: String, rules: String)
 {
@@ -36,6 +37,11 @@ export class RegressionTestingInterfaceComponent {
       console.log(data.ruleApplicationGraph);
       this.cy1.renderGraph(data.ruleApplicationGraph);
    }
+
+  if (data.hasOwnProperty("report")) {
+      this.report.nativeElement.innerHTML = data.report;
+  }
+
     },
       error => {
         console.error('An error occurred:', error);

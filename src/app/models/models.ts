@@ -1,6 +1,7 @@
 export interface LigerBatchParsingAnalysis {
   annotations: { [key: number]: LigerRuleAnnotation };
   ruleApplicationGraph: LigerGraphComponent[];
+  report: string;
 }
 
 export interface LigerRule {

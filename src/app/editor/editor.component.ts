@@ -73,7 +73,19 @@ CodeMirror.defineMode("glue", function() {
 const DEFAULT_TEST_SUITE = "John loves Mary.\n\n" +
                             "Every man loved a woman.\n\n" +
                             "Mary said that Susan was sick.\n\n" +
-                            "If Mary was sick, she would be sleeping.";
+                            "If Mary was sick, she would be sleeping.\n\n" +
+                            "Mary married a man who smiled.\n\n" +
+                            "Mary was dancing.\n\n" +
+                            "Mary seems to smile.\n\n" +
+                            "If Mary trained, she is sleeping.\n\n" +
+                            "A man saw the monkey with the telescope.\n\n" +
+                            "A woman will visit the cinema.\n\n" +
+                            "Peter had visited the cinema.\n\n" +
+                            "Peter wanted to visit Mary.\n\n" +
+                            "Mary gave Peter a letter.\n\n";
+
+
+
 
 const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
@@ -408,10 +420,10 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "#c T-REF' #e & #e GLUE {[/t_s.[/t2_s.after(t,t2)]],[/t_s.[/t2_s.overlap(t,t2)]]} : (#c -o (#d -o #c)).\n" +
   "\n" +
   "//Future reference\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'future' & #c EVAL #d & #c CHECK '-' ==>\n" +
+  "#a SEM #b TEMP-REF #c T-REF 'fut' & #c EVAL #d & #c CHECK '-' ==>\n" +
   "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.after(t,t2)]] : (#c -o (#d -o #c)).\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'future' & #c EVAL #d T-REF %a ==>\n" +
+  "#a SEM #b TEMP-REF #c T-REF 'fut' & #c EVAL #d T-REF %a ==>\n" +
   "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.after(t,t2)]] : (#c -o (#d -o #c)).\n" +
   "\n" +
   "\n" +

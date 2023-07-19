@@ -21,4 +21,14 @@
   height: 20px; /* adjust this to change the height of the empty space */
 }
 
+textarea{
+  width: 50%;
+  resize: both;
+  overflow: auto;
+  padding-left: 20px;
+}
+
+.frame {
+  padding-left: 10px;
+}
 
