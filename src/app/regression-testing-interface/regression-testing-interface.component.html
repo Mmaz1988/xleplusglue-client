@@ -1,0 +1,18 @@
+<app-editor #testsuite [mode]="'text'"> </app-editor>
+
+  <br>
+
+
+<div class="gradient-container">
+  <app-editor #ligerRules [mode]="'liger'"> </app-editor>
+  <div class="bar-container">
+    <div class="gradient-bar"></div>
+  </div>
+</div>
+
+
+<button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">Parse all</button>
+
+<div>
+<app-applied-rules-graph #arcy [graphID]="'arCy1'"></app-applied-rules-graph>
+</div>

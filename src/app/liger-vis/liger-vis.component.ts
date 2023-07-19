@@ -39,7 +39,7 @@ export class LigerVisComponent {
       data => {
         if (data.hasOwnProperty("graph")) {
           if (data.graph.hasOwnProperty("graphElements")) {
-         //   console.log(data.graph.graphElements);
+            console.log(data.graph.graphElements);
             this.cy1.renderGraph(data.graph.graphElements);
             this.graphElements = data.graph.graphElements;
           }

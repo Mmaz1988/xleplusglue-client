@@ -1,0 +1,5 @@
+<div>
+  <div class="cy" [id]="graphID" #graphContainer></div>
+  <button (click)="resizeToDefault()">Resize to Default</button>
+  <app-sub-graph-dialog [subgraphID] ="'sub' + graphID" [subgraphStyle]="'liger'" #subgraphDialog></app-sub-graph-dialog>
+</div>

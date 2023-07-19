@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { LigerBatchParsingAnalysis } from './models/models';
 
 @Injectable({
   providedIn: 'root'
@@ -20,6 +21,6 @@ export class DataService {
   }
 
   ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {
-    return this.http.post<any>(`${this.ligerpage}/apply_rules_to_batch`, ligerMultipleRequest);
+    return this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/apply_rules_to_batch`, ligerMultipleRequest);
   }
 }

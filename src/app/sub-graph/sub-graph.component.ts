@@ -1,9 +1,11 @@
 import {Component, Input} from '@angular/core';
 import cytoscape, {Core} from "cytoscape";
 import cise from "cytoscape-cise";
+import dagre from "cytoscape-dagre";
 import tippy from "tippy.js";
 
 cytoscape.use(cise);
+cytoscape.use(dagre);
 
 const ligerStyle = [
   {

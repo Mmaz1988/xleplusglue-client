@@ -70,6 +70,11 @@ CodeMirror.defineMode("glue", function() {
   };
 });
 
+const DEFAULT_TEST_SUITE = "John loves Mary.\n\n" +
+                            "Every man loved a woman.\n\n" +
+                            "Mary said that Susan was sick.\n\n" +
+                            "If Mary was sick, she would be sleeping.";
+
 const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
   "#a TNS-ASP #b ==> #a SEM #c & #c TEMP-REF #d & #d T-REF 'undefined' & #c SIT #s.\n" +
@@ -479,6 +484,11 @@ export class EditorComponent implements AfterViewInit {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
 
     }
+
+    if (this.mode == "text")  {
+      this.codeMirror.setValue(DEFAULT_TEST_SUITE);
+    }
+
     if (!(this.mode == "glue"))
     {
       this.codeMirror.setOption("lineNumbers", true);

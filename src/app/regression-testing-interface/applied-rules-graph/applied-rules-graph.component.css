@@ -1,0 +1,14 @@
+div.cy {
+  width: 760px;
+  height: 590px;
+  display: block;
+  border-style: solid;
+  border-radius: 25px;
+  border-color: #00a9e0;
+  margin: 5px;
+  overflow: hidden;
+  resize: both; /* Allow resizing */
+  max-width: 100%; /* Ensure the div doesn't exceed parent's width */
+  max-height: 100%; /* Ensure the div doesn't exceed parent's height */
+}
+
