@@ -1,0 +1,17 @@
+<div class="navigation"
+     [class.expanded]="isNavigationVisible"
+     (mouseenter)="showNavigation()"
+     (mouseleave)="hideNavigation()">
+  <div class="navigation-content" *ngIf="isNavigationVisible">
+    <ul>
+      <!-- Navigation items -->
+      <li><a routerLink="/demo">Analysis</a></li>
+      <li><a routerLink="/regression">Regression testing</a></li>
+      <!-- Add more li elements for each additional link -->
+    </ul>
+  </div>
+</div>
+<div class="page-content">
+  <router-outlet></router-outlet>
+  <!-- The router-outlet will display the content of the active route -->
+</div>

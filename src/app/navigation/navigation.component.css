@@ -1,0 +1,44 @@
+.navigation {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 50px;
+  height: 100vh;
+  background-color: #ffffff; /* set the background color to white */
+  border: 1px solid #00a9e0; /* add a border with color #00a9e0 */
+  transition: width 0.3s ease-in-out;
+  overflow: hidden;
+}
+
+.navigation.expanded {
+  width: 250px; /* Adjust the expanded width as needed */
+}
+
+.navigation-content {
+  padding: 16px;
+  width: 100%;
+}
+
+.page-content {
+  margin-left: 50px;
+  transition: margin-left 0.3s ease-in-out;
+}
+
+.navigation.expanded ~ .page-content {
+  margin-left: 250px; /* Adjust the left margin as the same as the expanded navigation width */
+}
+
+.navigation-content ul {
+  list-style-type: square;
+  padding-left: 20px;
+}
+
+.navigation-content ul li {
+  line-height: 2; /* Increase line-height for more vertical distance between elements */
+}
+
+.navigation-content ul li a {
+  font-weight: bold; /* Makes the font bold */
+  font-size: 1.2em; /* Increase the font-size */
+  text-decoration: none; /* Remove underline from links */
+}
