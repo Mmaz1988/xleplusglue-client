@@ -21,7 +21,21 @@ const style = [
       'height': '60px',
       'width': '60px',
       "background-fill": "linear-gradient",
-      "background-gradient-stop-colors": "#00FFFF white", // get data from data.color in each node
+      "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
+      "background-gradient-stop-positions": "0 30 60"
+    }
+  },
+  {
+    selector: 'node[node_type="cnode"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'blue',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'height': '60px',
+      'width': '60px',
+      "background-fill": "linear-gradient",
+      "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60"
     }
   },
@@ -83,6 +97,8 @@ export class GraphVisComponent implements OnInit {
 
   @Input() graphID!: string;
   private cy: Core;
+  private nodesHidden: boolean = false;
+  private selector = 'node[node_type="cnode"]';
 
   defaultWidth = '800px';
   defaultHeight = '600px';
@@ -169,6 +185,21 @@ export class GraphVisComponent implements OnInit {
       this.subgraphDialog.setContent(this.cy.data())
       this.subgraphDialog.showDialog()
   }
+
+  toggleNodes() {
+    const nodes = this.cy.nodes(this.selector);
+
+    this.cy.batch(() => {
+      if (this.nodesHidden) {
+        nodes.style('display', 'element');
+      } else {
+        nodes.style('display', 'none');
+      }
+
+      this.nodesHidden = !this.nodesHidden;
+    });
+  }
+
 }
 
 
