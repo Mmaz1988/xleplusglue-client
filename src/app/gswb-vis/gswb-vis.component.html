@@ -23,6 +23,7 @@
       <option value="0">Plain</option>
       <option value="1">Prolog</option>
       <option value="3">NLTK</option>
+      <option value="4">Prolog DRT</option>
     </select>
   </div>
 
@@ -61,10 +62,15 @@
 </form>
 
 
+
 <h3> Semantics: </h3>
-<app-sem #sem1> </app-sem>
+<div class="editor-restr">
+<app-editor #sem1 [mode]="'glue'">  </app-editor>
+  </div>
 <h3>Log:</h3>
-<app-log #log1> </app-log>
+<div class="editor-restr">
+  <app-editor #log1 [mode]="'glue'">  </app-editor>
+</div>
 
 <app-derivation-container #derivation>
 

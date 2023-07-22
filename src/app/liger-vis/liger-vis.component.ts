@@ -83,14 +83,19 @@ export class LigerVisComponent {
 
   calculateFromRuleList(event: any) {
 
-    let newRules = ["--replace(true);\n"];
+    let newRules = [];
 
     for (let i = 0; i <= event.index; i++) {
       newRules.push(this.rulelist1.elements[i].rule);
     }
     console.log("New rules: \n", newRules)
 
-    const ruleString = newRules.join("\n");
+    // map each element of newRules to its rule property and join with newline
+    let ruleString = newRules.map((element) => element["rule"]).join("\n");
+
+    ruleString = "--replace(true);\n" + ruleString;
+
+    console.log("Rule string: \n", ruleString);
 
     this.analyzeSentence(this.textarea.nativeElement.value, ruleString);
   }

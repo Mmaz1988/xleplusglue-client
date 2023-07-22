@@ -18,8 +18,8 @@ import {DialogComponent} from "../dialog/dialog.component";
 export class GswbVisComponent {
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
-  @ViewChild('sem1') sem: SemComponent;
-  @ViewChild('log1') log: LogComponent;
+  @ViewChild('sem1') sem: EditorComponent;
+  @ViewChild('log1') log: EditorComponent;
   @ViewChild('dialog') dialog: DialogComponent;
 
   gswbPreferencesForm: FormGroup;
@@ -66,16 +66,16 @@ export class GswbVisComponent {
           data.solutions.forEach(element => {
             console.log(element);
             //print solutions line by line to sem
-            this.sem.setContent(element);
+            this.sem.updateContent(element);
           });
           //translate data.solutions to string with each solution in a new line
           let solutions = data.solutions.join('\n');
-          this.sem.setContent(solutions);
+          this.sem.updateContent(solutions);
         }
 
         if (data.hasOwnProperty('log'))
         {
-          this.log.setContent(data.log)
+          this.log.updateContent(data.log)
         }
 
         if (data.hasOwnProperty('derivation')) {
