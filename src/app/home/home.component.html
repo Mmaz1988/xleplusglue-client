@@ -1,0 +1,41 @@
+<div>
+<h1> The XLE+Glue web application</h1>
+
+
+<p>This page presents several resources used for exploring LFG's glue semantics. Concretely, it presents the
+<a href="https://github.com/Mmaz1988/GlueSemWorkbench_v2"> Glue semantics workbench </a>and the <a href="https://github.com/Mmaz1988/liger">
+    LiGER rewrite system </a>. It also serves as a revised frontend for the original
+  <a href="https://github.com/Mmaz1988/xle-glueworkbench-interface">XLE + Glue</a>. As all of these resources, this frontend is open source.
+It is available at: <a href="https://github.com/Mmaz1988/xleplusglue-client">XLE+Glue client</a> </p>
+
+<h2>Quick start</h2>
+
+
+
+  <h2>Running the system locally</h2>
+  <p>
+    To run this system, you require:
+  </p>
+  <ul>
+    <li> A running version of the GSWB </li>
+    <li> A running version of LiGER </li>
+    <li> A running version of the client </li>
+  </ul>
+  <p>
+    You either need to compile your own jar files for the GSWB and LiGER, or you can use the ones provided at
+    <a href="https://cloud.uni-konstanz.de/index.php/s/RQ6ziY2xkHkjpGM">XLE+Glue resources</a>. Please contact Mark-Matthias Zymla
+    if you can't access the relevant files. You need to run both -jar files with the <b>-web</b> parameter. Furthermore,
+    they require resource folders to be present in the same directory as the jar files. These resource folders contain
+    additional requirements explained on the corresponding github pages.
+    </p>
+  <p>
+    The frontend is written in angular. To use it locally, you need to install node.js and npm.
+    Then, you can run <b>ng build</b> in the client directory to build the frontend, which is then stored in the dist directory.
+    You can use <b>http-server</b> to serve the frontend. It can be installed with <b>npm install -g http-server</b>.
+    Then, you can run <b>http-server dist/xleplusglue-cient</b> to serve the frontend. Http-server will tell you the correct address.
+  </p>
+<p>If you have node.js and http-server installed, you can also try to use the pre-build version available at:
+  <a href="https://github.com/Mmaz1988/xleplusglue-client"></a>. There, you also find the relevant resource folders for the GSWB
+and LiGER and a .sh file that allows you to execute the backend (i.e., the GSWB and LiGER jars) and frontend with a single command. </p>
+
+</div>

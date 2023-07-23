@@ -88,6 +88,47 @@ export class LigerVisComponent {
     );
   }
 
+  hybridAnalysis(inputValue: string, ruleString: string) {
+    const sentence = inputValue;
+
+    const ligerRequest = {sentence: sentence, ruleString: ruleString};
+
+    this.dataService.ligerHybrid(ligerRequest).subscribe(
+      data => {
+        this.errorhandle.nativeElement.innerHTML = "";
+
+        if (data.hasOwnProperty("graph")) {
+          if (data.graph.hasOwnProperty("graphElements")) {
+            if (!(data.graph.graphElements.length == 0)) {
+              console.log(data.graph.graphElements);
+              this.cy1.renderGraph(data.graph.graphElements);
+              this.graphElements = data.graph.graphElements;
+            } else {
+              this.errorhandle.nativeElement.innerHTML =  "Parsing failed...";
+            }
+          }
+        }
+        if (data.hasOwnProperty("appliedRules") && data.appliedRules !== null){
+          console.log(data.appliedRules);
+
+          this.rulelist1.clearList();
+
+          for (let i = 0; i < data.appliedRules.length; i++) {
+            this.rulelist1.addElement({rule: data.appliedRules[i], index: i});
+          }
+        }
+        if (data.hasOwnProperty("meaningConstructors")) {
+          console.log(data.meaningConstructors);
+          this.meaningConstructors = data.meaningConstructors;
+          this.changeDetector.emit(data.meaningConstructors);
+        }
+      },
+      error => {
+        console.log('ERROR: ', error);
+      }
+    );
+  }
+
   parseSentence(inputValue: string, ruleString: string) {
     // console.log(inputValue)
     // console.log(this.editor1.getContent())

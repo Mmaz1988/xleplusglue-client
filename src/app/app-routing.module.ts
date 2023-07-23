@@ -9,6 +9,7 @@ import {HomeComponent} from "./home/home.component";
 
 
 const routes: Routes = [
+  { path: '', redirectTo: 'home', pathMatch: 'full' },
   { path: 'demo', component: GlueInterfaceComponent },
   { path: 'regression', component: RegressionTestingInterfaceComponent },
   {path: 'home', component: HomeComponent }
