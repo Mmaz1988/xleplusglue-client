@@ -3,7 +3,7 @@ import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import { DataService } from '../data.service';
-import {FormBuilder} from "@angular/forms";
+import { LigerBatchParsingAnalysis, LigerRule, LigerRuleAnnotation, LigerWebGraph, LigerGraphComponent } from '../models/models';
 
 @Component({
   selector: 'app-liger-vis',
@@ -24,6 +24,7 @@ export class LigerVisComponent {
   @ViewChild('rl1') rulelist1: RuleListComponent;
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('textareaElement') textarea: ElementRef;
+  @ViewChild('errorhandle') errorhandle: ElementRef;
 
 
   analyzeSentence(inputValue: string, ruleString: string) {
@@ -37,14 +38,22 @@ export class LigerVisComponent {
 
     this.dataService.ligerAnnotate(ligerRequest).subscribe(
       data => {
+
+        this.errorhandle.nativeElement.innerHTML = "";
+
         if (data.hasOwnProperty("graph")) {
           if (data.graph.hasOwnProperty("graphElements")) {
-            console.log(data.graph.graphElements);
-            this.cy1.renderGraph(data.graph.graphElements);
-            this.graphElements = data.graph.graphElements;
+            if (!(data.graph.graphElements.length == 0)) {
+              console.log(data.graph.graphElements);
+              this.cy1.renderGraph(data.graph.graphElements);
+              this.graphElements = data.graph.graphElements;
+            } else {
+              this.errorhandle.nativeElement.innerHTML =  "Parsing failed...";
+            }
           }
         }
-        if (data.hasOwnProperty("appliedRules")) {
+
+        if (data.hasOwnProperty("appliedRules") && data.appliedRules !== null){
           console.log(data.appliedRules);
 
           /*
@@ -77,8 +86,45 @@ export class LigerVisComponent {
         console.log('ERROR: ', error);
       }
     );
+  }
+
+  parseSentence(inputValue: string, ruleString: string) {
+    // console.log(inputValue)
+    // console.log(this.editor1.getContent())
+    const sentence = inputValue;
+
+    const ligerRequest = {sentence: sentence, ruleString: ""};
+
+    // console.log(ligerRequest);
+
+    this.dataService.ligerParse(ligerRequest).subscribe(
+      data => {
+        this.errorhandle.nativeElement.innerHTML = "";
+
+        if (data.hasOwnProperty("graph")) {
+          if (data.graph.hasOwnProperty("graphElements")) {
+            if (!(data.graph.graphElements.length == 0)) {
+              console.log(data.graph.graphElements);
+              this.cy1.renderGraph(data.graph.graphElements);
+              this.graphElements = data.graph.graphElements;
+            } else {
+              this.errorhandle.nativeElement.innerHTML =  "Parsing failed...";
+            }
+          }
+        }
+
+        if (data.hasOwnProperty("meaningConstructors")) {
+          console.log(data.meaningConstructors);
+          this.meaningConstructors = data.meaningConstructors;
+          this.changeDetector.emit(data.meaningConstructors);
+        }
 
 
+      },
+      error => {
+        console.log('ERROR: ', error);
+      }
+    );
   }
 
   calculateFromRuleList(event: any) {

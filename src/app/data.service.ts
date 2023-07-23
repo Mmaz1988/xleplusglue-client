@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { LigerBatchParsingAnalysis } from './models/models';
+import {LigerBatchParsingAnalysis, LigerRuleAnnotation} from './models/models';
 
 @Injectable({
   providedIn: 'root'
@@ -17,7 +17,11 @@ export class DataService {
   }
 
   ligerAnnotate(ligerRequest): Observable<any> {
-    return this.http.post<any>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
+    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
+  }
+
+  ligerParse(ligerRequest): Observable<any> {
+    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_xle`, ligerRequest);
   }
 
   ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {

@@ -1,8 +1,9 @@
 <h3> Test sentence: </h3>
 
 <textarea [value]="defaultValue" #textareaElement></textarea> <br>
-
-<button (click)="analyzeSentence(textareaElement.value, edit1.getContent())">Analyze</button>
+<div class="errorhandling" #errorhandle></div>
+<button (click)="analyzeSentence(textareaElement.value, edit1.getContent())">Parse and rewrite</button>
+<button (click)="parseSentence(textareaElement.value, edit1.getContent())">Parse and extract</button>
 <br>
 <h3> Input rules: </h3>
 

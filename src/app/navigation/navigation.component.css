@@ -41,4 +41,5 @@
   font-weight: bold; /* Makes the font bold */
   font-size: 1.2em; /* Increase the font-size */
   text-decoration: none; /* Remove underline from links */
+  white-space: nowrap;
 }

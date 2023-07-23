@@ -25,6 +25,7 @@ import { NavigationComponent } from './navigation/navigation.component';
 import { RegressionTestingInterfaceComponent } from './regression-testing-interface/regression-testing-interface.component';
 import {AppRoutingModule} from "./app-routing.module";
 import { AppliedRulesGraphComponent } from './regression-testing-interface/applied-rules-graph/applied-rules-graph.component';
+import { HomeComponent } from './home/home.component';
 
 
 
@@ -48,6 +49,7 @@ import { AppliedRulesGraphComponent } from './regression-testing-interface/appli
     NavigationComponent,
     RegressionTestingInterfaceComponent,
     AppliedRulesGraphComponent,
+    HomeComponent
 
   ],
   imports: [

@@ -4,6 +4,7 @@ export interface LigerBatchParsingAnalysis {
   report: string;
 }
 
+
 export interface LigerRule {
   rule: string;
   index: number;
