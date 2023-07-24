@@ -1,27 +1,4 @@
-/* CSS code for form layout */
 
-form {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-div {
-  flex-basis: 50%;
-  margin-bottom: 10px;
-}
-
-label {
-  display: flex;
-  align-items: center;
-  margin-right: 5px;
-}
-
-select,
-input[type="checkbox"],
-input[type="submit"] {
-  width: auto;
-  margin-right: 5px;
-}
 
 .editor-restr {
   max-width: 800px;
