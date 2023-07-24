@@ -17,6 +17,8 @@
   </div>
 </div>
 
+<app-gswb-settings #gswbSettings></app-gswb-settings>
+
 
 <button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">Parse all</button>
 
@@ -24,8 +26,13 @@
   Report:
 </h3>
 
-<textarea #report>
+<textarea #ligerreport>
 </textarea>
+  <textarea #gswbreport>
+
+  </textarea>
+
+
 
 <h3>
   Applied rules:

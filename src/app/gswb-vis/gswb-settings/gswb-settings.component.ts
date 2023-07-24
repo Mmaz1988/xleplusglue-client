@@ -11,7 +11,17 @@ import {GswbPreferences} from "../../models/models";
 export class GswbSettingsComponent {
 
   gswbPreferencesForm: FormGroup;
-  gswbPreferences: GswbPreferences;
+  gswbPreferences: GswbPreferences = {
+    prover: 0,
+    debugging: false,
+    outputstyle: 0,
+    parseSem: false,
+    noreduce: false,
+    glueOnly: false,
+    meaningOnly: false,
+    explainFail: false,
+    naturalDeductionStyle: 0,
+  };
 
   constructor(private fb: FormBuilder) {
     this.gswbPreferencesForm = this.fb.group({

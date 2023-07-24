@@ -31,6 +31,8 @@ export class GswbVisComponent {
 
   calculateSemantics(){
 
+    this.gswbPreferences.onSubmit();
+
     const gswbRequest: GswbRequest = {
       premises: this.editor1.getContent(),
       gswbPreferences: this.gswbPreferences.gswbPreferences

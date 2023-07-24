@@ -1,7 +1,15 @@
 import {Component, ViewChild, ElementRef} from '@angular/core';
 import {DataService} from "../data.service";
 import {GraphVisComponent} from "../liger-vis/liger-graph-vis/graph-vis.component";
-import { LigerBatchParsingAnalysis, LigerRule, LigerRuleAnnotation, LigerWebGraph, LigerGraphComponent } from '../models/models';
+import {
+  LigerBatchParsingAnalysis,
+  LigerRule,
+  LigerRuleAnnotation,
+  LigerWebGraph,
+  LigerGraphComponent,
+  GswbPreferences, GswbMultipleRequest
+} from '../models/models';
+import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.component";
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -15,60 +23,80 @@ export class RegressionTestingInterfaceComponent {
 
 
   @ViewChild('arcy') cy1: GraphVisComponent;
-  @ViewChild('report') report: ElementRef;
+  @ViewChild('ligerreport') ligerreport: ElementRef;
+  @ViewChild('gswbreport') gswbreport: ElementRef;
+  @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent
 
-  batchParse(sentences: String, rules: String)
-{
-  //Split sentences into lines and add all non-empty lines to an array
-  let sentencesArray = sentences.split("\n").filter(line => line.trim() !== '');
+  gswbMultipleRequest: GswbMultipleRequest;
 
-  //map from id to sentences
-  let sentenceMap = {};
-  for (let i = 0; i < sentencesArray.length; i++) {
-    sentenceMap["S"+i] = sentencesArray[i];
-  }
+  batchParse(sentences: String, rules: String) {
 
+    this.gswbPreferences.onSubmit()
 
-  const ligerMultipleRequest= {sentences: sentenceMap, ruleString: rules};
+    //Split sentences into lines and add all non-empty lines to an array
+    let sentencesArray = sentences.split("\n").filter(line => line.trim() !== '');
 
-  this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
-    data => {
-      console.log(data);
-      if (data.hasOwnProperty("annotations")) {
-        console.log(data.annotations);
+    //map from id to sentences
+    let sentenceMap = {};
+    for (let i = 0; i < sentencesArray.length; i++) {
+      sentenceMap["S" + i] = sentencesArray[i];
+    }
 
-        let mcMap = {}
-        for (let i = 0; i < data.annotations.keys.length; i++) {
-          mcMap[data.annotations.keys[i]] = data.annotations[data.annotations.keys[i]].meaningConstructors;
+    const ligerMultipleRequest = {sentences: sentenceMap, ruleString: rules};
+
+    this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
+      data => {
+        console.log(data);
+        if (data.hasOwnProperty("annotations")) {
+          console.log(data.annotations);
+
+          let mcMap = {}
+          for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
+            mcMap[key] = value.meaningConstructors;
+          }
+
+          this.gswbMultipleRequest = {
+            premises: mcMap,
+            gswbPreferences: this.gswbPreferences.gswbPreferences
+          }
+
+          console.log("Specified request: ",this.gswbMultipleRequest);
 
         }
+        if (data.hasOwnProperty("ruleApplicationGraph")) {
 
-        let gswbMultipleRequest = {premises: mcMap, gswbPreferences: {} }
+          console.log(data.ruleApplicationGraph);
+          this.cy1.renderGraph(data.ruleApplicationGraph);
+        }
 
-          this.dataService.gswbBatchDeduce(gswbMultipleRequest).subscribe(
+        if (data.hasOwnProperty("report")) {
+          this.ligerreport.nativeElement.innerHTML = data.report;
+        }
 
+        this.batchDeduce(this.gswbMultipleRequest);
 
-          );
-
-      }
-  if (data.hasOwnProperty("ruleApplicationGraph")) {
-
-      console.log(data.ruleApplicationGraph);
-      this.cy1.renderGraph(data.ruleApplicationGraph);
-   }
-
-  if (data.hasOwnProperty("report")) {
-      this.report.nativeElement.innerHTML = data.report;
-  }
-
-    },
+      },
       error => {
         console.error('An error occurred:', error);
       });
 
 
 
+  }
 
-}
+  batchDeduce(gswbMultipleRequest: GswbMultipleRequest){
+    console.log("gswbRequest: ",gswbMultipleRequest);
+    this.dataService.gswbBatchDeduce(gswbMultipleRequest).subscribe(
+      data => {
+        console.log(data);
+
+        if (data.hasOwnProperty("report")) {
+          this.gswbreport.nativeElement.innerHTML = data.report;
+        }
+      },
+      error => {
+        console.error('An error occurred:', error);
+      });
+  }
 
 }
