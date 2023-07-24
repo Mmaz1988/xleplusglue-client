@@ -1,0 +1,54 @@
+<h3>Settings:</h3>
+
+<form [formGroup]="gswbPreferencesForm" (ngSubmit)="onSubmit()" novalidate>
+  <div>
+    <label for="prover">Prover:</label>
+    <select formControlName="prover" id="prover" name="prover">
+      <option value="0">Hepple</option>
+      <option value="1">Lev</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="outputstyle">Output Style:</label>
+    <select formControlName="outputstyle" id="outputstyle" name="outputstyle">
+      <option value="0">Plain</option>
+      <option value="1">Prolog</option>
+      <option value="3">NLTK</option>
+      <option value="4">Prolog DRT</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="parseSem">
+      <input type="checkbox" formControlName="parseSem" id="parseSem" name="parseSem">
+      Parse Semantics
+    </label>
+  </div>
+
+  <div>
+    <label for="explain">
+      <input type="checkbox" formControlName="explain" id="explain" name="explain">
+      Explanation
+    </label>
+  </div>
+
+  <div>
+    <label for="debugging">
+      <input type="checkbox" formControlName="debugging" id="debugging" name="debugging">
+      Debugging
+    </label>
+  </div>
+
+  <div>
+    <label for="ndstyle">Natural deduction style:</label>
+    <select formControlName="ndstyle" id="ndstyle" name="ndstyle">
+      <option value="0">Full semantics</option>
+      <option value="1">Reduced semantics</option>
+      <option value="2">No semantics</option>
+    </select>
+  </div>
+
+
+  <input type="submit" value="Submit" class="submitbutton">
+</form>
