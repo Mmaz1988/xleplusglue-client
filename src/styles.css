@@ -66,6 +66,7 @@ pre {
 html, body { height: 100%; }
 body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
 
+/*
 button.resize {
   opacity: 0.2;
   transition: opacity 0.5s ease-in-out;
@@ -73,4 +74,38 @@ button.resize {
 
 button.resize:hover {
   opacity: 1;
+}
+ */
+
+
+button {
+  border-style: solid;
+  border-radius: 25px;
+  border-color: #00a9e0;
+  background-color: #00a9e0;
+  color: white;
+  margin: 5px;
+}
+
+input.submitbutton {
+  border-style: solid;
+  border-radius: 25px;
+  border-color: #00a9e0;
+  background-color: #00a9e0;
+  color: white;
+  margin: 5px;
+}
+
+button:active, input.submitbutton:active {
+  background-color: #007b8a;  /* A darker shade of the original color */
+  border-color: #007b8a;  /* A darker shade of the original color */
+}
+
+button.hide-button {
+  border-style: solid;
+  border-radius: 25px;
+  border-color: #00a9e0;
+  background-color: #00a9e0;
+  color: white;
+  margin: 5px;
 }

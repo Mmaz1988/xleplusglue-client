@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import {LigerBatchParsingAnalysis, LigerRuleAnnotation} from './models/models';
+import {GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation} from './models/models';
 
 @Injectable({
   providedIn: 'root'
@@ -13,7 +13,11 @@ export class DataService {
   constructor(private http: HttpClient) { }
 
   gswbDeduce(gswbRequest): Observable<any> {
-    return this.http.post<any>(`${this.gswbpage}/deduce`, gswbRequest);
+    return this.http.post<GswbRequest>(`${this.gswbpage}/deduce`, gswbRequest);
+  }
+
+  gswbBatchDeduce(gswbBatchRequest): Observable<any> {
+    return this.http.post<GswbMultipleRequest>(`${this.gswbpage}/gswb_batch_proof`,gswbBatchRequest);
   }
 
   ligerAnnotate(ligerRequest): Observable<any> {

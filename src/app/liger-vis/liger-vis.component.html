@@ -6,19 +6,25 @@
 <button (click)="parseSentence(textareaElement.value, edit1.getContent())">Parse and extract</button>
 <button (click)="hybridAnalysis(textareaElement.value, edit1.getContent())">Hybrid analysis</button>
 <br>
-<h3> Input rules: </h3>
 
-<div class="ligereditorcontainer">
+
+<app-toggle-display showText="Show input rules" hideText="Hide input rules">
+  <h3> Input rules: </h3>
+  <div class="ligereditorcontainer">
   <app-editor #edit1 [mode]="'liger'" ></app-editor>
-<br>
 </div>
+</app-toggle-display>
 
+<app-toggle-display showText="Show graph vis" hideText="Hide graph vis">
 <h3> Graph visualization: </h3>
 
 <div class="ligergraphcontainer">
 <app-graph-vis #cy1></app-graph-vis>
 <button (click)="showDialog()">Show dialog</button>
-</div>
+</div><br>
+</app-toggle-display>
 
+<app-toggle-display showText="Show applied rules" hideText="Hide applied rules">
 <h3> Rule list: </h3>
 <app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>
+</app-toggle-display>

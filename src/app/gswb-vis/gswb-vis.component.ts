@@ -6,6 +6,8 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../dialog/dialog.component";
+import {GswbRequest,GswbPreferences} from "../models/models";
+import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 
 
 @Component({
@@ -21,40 +23,17 @@ export class GswbVisComponent {
   @ViewChild('sem1') sem: EditorComponent;
   @ViewChild('log1') log: EditorComponent;
   @ViewChild('dialog') dialog: DialogComponent;
+  @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
 
-  gswbPreferencesForm: FormGroup;
 
-  constructor(private fb: FormBuilder, private dataService: DataService) {
-    this.gswbPreferencesForm = this.fb.group({
-      prover: [0, Validators.required], // Default value is 0
-      outputstyle: [0, Validators.required], // Default value is 0
-      parseSem: [false], // Default value is false
-      explain: [false], // Default value is false
-      debugging: [false],
-      ndstyle: [0, Validators.required]// Default value is false
-    });
+  constructor(private dataService: DataService) {
   }
 
-  onSubmit(): void {
-    const editorContent = this.editor1.getContent();
-    console.log(editorContent);
+  calculateSemantics(){
 
-    const gswbPreferences = {
-      prover: this.gswbPreferencesForm.value.prover,
-      outputstyle: this.gswbPreferencesForm.value.outputstyle,
-      parseSem: this.gswbPreferencesForm.value.parseSem,
-      noreduce: false,
-      glueOnly: false,
-      meaningOnly: false,
-      explainFail: this.gswbPreferencesForm.value.explain,
-      debugging: this.gswbPreferencesForm.value.debugging,
-      naturalDeductionStyle: this.gswbPreferencesForm.value.ndstyle
-    };
-    console.log("Gswb preferences: ",gswbPreferences);
-
-    const gswbRequest = {
-      premises: editorContent,
-      gswbPreferences: gswbPreferences
+    const gswbRequest: GswbRequest = {
+      premises: this.editor1.getContent(),
+      gswbPreferences: this.gswbPreferences.gswbPreferences
     }
 
     this.dataService.gswbDeduce(gswbRequest).subscribe(

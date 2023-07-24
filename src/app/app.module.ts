@@ -26,6 +26,8 @@ import { RegressionTestingInterfaceComponent } from './regression-testing-interf
 import {AppRoutingModule} from "./app-routing.module";
 import { AppliedRulesGraphComponent } from './regression-testing-interface/applied-rules-graph/applied-rules-graph.component';
 import { HomeComponent } from './home/home.component';
+import { ToggleDisplayComponent } from './toggle-display/toggle-display.component';
+import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
 
 
 
@@ -49,7 +51,9 @@ import { HomeComponent } from './home/home.component';
     NavigationComponent,
     RegressionTestingInterfaceComponent,
     AppliedRulesGraphComponent,
-    HomeComponent
+    HomeComponent,
+    ToggleDisplayComponent,
+    GswbSettingsComponent
 
   ],
   imports: [

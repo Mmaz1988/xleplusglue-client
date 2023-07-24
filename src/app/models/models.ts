@@ -25,3 +25,30 @@ export interface LigerWebGraph {
 export interface LigerGraphComponent {
   data: { [key: string]: any };
 }
+
+export interface GswbBatchOutput {
+
+}
+
+export interface GswbRequest {
+  premises: string;
+  gswbPreferences: GswbPreferences;
+}
+
+export interface GswbMultipleRequest {
+  premises: { [key: string]: string };
+  gswbPreferences: GswbPreferences;
+}
+
+export interface GswbPreferences {
+  prover: number;
+  debugging: boolean;
+  outputstyle: number;
+  parseSem: boolean;
+  noreduce: boolean;
+  glueOnly: boolean;
+  meaningOnly: boolean;
+  explainFail: boolean;
+  naturalDeductionStyle: number;
+}
+
