@@ -88,6 +88,7 @@ export class LigerVisComponent {
     );
   }
 
+  /*
   hybridAnalysis(inputValue: string, ruleString: string) {
     const sentence = inputValue;
 
@@ -128,6 +129,7 @@ export class LigerVisComponent {
       }
     );
   }
+   */
 
   parseSentence(inputValue: string, ruleString: string) {
     // console.log(inputValue)

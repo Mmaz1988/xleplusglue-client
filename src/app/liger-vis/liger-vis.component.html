@@ -3,8 +3,7 @@
 <textarea [value]="defaultValue" #textareaElement></textarea> <br>
 <div class="errorhandling" #errorhandle></div>
 <button (click)="analyzeSentence(textareaElement.value, edit1.getContent())">Parse and rewrite</button>
-<button (click)="parseSentence(textareaElement.value, edit1.getContent())">Parse and extract</button>
-<button (click)="hybridAnalysis(textareaElement.value, edit1.getContent())">Hybrid analysis</button>
+<button class="button beta" (click)="parseSentence(textareaElement.value, edit1.getContent())">Extract multi-stage</button>
 <br>
 
 

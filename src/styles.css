@@ -109,3 +109,24 @@ button.hide-button {
   color: white;
   margin: 5px;
 }
+
+.beta {
+  position: relative;  /* This is crucial */
+  /* Other potential button styles like padding, font-size, etc. */
+}
+
+.button.beta::after {
+  content: "β"; /* Greek beta sign */
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  background-color: red; /* Circle color */
+  color: white; /* Text color */
+  width: 20px;
+  height: 20px;
+  border-radius: 50%; /* Makes it a circle */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 14px; /* Adjust size of beta sign */
+}

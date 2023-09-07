@@ -28,11 +28,11 @@ export class DataService {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_xle`, ligerRequest);
   }
 
-  ligerHybrid(ligerRequest): Observable<any> {
-    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/hybrid_analysis`,ligerRequest);
-  }
-
   ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {
     return this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/apply_rules_to_batch`, ligerMultipleRequest);
+  }
+
+  ligerBatchMultistage(ligerMultipleRequest): Observable<any> {
+    return this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/multistage_to_batch`, ligerMultipleRequest);
   }
 }
