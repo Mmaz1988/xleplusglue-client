@@ -34,7 +34,10 @@ export class RegressionTestingInterfaceComponent {
     this.gswbPreferences.onSubmit()
 
     //Split sentences into lines and add all non-empty lines to an array
-    let sentencesArray = sentences.split("\n").filter(line => line.trim() !== '');
+    let sentencesArray = sentences.split("\n").filter(line => {
+      let trimmedLine = line.trim();
+      return trimmedLine !== '' && !trimmedLine.startsWith("#");
+    });
 
     //map from id to sentences
     let sentenceMap = {};
@@ -88,8 +91,11 @@ export class RegressionTestingInterfaceComponent {
 
     this.gswbPreferences.onSubmit()
 
-    //Split sentences into lines and add all non-empty lines to an array
-    let sentencesArray = sentences.split("\n").filter(line => line.trim() !== '');
+    //Split sentences into lines and add all non-empty lines and comment lines to an array
+    let sentencesArray = sentences.split("\n").filter(line => {
+      let trimmedLine = line.trim();
+      return trimmedLine !== '' && !trimmedLine.startsWith("#");
+    });
 
     //map from id to sentences
     let sentenceMap = {};

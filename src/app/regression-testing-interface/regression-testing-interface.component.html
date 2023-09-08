@@ -2,20 +2,29 @@
 <h3>
   Testsuite:
 </h3>
-<app-editor #testsuite [mode]="'text'"> </app-editor>
 
+  <div class="editor-restr">
+<app-editor #testsuite [mode]="'text'"> </app-editor>
+  </div>
   <br>
 
-
+  <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
 <h3>
   Test rules:
 </h3>
-<div class="gradient-container">
+    <div class="gradient-container">
+    <div class="editor-restr">
+
   <app-editor #ligerRules [mode]="'liger'"> </app-editor>
-  <div class="bar-container">
-    <div class="gradient-bar"></div>
-  </div>
 </div>
+      <div class="bar-container">
+        <div class="gradient-bar"></div>
+        <div class="empty-space"></div>
+      </div>
+    </div>
+
+</app-toggle-display>
+
 
 <app-gswb-settings #gswbSettings></app-gswb-settings>
 
@@ -28,14 +37,14 @@
   Report:
 </h3>
 
-<textarea #ligerreport>
+<textarea class="log" #ligerreport>
 </textarea>
-  <textarea #gswbreport>
+  <textarea class="log" #gswbreport>
 
   </textarea>
-
-
-
+  <br>
+  <br>
+  <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
 <h3>
   Applied rules:
 </h3>
@@ -43,4 +52,5 @@
 <div>
 <app-applied-rules-graph #arcy [graphID]="'arCy1'"></app-applied-rules-graph>
 </div>
+  </app-toggle-display>
 </div>

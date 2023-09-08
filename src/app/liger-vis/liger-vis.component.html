@@ -7,9 +7,9 @@
 <br>
 
 
-<app-toggle-display showText="Show input rules" hideText="Hide input rules">
+<app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
   <h3> Input rules: </h3>
-  <div class="ligereditorcontainer">
+  <div class="editor-restr">
   <app-editor #edit1 [mode]="'liger'" ></app-editor>
 </div>
 </app-toggle-display>
@@ -23,7 +23,7 @@
 </div><br>
 </app-toggle-display>
 
-<app-toggle-display showText="Show applied rules" hideText="Hide applied rules">
+<app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
 <h3> Rule list: </h3>
 <app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>
 </app-toggle-display>

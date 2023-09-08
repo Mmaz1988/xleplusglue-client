@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import {HideComponentsService} from "../hide-components.service";
 
 @Component({
   selector: 'app-navigation',
@@ -8,6 +9,19 @@ import { Component } from '@angular/core';
 
 export class NavigationComponent {
   isNavigationVisible: boolean = false;
+  isAllHidden = false;
+
+  constructor(private hideComponentsService: HideComponentsService) {}
+
+  toggleAll() {
+    if (this.isAllHidden) {
+      this.hideComponentsService.showAllComponents("liger");
+    } else {
+      this.hideComponentsService.hideAllComponents("liger");
+    }
+    this.isAllHidden = !this.isAllHidden;
+  }
+
 
   showNavigation() {
     this.isNavigationVisible = true;

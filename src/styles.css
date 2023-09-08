@@ -130,3 +130,16 @@ button.hide-button {
   align-items: center;
   font-size: 14px; /* Adjust size of beta sign */
 }
+
+.editor-restr {
+  max-width: 800px;
+  overflow: hidden;
+}
+
+  .log{
+    width: 450px;
+    max-width: 450px;
+  height: 400px;
+  }
+
+

@@ -501,10 +501,9 @@ export class EditorComponent implements AfterViewInit {
       this.codeMirror.setValue(DEFAULT_TEST_SUITE);
     }
 
-    if (!(this.mode == "glue"))
-    {
+
       this.codeMirror.setOption("lineNumbers", true);
-    }
+
 
 
   }

@@ -2,6 +2,12 @@
      [class.expanded]="isNavigationVisible"
      (mouseenter)="showNavigation()"
      (mouseleave)="hideNavigation()">
+  LiGER:
+  <label class="switch">
+    <input type="checkbox" (change)="toggleAll()">
+    <span class="slider"></span>
+  </label>
+
   <div class="navigation-content" *ngIf="isNavigationVisible">
     <ul>
       <!-- Navigation items -->

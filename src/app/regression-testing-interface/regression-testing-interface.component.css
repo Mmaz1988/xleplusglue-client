@@ -1,7 +1,6 @@
 .gradient-container {
   display: flex;
   align-items: stretch; /* this ensures that the children of the container stretch to fill the container */
-  width: 50%; /* set width to .gradient-container directly */
   max-width: 100%;
 }
 
@@ -18,7 +17,7 @@
 
 .empty-space {
   width: 20px; /* match the width of the gradient bar */
-  height: 20px; /* adjust this to change the height of the empty space */
+  height: 30px; /* adjust this to change the height of the empty space */
 }
 
 textarea{
