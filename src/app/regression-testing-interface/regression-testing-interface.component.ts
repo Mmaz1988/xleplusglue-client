@@ -58,8 +58,21 @@ export class RegressionTestingInterfaceComponent {
             mcMap[key] = value.meaningConstructors;
           }
 
+// sort mcMap by key where keys are of the form S0, S1, S2, ...
+// sort by the entire numeric portion of the key
+          let sortedMcMap = {};
+          Object.keys(mcMap).sort((a, b) => {
+            let aNum = parseInt(a.match(/\d+/)[0]);
+            let bNum = parseInt(b.match(/\d+/)[0]);
+            return aNum - bNum;
+          }).forEach(key => {
+            sortedMcMap[key] = mcMap[key];
+          });
+
+          console.log("sorted MCs",sortedMcMap);
+
           this.gswbMultipleRequest = {
-            premises: mcMap,
+            premises: sortedMcMap,
             gswbPreferences: this.gswbPreferences.gswbPreferences
           }
 

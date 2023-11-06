@@ -170,6 +170,45 @@ export class LigerVisComponent {
     );
   }
 
+  parse2UD(inputValue: string) {
+    // console.log(inputValue)
+    // console.log(this.editor1.getContent())
+    const sentence = inputValue;
+
+    const stanzaRequest = {sentence: sentence, language: "en"};
+
+    // console.log(ligerRequest);
+
+    this.dataService.stanzaParse(stanzaRequest).subscribe(
+      data => {
+        this.errorhandle.nativeElement.innerHTML = "";
+
+        if (data.hasOwnProperty("graph")) {
+          if (data.graph.hasOwnProperty("graphElements")) {
+            if (!(data.graph.graphElements.length == 0)) {
+              console.log(data.graph.graphElements);
+              this.cy1.renderGraph(data.graph.graphElements);
+              this.graphElements = data.graph.graphElements;
+            } else {
+              this.errorhandle.nativeElement.innerHTML =  "Parsing failed...";
+            }
+          }
+        }
+
+        if (data.hasOwnProperty("meaningConstructors")) {
+          console.log(data.meaningConstructors);
+          this.meaningConstructors = data.meaningConstructors;
+          this.changeDetector.emit(data.meaningConstructors);
+        }
+
+
+      },
+      error => {
+        console.log('ERROR: ', error);
+      }
+    );
+  }
+
   calculateFromRuleList(event: any) {
 
     let newRules = [];
