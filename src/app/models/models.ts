@@ -5,12 +5,17 @@ export interface LigerBatchParsingAnalysis {
 }
 
 
-export interface StanzaRuleAnnotation {
+export  interface Ud2semAnnotation {
+  glue: string;
+}
+
+export interface StanzaAnnotation {
   graph: StanzaWebGraph;
+  conllu?: string;
 }
 
 export interface StanzaWebGraph {
-  graphElements: LigerGraphComponent[];
+  graphElements: StanzaGraphComponent[];
 }
 
 export interface StanzaGraphComponent {

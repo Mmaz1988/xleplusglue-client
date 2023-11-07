@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import {GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation, StanzaRuleAnnotation} from './models/models';
+import {GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation, StanzaAnnotation, Ud2semAnnotation} from './models/models';
 
 @Injectable({
   providedIn: 'root'
@@ -9,7 +9,8 @@ import {GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAn
 export class DataService {
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
-  private stanzapage = 'http://localhost:8002';
+  private stanzapage = 'http://localhost:8002'
+  private ud2sempage = 'http://localhost:8004';
 
   constructor(private http: HttpClient) { }
 
@@ -44,7 +45,11 @@ export class DataService {
   //Stanza models
 
   stanzaParse(stanzaRequest): Observable<any> {
-    return this.http.post<StanzaRuleAnnotation>(`${this.stanzapage}/parse`, stanzaRequest);
+    return this.http.post<StanzaAnnotation>(`${this.stanzapage}/parse`, stanzaRequest);
+  }
+
+  ud2Sem(conllu): Observable<any> {
+    return this.http.post<Ud2semAnnotation>(`${this.ud2sempage}/analyze`, conllu);
   }
 
 }

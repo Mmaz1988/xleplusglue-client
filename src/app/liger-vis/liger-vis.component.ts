@@ -180,8 +180,12 @@ export class LigerVisComponent {
     // console.log(ligerRequest);
 
     this.dataService.stanzaParse(stanzaRequest).subscribe(
-      data => {
+      response => {
         this.errorhandle.nativeElement.innerHTML = "";
+
+        var data = JSON.parse(response);
+
+        console.log("Stanza data: ", data);
 
         if (data.hasOwnProperty("graph")) {
           if (data.graph.hasOwnProperty("graphElements")) {
@@ -195,12 +199,13 @@ export class LigerVisComponent {
           }
         }
 
-        if (data.hasOwnProperty("meaningConstructors")) {
-          console.log(data.meaningConstructors);
-          this.meaningConstructors = data.meaningConstructors;
-          this.changeDetector.emit(data.meaningConstructors);
+        /*
+        if (data.hasOwnProperty("conllu")) {
+          console.log(data.conllu);
+          this.meaningConstructors = data.conllu;
+          this.changeDetector.emit(data.conllu);
         }
-
+         */
 
       },
       error => {
