@@ -5,18 +5,6 @@ export interface LigerBatchParsingAnalysis {
 }
 
 
-export interface StanzaRuleAnnotation {
-  graph: StanzaWebGraph;
-}
-
-export interface StanzaWebGraph {
-  graphElements: LigerGraphComponent[];
-}
-
-export interface StanzaGraphComponent {
-  data: { [key: string]: any };
-}
-
 //Unify Liger and Stanza models
 
 export interface LigerRule {
