@@ -1,0 +1,20 @@
+.tabs {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+}
+
+.tabs li {
+  padding: 10px 20px;
+  cursor: pointer;
+  background-color: #646464;
+  margin-right: 2px;
+  color: white;
+}
+
+.tabs li.active {
+  font-weight: bold;
+  background-color: #00A9E0FF;
+  color: white;
+}
