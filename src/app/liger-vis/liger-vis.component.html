@@ -10,10 +10,27 @@
 
 <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
   <h3> Input rules: </h3>
-  <div class="editor-restr">
-  <app-editor #edit1 [mode]="'liger'" ></app-editor>
-</div>
+
+  <!-- This is the template for your parent component, e.g., parent.component.html -->
+  <app-tabs>
+    <app-tab title="First Tab" [active]="true">
+      <div class="editor-restr">
+        <app-editor #edit1 [mode]="'liger'" ></app-editor>
+      </div>
+    </app-tab>
+    <app-tab title="Second Tab">
+      Content for the second tab...
+    </app-tab>
+    <!-- ... more tabs as needed ... -->
+  </app-tabs>
+
+
+
+
+
+
 </app-toggle-display>
+
 
 <app-toggle-display showText="Show graph vis" hideText="Hide graph vis">
 <h3> Graph visualization: </h3>

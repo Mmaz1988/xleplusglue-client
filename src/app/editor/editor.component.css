@@ -30,6 +30,11 @@
   color: #08d700;
 }
 
+.cm-parens
+{
+  color: #318f2a;
+}
+
 .cm-liger_conjunction
 {
   color: #ff0000;
@@ -38,6 +43,11 @@
 .cm-angular_brackets
 {
   color: #d100ff;
+}
+
+.cm-tilde
+{
+  color: #d0522a;
 }
 
 

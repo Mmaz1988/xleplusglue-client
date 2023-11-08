@@ -5,16 +5,33 @@ import * as CodeMirror from 'codemirror';
 CodeMirror.defineMode("liger", function() {
   return {
     token: function(stream,state) {
-      if (stream.match("==>") ) {
+      if (stream.match(/(->|;)/) ) {
         return "rule_separator";
       }
 
-      else if (stream.match(/#[A-Za-z0-9]+/))
+      else if (stream.match(/(\^|!|\*)/))
       {
         return "liger_node_var";
       }
 
-      else if (stream.match(/%[A-Za-z0-9]+/)) {
+      else if (stream.match(/=/))
+      {
+        return "angular_brackets";
+      }
+
+      else if (stream.match(/~/))
+      {
+        return "tilde";
+      }
+      else if (stream.match(/(\(|\)|\[|\])/))
+      {
+        return "parens";
+      }
+
+      else if (stream.match(/@(.*?)(?=\()/)) {
+        return "liger_val_var";
+      }
+      else if (stream.match(/({|})/)) {
         return "liger_val_var";
       }
       else if (stream.match(/(\&|\.)/)) {
@@ -87,379 +104,288 @@ const DEFAULT_TEST_SUITE = "John loves Mary.\n\n" +
 
 
 
-const LIGER_DEFAULT_RULES = "--replace(true);\n" +
-  "\n" +
-  "#a TNS-ASP #b ==> #a SEM #c & #c TEMP-REF #d & #d T-REF 'undefined' & #c SIT #s.\n" +
-  "#a PTYPE 'sem' ==> #a SEM #b & #b SIT #s.\n" +
-  "\n" +
-  "//Tier 1 rules\n" +
-  "#a TNS-ASP #b TENSE 'past' & #a SEM #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'past' & #d CHECK '-'.\n" +
-  "#a TNS-ASP #b TENSE 'pres' & #a SEM #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'pres' & #d CHECK '-'.\n" +
-  "#a TNS-ASP #b TENSE 'fut' & #a SEM #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'fut' & #d CHECK '-'.\n" +
-  "\n" +
-  "//#a TNS-ASP #b TENSE 'pres' & #a SEM #c ==> #c TEMP-REF #d & #d T-REF 'pres' & #d EVAL #e & #e TIME 'now'.\n" +
-  "//#a TNS-ASP #b TENSE 'fut' & #a SEM #c ==> #c TEMP-REF #d & #d T-REF 'fut' & #d EVAL #e & #e TIME 'now'.\n" +
-  "\n" +
-  "//Tier 2 rules\n" +
-  "//SOT rule\n" +
-  "#a T-REF 'past' &\n" +
-  "#a CHECK '-' &\n" +
-  "#a ^(TEMP-REF>SEM>COMP) #b & #b !(SEM>TEMP-REF) #c T-REF 'past' ==> #a T-REF 'non-future' & #a CHECK '+' & #a EVAL #c.\n" +
-  "\n" +
-  "//Present counterfactual\n" +
-  "#a T-REF 'past' &\n" +
-  "#a CHECK '-' &\n" +
-  "#a ^(TEMP-REF>SEM>OBJ>in_set>ADJUNCT) #b & #b VTYPE 'modal' &\n" +
-  "#b !(SEM>TEMP-REF) #c T-REF 'pres' &\n" +
-  "#c CHECK '-'\n" +
-  "==> #a T-REF 'non-past' & #c CHECK '+' & #c EVAL #a.\n" +
-  "\n" +
-  "\n" +
-  "//Relative tense rules\n" +
-  "#a T-REF 'undefined' &\n" +
-  "#a ^(TEMP-REF>SEM>XCOMP) #b & #b !(SEM>TEMP-REF) #c ==> #a EVAL #c.\n" +
-  "\n" +
-  "#a T-REF %a & %a != 'undefined' & #a CHECK '-' ==> #a EVAL #b.\n" +
-  "\n" +
-  "//Aspect rules\n" +
-  "#a TNS-ASP #b PROG '+_' & #a SEM #c ==> #c VIEWPOINT #d & #d ASPECT 'impv' & #d A-RESTR 'ongoing'.\n" +
-  "#a TNS-ASP #b PROG '-_' & #a SEM #c ==> #c VIEWPOINT #d & #d ASPECT 'undefined'.\n" +
-  "#a TNS-ASP #b TENSE %x & #b PROG '-_' & #a SEM #c VIEWPOINT #d ASPECT 'undefined' ==> #d ASPECT 'prv' & #d A-RESTR 'bounded'.\n" +
-  "#a TNS-ASP #b PERF '+_' & #a SEM #c ==> #c ASP-TENSE #d & #d A-REF 'past'.\n" +
-  "\n" +
-  "//Tier 2 aspect example\n" +
-  "#a T-REF 'undefined' &\n" +
-  "#a ^(TEMP-REF) #b ^(SEM>XCOMP) #c & #c !(SEM>TEMP-REF) #d EVAL #e &\n" +
-  "#b VIEWPOINT #f ASPECT 'prv'\n" +
-  "==>  #a T-REF 'future' & #a EVAL #d.\n" +
-  "\n" +
-  "//undefined FPS for transitive verbs\n" +
-  "#a TNS-ASP #b & #a PRED %a & #a SEM #z  ==>\n" +
-  "#z FPS #y & #y CHECK '+'.\n" +
-  "\n" +
-  "#a TNS-ASP #b & #a PRED %a & #a SEM #z & #a SUBJ #c & #a OBJ #d & strip(%a) == 'push' &\n" +
-  "#z FPS #e & #e CHECK '+' ==>\n" +
-  "#e CHECK '-' &\n" +
-  "#e initP #f &\n" +
-  "#f INIT #a &\n" +
-  "#f I-SUBJ #c &\n" +
-  "#e procP #g &\n" +
-  "#g PROC #a &\n" +
-  "#g P-SUBJ #d &\n" +
-  "#e XP #h &\n" +
-  "#h REF 'unspec' &\n" +
-  "#h TYPE 'rheme'.\n" +
-  "\n" +
-  "#a TNS-ASP #b & #a PRED %a & #a SEM #z & #a SUBJ #c & #a OBJ #d & strip(%a) == 'bake' &\n" +
-  "#z FPS #e & #e CHECK '+' ==>\n" +
-  "#e CHECK '-' &\n" +
-  "#e initP #f &\n" +
-  "#f INIT #a &\n" +
-  "#f I-SUBJ #c &\n" +
-  "#e procP #g &\n" +
-  "#g PROC #a &\n" +
-  "#g P-SUBJ #c &\n" +
-  "#e XP #h &\n" +
-  "#h REF 'unspec' &\n" +
-  "#h TYPE 'rheme'.\n" +
-  "\n" +
-  "#a TNS-ASP #b & #a PRED %a & #a SEM #z & #a SUBJ #c & #a OBJ #d & #a OBJ-TH #e & strip(%a) == 'give' &\n" +
-  "#f FPS #g & #g CHECK '+' ==>\n" +
-  "#g CHECK '-' &\n" +
-  "#g initP #i &\n" +
-  "#i INIT #a &\n" +
-  "#i I-SUBJ #c &\n" +
-  "#g procP #j &\n" +
-  "#j PROC #a &\n" +
-  "#j P-SUBJ 'undefined' &\n" +
-  "#g resP #k &\n" +
-  "#k RES #a &\n" +
-  "#k R-SUBJ #d &\n" +
-  "#g XP #l &\n" +
-  "#l REF #e &\n" +
-  "#l TYPE 'possession'.\n" +
-  "\n" +
-  "//Semantic interpretation\n" +
-  "\n" +
-  "//Semantic interpretation\n" +
-  "//attributes without values can be used for existential constraints\n" +
-  "#g NTYPE & #g PRED %g\n" +
-  "==> #g SEM #i & #i GLUE strip(%g) : #i.\n" +
-  "\n" +
-  "//NP Quantifier -- Sem structure\n" +
-  "#g ^(SPEC) #h & #g QUANT #i & #h SEM #l ==> #l VAR #j & #l RESTR #k & #l SIT #s.\n" +
-  "#g ^(SPEC) #h & #g DET #i & #h SEM #l ==> #l VAR #j & #l RESTR #k & #l SIT #s.\n" +
+
+const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
+  "relation = expl -> STOP\n" +
+  "relation = dislocated -> STOP\n" +
+  "relation = discourse -> STOP\n" +
+  "relation = vocative -> STOP\n" +
   "\n" +
-  "//relative clause (with who)\n" +
-  "#a PRED %a & #a PRON-REL #b & #a SUBJ #b &\n" +
-  "#a SEM #z & #b SEM #y &\n" +
-  "#a ^(in_set>ADJUNCT) #c SEM #d VAR #e & #d RESTR #f & #d SIT #s\n" +
-  "==> #y GLUE [/P_<e,t>.[/Q_<e,t>.[/x_e.(P(x) \\& Q(x))]]] : ((#e -o #f) -o ((#y -o #z) -o (#e -o #f))).\n" +
+  "relation = flat ->\n" +
   "\n" +
-  "//NP Quantifier instantiation\n" +
+  "relation = nsubj; PronType=Rel -> @gap-type-verbal-dep(nsubj^)\n" +
+  "relation = nsubj:pass; PronType=Rel -> @gap-type-verbal-dep(nsubj_pass^)\n" +
+  "relation = obj; PronType=Rel -> @gap-type-verbal-dep(obj^)\n" +
+  "relation = iobj; PronType=Rel -> @gap-type-verbal-dep(iobj^)\n" +
+  "relation = gf; PronType=Rel -> @gap-type-verbal-dep(gf^)\n" +
+  "relation = nmod:poss; PronType=Rel -> \\X.\\P.\\Y.(([], [poss*(X,Y)]) + P(Y)) : (e(!) -o (@et(^) -o @et(^)))\n" +
+  "PronType=Rel ->\n" +
   "\n" +
-  "//Universal quantifier\n" +
-  "#g ^(SPEC) #h SEM #i VAR #j & #i RESTR #k & #i SIT #s &\n" +
-  "#g QUANT #l PRED %l & %l == 'every' &\n" +
-  "#h ^(%) #m SEM #n FPS #b & #n SIT #o\n" +
-  "==> #i GLUE [/P_<e,<s,t>>.[/Q_<e,<s,t>>.[/s_s.Ax_e[P(x)(s) -> Q(x)(s)]]]] : ((#j -o (#s -o #k)) -o ((#i -o (#o -o #n)) -o (#o -o #n))).\n" +
+  "## IF negative_concord = \"yes\"\n" +
+  "relation = (root|@CLAUSAL-REL() ); advmod { @NEGATIVE() } -> \\P.(-P) : p(!) -o p(!)\n" +
   "\n" +
-  "//Existential quantifier\n" +
-  "#g ^(SPEC) #h SEM #i VAR #j & #i RESTR #k & #i SIT #s &\n" +
-  "#g DET #l PRED %l & %l == 'a' &\n" +
-  "#h ^(%) #m SEM #n FPS #b & #n SIT #o\n" +
-  "==> #i GLUE [/P_<e,<s,t>>.[/Q_<e,<s,t>>.[/s_s.Ex_e[P(x)(s) \\& Q(x)(s)]]]] : ((#j -o (#s -o #k)) -o ((#i -o (#o -o #n)) -o (#o -o #n))).\n" +
+  "## ELSE\n" +
+  "relation = advmod; @NEGATIVE() -> \\P.(-P) : p(^) -o p(^)\n" +
+  "## ENDIF\n" +
   "\n" +
+  "relation = conj; coarsePos = VERB; ~ ^ {relation = amod}; ~ ^ {relation = xcomp}; ~ ^ {relation = advcl} -> \\V.\\U.\\F.(U(F) + V(\\G.([],[]))) : x(!) -o x(^) -o x(^)\n" +
   "\n" +
-  "#g ^(SPEC) #h SEM #i VAR #j & #i RESTR #k & #i SIT #s &\n" +
-  "#g DET #l DET-TYPE 'def'\n" +
-  "==> #i GLUE [/P_<e,<s,t>>.Ix_e[P(x)]] : ((#j -o (#s -o #k)) -o #i).\n" +
+  "relation = conj; coarsePos = ADJ; ~ ^ {relation = amod} -> \\V.\\U.\\F.(U(F) + V(\\G.([],[]))) : x(!) -o x(^) -o x(^)\n" +
   "\n" +
-  "//==> #i SIT #s & #i GLUE [/P_<e,<s,t>>.[/Q_<e,<s,t>>.[/s_s.the(P(x)(s),Q(x)(s))]]] : ((#j -o (#s -o #k)) -o ((#i -o (#o -o #n)) -o (#o -o #n))).\n" +
+  "relation = conj; coarsePos = NOUN; ^ {relation = root}; ^ nsubj {  } -> \\V.\\U.\\F.(U(F) + V(\\G.([],[]))) : x(!) -o x(^) -o x(^)\n" +
   "\n" +
+  "relation = conj; coarsePos = VERB; ~ nsubj {}; ^ {relation = xcomp} -> \\V.\\X.\\E.(V(\\E1.(([],[xcomp(E,E1), nsubj(E1,X)])))) : x(!) -o (e(!) -o v(!) -o t(!))\n" +
   "\n" +
-  "//predicates for Quantifiers\n" +
-  "#g SEM #j VAR #i & #j RESTR #k & #j SIT #a & #g PRED %g ==> #a GLUE [/x_e.[/s_s.strip(%g)(x,s)]] : (#i -o (#a -o #k)).\n" +
+  "relation = conj; coarsePos = VERB; ~ nsubj {}; ^ {relation = xcomp} -> \\P.\\Q.\\X.\\E.(P(X)(E)+Q(X)(E)) : (e(!) -o v(!) -o t(!)) -o (e(^) -o v(^) -o t(^)) -o e(^) -o v(^) -o t(^)\n" +
   "\n" +
+  "relation = mark; ^ {relation = conj}; ^ ^ {relation = advcl} -> \\U.\\V.\\F.V(\\E.(([], [:LEMMA:(E, U(\\G.([],[])))]) + F(E))) : x(^) -o x(^ ^ ^) -o x(^ ^ ^)\n" +
   "\n" +
-  "//modification\n" +
-  "#g SEM #j VAR #i & #j RESTR #k & #j SIT #l &\n" +
-  "#g ADJUNCT #e in_set #h OBJ #m SEM #a  & #h SEM #b SIT #c\n" +
-  "==> #h GLUE [/P_<e,<s,t>>.[/Q_<e,<s,t>>.[/x_e.[/s_s.(P(x)(s) \\& Q(x)(s))]]]] : ((#j -o (#c -o #b)) -o ((#i -o (#l -o #k)) -o (#i -o (#l -o #k)))) &\n" +
-  " #e GLUE [/y_e.[/x_e.[/s_s.with(x,y,s)]]] : (#a -o (#j -o (#c -o #b))).\n" +
+  "relation = conj; ~ mark { }; ^ {relation = advcl} -> \\U.\\V.\\F.V(\\E.(([], [advcl(E, U(\\G.([],[])))]) + F(E))) : x(!) -o x(^ ^) -o x(^ ^)\n" +
   "\n" +
-  "//FPS rules\n" +
+  "relation = conj; ^ {relation = amod} -> \\V.\\P.\\X.(V(\\E.([],[Attribute*(X,E)])) + P(X)) : (x(!) -o (@et(^ ^) -o @et(^ ^)))\n" +
   "\n" +
-  "#a SEM #z FPS #y CHECK '+' & #a PRED %a ==> #y EVENT #x & #x GLUE [/e_v.strip(%a)(e)] : (#x -o #y).\n" +
+  "relation = conj; ^ {relation = nmod}; ~ case { } -> \\Q.\\P.\\X.((Q(\\Y.([], [nmod*(X,Y)] ))) + P(X)) : (@quant(\"!\" \"^\") -o (@et(^ ^) -o @et(^ ^)))\n" +
   "\n" +
-  "#a XP #b REF 'unspec' & #b TYPE 'rheme' ==> #b GLUE y : #b.\n" +
+  "relation = case; ^ {relation = conj};  ^ ^ {relation = nmod} -> \\Q.\\P.\\X.((Q(\\Y.([], [:LEMMA:*(X,Y)] ))) + P(X)) : (@quant(\"^\" \"^ ^\") -o (@et(^ ^ ^) -o @et(^ ^ ^)))\n" +
   "\n" +
+  "relation = case; ^ {relation = conj}; ^ ^ {relation = nmod:poss} ->\n" +
   "\n" +
-  "//RES\n" +
-  "#a XP #b &\n" +
-  "#b REF #c &\n" +
-  "#b TYPE 'possession' &\n" +
-  "#a resP #d &\n" +
-  "#d RES #e &\n" +
-  "#d R-SUBJ #f ==>\n" +
-  "#b GLUE [/x_e.[/y_e.[/e_v.(have(e) \\& (ag(e,x) \\& th(e,y)))]]] : (#f -o (#c -o (#e -o #b))) &\n" +
-  "#d GLUE [/P_<e,<v,t>>.[/x_e.[/e_v.(res(e,x) \\& P(x)(e))]]] : ((#f -o (#e -o #b)) -o (#f -o (#e -o #d))).\n" +
+  "relation = conj; ^ {relation = nmod:poss} -> \\Q.\\P.\\X.((Q(\\Y.([], [poss*(X,Y)] ))) + P(X)) : (@quant(\"!\" \"^\") -o (@et(^ ^) -o @et(^ ^)))\n" +
   "\n" +
-  "//PROC\n" +
-  "#d SEM #z FPS #b procP #c PROC #d & #c P-SUBJ 'undefined' &\n" +
-  "#b resP #g RES #d &\n" +
-  "#b XP #f TYPE 'possession' & #f REF #j ==>\n" +
-  "#c GLUE [/P_<v,t>.[/e_v.Ee1_v[Ee2_v[equals(e,to(e1,e2)) \\& (proc(e1) \\& P(e2))]]]] : ((#d -o #g) -o (#d -o #c)).\n" +
+  "relation = conj; ^ {relation = advmod}; ! {PronType=Int}; ~ ^ ^ {relation = (amod|advmod)} -> \\P.\\F.P(\\E(([X], [:INTR:*(X), EQ*(X, `?`), :LEMMA:*(E,X)]) + F(E))) : (x(^ ^) -o x(^ ^))\n" +
   "\n" +
-  "#a SEM #z FPS #b procP #c PROC #d & #c P-SUBJ #e & #b XP #f TYPE 'rheme' ==>\n" +
-  "#c GLUE [/y_s.[/x_e.[/e_v.proc(e,x,y)]]] : (#f -o (#e -o (#d -o #c))).\n" +
+  "relation = conj; ^ {relation = advmod}; !{PronType=Int}; ^ ^ {relation = (amod|advmod)} -> \\P.\\X.(([Y],[:INTR:*(Y), EQ*(Y, `?`), :LEMMA:*(X,Y)]) + P(X)) : (v(^ ^) -o t(^ ^)) -o v(^ ^) -o t(^ ^)\n" +
   "\n" +
+  "relation = conj; ^ {relation = advmod}; ~ ! {PronType=Int} -> \\X.(([],[:INTR:*(X), :LEMMA:*(X)])) : v(!) -o t(!)\n" +
   "\n" +
+  "relation = conj; ^ {relation = advmod}; ~ ! {PronType=Int}; ~ ^ ^ {relation = (amod|advmod)} ->  \\Q.\\P.\\F.P(\\E(([X], [advmod*(E,X)]) + F(E) + Q(X))) : (v(!) -o t(!)) -o (x(^ ^) -o x(^ ^))\n" +
   "\n" +
-  "//INIT\n" +
-  "#a SEM #z FPS #b initP #c I-SUBJ #d & #c INIT #h & #b procP #e PROC #f ==>\n" +
-  "#c GLUE [/P_<v,t>.[/x_e.[/e_v.Ee1_v[Ee2_v[equals(e,to(e1,e2)) \\& (init(e1,x) \\& P(e2))]]]]] : ((#f -o #e) -o (#d -o (#h -o #c))).\n" +
+  "relation = conj; ^ {relation = advmod}; ~ ! {PronType=Int}; ^ ^ {relation = (amod|advmod)} -> \\Q.\\P.\\X.(([Y],[:INTR:*(Y), :LEMMA:*(Y), advmod*(X,Y)]) + P(X) + Q(X)) : (v(!) -o t(!)) -o (v(^ ^) -o t(^ ^)) -o v(^ ^) -o t(^ ^)\n" +
   "\n" +
-  "#a SEM #z FPS #b initP #c I-SUBJ #d & #c INIT #h & #b procP #e PROC #f & #e P-SUBJ #d ==>\n" +
-  "#c GLUE [/P_<e,<v,t>>.[/x_e.[/e_v.Ee1_v[Ee2_v[equals(e,to(e1,e2)) \\& (init(e1,x) \\& P(x)(e2))]]]]] : ((#d -o (#f -o #e)) -o (#d -o (#h -o #c))).\n" +
+  "relation = conj; ^ {relation = obl.*}; ~ case { } -> @e-type-verbal-dep-mng(obl) : @e-type-verbal-dep-type(\"!\" \"%h\" \"^ ^\") : %h = ^\n" +
   "\n" +
+  "relation = case; ^ {relation = conj}; ^ ^ {relation = obl.*} -> @e-type-verbal-dep-mng(:LEMMA:) : @e-type-verbal-dep-type(\"^\" \"%h\" \"^ ^ ^\") : %h = ^ ^\n" +
   "\n" +
-  "//Subcategorization for verbs\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc{lemma = $conjunction }; ~ ! conj case { }; relation = @CORE-NOMINAL-REL() -> \\R.\\S.(([X],[:INTR:{conj cc}(X), entity(X)]) + R(X) + S(X)) : @et(%C) -o @quant(\"!\" \"^\")\n" +
   "\n" +
-  "//Transitive verbs -- Type A\n" +
-  "#a SUBJ #b & #a OBJ #c & #a TNS-ASP #d & #a PRED %a &\n" +
-  "#a SEM #z FPS #e procP #f P-SUBJ #c SEM #j &\n" +
-  "#z SIT #y &\n" +
-  "#e initP #h INIT #i & #h I-SUBJ #b SEM #k ==>\n" +
-  "#e GLUE [/R_<e,<e,<v,t>>>.[/x_e.[/y_e.[/s_s.[/e_v.(partOf(e,s) \\& (strip(%a)(e) \\& (R(x)(y)(e) \\& (ag(e,x) \\& pt(e,y)))))]]]]] : ((#b -o (#c -o (#i -o #h))) -o (#k -o (#j -o (#y -o (#h -o #e))))).\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc{lemma = $conjunction }; ~ ! conj case { }; relation = root; ~ ! nsubj {  }; ~ ! cop { } -> \\R.\\S.(([X],[:INTR:{conj cc}(X), entity(X)]) + R(X) + S(X)) : @et(%C) -o @quant(\"!\" \"^\")\n" +
   "\n" +
-  "//Transitive verbs -- Type B\n" +
-  "#a SUBJ #b & #a OBJ #c & #a TNS-ASP #d & #a PRED %a &\n" +
-  "#a SEM #z FPS #e procP #f P-SUBJ #b SEM #j &\n" +
-  "#z SIT #y &\n" +
-  "#e initP #h INIT #i & #h I-SUBJ #b SEM #j &\n" +
-  "#c SEM #k\n" +
-  "==>\n" +
-  "#e GLUE [/R_<e,<v,t>>.[/x_e.[/y_e.[/s_s.[/e_v.(partOf(e,s) \\& (strip(%a)(e) \\& (R(x)(e) \\& (ag(e,x) \\& pt(e,y)))))]]]]] : ((#b -o (#i -o #h)) -o (#j -o (#k -o (#y -o (#h -o #e))))).\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc {lemma = $conjunction }; ~ ! conj case { }; relation = @CORE-NOMINAL-REL() -> \\Q.\\X.(Q(\\Z.(([],[Sub{conj cc}(X,Z)])))) : @quant(\"!\" \"^\") -o @et(%C)\n" +
   "\n" +
-  "//Ditransitive verb\n" +
-  "#a SUBJ #b & #a OBJ #c & #a OBJ-TH #d & #a PRED %a &\n" +
-  "#d SEM #h &\n" +
-  "#a SEM #z FPS #e resP #f R-SUBJ #c SEM #g &\n" +
-  "#z SIT #y &\n" +
-  "#e initP #k INIT #l & #k I-SUBJ #b SEM #m ==>\n" +
-  "#e GLUE [/R_<e,<e,<e,<v,t>>>>.[/x_e.[/y_e.[/z_e.[/s_s.[/e_v.(partOf(e,s) \\& (strip(%a)(e) \\& (R(x)(y)(z)(e) \\& (ag(e,x) \\& (theme(e,z) \\& goal(e,y))))))]]]]]] : ((#b -o (#c -o (#d -o (#l -o #k)))) -o (#m -o (#g -o (#h -o (#y -o (#k -o #e)))))).\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc {lemma = $conjunction }; ~ ! conj case { }; relation = root; ~ ! nsubj {  }; ~ ! cop { } -> \\Q.\\X.(Q(\\Z.(([],[Sub{conj cc}(X,Z)])))) : @quant(\"!\" \"^\") -o @et(%C)\n" +
   "\n" +
+  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = $conjunction }; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL() } -> \\Q.\\P.\\X.(Q(\\Z.(([],[Sub{^ conj cc}(X,Z)]))) + P(X)) : @quant(\"!\" \"^\") -o (@et(%C) -o @et(%C))\n" +
   "\n" +
-  "//intransitive ohne PFS\n" +
-  "#a SUBJ #b SEM #c &\n" +
-  "#a SEM #z FPS #f EVENT #y & #f CHECK '+' & #z SIT #x ==>\n" +
-  "#f GLUE [/R_<v,t>.[/x_e.[/s_s.[/e_v.(R(e) \\& (partOf(e,s) \\& ag(e,x)))]]]] : ((#y -o #f) -o (#c -o (#x -o (#y -o #f)))).\n" +
+  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = $conjunction }; ~ ! case {}; ^ { relation = root }; ~ ^ nsubj { }; ~ ^ cop { } -> \\Q.\\P.\\X.(Q(\\Z.(([],[Sub{^ conj cc}(X,Z)]))) + P(X)) : @quant(\"!\" \"^\") -o (@et(%C) -o @et(%C))\n" +
   "\n" +
-  "//transitive ohne FPS\n" +
-  "#a SUBJ #b SEM #c & #a OBJ #d SEM #e &\n" +
-  "#a SEM #z FPS #f EVENT #y & #f CHECK '+' & #z SIT #x ==>\n" +
-  "#f GLUE [/R_<v,t>.[/x_e.[/y_e.[/s_s.[/e_v.(R(e) \\& (partOf(e,s) \\& (ag(e,x) \\& pt(e,y))))]]]]] : ((#y -o #f) -o (#c -o (#e -o (#x -o (#y -o #f))))).\n" +
+  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = $disjunction }; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL() } -> \\Q1.\\Q2.\\P.(([Y], [Q1(\\X.(([],[X=Y]))) | Q2(\\Z.(([],[Z=Y])))]) + P(Y)) : @quant(\"^\" \"^ ^\") -o @quant(\"!\" \"^\") -o @quant(\"^\" \"^ ^\")\n" +
   "\n" +
+  "@POTENTIAL-PRO-DROP() ; @1ST-PERSON() ; @SINGULAR() ->  \\V.\\F.(V(\\E.(([X], [@1SG-PRONOUN-DRS-CONDS(\"X\"), nsubj(E,X)]) + F(E)))) : (x(!) -o x(!))\n" +
   "\n" +
+  "@POTENTIAL-PRO-DROP() ; @2ND-PERSON() ; @SINGULAR() ->  \\V.\\F.(V(\\E.(([X], [@2SG-PRONOUN-DRS-CONDS(\"X\"), nsubj(E,X)]) + F(E)))) : (x(!) -o x(!))\n" +
   "\n" +
+  "@POTENTIAL-PRO-DROP() ; @3RD-PERSON() ; @SINGULAR() ->  \\V.\\F.(V(\\E.(([X], [@3SG-PRONOUN-DRS-CONDS(\"entity\" \"X\"), nsubj(E,X)]) + F(E)))) : (x(!) -o x(!))\n" +
   "\n" +
-  "//Verb template for comp verbs\n" +
-  "#a SUBJ #b SEM #c &\n" +
-  "#a SEM #j &\n" +
-  "#a COMP #d SEM #e TEMP-REF #f EVAL #g T-REF %i &\n" +
-  "#j FPS #h EVENT #i &\n" +
-  "#j SIT #k\n" +
-  " ==> #h GLUE [/R_<v,t>.[/P_<s,t>.[/x_e.[/s_s.[/e_v.(R(e) \\& (partOf(e,s) \\& (ag(e,x) \\& th(e,P(s)))))]]]]] : ((#i -o #h) -o ((#g -o #e) -o (#c -o (#k -o (#i -o #h))))).\n" +
+  "@POTENTIAL-PRO-DROP() ; @1ST-PERSON() ; @PLURAL() ->  \\V.\\F.(V(\\E.(([X], [@1PL-PRONOUN-DRS-CONDS(\"X\"), nsubj(E,X)]) + F(E)))) : (x(!) -o x(!))\n" +
   "\n" +
-  "//XCOMP\n" +
-  "//Verb template for comp verbs\n" +
-  "#a SUBJ #b SEM #c &\n" +
-  "#a SEM #j &\n" +
-  "#a XCOMP #d SEM #e TEMP-REF #f EVAL #g T-REF %i &\n" +
-  "#j FPS #h EVENT #i &\n" +
-  "#j SIT #k\n" +
-  " ==> #h GLUE [/R_<v,t>.[/P_<e,<s,t>>.[/x_e.[/s_s.[/e_v.(R(e) \\& (partOf(e,s) \\& (ag(e,x) \\& th(e,P(x)(s)))))]]]]] : ((#i -o #h) -o ((#c -o (#g -o #e)) -o (#c -o (#k -o (#i -o #h))))).\n" +
+  "@POTENTIAL-PRO-DROP() ; @2ND-PERSON() ; @PLURAL() ->  \\V.\\F.(V(\\E.(([X], [@2PL-PRONOUN-DRS-CONDS(\"X\"), nsubj(E,X)]) + F(E)))) : (x(!) -o x(!))\n" +
   "\n" +
-  "//Bound-variable (cf) Conditional\n" +
+  "@POTENTIAL-PRO-DROP() ; @3RD-PERSON() ; @PLURAL() ->  \\V.\\F.(V(\\E.(([X], [@3SG-PRONOUN-DRS-CONDS(\"entity\" \"X\"), nsubj(E,X)]) + F(E)))) : (x(!) -o x(!))\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c EVAL #d & #a VTYPE 'modal' &\n" +
-  "#a !(ADJUNCT>in_set) #f PRED %a & strip(%a) == 'if' &\n" +
-  "#f OBJ #g SEM #h TEMP-REF #i EVAL #j\n" +
-  "==> #b COND #k & #k GLUE [/P_<s,t>.[/Q_<s,t>.[/s_s.(P(s) -> Q(s))]]]  : ((#j -o #h) -o ((#d -o #b) -o (#j -o #b))).\n" +
+  "coarsePos = VERB -> \\F.(([E],[:INTR:*(E), :LEMMA:(E)]) + F(E) ) : x(!)\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c EVAL #d & #a VTYPE 'main' &\n" +
-  "#a !(ADJUNCT>in_set) #f PRED %a & strip(%a) == 'if' &\n" +
-  "#f OBJ #g SEM #h TEMP-REF #i EVAL #j\n" +
-  "==> #b COND #k & #k GLUE [/P_t.[/Q_t.(P -> Q)]]  : (#h -o (#b -o #k)).\n" +
+  "coarsePos = VERB; @NO-AUX() ; Tense=Past -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(!) -o x(!)\n" +
   "\n" +
-  "//modification\n" +
-  "#g SEM #j SIT #l & #j FPS #o CHECK '+' & #o EVENT #p &\n" +
-  "#g ADJUNCT #e in_set #h OBJ #m SEM #a  & #h SEM #b SIT #c\n" +
-  "==> #h GLUE [/P_<v,t>.[/Q_<s,<v,t>>.[/s_s.[/e_v.(P(e) \\& Q(s)(e))]]]] : ((#p -o #b) -o ((#l -o (#p -o #o)) -o (#l -o (#p -o #o)))) &\n" +
-  " #e GLUE [/y_e.[/e_v.with(e,y)]] : (#a -o (#p -o #b)).\n" +
+  "# coarsePos = VERB; @NO-AUX ; Tense=Pres -> \\V.\\F.(V(\\E.(-@PRES-DRS(\"T\" \"E\") + F(E)))) : x(!) -o x(!)\n" +
+  "# coarsePos = VERB; ~ dep {relation = aux.*}; Tense=Pres -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(!) -o x(!)\n" +
+  "coarsePos = VERB; ~ aux.* {}; Tense=Pres -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(!) -o x(!)\n" +
   "\n" +
-  "//Closure\n" +
-  "#b FPS #c ==> #c CLOSURE #d.\n" +
-  "#b FPS #c initP #d & #c CLOSURE #e & #b SIT #f ==> #e GLUE [/P_<s,<v,t>>.[/s_s.Ee_v[P(s)(e)]]] : ((#f -o (#d -o #c)) -o (#f -o #b)).\n" +
-  "#b FPS #c CLOSURE #e & #c EVENT #z & #c CHECK '+' & #b SIT #f ==> #e GLUE [/P_<s,<v,t>>.[/s_s.Ee_v[P(s)(e)]]] : ((#f -o (#z -o #c)) -o (#f -o #b)).\n" +
+  "coarsePos = VERB; @NO-AUX() ; Tense=Fut -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(!) -o x(!)\n" +
   "\n" +
+  "coarsePos = VERB; @NO-AUX() ; Tense=Imp -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(!) -o x(!)\n" +
   "\n" +
+  "coarsePos = VERB; @NO-AUX() ; Tense=Pqp -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(!) -o x(!)\n" +
   "\n" +
-  "//Rules for interpreting grammatical aspect\n" +
-  "#a SEM #b VIEWPOINT #c ==>\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f.\n" +
+  "coarsePos = NOUN -> \\X.([],[:LEMMA:(X) ] ) : @et(!)\n" +
+  "coarsePos = PROPN -> \\X.([], [Name(X, `:LEMMA:`)]) : @et(!)\n" +
   "\n" +
+  "coarsePos = (PROPN|NOUN); relation = (root|@CLAUSAL-REL() ); ! (nsubj|cop) { } -> \\V.(V(\\F.( [],[] ))) : (x(!) -o p(!))\n" +
   "\n" +
-  "#a SEM #b VIEWPOINT #c A-RESTR 'ongoing' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f ==>\n" +
-  "#f GLUE [/s_s.[/t_s.ongoing(t,s)]] : (#d -o (#e -o #c)).\n" +
+  "coarsePos = (PROPN|NOUN); relation = root ; ~ ! gf {coarsePos = ADP}; ! (nsubj|cop) { } -> \\Q.\\F.(Q(\\X.(([E], [be{cop}(E), Co_Theme(E,X)]) + F(E)))) : (@quant(\"!\" \"^\") -o x(!))\n" +
   "\n" +
-  "#a SEM #b VIEWPOINT #c A-RESTR 'bounded' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f ==>\n" +
-  "#f GLUE [/s_s.[/t_s.bounded(t,s)]] : (#d -o (#e -o #c)).\n" +
+  "coarsePos = (PROPN|NOUN); relation = conj ; ^ {relation = root}; ~ ! gf {coarsePos = ADP}; ^ (nsubj|cop) { } -> \\Q.\\F.(Q(\\X.(([E], [be{cop}(E), Co_Theme(E,X)]) + F(E)))) : (@quant(\"!\" \"^\") -o x(!))\n" +
   "\n" +
+  "coarsePos = (PROPN|NOUN); relation = conj; ^ {relation = @CLAUSAL-REL() }; ~ ! gf {coarsePos = ADP} -> \\Q.\\F.(Q(\\X.(([E], [be{^ cop}(E), Co_Theme{^ cop}(E,X)]) + F(E)))) : (@quant(\"!\" \"^\") -o x(!))\n" +
   "\n" +
-  "#a SEM #b VIEWPOINT #c ASPECT 'impv' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE [/M_<s,<s,t>>.[/P_<s,t>.[/s_s.Az_s[M(s)(z) -> P(z)]]]] : ((#d -o (#e -o #c)) -o ((#g -o #b) -o (#f -o #b))).\n" +
+  "coarsePos = (PROPN|NOUN); relation = @CLAUSAL-REL() ; ~ ! gf {coarsePos = ADP} -> \\Q.\\F.(Q(\\X.(([E], [be{cop}(E), Co_Theme(E,X)]) + F(E)))) : (@quant(\"!\" \"^\") -o x(!))\n" +
   "\n" +
-  "#a SEM #b VIEWPOINT #c ASPECT 'prv' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE [/M_<s,<s,t>>.[/P_<s,t>.[/s_s.Ez_s[M(s)(z) \\& P(z)]]]] : ((#d -o (#e -o #c)) -o ((#g -o #b) -o (#f -o #b))).\n" +
+  "coarsePos = ADP; ^ {relation = root}; ^ {coarsePos = (PROPN|NOUN)}; ^ (nsubj|cop) { } -> \\Q.\\F.(Q(\\X.(([E], [:INTR:{^ cop}(E), be(E), :LEMMA:*(E,X)]) + F(E)))) : (@quant(\"^\" \"^ ^\") -o x(^))\n" +
   "\n" +
-  "#a SEM #b VIEWPOINT #c ASPECT 'undefined' &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE [/P_<s,t>.[/s_s.P(s)]] : ((#g -o #b) -o (#f -o #b)).\n" +
+  "coarsePos = ADP; ^ {relation = conj}; ^ {coarsePos = (PROPN|NOUN)}; ^ ^ {relation = root}; ^ ^ (nsubj|cop) { } -> \\Q.\\F.(Q(\\X.(([E], [:INTR:{^ ^ cop}(E), be(E), :LEMMA:*(E,X)]) + F(E)))) : (@quant(\"^\" \"^ ^\") -o x(^))\n" +
   "\n" +
-  "//Tense values\n" +
+  "coarsePos = ADP; ^ {relation = conj}; ^ {coarsePos = (PROPN|NOUN)}; ^ ^ {relation = @CLAUSAL-REL() } -> \\Q.\\F.(Q(\\X.(([E], [:INTR:{^ ^ cop}(E), be(E), :LEMMA:*(E,X)]) + F(E)))) : (@quant(\"^\" \"^ ^\") -o x(^))\n" +
   "\n" +
-  "//TODO make so that one tense restrictor works for both relative and absolute tenses\n" +
+  "coarsePos = ADP; ^ {relation = @CLAUSAL-REL() }; ^ {coarsePos = (PROPN|NOUN)} -> \\Q.\\F.(Q(\\X.(([E], [:INTR:{^ cop}(E), be(E), :LEMMA:*(E,X)]) + F(E)))) : (@quant(\"^\" \"^ ^\") -o x(^))\n" +
   "\n" +
-  "//Past reference\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'past' & #c EVAL #d & #c CHECK '-' ==>\n" +
-  "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.before(t,t2)]] : (#c -o (#d -o #c)).\n" +
+  "coarsePos = ADJ; relation=(nsubj|obj|iobj|obl.*) -> \\X.([], [:LEMMA:(X)]) : @et(!)\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'past' & #c EVAL #d & #c CHECK '+' ==>\n" +
-  "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.before(t,t2)]] : (#c -o (#d -o #c)).\n" +
+  "coarsePos = ADJ; relation=(nsubj|obj|iobj|obl.*); ~ det { } -> \\P.\\Q.(([X],[:INTR:*(X) ]) + P(X) + Q(X) ) : (@et(!) -o @quant(\"!\" \"^\"))\n" +
   "\n" +
-  "//Aspectual tense\n" +
+  "coarsePos = ADJ; ~ relation = amod; ~ ^ {relation = amod} -> \\F.(([S], [:INTR:*(S), :LEMMA:*(S)]) + F(S)) : x(!)\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c EVAL #d &\n" +
-  "#b ASP-TENSE #e A-REF 'past' &\n" +
-  " ==>\n" +
-  "#e A-REF' #f & #f GLUE [/t_s.[/t2_s.before(t,t2)]] :(#e -o (#c -o #e)) .\n" +
+  "coarsePos = ADJ; relation = root -> \\V.(V(\\F.( [],[] ))) : (x(!) -o p(!))\n" +
   "\n" +
-  "//Present reference\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'pres' & #c EVAL #d & #c CHECK '-' ==>\n" +
-  "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.overlap(t,t2)]] : (#c -o (#d -o #c)).\n" +
+  "@PRONOUN() ; @1SG() -> @1SG-PRONOUN-MEANING-CONSTRUCTOR()\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'pres' & #c EVAL #d & #c CHECK '+' ==>\n" +
-  "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.overlap(t,t2)]] : (#c -o (#d -o #c)).\n" +
+  "@PRONOUN() ; @1PL() -> @1-PL-PRONOUN-MEANING-CONSTRUCTOR()\n" +
   "\n" +
-  "//Non-future\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'non-future' & #c EVAL #d & #c CHECK '-' ==>\n" +
-  "#c T-REF' #e & #e GLUE {[/t_s.[/t2_s.before(t,t2)]],[/t_s.[/t2_s.overlap(t,t2)]]} : (#c -o (#d -o #c)).\n" +
+  "@PRONOUN() ; @PERSON(\"1\"); ~ @NUMBER(\"Sing\"); ~ @NUMBER(\"Plur\") -> @1SG-PRONOUN-MEANING-CONSTRUCTOR()\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'non-future' & #c EVAL #d T-REF %a ==>\n" +
-  "#c T-REF' #e & #e GLUE {[/t_s.[/t2_s.before(t,t2)]],[/t_s.[/t2_s.overlap(t,t2)]]} : (#c -o (#d -o #c)).\n" +
+  "@PRONOUN() ; @2SG() -> @2-SG-PRONOUN-MEANING-CONSTRUCTOR()\n" +
   "\n" +
-  "//Non-past\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'non-past' & #c EVAL #d & #c CHECK '-' ==>\n" +
-  "#c T-REF' #e & #e GLUE {[/t_s.[/t2_s.after(t,t2)]],[/t_s.[/t2_s.overlap(t,t2)]]} : (#c -o (#d -o #c)).\n" +
+  "@PRONOUN() ; @2PL() -> @2-PL-PRONOUN-MEANING-CONSTRUCTOR()\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'non-past' & #c EVAL #d T-REF %a ==>\n" +
-  "#c T-REF' #e & #e GLUE {[/t_s.[/t2_s.after(t,t2)]],[/t_s.[/t2_s.overlap(t,t2)]]} : (#c -o (#d -o #c)).\n" +
+  "@PRONOUN() ; @PERSON(\"2\"); ~ @NUMBER(\"Sing\"); ~ @NUMBER(\"Plur\") -> @2-SG-PRONOUN-MEANING-CONSTRUCTOR()\n" +
   "\n" +
-  "//Future reference\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'fut' & #c EVAL #d & #c CHECK '-' ==>\n" +
-  "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.after(t,t2)]] : (#c -o (#d -o #c)).\n" +
+  "## IF grammatical_gender = \"no\"\n" +
   "\n" +
-  "#a SEM #b TEMP-REF #c T-REF 'fut' & #c EVAL #d T-REF %a ==>\n" +
-  "#c T-REF' #e & #e GLUE [/t_s.[/t2_s.after(t,t2)]] : (#c -o (#d -o #c)).\n" +
+  "@3RD-PERSON-PRONOUN() ; Gender=Masc -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-MASC()\n" +
   "\n" +
+  "@3RD-PERSON-PRONOUN() ; Gender=Fem -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-FEM()\n" +
   "\n" +
-  "//absolute tense closure\n" +
-  "#a SEM #b TEMP-REF #c T-REF %a & %a != 'undefined' & #c EVAL #d & #c CHECK '-'\n" +
-  "==> #c GLUE [/T_<s,<s,t>>.[/P_<s,t>.[/s_s.Er_s[T(r)(s) \\& P(r)]]]] : ((#c -o (#d -o #c)) -o ((#c -o #b) -o (#d -o #b))).\n" +
+  "@3RD-PERSON-PRONOUN() ; Gender=Neut -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-NEUT()\n" +
   "\n" +
-  "//relative tense closure\n" +
-  "#a SEM #b TEMP-REF #c T-REF %a & %a != 'undefined' & #c EVAL #d T-REF %b\n" +
-  "==> #c GLUE [/T_<s,<s,t>>.[/P_<s,t>.[/s_s.Er_s[T(r)(s) \\& P(r)]]]] : ((#c -o (#d -o #c)) -o ((#c -o #b) -o (#d -o #b))).\n" +
+  "@3RD-PERSON-PRONOUN() ; @NO-GENDER() -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-NEUT()\n" +
   "\n" +
-  "//aspectual tense closure\n" +
-  "#a SEM #b ASP-TENSE #c A-REF %a &\n" +
-  "#b TEMP-REF #e &\n" +
-  " %a != 'undefined'\n" +
-  "==> #c GLUE [/T_<s,<s,t>>.[/P_<s,t>.[/s_s.Er_s[T(r)(s) \\& P(r)]]]] : ((#c -o (#e -o #c)) -o ((#e -o #b) -o (#e -o #b))).\n" +
+  "## ELSE\n" +
+  "@3RD-PERSON-PRONOUN() -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-NEUT()\n" +
+  "## ENDIF\n" +
   "\n" +
-  "//unspec absolute closure\n" +
-  "#a SEM #b TEMP-REF #c T-REF %a & %a == 'undefined' & #c EVAL #d & #c CHECK '-'\n" +
-  "==> #c GLUE [/P_<s,t>.[/s_s.P(s)]] : ((#c -o #b) -o (#d -o #b)).\n" +
+  "relation = root, coarsePos = VERB -> \\V.(V(\\E.( [],[] ))) : (x(!) -o p(!))\n" +
   "\n" +
-  "//unspec relative closure\n" +
-  "#a SEM #b TEMP-REF #c T-REF %a & %a == 'undefined' & #c EVAL #d T-REF %b\n" +
-  "==> #c GLUE [/P_<s,t>.[/s_s.P(s)]] : ((#c -o #b) -o (#d -o #b)).\n" +
+  "relation = root; coarsePos = (PROPN|NOUN); ~ nsubj { }; ~ cop { } -> \\X.([E],[event(E), Participant(E,X)]) : (e(!) -o p(^))\n" +
   "\n" +
+  "relation = nsubj; ^ {coarsePos=VERB} -> @e-type-verbal-dep(nsubj^) : %h = @arg-scope()\n" +
+  "relation = nsubj:pass -> @e-type-verbal-dep(nsubj_pass^) : %h = @arg-scope()\n" +
   "\n" +
+  "relation = nsubj; ^ {coarsePos=(PROPN|NOUN)} -> @e-type-verbal-dep(Theme{^ cop}) : %h = @arg-scope()\n" +
   "\n" +
-  "//#a SEM #b TEMP-REF #c T-REF 'pres' & #c EVAL #d ==> #c GLUE [/P_<s,t>.[/s_s.Er_s[equals(r,s) \\& P(r)]]] : ((#c -o #b) -o (#d -o #b)).\n" +
+  "relation = nsubj; ^ {coarsePos=ADJ} -> @e-type-verbal-dep-inverse(Attribute^) : %h = @arg-scope()\n" +
   "\n" +
-  "// #a SEM #b ASP-TENSE #c A-REF 'past' & #b TEMP-REF #d ==>  #c GLUE [/P_<s,t>.[/s_s.Er_s[before(r,s) \\& P(r)]]] : ((#d -o #b) -o (#d -o #b)).\n" +
+  "relation = obj -> @e-type-verbal-dep(obj^) : %h = @arg-scope()\n" +
   "\n" +
-  "#a SEM #b ASP-TENSE #c A-REF 'undefined' & #b TEMP-REF #d ==>  #c GLUE [/P_<s,t>.[/s_s.P(s)]] : ((#d -o #b) -o (#d -o #b)).\n" +
+  "relation = iobj -> @e-type-verbal-dep(iobj^) : %h = @arg-scope()\n" +
   "\n" +
-  "#a EVAL #b & #a CHECK '-' ==> #b GLUE now : #b.\n" +
+  "relation = obl.*; ~ case { }; ~ relation = obl:tmod -> @e-type-verbal-dep(obl^) : %h = @arg-scope()\n" +
+  "relation = case; ^ {relation = obl.*}; ~ ^{relation = obl:tmod} -> @e-type-verbal-dep-mng(:LEMMA:) : @e-type-verbal-dep-type(\"^\" \"%h\" \"^ ^\") : %h = ^ ^\n" +
   "\n" +
-  "\n";
+  "relation = obl:tmod; ~ case { } -> @e-type-verbal-dep(Time^) : %h = @arg-scope()\n" +
+  "\n" +
+  "relation = gf -> @e-type-verbal-dep(gf^) : %h = @arg-scope()\n" +
+  "\n" +
+  "relation = csubj ->  \\U.\\V.\\F.V(\\E.(([], [csubj^(E, U(\\G.([],[])))]) + F(E))) : x(!) -o x(^) -o x(^)\n" +
+  "\n" +
+  "relation = ccomp; ~ mark { }; advmod { @NEGATIVE() } ->  \\U.\\V.\\F.V(\\E.(([], [ccomp^(E, -U(\\G.([],[])))]) + F(E))) : x(!) -o x(^) -o x(^)\n" +
+  "relation = ccomp; ~ mark { }; ~ advmod { @NEGATIVE() } ->  \\U.\\V.\\F.V(\\E.(([], [ccomp^(E, U(\\G.([],[])))]) + F(E))) : x(!) -o x(^) -o x(^)\n" +
+  "\n" +
+  "relation = xcomp; coarsePos = VERB; ~ nsubj {} -> \\V.\\X.\\E.(V(\\E1.(([],[xcomp(E,E1), nsubj(E1,X)])))) : x(!) -o (e(!) -o v(!) -o t(!))\n" +
+  "\n" +
+  "relation = xcomp; coarsePos = VERB; ~ nsubj {} -> \\W.\\V.\\F.(V(\\E.(([X],[control_rel(E,X)]) + W(X)(E) + F(E)))) : (e(!) -o v(!) -o t(!)) -o (x(^) -o x(^))\n" +
+  "\n" +
+  "relation = advcl; ~ mark { } -> \\U.\\V.\\F.V(\\E.(([], [advcl^(E, U(\\G.([],[])))]) + F(E))) : x(!) -o x(^) -o x(^)\n" +
+  "\n" +
+  "relation = acl; coarsePos = VERB -> \\V.\\P.\\X.(V(\\E.(P(X) + ([], [Participant*(E,X)])))) : x(!) -o (@et(^) -o @et(^))\n" +
+  "\n" +
+  "relation = acl:relcl -> \\P.\\V.\\X.(P(X) + ((V(X))(\\X.([],[])))) : (@et(^) -o ((e(! gf§ gf{PronType=Rel}) -o x(!)) -o @et(^)))\n" +
+  "\n" +
+  "relation = nmod; ~ case { } -> \\Q.\\P.\\X.((Q(\\Y.([], [nmod*(X,Y)] ))) + P(X)) : (@quant(\"!\" \"^\") -o (@et(^) -o @et(^)))\n" +
+  "relation = case; ^ {relation = nmod} -> \\Q.\\P.\\X.((Q(\\Y.([], [:LEMMA:(X,Y)] ))) + P(X)) : (@quant(\"^\" \"^ ^\") -o (@et(^ ^) -o @et(^ ^)))\n" +
+  "relation = case; ^ {relation = nmod:poss} ->\n" +
+  "relation = nmod:poss ->  \\Q.\\P.\\X.((Q(\\Y.([], [poss*(X,Y)] ))) + P(X)) : (@quant(\"!\" \"^\") -o (@et(^) -o @et(^)))\n" +
+  "\n" +
+  "coarsePos = VERB; relation = amod -> \\V.\\P.\\X.(V(\\E.([],[Attribute^(X,E)])) + P(X)) : (x(!) -o (@et(^) -o @et(^)))\n" +
+  "\n" +
+  "coarsePos = ADJ; relation = amod -> \\F.(([E],[:INTR:*(E), :LEMMA:(E)]) + F(E) ) : x(!)\n" +
+  "\n" +
+  "coarsePos = ADJ; ^ {relation = amod} -> \\F.(([E],[:INTR:*(E), :LEMMA:(E)]) + F(E) ) : x(!)\n" +
+  "\n" +
+  "coarsePos = ADJ; relation = amod -> \\A.\\P.\\X.(A(\\E.([],[Attribute^(X,E)])) + P(X)) : (x(!) -o (@et(^) -o @et(^)))\n" +
+  "\n" +
+  "relation = advmod; ~ ! {PronType=Int}; @AFFIRMATIVE() -> \\X.(([],[:INTR:*(X), :LEMMA:*(X)])) : v(!) -o t(!)\n" +
+  "\n" +
+  "relation = advmod; ~ ! {PronType=Int}; ~ ^ {relation = (amod|advmod)}; @AFFIRMATIVE() ->  \\Q.\\P.\\F.P(\\E(([X], [advmod*(E,X)]) + F(E) + Q(X))) : (v(!) -o t(!)) -o (x(^) -o x(^))\n" +
+  "\n" +
+  "relation = advmod; ~ ! {PronType=Int}; ^ {relation = (amod|advmod)}; @AFFIRMATIVE() -> \\Q.\\P.\\X.(([Y],[:INTR:*(Y), :LEMMA:*(Y), advmod*(X,Y)]) + P(X) + Q(X)) : (v(!) -o t(!)) -o (v(^) -o t(^)) -o v(^) -o t(^)\n" +
+  "\n" +
+  "relation = advmod; !{PronType=Int}; ~ ^ {relation = (amod|advmod)} -> \\P.\\F.P(\\E(([X], [:INTR:*(X), EQ*(X, `?`), :LEMMA:*(E,X)]) + F(E))) : (x(^) -o x(^))\n" +
+  "\n" +
+  "relation = advmod; !{PronType=Int}; ^ {relation = (amod|advmod)} -> \\P.\\X.(([Y],[:INTR:*(Y), EQ*(Y, `?`), :LEMMA:*(X,Y)]) + P(X)) : (v(^) -o t(^)) -o v(^) -o t(^)\n" +
+  "\n" +
+  "relation = appos -> \\P.\\Q.\\X.(P(X) + Q(X)) : (@et(!) -o (@et(^) -o @et(^)))\n" +
+  "\n" +
+  "##IF language = \"eng\"\n" +
+  "\n" +
+  "relation = aux; lemma = $future_aux -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux; ! {Tense=Pres}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Past}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Fut}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }}  -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Imp}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }}  -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Pqp}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }}  -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux; @NO-TENSE(!); @NO-TENSE(^); ~ lemma = $future_aux -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux; Tense=Pres; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ {Tense=Past,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; Tense=Pres; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ aux{Tense=Past,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux; Tense=Pres; VerbForm=Fin; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ {Tense=Pres,VerbForm=Part}; ~ ^ aux{Tense=Past} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; Tense=Past; VerbForm=Fin; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ {Tense=Pres,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux:pass; ! {Tense=Pres}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Past}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Fut}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Imp}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Pqp}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux:pass; @NO-TENSE(!); @NO-TENSE(^ aux); ~ ^ aux {lemma=$future_aux } -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux:pass; @NO-TENSE(!); ^ aux {Tense=Pres}; ~ ^ aux {Tense=Past} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux:pass; @NO-TENSE(!); ^ aux {Tense=Past} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "## ENDIF\n" +
+  "\n" +
+  "relation = cop; ! {Tense=Pres} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = cop; ! {Tense=Past} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = cop; ! {Tense=Fut} -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = cop; ! {Tense=Imp} -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = cop; ! {Tense=Pqp} -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = mark; lemma = $infinitive_marker ; ^ mark {lemma != $infinitive_marker } ->\n" +
+  "\n" +
+  "relation = mark; ^ {relation = advcl} -> \\U.\\V.\\F.V(\\E.(([], [:LEMMA:(E, U(\\G.([],[])))]) + F(E))) : x(^) -o x(^ ^) -o x(^ ^)\n" +
+  "\n" +
+  "relation = mark; ^ {relation = ccomp} -> \\U.\\V.\\F.V(\\E.(([], [:LEMMA:_ccomp(E, U(\\G.([],[])))]) + F(E))) : x(^) -o x(^ ^) -o x(^ ^)\n" +
+  "\n" +
+  "coarsePos = DET; ^ {relation = appos} ->\n" +
+  "\n" +
+  "relation = det; ! {PronType=Int} -> \\P.\\Q.(([X],[:INTR:*(X), EQ*(X,`?`)]) + P(X) + Q(X) ) : (@et(^) -o ((e(^) -o p(%h)) -o p(%h))) : %h = ^ ^\n" +
+  "\n" +
+  "## IF NOT definite_det=\"\"\n" +
+  "relation = det; lemma = $definite_det -> \\P.\\Q.(([],[PRESUPPOSITION((([X],[:INTR:*(X)]) + P(X)))]) + Q(X)) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
+  "## ENDIF\n" +
+  "relation = det; lemma = $indefinite_det ->   \\P.\\Q.(([X],[:INTR:*(X)]) + P(X) + Q(X) )  : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
+  "relation = det; lemma = $universal_quantifier -> \\P.\\Q.([ ],[ ((([X],[:INTR:*(X)]) + P(X)) => (Q(X))) ]) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
+  "\n" +
+  "# relation = det; Definite=Def -> \\P.\\Q.(([],[PRESUPPOSITION((([X],[:INTR:*(X)]) + P(X)))]) + Q(X)) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
+  "\n" +
+  "coarsePos = NOUN; ~ det { }; ~ ! {relation=compound} -> \\P.\\Q.(([X],[:INTR:*(X)]) + P(X) + Q(X) ) : (@et(!) -o @quant(\"!\" \"^\"))\n" +
+  "\n" +
+  "coarsePos = PROPN; ~ relation = appos; ~ relation = compound; ~ det { } -> \\P.\\Q.(([],[PRESUPPOSITION((([X],[:INTR:*(X)]) + P(X)))]) + Q(X)) : (@et(!) -o @quant(\"!\" \"^\"))\n" +
+  "\n" +
+  "relation = compound; coarsePos = NOUN|PROPN -> \\Q.\\P.\\X.(([Y], [compound(X,Y)]) + Q(Y) + P(X))  : @et(!) -o @et(^) -o @et(^)\n"
+
 
 @Component({
   selector: 'app-editor',

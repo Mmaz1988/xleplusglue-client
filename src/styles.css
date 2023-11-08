@@ -132,8 +132,12 @@ button.hide-button {
 }
 
 .editor-restr {
-  max-width: 800px;
+  max-width: 1000px;
+  width: 800px;
+  width: auto; /* Width is automatic, allowing it to grow */
+  padding-right: 50px; /* Default padding, you can adjust this value to meet your needs */
   overflow: hidden;
+  resize: horizontal;
 }
 
   .log{

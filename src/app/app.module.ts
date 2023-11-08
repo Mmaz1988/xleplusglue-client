@@ -28,6 +28,8 @@ import { AppliedRulesGraphComponent } from './regression-testing-interface/appli
 import { HomeComponent } from './home/home.component';
 import { ToggleDisplayComponent } from './toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
+import { TabsComponent } from './tabs/tabs.component';
+import { TabComponent } from './tab/tab.component';
 
 
 
@@ -53,7 +55,9 @@ import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.co
     AppliedRulesGraphComponent,
     HomeComponent,
     ToggleDisplayComponent,
-    GswbSettingsComponent
+    GswbSettingsComponent,
+    TabsComponent,
+    TabComponent
 
   ],
   imports: [
