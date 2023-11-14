@@ -121,12 +121,9 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "relation = nmod:poss; PronType=Rel -> \\X.\\P.\\Y.(([], [poss*(X,Y)]) + P(Y)) : (e(!) -o (@et(^) -o @et(^)))\n" +
   "PronType=Rel ->\n" +
   "\n" +
-  "## IF negative_concord = \"yes\"\n" +
-  "relation = (root|@CLAUSAL-REL() ); advmod { @NEGATIVE() } -> \\P.(-P) : p(!) -o p(!)\n" +
   "\n" +
-  "## ELSE\n" +
   "relation = advmod; @NEGATIVE() -> \\P.(-P) : p(^) -o p(^)\n" +
-  "## ENDIF\n" +
+  "\n" +
   "\n" +
   "relation = conj; coarsePos = VERB; ~ ^ {relation = amod}; ~ ^ {relation = xcomp}; ~ ^ {relation = advcl} -> \\V.\\U.\\F.(U(F) + V(\\G.([],[]))) : x(!) -o x(^) -o x(^)\n" +
   "\n" +
@@ -166,19 +163,19 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "\n" +
   "relation = case; ^ {relation = conj}; ^ ^ {relation = obl.*} -> @e-type-verbal-dep-mng(:LEMMA:) : @e-type-verbal-dep-type(\"^\" \"%h\" \"^ ^ ^\") : %h = ^ ^\n" +
   "\n" +
-  "coarsePos = (PROPN|NOUN|PRON); ! conj cc{lemma = $conjunction }; ~ ! conj case { }; relation = @CORE-NOMINAL-REL() -> \\R.\\S.(([X],[:INTR:{conj cc}(X), entity(X)]) + R(X) + S(X)) : @et(%C) -o @quant(\"!\" \"^\")\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc{lemma = and }; ~ ! conj case { }; relation = @CORE-NOMINAL-REL() -> \\R.\\S.(([X],[:INTR:{conj cc}(X), entity(X)]) + R(X) + S(X)) : @et(%C) -o @quant(\"!\" \"^\")\n" +
   "\n" +
-  "coarsePos = (PROPN|NOUN|PRON); ! conj cc{lemma = $conjunction }; ~ ! conj case { }; relation = root; ~ ! nsubj {  }; ~ ! cop { } -> \\R.\\S.(([X],[:INTR:{conj cc}(X), entity(X)]) + R(X) + S(X)) : @et(%C) -o @quant(\"!\" \"^\")\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc{lemma = and }; ~ ! conj case { }; relation = root; ~ ! nsubj {  }; ~ ! cop { } -> \\R.\\S.(([X],[:INTR:{conj cc}(X), entity(X)]) + R(X) + S(X)) : @et(%C) -o @quant(\"!\" \"^\")\n" +
   "\n" +
-  "coarsePos = (PROPN|NOUN|PRON); ! conj cc {lemma = $conjunction }; ~ ! conj case { }; relation = @CORE-NOMINAL-REL() -> \\Q.\\X.(Q(\\Z.(([],[Sub{conj cc}(X,Z)])))) : @quant(\"!\" \"^\") -o @et(%C)\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc {lemma = and }; ~ ! conj case { }; relation = @CORE-NOMINAL-REL() -> \\Q.\\X.(Q(\\Z.(([],[Sub{conj cc}(X,Z)])))) : @quant(\"!\" \"^\") -o @et(%C)\n" +
   "\n" +
-  "coarsePos = (PROPN|NOUN|PRON); ! conj cc {lemma = $conjunction }; ~ ! conj case { }; relation = root; ~ ! nsubj {  }; ~ ! cop { } -> \\Q.\\X.(Q(\\Z.(([],[Sub{conj cc}(X,Z)])))) : @quant(\"!\" \"^\") -o @et(%C)\n" +
+  "coarsePos = (PROPN|NOUN|PRON); ! conj cc {lemma = and }; ~ ! conj case { }; relation = root; ~ ! nsubj {  }; ~ ! cop { } -> \\Q.\\X.(Q(\\Z.(([],[Sub{conj cc}(X,Z)])))) : @quant(\"!\" \"^\") -o @et(%C)\n" +
   "\n" +
-  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = $conjunction }; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL() } -> \\Q.\\P.\\X.(Q(\\Z.(([],[Sub{^ conj cc}(X,Z)]))) + P(X)) : @quant(\"!\" \"^\") -o (@et(%C) -o @et(%C))\n" +
+  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = and }; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL() } -> \\Q.\\P.\\X.(Q(\\Z.(([],[Sub{^ conj cc}(X,Z)]))) + P(X)) : @quant(\"!\" \"^\") -o (@et(%C) -o @et(%C))\n" +
   "\n" +
-  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = $conjunction }; ~ ! case {}; ^ { relation = root }; ~ ^ nsubj { }; ~ ^ cop { } -> \\Q.\\P.\\X.(Q(\\Z.(([],[Sub{^ conj cc}(X,Z)]))) + P(X)) : @quant(\"!\" \"^\") -o (@et(%C) -o @et(%C))\n" +
+  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = and }; ~ ! case {}; ^ { relation = root }; ~ ^ nsubj { }; ~ ^ cop { } -> \\Q.\\P.\\X.(Q(\\Z.(([],[Sub{^ conj cc}(X,Z)]))) + P(X)) : @quant(\"!\" \"^\") -o (@et(%C) -o @et(%C))\n" +
   "\n" +
-  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = $disjunction }; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL() } -> \\Q1.\\Q2.\\P.(([Y], [Q1(\\X.(([],[X=Y]))) | Q2(\\Z.(([],[Z=Y])))]) + P(Y)) : @quant(\"^\" \"^ ^\") -o @quant(\"!\" \"^\") -o @quant(\"^\" \"^ ^\")\n" +
+  "coarsePos = (PROPN|NOUN|PRON); relation = conj; ^ conj cc {lemma = or }; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL() } -> \\Q1.\\Q2.\\P.(([Y], [Q1(\\X.(([],[X=Y]))) | Q2(\\Z.(([],[Z=Y])))]) + P(Y)) : @quant(\"^\" \"^ ^\") -o @quant(\"!\" \"^\") -o @quant(\"^\" \"^ ^\")\n" +
   "\n" +
   "@POTENTIAL-PRO-DROP() ; @1ST-PERSON() ; @SINGULAR() ->  \\V.\\F.(V(\\E.(([X], [@1SG-PRONOUN-DRS-CONDS(\"X\"), nsubj(E,X)]) + F(E)))) : (x(!) -o x(!))\n" +
   "\n" +
@@ -247,7 +244,7 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "\n" +
   "@PRONOUN() ; @PERSON(\"2\"); ~ @NUMBER(\"Sing\"); ~ @NUMBER(\"Plur\") -> @2-SG-PRONOUN-MEANING-CONSTRUCTOR()\n" +
   "\n" +
-  "## IF grammatical_gender = \"no\"\n" +
+  "\n" +
   "\n" +
   "@3RD-PERSON-PRONOUN() ; Gender=Masc -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-MASC()\n" +
   "\n" +
@@ -257,9 +254,7 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "\n" +
   "@3RD-PERSON-PRONOUN() ; @NO-GENDER() -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-NEUT()\n" +
   "\n" +
-  "## ELSE\n" +
-  "@3RD-PERSON-PRONOUN() -> @3-SG-PRONOUN-MEANING-CONSTRUCTOR-NEUT()\n" +
-  "## ENDIF\n" +
+  "\n" +
   "\n" +
   "relation = root, coarsePos = VERB -> \\V.(V(\\E.( [],[] ))) : (x(!) -o p(!))\n" +
   "\n" +
@@ -323,37 +318,37 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "\n" +
   "relation = appos -> \\P.\\Q.\\X.(P(X) + Q(X)) : (@et(!) -o (@et(^) -o @et(^)))\n" +
   "\n" +
-  "##IF language = \"eng\"\n" +
   "\n" +
-  "relation = aux; lemma = $future_aux -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "relation = aux; ! {Tense=Pres}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux; ! {Tense=Past}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux; ! {Tense=Fut}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }}  -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux; ! {Tense=Imp}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }}  -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux; ! {Tense=Pqp}; @NO-TENSE(^); ~ ^ {aux.* {lemma= $future_aux }}  -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; lemma = will -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "relation = aux; @NO-TENSE(!); @NO-TENSE(^); ~ lemma = $future_aux -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Pres}; @NO-TENSE(^); ~ ^ {aux.* {lemma= will }} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Past}; @NO-TENSE(^); ~ ^ {aux.* {lemma= will }} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Fut}; @NO-TENSE(^); ~ ^ {aux.* {lemma= will }}  -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Imp}; @NO-TENSE(^); ~ ^ {aux.* {lemma= will }}  -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; ! {Tense=Pqp}; @NO-TENSE(^); ~ ^ {aux.* {lemma= will }}  -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "relation = aux; Tense=Pres; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ {Tense=Past,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux; Tense=Pres; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ aux{Tense=Past,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; @NO-TENSE(!); @NO-TENSE(^); ~ lemma = will -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "relation = aux; Tense=Pres; VerbForm=Fin; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ {Tense=Pres,VerbForm=Part}; ~ ^ aux{Tense=Past} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux; Tense=Past; VerbForm=Fin; ~ ^ aux{lemma = $future_aux }; ~ ^ aux:pass {}; ^ {Tense=Pres,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; Tense=Pres; ~ ^ aux{lemma = will }; ~ ^ aux:pass {}; ^ {Tense=Past,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; Tense=Pres; ~ ^ aux{lemma = will }; ~ ^ aux:pass {}; ^ aux{Tense=Past,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "relation = aux:pass; ! {Tense=Pres}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux:pass; ! {Tense=Past}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux:pass; ! {Tense=Fut}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux:pass; ! {Tense=Imp}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
-  "relation = aux:pass; ! {Tense=Pqp}; ~ ^ aux{lemma = $future_aux } -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; Tense=Pres; VerbForm=Fin; ~ ^ aux{lemma = will }; ~ ^ aux:pass {}; ^ {Tense=Pres,VerbForm=Part}; ~ ^ aux{Tense=Past} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux; Tense=Past; VerbForm=Fin; ~ ^ aux{lemma = will }; ~ ^ aux:pass {}; ^ {Tense=Pres,VerbForm=Part} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "relation = aux:pass; @NO-TENSE(!); @NO-TENSE(^ aux); ~ ^ aux {lemma=$future_aux } -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Pres}; ~ ^ aux{lemma = will } -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Past}; ~ ^ aux{lemma = will } -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Fut}; ~ ^ aux{lemma = will } -> \\V.\\F.(V(\\E.(@FUT-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Imp}; ~ ^ aux{lemma = will } -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "relation = aux:pass; ! {Tense=Pqp}; ~ ^ aux{lemma = will } -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
+  "\n" +
+  "relation = aux:pass; @NO-TENSE(!); @NO-TENSE(^ aux); ~ ^ aux {lemma=will } -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
   "relation = aux:pass; @NO-TENSE(!); ^ aux {Tense=Pres}; ~ ^ aux {Tense=Past} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
   "relation = aux:pass; @NO-TENSE(!); ^ aux {Tense=Past} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "## ENDIF\n" +
+  "\n" +
   "\n" +
   "relation = cop; ! {Tense=Pres} -> \\V.\\F.(V(\\E.(@PRES-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "relation = cop; ! {Tense=Past} -> \\V.\\F.(V(\\E.(@PAST-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
@@ -362,7 +357,7 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "relation = cop; ! {Tense=Imp} -> \\V.\\F.(V(\\E.(@IMP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "relation = cop; ! {Tense=Pqp} -> \\V.\\F.(V(\\E.(@PQP-DRS(\"T\" \"E\") + F(E)))) : x(^) -o x(^)\n" +
   "\n" +
-  "relation = mark; lemma = $infinitive_marker ; ^ mark {lemma != $infinitive_marker } ->\n" +
+  "relation = mark; lemma = to ; ^ mark {lemma != to } ->\n" +
   "\n" +
   "relation = mark; ^ {relation = advcl} -> \\U.\\V.\\F.V(\\E.(([], [:LEMMA:(E, U(\\G.([],[])))]) + F(E))) : x(^) -o x(^ ^) -o x(^ ^)\n" +
   "\n" +
@@ -372,11 +367,11 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "\n" +
   "relation = det; ! {PronType=Int} -> \\P.\\Q.(([X],[:INTR:*(X), EQ*(X,`?`)]) + P(X) + Q(X) ) : (@et(^) -o ((e(^) -o p(%h)) -o p(%h))) : %h = ^ ^\n" +
   "\n" +
-  "## IF NOT definite_det=\"\"\n" +
-  "relation = det; lemma = $definite_det -> \\P.\\Q.(([],[PRESUPPOSITION((([X],[:INTR:*(X)]) + P(X)))]) + Q(X)) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
-  "## ENDIF\n" +
-  "relation = det; lemma = $indefinite_det ->   \\P.\\Q.(([X],[:INTR:*(X)]) + P(X) + Q(X) )  : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
-  "relation = det; lemma = $universal_quantifier -> \\P.\\Q.([ ],[ ((([X],[:INTR:*(X)]) + P(X)) => (Q(X))) ]) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
+  "\n" +
+  "relation = det; lemma = (the|this|that) -> \\P.\\Q.(([],[PRESUPPOSITION((([X],[:INTR:*(X)]) + P(X)))]) + Q(X)) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
+  "\n" +
+  "relation = det; lemma = (a|some) ->   \\P.\\Q.(([X],[:INTR:*(X)]) + P(X) + Q(X) )  : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
+  "relation = det; lemma = (every|each) -> \\P.\\Q.([ ],[ ((([X],[:INTR:*(X)]) + P(X)) => (Q(X))) ]) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
   "\n" +
   "# relation = det; Definite=Def -> \\P.\\Q.(([],[PRESUPPOSITION((([X],[:INTR:*(X)]) + P(X)))]) + Q(X)) : (@et(^) -o @quant(\"^\" \"%h\")) : %h = @det-scope()\n" +
   "\n" +
@@ -384,7 +379,9 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "\n" +
   "coarsePos = PROPN; ~ relation = appos; ~ relation = compound; ~ det { } -> \\P.\\Q.(([],[PRESUPPOSITION((([X],[:INTR:*(X)]) + P(X)))]) + Q(X)) : (@et(!) -o @quant(\"!\" \"^\"))\n" +
   "\n" +
-  "relation = compound; coarsePos = NOUN|PROPN -> \\Q.\\P.\\X.(([Y], [compound(X,Y)]) + Q(Y) + P(X))  : @et(!) -o @et(^) -o @et(^)\n"
+  "relation = compound; coarsePos = NOUN|PROPN -> \\Q.\\P.\\X.(([Y], [compound(X,Y)]) + Q(Y) + P(X))  : @et(!) -o @et(^) -o @et(^)\n" +
+  "\n" +
+  "\n";
 
 
 const DEFAULT_TEMPLATES = "@CLAUSAL-REL 0 = (xcomp|ccomp|acl|advcl|csubj)\n" +
@@ -493,7 +490,9 @@ const DEFAULT_TEMPLATES = "@CLAUSAL-REL 0 = (xcomp|ccomp|acl|advcl|csubj)\n" +
   "\n" +
   "@arg-scope 0 = ^\n" +
   "\n" +
-  "@det-scope 0 = ^ ^\n";
+  "@det-scope 0 = ^ ^\n" +
+  "\n" +
+  "\n";
 
 const DEFAULT_CHOP_RULES = "! {PronType=Rel} -> \n" +
   "# Standalone NPs, e.g. headings, have a different structure from normal main clauses\n" +
@@ -535,7 +534,9 @@ const DEFAULT_CHOP_RULES = "! {PronType=Rel} -> \n" +
   "# obls\n" +
   "relation = conj; ! {relation = case}; ^ {relation = obl} -> \\V.\\F.(V(\\E.(([X], [obl(E,X), DUMMY(X)]) + F(E)))) : (x(^ ^) -o x(^ ^))\n" +
   "# NPs\n" +
-  "# coarsePos = (PROPN|NOUN|PRON); relation = conj; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL } -> \\P.\\X.(([Z],[DUMMY(Z), Sub(X,Z)]) + P(X)) : (@et(%C) -o @et(%C))\n";
+  "# coarsePos = (PROPN|NOUN|PRON); relation = conj; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL } -> \\P.\\X.(([Z],[DUMMY(Z), Sub(X,Z)]) + P(X)) : (@et(%C) -o @et(%C))\n" +
+  "\n" +
+  "\n";
 
 @Component({
   selector: 'app-editor',

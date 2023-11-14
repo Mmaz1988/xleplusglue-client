@@ -1,10 +1,13 @@
 <h3> Test sentence: </h3>
 
+
 <textarea [value]="defaultValue" #textareaElement></textarea> <br>
 <div class="errorhandling" #errorhandle></div>
+<!--
 <button (click)="analyzeSentence(textareaElement.value, edit1.getContent())">Parse and rewrite</button>
 <button class="button beta" (click)="parseSentence(textareaElement.value, edit1.getContent())">Extract multi-stage</button>
-<button class="button beta" (click)="parse2UD(textareaElement.value)"> UD parse </button>
+-->
+<button  (click)="parse2UD(textareaElement.value)"> UD parse </button>
 <br>
 
 
@@ -48,7 +51,9 @@
 </div><br>
 </app-toggle-display>
 
+<!--
 <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
 <h3> Rule list: </h3>
 <app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>
 </app-toggle-display>
+-->
