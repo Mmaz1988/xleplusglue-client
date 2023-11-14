@@ -21,6 +21,8 @@ export class LigerVisComponent {
   graphElements: any
 
   @ViewChild('edit1') editor1: EditorComponent;
+  @ViewChild('edit2') editor2: EditorComponent;
+  @ViewChild('edit3') editor3: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('textareaElement') textarea: ElementRef;
@@ -198,6 +200,21 @@ export class LigerVisComponent {
             }
           }
         }
+
+        var ud2semRequest = { 'rules' : this.editor1.getContent(), 'choprules' : this.editor3.getContent(),
+                               'templates' : this.editor2.getContent(),  'conllu' : data.conllu }
+
+        console.log("ud2semRequest: ", ud2semRequest);
+
+
+        this.dataService.ud2Glue(ud2semRequest).subscribe(
+          data => {
+            this.meaningConstructors = data.response
+            this.changeDetector.emit(data.response);
+          },
+          error => {
+            console.log('ERROR: ', error);
+          });
 
         /*
         if (data.hasOwnProperty("conllu")) {

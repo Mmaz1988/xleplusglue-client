@@ -6,14 +6,20 @@
 </app-editor>
 </div>
 
+<!--
 <app-gswb-settings #gswbPrefs></app-gswb-settings>
 <button (click)="calculateSemantics()">Calculate semantics</button>
+-->
+
+<button (click)="calculateMultiSemantics()">Calculate Multi semantics</button>
 
 
 <h3> Semantics: </h3>
 <div class="editor-restr">
 <app-editor #sem1 [mode]="'glue'">  </app-editor>
   </div>
+
+<!--
 <h3>Log:</h3>
 <div class="editor-restr">
   <app-editor #log1 [mode]="'glue'">  </app-editor>
@@ -23,3 +29,4 @@
 
 </app-derivation-container>
 <app-dialog #dialog></app-dialog>
+-->

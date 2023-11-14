@@ -11,6 +11,8 @@ export class DataService {
   private ligerpage = 'http://localhost:8080';
   private stanzapage = 'http://localhost:8002'
   private ud2sempage = 'http://localhost:8004';
+  private multisempage = 'http://localhost:8006';
+
 
   constructor(private http: HttpClient) { }
 
@@ -48,8 +50,12 @@ export class DataService {
     return this.http.post<StanzaAnnotation>(`${this.stanzapage}/parse`, stanzaRequest);
   }
 
-  ud2Sem(conllu): Observable<any> {
-    return this.http.post<Ud2semAnnotation>(`${this.ud2sempage}/analyze`, conllu);
+  ud2Glue(ud2DrsRequest): Observable<any> {
+    return this.http.post<Ud2semAnnotation>(`${this.ud2sempage}/ud2drs`, ud2DrsRequest);
+  }
+
+  glue2Sem(multiRequest): Observable<any> {
+    return this.http.post<Ud2semAnnotation>(`${this.multisempage}/gsw_multistage`, multiRequest);
   }
 
 }

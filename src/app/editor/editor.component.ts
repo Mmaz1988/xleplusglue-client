@@ -387,6 +387,156 @@ const LIGER_DEFAULT_RULES = "relation = parataxis -> STOP\n" +
   "relation = compound; coarsePos = NOUN|PROPN -> \\Q.\\P.\\X.(([Y], [compound(X,Y)]) + Q(Y) + P(X))  : @et(!) -o @et(^) -o @et(^)\n"
 
 
+const DEFAULT_TEMPLATES = "@CLAUSAL-REL 0 = (xcomp|ccomp|acl|advcl|csubj)\n" +
+  "\n" +
+  "@CORE-NOMINAL-REL 0 = (nsubj|obj|iobj)\n" +
+  "\n" +
+  "@CORE-CLAUSAL-REL 0 = (csubj|ccomp|xcomp)\n" +
+  "\n" +
+  "@CORE-REL 0 = ( @CORE-NOMINAL-REL() | @CORE-CLAUSAL-REL() )\n" +
+  "\n" +
+  "@SUBJ 0 = (nsubj|csubj)\n" +
+  "\n" +
+  "@PERSON 1 = Person = #1\n" +
+  "@1ST-PERSON 0 = @PERSON(1)\n" +
+  "@2ND-PERSON 0 = @PERSON(2)\n" +
+  "@3RD-PERSON 0 = @PERSON(3)\n" +
+  "\n" +
+  "@NUMBER 1 = Number = #1\n" +
+  "@SINGULAR 0 = @NUMBER(Sing)\n" +
+  "@PLURAL 0 = @NUMBER(Plur)\n" +
+  "\n" +
+  "@1SG 0 = @1ST-PERSON() ; @SINGULAR()\n" +
+  "@2SG 0 = @2ND-PERSON() ; @SINGULAR()\n" +
+  "@3SG 0 = @3RD-PERSON() ; @SINGULAR()\n" +
+  "@1PL 0 = @1ST-PERSON() ; @PLURAL()\n" +
+  "@2PL 0 = @2ND-PERSON() ; @PLURAL()\n" +
+  "@3PL 0 = @3RD-PERSON() ; @PLURAL()\n" +
+  "\n" +
+  "@NO-TENSE 1 = ~ #1 {Tense=Past}; ~ #1 {Tense=Pres}; ~ #1 {Tense=Fut}; ~ #1 {Tense=Imp}; ~ #1 {Tense=Pqp}\n" +
+  "\n" +
+  "@et 1 = (e(#1) -o t(#1))\n" +
+  "\n" +
+  "@quant 2 = ((e(#1) -o p(#2)) -o p(#2))\n" +
+  "\n" +
+  "@INTRODUCE-DREF 1 = :INTR:*(#1)\n" +
+  "@INTRODUCE-DREF-WITH-PREDICATE 2 = @INTRODUCE-DREF(#1), #2*(#1)\n" +
+  "# @INTRODUCE-DREF-WITH-PREDICATE 2 = @INTRODUCE-DREF(#2), #1*(#2)\n" +
+  "\n" +
+  "@INTRODUCE-PERSON 1 = @INTRODUCE-DREF-WITH-PREDICATE(\"#1\" \"person\")\n" +
+  "# @INTRODUCE-PERSON 1 = @INTRODUCE-DREF-WITH-PREDICATE(\"person\" \"#1\")\n" +
+  "@INTRODUCE-ENTITY 1 = @INTRODUCE-DREF-WITH-PREDICATE(\"#1\" \"entity\")\n" +
+  "\n" +
+  "@gap-type-verbal-dep-mng 1 = \\V.\\X.\\F.V(\\E.(([], [#1(E,X)]) + F(E)))\n" +
+  "\n" +
+  "@gap-type-verbal-dep-type 2 = (x(#2) -o (e(#1) -o x(#2)))\n" +
+  "\n" +
+  "@gap-type-verbal-dep 1 = @gap-type-verbal-dep-mng(#1) : @gap-type-verbal-dep-type(\"!\" \"^\")\n" +
+  "\n" +
+  "@NEGATIVE 0 = Polarity=Neg\n" +
+  "\n" +
+  "# @AFFIRMATIVE 0 = (~Polarity=Neg | Polarity=Pos)\n" +
+  "\n" +
+  "@AFFIRMATIVE 0 = Polarity!=Neg; PronType!=Neg\n" +
+  "\n" +
+  "@POTENTIAL-PRO-DROP 0 = coarsePos = VERB; VerbForm = Fin; ~ ! gf {relation = @SUBJ() }\n" +
+  "\n" +
+  "@PRES-DRS 2 = (([],[PRESUPPOSITION(([#1],[:INTR:*(#1), time*(#1), EQ*(#1, `now`)])), Time*(#2,#1)]))\n" +
+  "\n" +
+  "@PAST-DRS 2 = (([],[PRESUPPOSITION(([#1],[:INTR:*(#1), time*(#1), TPR*(#1, `now`)])), Time*(#2,#1)]))\n" +
+  "\n" +
+  "@FUT-DRS 2 = (([],[PRESUPPOSITION(([#1],[:INTR:*(#1), time*(#1), TPR*(`now`,#1)])), Time*(#2,#1)]))\n" +
+  "\n" +
+  "@IMP-DRS 2 = (([],[PRESUPPOSITION(([#1],[:INTR:*(#1), time*(#1), TPR*(#1, `now`)])), Time*(#2,#1)]))\n" +
+  "\n" +
+  "@PQP-DRS 2 = (([],[PRESUPPOSITION(([#1],[:INTR:*(#1), time*(#1), TPR*(#1, `now`)])), Time*(#2,#1)]))\n" +
+  "\n" +
+  "# @TENSE-DRS 3 = ([#1],[time(#1), Time(#2,#1), #3])\n" +
+  "# @PRES-DRS 2 = @TENSE-DRS(\"#1\" \"#2\" \"EQU(#1,`now`)\")\n" +
+  "# @PAST-DRS 2 = @TENSE-DRS(\"#1\" \"#2\" \"TPR(#1,`now`)\")\n" +
+  "# @FUT-DRS 2 = @TENSE-DRS(\"#1\" \"#2\" \"TPR(`now`,#1)\")\n" +
+  "\n" +
+  "# @NO-AUX 0 = ~ ! dep {relation = aux.*}\n" +
+  "@NO-AUX 0 = ~ aux.* {}\n" +
+  "\n" +
+  "@PRONOUN 0 = coarsePos = PRON\n" +
+  "\n" +
+  "@1SG-PRONOUN-DRS-CONDS 1 = @INTRODUCE-PERSON(#1), EQ*(#1, `speaker`)\n" +
+  "@1PL-PRONOUN-DRS-CONDS 1 = @INTRODUCE-PERSON(#1), Sub*(#1, `speaker`)\n" +
+  "\n" +
+  "@2SG-PRONOUN-DRS-CONDS 1 = @INTRODUCE-PERSON(#1), EQ*(#1, `speaker`)\n" +
+  "@2PL-PRONOUN-DRS-CONDS 1 = @INTRODUCE-PERSON(#1), Sub*(#1, `speaker`)\n" +
+  "\n" +
+  "@3SG-PRONOUN-DRS-CONDS 2 = PRESUPPOSITION(([#2], [@INTRODUCE-DREF(\"#2\") #1*(#2)]))\n" +
+  "# @3SG-PRONOUN-DRS-CONDS-NEUT 1 = @3SG-PRONOUN-DRS-CONDS(\"entity\" \"#1\")\n" +
+  "\n" +
+  "@1SG-PRONOUN-MEANING-CONSTRUCTOR 0 = \\P.(([X], [@1SG-PRONOUN-DRS-CONDS(\"X\")]) + P(X)) : @quant(\"!\" \"^\")\n" +
+  "@1-PL-PRONOUN-MEANING-CONSTRUCTOR 0 = \\P.(([X], [@1PL-PRONOUN-DRS-CONDS(\"X\")]) + P(X)) : @quant(\"!\" \"^\")\n" +
+  "@2-SG-PRONOUN-MEANING-CONSTRUCTOR 0 = \\P.(([X], [@2SG-PRONOUN-DRS-CONDS(\"X\")]) + P(X)) : @quant(\"!\" \"^\")\n" +
+  "@2-PL-PRONOUN-MEANING-CONSTRUCTOR 0 = \\P.(([X], [@2PL-PRONOUN-DRS-CONDS(\"X\")]) + P(X)) : @quant(\"!\" \"^\")\n" +
+  "@3-SG-PRONOUN-MEANING-CONSTRUCTOR 1 = \\P.(([],[@3SG-PRONOUN-DRS-CONDS(\"#1\" \"X\")]) + P(X)) : @quant(\"!\" \"^\")\n" +
+  "@3-SG-PRONOUN-MEANING-CONSTRUCTOR-NEUT 0 = @3-SG-PRONOUN-MEANING-CONSTRUCTOR(\"entity\")\n" +
+  "@3-SG-PRONOUN-MEANING-CONSTRUCTOR-MASC 0 = @3-SG-PRONOUN-MEANING-CONSTRUCTOR(\"male\")\n" +
+  "@3-SG-PRONOUN-MEANING-CONSTRUCTOR-FEM 0 = @3-SG-PRONOUN-MEANING-CONSTRUCTOR(\"female\")\n" +
+  "\n" +
+  "@3RD-PERSON-PRONOUN 0 = @PRONOUN() ; ~ @PERSON(1); ~ @PERSON(2)\n" +
+  "\n" +
+  "@NO-GENDER 0 = ~ Gender = Masc; ~ Gender = Fem; ~ Gender = Neut\n" +
+  "\n" +
+  "@e-type-verbal-dep-mng 1 = \\Q.\\V.\\F.(Q(\\X.(V(\\E.(([], [#1(E,X)]) + F(E))))))\n" +
+  "@e-type-verbal-dep-mng-inverse 1 = \\Q.\\V.\\F.(Q(\\X.(V(\\E.(([], [#1(X,E)]) + F(E))))))\n" +
+  "\n" +
+  "@e-type-verbal-dep-type 3 = (@quant(\"#1\" \"#2\") -o (x(#3) -o x(#3)))\n" +
+  "\n" +
+  "@e-type-verbal-dep 1 = @e-type-verbal-dep-mng(#1) : @e-type-verbal-dep-type(\"!\" \"%h\" \"^\")\n" +
+  "@e-type-verbal-dep-inverse 1 = @e-type-verbal-dep-mng-inverse(#1) : @e-type-verbal-dep-type(\"!\" \"%h\" \"^\")\n" +
+  "\n" +
+  "@arg-scope 0 = ^\n" +
+  "\n" +
+  "@det-scope 0 = ^ ^\n";
+
+const DEFAULT_CHOP_RULES = "! {PronType=Rel} -> \n" +
+  "# Standalone NPs, e.g. headings, have a different structure from normal main clauses\n" +
+  "relation = root; coarsePos = (NOUN|PROPN); ~ nsubj { } -> ([],[DUMMY]) : p(^)\n" +
+  "# Standard goal for the main clause\n" +
+  "relation = root  -> ([],[DUMMY]) : p(!)\n" +
+  "# Appositions\n" +
+  "relation = appos -> \\P.\\X.(([],[DUMMY_APPOSITION(X) ] ) + P(X)) : ((e(^) -o t(^)) -o (e(^) -o t(^)))\n" +
+  "# Arguments are islands\n" +
+  "relation = nsubj -> \\V.\\F.(V(\\E.(([X], [nsubj(E,X), DUMMY(X)]) + F(E)))) : (x(^) -o x(^))\n" +
+  "relation = nsubj:pass -> \\V.\\F.(V(\\E.(([X], [nsubj_pass(E,X), DUMMY(X)]) + F(E)))) : (x(^) -o x(^))\n" +
+  "relation = obj -> \\V.\\F.(V(\\E.(([X], [obj(E,X), DUMMY(X)]) + F(E)))) : (x(^) -o x(^))\n" +
+  "relation = iobj -> \\V.\\F.(V(\\E.(([X], [iobj(E,X), DUMMY(X)]) + F(E)))) : (x(^) -o x(^))\n" +
+  "relation = dep -> \\V.\\F.(V(\\E.(([X], [dep(E,X), DUMMY(X)]) + F(E)))) : (x(^) -o x(^))\n" +
+  "relation = obl -> \\V.\\F.(V(\\E.(([X], [obl(E,X), DUMMY(X)]) + F(E)))) : (x(^) -o x(^))\n" +
+  "relation = ccomp -> \\V.\\F.V(\\E.(([], [ccomp(E,DUMMY_PROPOSITION)]) + F(E))) : (x(^) -o x(^))\n" +
+  "relation = xcomp -> \\V.\\F.V(\\E1.(([E,X],[DUMMY_VERB(E), xcomp(E1,E), nsubj(E,X)]) + F(E1))) : (x(^) -o x(^))\n" +
+  "\n" +
+  "# Other basic rels\n" +
+  "relation = acl; coarsePos = VERB -> \\P.\\X.(P(X) + ([E],[DUMMY(E), Participant(E,X)])) : (@et(^) -o @et(^))\n" +
+  "\n" +
+  "## Coordinate structures\n" +
+  "# roots and ccomps\n" +
+  "relation = conj; coarsePos = VERB; ~ ^ {relation = amod}; ~ ^ {relation = xcomp}; ~ ^ {relation = advcl} -> \\U.\\F.(U(F) + ([G],[DUMMY_VERB(G)])) : (x(^) -o x(^))\n" +
+  "# relation = conj; coarsePos = NOUN; ^ {relation = root}; ^ nsubj { } -> \\U.\\F.(U(F) + ([G],[DUMMY_PRED_NOUN(G)])) : (x(^) -o x(^))\n" +
+  "relation = conj; coarsePos = ADJ; ~ ^ {relation = amod} -> \\U.\\F.(U(F) + ([G],[DUMMY_PRED_ADJ(G)])) : (x(^) -o x(^))\n" +
+  "# xcomps\n" +
+  "relation = conj; coarsePos = VERB; ^ {relation = xcomp} -> \\Q.\\X.\\E.((([E1],[DUMMY_VERB(E1), nsubj*(E1,X)]) + Q(X)(E))) : ((e(^) -o v(^) -o t(^)) -o e(^) -o v(^) -o t(^))\n" +
+  "# amods\n" +
+  "relation = conj; ^ {relation = amod} -> \\P.\\X.(([G],[DUMMY_ADJ(G), Attribute(X,G)]) + P(X)) : (@et(^ ^) -o @et(^ ^))\n" +
+  "# advmods\n" +
+  "relation = conj; ^ {relation = advmod} -> \\P.\\F.P(\\E(([X], [DUMMY_ADV(X), advmod(E,X)]) + F(E))) : (x(^ ^) -o x(^ ^))\n" +
+  "# nmods\n" +
+  "relation = conj; ^ {relation = nmod} -> \\P.\\X.(([Y],[DUMMY_NOUN(Y), nmod(X,Y)]) + P(X)) : (@et(^ ^) -o @et(^ ^))\n" +
+  "# nmod:poss\n" +
+  "relation = conj; ^ {relation = nmod:poss} -> \\P.\\X.(([Y],[DUMMY_NOUN(Y), poss(X,Y)]) + P(X)) : (@et(^ ^) -o @et(^ ^))\n" +
+  "# advcls\n" +
+  "relation = conj; ^ {relation = advcl} -> \\V.\\F.(V(\\E.(([X], [DUMMY_ADVCL(E,X)]) + F(E)))) : (x(^ ^) -o x(^ ^))\n" +
+  "# obls\n" +
+  "relation = conj; ! {relation = case}; ^ {relation = obl} -> \\V.\\F.(V(\\E.(([X], [obl(E,X), DUMMY(X)]) + F(E)))) : (x(^ ^) -o x(^ ^))\n" +
+  "# NPs\n" +
+  "# coarsePos = (PROPN|NOUN|PRON); relation = conj; ~ ! case {}; ^ { relation = @CORE-NOMINAL-REL } -> \\P.\\X.(([Z],[DUMMY(Z), Sub(X,Z)]) + P(X)) : (@et(%C) -o @et(%C))\n";
+
 @Component({
   selector: 'app-editor',
   templateUrl: './editor.component.html',
@@ -401,6 +551,7 @@ export class EditorComponent implements AfterViewInit {
 
   @Input() id: string;
   @Input() mode: string;
+  @Input() rules: number;
 
   defaultWidth = '800px';
   defaultHeight = '300px';
@@ -412,15 +563,26 @@ export class EditorComponent implements AfterViewInit {
 
   ngAfterViewInit() {
     console.log("mode is " + this.mode);
+    console.log("ngAfterViewInit called");
+    console.log("Textarea element: ", this.host.nativeElement);
 
     this.codeMirror = CodeMirror.fromTextArea(this.host.nativeElement, {
       mode: this.mode,
       viewPortMargin: Infinity
     });
 
-    if (this.mode == "liger" ) {
+    if (this.rules == 1 ) {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
 
+    }
+
+    else if (this.rules == 2 ) {
+      this.codeMirror.setValue(DEFAULT_TEMPLATES);
+
+    }
+
+    else if (this.rules == 3 ) {
+      this.codeMirror.setValue(DEFAULT_CHOP_RULES);
     }
 
     if (this.mode == "text")  {
@@ -430,7 +592,7 @@ export class EditorComponent implements AfterViewInit {
 
       this.codeMirror.setOption("lineNumbers", true);
 
-
+    this.codeMirror.refresh();
 
   }
 

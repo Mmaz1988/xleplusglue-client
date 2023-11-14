@@ -13,13 +13,20 @@
 
   <!-- This is the template for your parent component, e.g., parent.component.html -->
   <app-tabs>
-    <app-tab title="First Tab" [active]="true">
+    <app-tab title="Rules" [active]="true">
       <div class="editor-restr">
-        <app-editor #edit1 [mode]="'liger'" ></app-editor>
+        <app-editor #edit1 [mode]="'liger'" [rules]=1 ></app-editor>
       </div>
     </app-tab>
-    <app-tab title="Second Tab">
-      Content for the second tab...
+    <app-tab title="Templates">
+      <div class="editor-restr">
+        <app-editor #edit2 [mode]="'liger'" [rules]=2 ></app-editor>
+      </div>
+    </app-tab>
+    <app-tab title="Chop rules">
+      <div class="editor-restr">
+        <app-editor #edit3 [mode]="'liger'" [rules]=3 ></app-editor>
+      </div>
     </app-tab>
     <!-- ... more tabs as needed ... -->
   </app-tabs>

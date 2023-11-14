@@ -6,7 +6,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../dialog/dialog.component";
-import {GswbRequest,GswbPreferences} from "../models/models";
+import {GswbRequest, GswbPreferences} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 
 
@@ -27,6 +27,25 @@ export class GswbVisComponent {
 
 
   constructor(private dataService: DataService) {
+  }
+
+  calculateMultiSemantics() {
+    var glue2SemRequest = {
+      'ud2drs_out' : this.editor1.getContent()
+    }
+
+    console.log(glue2SemRequest)
+
+    this.dataService.glue2Sem(glue2SemRequest).subscribe(
+      data => {
+        if (data.hasOwnProperty("response")) {
+         this.sem.updateContent(data.response)
+        }
+      },
+      error => {
+        console.log('ERROR: ', error);
+      }
+      );
   }
 
   calculateSemantics(){

@@ -6,7 +6,9 @@ export interface LigerBatchParsingAnalysis {
 
 
 export  interface Ud2semAnnotation {
-  glue: string;
+  response: string;
+  return_code?: string
+  err?: string
 }
 
 export interface StanzaAnnotation {
@@ -71,3 +73,10 @@ export interface GswbPreferences {
   naturalDeductionStyle: number;
 }
 
+//ud2drs glue to sem
+
+/*
+export interface Ud2drsGlueToSemRequest {
+  ud2drs_out: string;
+}
+*/
