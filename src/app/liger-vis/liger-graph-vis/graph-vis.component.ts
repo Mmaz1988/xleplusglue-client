@@ -14,12 +14,13 @@ const style = [
   {
     selector: 'node[node_type="input"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(avp.text)',
       'color': 'blue',
+      'shape': 'rectangle',
       'text-valign': 'center',
       'text-halign': 'center',
-      'height': '60px',
-      'width': '60px',
+      'height': '40px',
+      'width': '120px',
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60"
@@ -28,8 +29,9 @@ const style = [
   {
     selector: 'node[node_type="cnode"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(avp.text)',
       'color': 'blue',
+      'shape': 'rectangle',
       'text-valign': 'center',
       'text-halign': 'center',
       'height': '60px',
@@ -42,7 +44,7 @@ const style = [
   {
     selector: 'node[node_type="annotation"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(avp.text)',
       'color': 'blue',
       'text-valign': 'center',
       'text-halign': 'center',

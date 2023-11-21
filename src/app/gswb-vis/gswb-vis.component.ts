@@ -38,6 +38,7 @@ export class GswbVisComponent {
 
     this.dataService.glue2Sem(glue2SemRequest).subscribe(
       data => {
+        console.log("glue2sem_output:", data)
         if (data.hasOwnProperty("response")) {
          this.sem.updateContent(data.response)
         }
