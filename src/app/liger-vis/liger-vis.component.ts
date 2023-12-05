@@ -15,7 +15,7 @@ export class LigerVisComponent {
   constructor(private dataService: DataService) {
   }
 
-  defaultValue: string = 'Every man loves a woman.';
+  defaultValue: string = 'Every man hugged a woman.';
   meaningConstructors: string;
   changeDetector: EventEmitter<any> = new EventEmitter();
   graphElements: any
