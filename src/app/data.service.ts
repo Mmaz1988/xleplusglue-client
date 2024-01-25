@@ -23,10 +23,12 @@ export class DataService {
 
   //Liger models
 
+  //Currently used for parse and rewrite
   ligerAnnotate(ligerRequest): Observable<any> {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
   }
 
+  //currently used for multistage
   ligerParse(ligerRequest): Observable<any> {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_xle`, ligerRequest);
   }
