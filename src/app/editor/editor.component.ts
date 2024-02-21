@@ -144,14 +144,14 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "#c VAR #d & #c RESTR #e &\n" +
   "#b TEMP-REF #f &\n" +
   "#b SIT #g\n" +
-  " ==>  #c GLUE lam(M,lam(P,lam(S,drs([],[imp(merge(drs([Z],[]),app(app(M,S),Z)),app(P,Z))])))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #b_t) -o (#f_s -o #b_t))).\n" +
+  " ==>  #c GLUE lam(M,lam(P,lam(S,drs([],[imp(merge(drs([Z],[]),app(app(M,S),Z)),app(P,Z))])))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #g_t) -o (#f_s -o #f_t))).\n" +
   "\n" +
   "//prv closure -- fixed \n" +
   "#a s:: #b VIEWPOINT #c ASPECT 'prv' &\n" +
   "#c VAR #d & #c RESTR #e &\n" +
   "#b TEMP-REF #f &\n" +
   "#b SIT #g\n" +
-  " ==>  #c GLUE lam(M,lam(P,lam(S,merge(drs([Z],[]),merge(app(app(M,S),Z),app(P,Z)))))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #b_t) -o (#f_s -o #b_t))).\n" +
+  " ==>  #c GLUE lam(M,lam(P,lam(S,merge(drs([Z],[]),merge(app(app(M,S),Z),app(P,Z)))))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #g_t) -o (#f_s -o #f_t))).\n" +
   "\n" +
   "#a s:: #b VIEWPOINT #c ASPECT 'undefined' &\n" +
   "#b TEMP-REF #f &\n" +
@@ -190,7 +190,7 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
   "//absolute tense closure -- fixed \n" +
   "#a s:: #b TEMP-REF #c T-REF %a & %a != 'undefined' & #c EVAL #d \n" +
-  "==> #c GLUE lam(T,lam(P,lam(S,merge(drs([R],[]),merge(app(app(T,R),S),app(P,R)))))) : ((#c_s -o (#d_s -o #c_t)) -o ((#c_s -o #b_t) -o (#d_s -o #b_t))).\n" +
+  "==> #c GLUE lam(T,lam(P,lam(S,merge(drs([R],[]),merge(app(app(T,R),S),app(P,R)))))) : ((#c_s -o (#d_s -o #c_t)) -o ((#c_s -o #c_t) -o (#d_s -o #d_t))).\n" +
   "\n" +
   "//aspectual tense closure\n" +
   "#a s:: #b ASP-TENSE #c A-REF %a &\n" +
