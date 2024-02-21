@@ -50,7 +50,7 @@ export class DataService {
   }
 
   glue2Sem(multiRequest): Observable<any> {
-    return this.http.post<Ud2semAnnotation>(`${env}/gsw_multistage`, multiRequest);
+    return this.http.post<Ud2semAnnotation>(`${env.multisempage}/gsw_multistage`, multiRequest);
   }
 
 }
