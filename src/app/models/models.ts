@@ -54,3 +54,11 @@ export interface GswbPreferences {
   naturalDeductionStyle: number;
 }
 
+export interface GrammarList {
+  grammarList: string[];
+}
+
+export interface GrammarString {
+  grammar: string;
+}
+

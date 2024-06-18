@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import {GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation} from './models/models';
+import {GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
+, GrammarList, GrammarString} from './models/models';
 
 @Injectable({
   providedIn: 'root'
@@ -41,7 +42,16 @@ export class DataService {
     return this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/multistage_to_batch`, ligerMultipleRequest);
   }
 
-  //Stanza models
+  //display and change grammars
+
+  getGrammars(): Observable<GrammarList> {
+    return this.http.get<GrammarList>(`${this.ligerpage}/list_grammars`);
+  }
+
+  changeGrammar(grammarString): Observable<any> {
+    return this.http.post<GrammarString>(`${this.ligerpage}/change_grammar`, grammarString);
+  }
+
 
 
 

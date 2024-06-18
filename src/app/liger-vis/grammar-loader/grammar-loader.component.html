@@ -1,0 +1,7 @@
+<select #grammarListSelector>
+  <option  *ngFor="let item of grammarList" [value]="item">
+    {{ item }}
+  </option>
+</select>
+
+<button (click)="updateGrammar(grammarListSelector.value)">Update</button>

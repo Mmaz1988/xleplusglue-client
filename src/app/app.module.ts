@@ -28,6 +28,7 @@ import { AppliedRulesGraphComponent } from './regression-testing-interface/appli
 import { HomeComponent } from './home/home.component';
 import { ToggleDisplayComponent } from './toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
+import { GrammarLoaderComponent } from './liger-vis/grammar-loader/grammar-loader.component';
 
 
 
@@ -53,7 +54,8 @@ import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.co
     AppliedRulesGraphComponent,
     HomeComponent,
     ToggleDisplayComponent,
-    GswbSettingsComponent
+    GswbSettingsComponent,
+    GrammarLoaderComponent
 
   ],
   imports: [
