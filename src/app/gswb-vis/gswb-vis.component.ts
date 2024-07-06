@@ -28,8 +28,10 @@ export class GswbVisComponent {
 
   constructor(private dataService: DataService) {
   }
+  loading: boolean = false;
 
   calculateSemantics(){
+    this.loading = true;
 
     this.gswbPreferences.onSubmit();
 
@@ -40,18 +42,29 @@ export class GswbVisComponent {
 
     this.dataService.gswbDeduce(gswbRequest).subscribe(
       data => {
+        this.loading = false;
         // Handle the data here...
         // Depending on the structure of the data you might need to modify the below code.
         if (data.hasOwnProperty('solutions')) {
           // log each element in data.solutions individually
-          data.solutions.forEach(element => {
-            console.log(element);
-            //print solutions line by line to sem
-            this.sem.updateContent(element);
-          });
-          //translate data.solutions to string with each solution in a new line
-          let solutions = data.solutions.join('\n');
-          this.sem.updateContent(solutions);
+
+          //Check if data.solutions is not null and not empty
+          if (data.solutions.length > 0) {
+
+            data.solutions.forEach(element => {
+              console.log(element);
+              //print solutions line by line to sem
+              this.sem.updateContent(element);
+            });
+            //translate data.solutions to string with each solution in a new line
+            let solutions = data.solutions.join('\n');
+            this.sem.updateContent(solutions);
+          } else {
+            //create error message with request time stamp
+            this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] No solutions found.");
+          }
+        } else {
+          this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] No solutions found.");
         }
 
         if (data.hasOwnProperty('log'))
@@ -59,7 +72,7 @@ export class GswbVisComponent {
           this.log.updateContent(data.log)
         }
 
-        if (data.hasOwnProperty('derivation')) {
+        if (data.hasOwnProperty('derivation') && this.gswbPreferences.gswbPreferences.explainFail) {
           console.log(data.derivation)
 
           //check if derivation is a string or an object
@@ -93,6 +106,9 @@ export class GswbVisComponent {
       },
       error => {
         console.log('ERROR: ', error);
+        this.loading = false;
+        this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] An error occurred.");
+        console.log("Sent following request: ", gswbRequest);
       }
     );
 

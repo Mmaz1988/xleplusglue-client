@@ -1,4 +1,4 @@
-import {Component, ElementRef, ViewChild, OnInit} from '@angular/core';
+import {Component, ElementRef, ViewChild, OnInit, ChangeDetectorRef } from '@angular/core';
 import {DataService} from "../../data.service";
 import {GrammarString} from "../../models/models";
 import { tap } from 'rxjs/operators';  // Import tap operator
@@ -14,12 +14,15 @@ export class GrammarLoaderComponent {
   //The list of strings should be populated by a call to the backend
   //The string should be be empty by default and should be populated by the user selecting a grammar from the list
 
-  constructor(private dataService: DataService) {
+  constructor(private dataService: DataService, private cd: ChangeDetectorRef) {
+
   }
   @ViewChild('grammarListSelector') grammarListSelector: ElementRef;
+  @ViewChild('statusMessage') statusMessageDiv: ElementRef;
 
   grammarList: string[] = [];
   defaultGrammar: string = "/grammars/hybrid-drt-tense.lfg.glue";
+  currentStatusMessage: string = ""
 
 
   ngOnInit() {
@@ -87,18 +90,21 @@ export class GrammarLoaderComponent {
         console.log(data);
         if (data.hasOwnProperty("grammar")) {
           //update the current grammar string
-          if (data.grammar.hasOwnProperty("grammar")) {
-            console.log("Successfully changed grammar to: " + data.grammar.grammar);
+          if (data.grammar === "success") {
+            console.log("Successfully changed grammar to: " + selectedValue);
             //Change selected value of grammarListSelector to the new grammar
             this.grammarListSelector.nativeElement.value = selectedValue
+            this.currentStatusMessage = "Currently loaded grammar: " + selectedValue;
+            this.cd.detectChanges();
           }
-        }
-      }
+        } else {
+          this.currentStatusMessage = "Failed to load grammar: " + selectedValue;
+        }      }
       ,
         error => {
           console.log('ERROR: ', error);
+          this.currentStatusMessage = "Failed to load grammar: " + selectedValue;
         }
     );
   }
-
 }

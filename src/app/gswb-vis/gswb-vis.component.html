@@ -7,7 +7,11 @@
 </div>
 
 <app-gswb-settings #gswbPrefs></app-gswb-settings>
-<button (click)="calculateSemantics()">Calculate semantics</button>
+<button (click)="calculateSemantics()">
+  <span *ngIf="!loading">Calculate semantics</span>
+  <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+  <span *ngIf="loading">Loading...</span>
+</button>
 
 
 <h3> Semantics: </h3>

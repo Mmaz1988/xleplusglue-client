@@ -93,7 +93,7 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
   "//Tier 1 rules\n" +
   "#a TNS-ASP #b TENSE 'past' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'past'.\n" +
-  "#a TNS-ASP #b TENSE 'pres' & #a :: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'pres'.\n" +
+  "#a TNS-ASP #b TENSE 'pres' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'pres'.\n" +
   "#a TNS-ASP #b TENSE 'fut' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'fut'.\n" +
   "\n" +
   "//#a TNS-ASP #b TENSE 'pres' & #a s:: #c ==> #c TEMP-REF #d & #d T-REF 'pres' & #d EVAL #e & #e TIME 'now'.\n" +

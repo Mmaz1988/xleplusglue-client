@@ -19,6 +19,7 @@ export class LigerVisComponent {
   meaningConstructors: string;
   changeDetector: EventEmitter<any> = new EventEmitter();
   graphElements: any
+  loading: boolean = false;
 
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
@@ -27,9 +28,13 @@ export class LigerVisComponent {
   @ViewChild('errorhandle') errorhandle: ElementRef;
 
 
+
   analyzeSentence(inputValue: string, ruleString: string) {
    // console.log(inputValue)
     // console.log(this.editor1.getContent())
+    this.loading = true;
+
+    this.errorhandle.nativeElement.innerHTML = "";
     const sentence = inputValue;
 
     const ligerRequest = {sentence: sentence, ruleString: ruleString};
@@ -38,7 +43,7 @@ export class LigerVisComponent {
 
     this.dataService.ligerAnnotate(ligerRequest).subscribe(
       data => {
-
+        this.loading = false;
         this.errorhandle.nativeElement.innerHTML = "";
 
         if (data.hasOwnProperty("graph")) {
@@ -47,10 +52,13 @@ export class LigerVisComponent {
               console.log(data.graph.graphElements);
               this.cy1.renderGraph(data.graph.graphElements);
               this.graphElements = data.graph.graphElements;
+              this.displayMessage("Parsing successful...", "green");
             } else {
-              this.errorhandle.nativeElement.innerHTML =  "Parsing failed...";
+              this.displayMessage("Parsing failed...", "red");
             }
           }
+        } else {
+          this.displayMessage("Parsing failed...", "red")
         }
 
         if (data.hasOwnProperty("appliedRules") && data.appliedRules !== null){
@@ -83,11 +91,13 @@ export class LigerVisComponent {
 
       },
       error => {
+        this.loading = false;
         console.log('ERROR: ', error);
+        this.displayMessage("An error occurred...", "red");
       }
     );
   }
-
+x
   /*
   hybridAnalysis(inputValue: string, ruleString: string) {
     const sentence = inputValue;
@@ -135,6 +145,8 @@ export class LigerVisComponent {
     // console.log(inputValue)
     // console.log(this.editor1.getContent())
     const sentence = inputValue;
+    this.errorhandle.nativeElement.innerHTML = "";
+    this.loading = true;
 
     const ligerRequest = {sentence: sentence, ruleString: ""};
 
@@ -142,7 +154,7 @@ export class LigerVisComponent {
 
     this.dataService.ligerParse(ligerRequest).subscribe(
       data => {
-        this.errorhandle.nativeElement.innerHTML = "";
+        this.loading = false;
 
         if (data.hasOwnProperty("graph")) {
           if (data.graph.hasOwnProperty("graphElements")) {
@@ -151,9 +163,12 @@ export class LigerVisComponent {
               this.cy1.renderGraph(data.graph.graphElements);
               this.graphElements = data.graph.graphElements;
             } else {
-              this.errorhandle.nativeElement.innerHTML =  "Parsing failed...";
+              this.displayMessage("Parsing failed...", "red");
             }
           }
+        } else
+        {
+          this.displayMessage("Parsing failed...", "red");
         }
 
         if (data.hasOwnProperty("meaningConstructors")) {
@@ -166,9 +181,12 @@ export class LigerVisComponent {
       },
       error => {
         console.log('ERROR: ', error);
+        this.displayMessage("An error occurred...", "red");
+        this.loading = false;
       }
     );
   }
+
 
 
   calculateFromRuleList(event: any) {
@@ -191,10 +209,15 @@ export class LigerVisComponent {
   }
 
   showDialog(){
-
     this.cy1.subgraphDialog.setContent(this.graphElements)
     this.cy1.subgraphDialog.showDialog()
   }
+
+  displayMessage(message: string, color: string) {
+    this.errorhandle.nativeElement.style.color = color;
+    this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
+  }
+
 
 }
 
