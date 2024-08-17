@@ -21,7 +21,7 @@ export class GrammarLoaderComponent {
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
 
   grammarList: string[] = [];
-  defaultGrammar: string = "/grammars/hybrid-drt-tense.lfg.glue";
+  defaultGrammar: string = "/grammars/polar-urdu.lfg.glue";
   currentStatusMessage: string = ""
 
 
