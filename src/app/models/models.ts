@@ -58,6 +58,13 @@ export interface GrammarList {
   grammarList: string[];
 }
 
+export interface FileTree {
+  name: string;        // The name of the file or directory
+  path: string;        // The full path of the file or directory
+  isDirectory: boolean; // Whether the node is a directory (true) or a file (false)
+  children: FileTree[]; // A list of children nodes (only populated if it's a directory)
+}
+
 export interface GrammarString {
   grammar: string;
 }
