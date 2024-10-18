@@ -1,11 +1,10 @@
+<app-toggle-display #toggleDisplayComponent type="fileTree" showText="Select file" hideText="Hide file selection">
 <div>
-<select #grammarListSelector>
-  <option  *ngFor="let item of grammarList" [value]="item">
-    {{ item }}
-  </option>
-</select>
-<button (click)="updateGrammar(grammarListSelector.value)">Update</button>
+  <app-file-tree [fileTree]="grammarFileTree" (nodeSelected)="onFileSelected($event)"></app-file-tree>
+<button (click)="updateGrammar()">Update</button>
 </div>
+
+</app-toggle-display>
 <div #statusMessage class="status-message">
   {{currentStatusMessage}}
 </div>

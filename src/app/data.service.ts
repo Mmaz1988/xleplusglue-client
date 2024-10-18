@@ -1,8 +1,10 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import {GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
-, GrammarList, GrammarString} from './models/models';
+import {
+  GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
+  , GrammarList, GrammarString, FileTree
+} from './models/models';
 
 @Injectable({
   providedIn: 'root'
@@ -44,9 +46,16 @@ export class DataService {
 
   //display and change grammars
 
+  /*
   getGrammars(): Observable<GrammarList> {
     return this.http.get<GrammarList>(`${this.ligerpage}/list_grammars`);
   }
+   */
+
+  getGrammars(): Observable<FileTree> {
+    return this.http.get<FileTree>(`${this.ligerpage}/list_grammars1`);
+  }
+
 
   changeGrammar(grammarString): Observable<any> {
     return this.http.post<GrammarString>(`${this.ligerpage}/change_grammar`, grammarString);

@@ -29,8 +29,11 @@ import { HomeComponent } from './home/home.component';
 import { ToggleDisplayComponent } from './toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
 import { GrammarLoaderComponent } from './liger-vis/grammar-loader/grammar-loader.component';
+import { FileTreeComponent } from './liger-vis/grammar-loader/file-tree/file-tree.component';
 
-
+import { MatTreeModule } from '@angular/material/tree';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
 
 @NgModule({
   declarations: [
@@ -55,7 +58,8 @@ import { GrammarLoaderComponent } from './liger-vis/grammar-loader/grammar-loade
     HomeComponent,
     ToggleDisplayComponent,
     GswbSettingsComponent,
-    GrammarLoaderComponent
+    GrammarLoaderComponent,
+    FileTreeComponent
 
   ],
   imports: [
@@ -64,7 +68,10 @@ import { GrammarLoaderComponent } from './liger-vis/grammar-loader/grammar-loade
     HttpClientModule,
     FormsModule,
     CommonModule,
-    AppRoutingModule],
+    AppRoutingModule,
+    MatTreeModule,
+    MatIconModule,
+    MatButtonModule],
   providers: [],
   bootstrap: [AppComponent]
 })

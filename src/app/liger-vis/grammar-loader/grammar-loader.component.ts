@@ -1,36 +1,35 @@
-import {Component, ElementRef, ViewChild, OnInit, ChangeDetectorRef } from '@angular/core';
-import {DataService} from "../../data.service";
-import {GrammarString} from "../../models/models";
-import { tap } from 'rxjs/operators';  // Import tap operator
+import { Component, ElementRef, ViewChild, OnInit, ChangeDetectorRef } from '@angular/core';
+import { DataService } from "../../data.service";
+import { FileTree } from "../../models/models";
+import { tap } from 'rxjs/operators';
+import {ToggleDisplayComponent} from "../../toggle-display/toggle-display.component";  // Import tap operator
 
 @Component({
   selector: 'app-grammar-loader',
   templateUrl: './grammar-loader.component.html',
   styleUrls: ['./grammar-loader.component.css']
 })
-export class GrammarLoaderComponent {
+export class GrammarLoaderComponent implements OnInit {
 
-  //This should have to variables, a list of strings which refer to grammars and a string which refers to the current grammar
-  //The list of strings should be populated by a call to the backend
-  //The string should be be empty by default and should be populated by the user selecting a grammar from the list
-
-  constructor(private dataService: DataService, private cd: ChangeDetectorRef) {
-
-  }
   @ViewChild('grammarListSelector') grammarListSelector: ElementRef;
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
+  @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
   grammarList: string[] = [];
-  defaultGrammar: string = "/grammars/hybrid-drt-tense.lfg.glue";
+  defaultGrammar: string = "./grammars/hybrid-drt-tense.lfg.glue";
   currentStatusMessage: string = ""
+  grammarFileTree: FileTree[] = [];  // Initialize as an empty array
+  selectedPath: string = "";  // This will store the selected file or folder path
 
+  constructor(private dataService: DataService, private cd: ChangeDetectorRef) {}
 
   ngOnInit() {
     this.getGrammars().subscribe(
       () => {
-        if (this.grammarList.includes(this.defaultGrammar)) {
-          this.updateGrammar(this.defaultGrammar);
-        }
+        console.log("Grammar file tree: ", this.grammarFileTree);
+        this.toggleDisplayComponent.isHidden = true;
+        this.selectedPath = this.defaultGrammar;
+        this.updateGrammar()
       },
       error => {
         console.log('ERROR: ', error);
@@ -38,73 +37,60 @@ export class GrammarLoaderComponent {
     );
   }
 
-  // checkFirstLoad(): void {
-  //   // Check if the session storage already has the 'firstLoad' item
-  //   const firstLoad = sessionStorage.getItem('firstLoad');
-  //
-  //   if (!firstLoad) {
-  //     // This means it's the first load in this session
-  //     this.updateGrammar(this.defaultGrammar);
-  //
-  //     // Set the 'firstLoad' item to indicate the function has been called
-  //     sessionStorage.setItem('firstLoad', 'true');
-  //   }
-  //}
+  // Method to handle the file/folder selection from the file tree
+  onFileSelected(path: string) {
+    console.log("Selected path from file tree:", path);
+    this.selectedPath = path;  // Store the selected path
+  }
 
-  /*
-  getGrammars(){console.log("Getting grammars")
-    this.dataService.getGrammars().subscribe(
+  // Method to change the grammar using the selected path
+  updateGrammar() {
+    if (!this.selectedPath) {
+      console.error("No file or folder selected!");
+      return;
+    }
 
+    console.log("Changing grammar to: " + this.selectedPath);
+
+    // Update the current grammar string
+    this.dataService.changeGrammar({ grammar: this.selectedPath }).subscribe(
       data => {
-        if (data.hasOwnProperty("grammarList")) {
-          //add each element of the grammar list to the grammarList array
-          for (let grammar of data.grammarList) {
-            this.grammarList.push(grammar);
-          }
+        console.log(data);
+        if (data.hasOwnProperty("grammar") && data.grammar === "success") {
+          console.log("Successfully changed grammar to: " + this.selectedPath);
+          // this.grammarListSelector.nativeElement.value = this.selectedPath;
+          this.currentStatusMessage = "Currently loaded grammar: " + this.selectedPath;
+          this.cd.detectChanges();
+          this.toggleDisplayComponent.isHidden = true;
+        } else {
+          this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
         }
-      }
-      ,
+      },
       error => {
         console.log('ERROR: ', error);
+        this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
       }
-    );}
-
-   */
+    );
+  }
 
   getGrammars() {
     console.log("Getting grammars");
     return this.dataService.getGrammars().pipe(
       tap(data => {
-        if (data.hasOwnProperty("grammarList")) {
-          this.grammarList = data.grammarList;
+        if (data.hasOwnProperty("children")) {
+          console.log("Grammar file tree: ", this.grammarFileTree);
+          this.grammarFileTree = this.buildFileTree(data.children);  // Pass only children
         }
       })
     );
   }
 
-  updateGrammar(selectedValue: String) {
-    console.log("Changing grammar to: " + this.grammarListSelector.nativeElement.value)
-    //update the current grammar string
-    this.dataService.changeGrammar({grammar: selectedValue}).subscribe(
-      data => {
-        console.log(data);
-        if (data.hasOwnProperty("grammar")) {
-          //update the current grammar string
-          if (data.grammar === "success") {
-            console.log("Successfully changed grammar to: " + selectedValue);
-            //Change selected value of grammarListSelector to the new grammar
-            this.grammarListSelector.nativeElement.value = selectedValue
-            this.currentStatusMessage = "Currently loaded grammar: " + selectedValue;
-            this.cd.detectChanges();
-          }
-        } else {
-          this.currentStatusMessage = "Failed to load grammar: " + selectedValue;
-        }      }
-      ,
-        error => {
-          console.log('ERROR: ', error);
-          this.currentStatusMessage = "Failed to load grammar: " + selectedValue;
-        }
-    );
+  buildFileTree(nodes: any[]): any[] {
+    return nodes.map(node => ({
+      name: node.name,
+      path: node.path,
+      directory: node.directory,
+      children: node.children ? this.buildFileTree(node.children) : []
+    }));
   }
 }
