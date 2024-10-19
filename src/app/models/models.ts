@@ -67,6 +67,7 @@ export interface FileTree {
 
 export interface GrammarString {
   grammar: string;
+  isDir: boolean;
 }
 
 
