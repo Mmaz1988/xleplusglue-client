@@ -61,7 +61,4 @@ export class DataService {
     return this.http.post<GrammarString>(`${this.ligerpage}/change_grammar`, grammarString);
   }
 
-
-
-
 }

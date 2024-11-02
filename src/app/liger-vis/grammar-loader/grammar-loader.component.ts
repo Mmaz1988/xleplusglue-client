@@ -16,7 +16,7 @@ export class GrammarLoaderComponent implements OnInit {
   @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
   grammarList: string[] = [];
-  defaultGrammar: string = "./grammars/hybrid-drt-tense.lfg.glue";
+  defaultGrammar: string = "./grammars/multistage_grammar.lfg.glue";
   currentStatusMessage: string = ""
   grammarFileTree: FileTree[] = [];  // Initialize as an empty array
   selectedPath: string = "";  // This will store the selected file or folder path
