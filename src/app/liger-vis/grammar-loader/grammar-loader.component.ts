@@ -20,7 +20,6 @@ export class GrammarLoaderComponent implements OnInit {
   currentStatusMessage: string = ""
   grammarFileTree: FileTree[] = [];  // Initialize as an empty array
   selectedPath: string = "";  // This will store the selected file or folder path
- // selectedIsDirectory: boolean = false;  // This will store if the selected path is a directory
 
   constructor(private dataService: DataService, private cd: ChangeDetectorRef) {}
 

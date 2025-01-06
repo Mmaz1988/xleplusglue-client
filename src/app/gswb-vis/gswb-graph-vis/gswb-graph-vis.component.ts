@@ -10,7 +10,7 @@ const styleArray = [
   {
     selector: 'node[color="yellow"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(text)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -18,73 +18,295 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "yellow white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': 'label',  // Set the width based on the label size
-      'height': 'label',  // Set the height based on the label size
-      'padding': '10px' // Set the padding value as desired
+      'background-width': '100%',
+      'background-height': '100%',
+      'padding': '10px', // Set the padding value as desired
+      'font-family': 'Arial, sans-serif' //support utf-8
     }
   },
   {
     selector: 'node[color="red"]',
     style: {
-      'content': 'data(id)',
-      'color': 'black',
       'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
+      'background-image': (ele) => {
+        const svgString = ele.data('text'); // Retrieve the SVG string from data
+        console.log(`Node ${ele.data('id')} background-image:`, `data:image/svg+xml,${encodeURIComponent(svgString)}`);
+        return `data:image/svg+xml,${encodeURIComponent(svgString)}`;
+      },
+      'background-fit': 'contain contain',
+      'background-clip': 'none',
+      'background-opacity': 1,
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "red white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': 'label',  // Set the width based on the label size
-      'height': 'label',  // Set the height based on the label size
-      'padding': '10px' // Set the padding value as desired
+      'width': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default width
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim(); // Trim to remove any extra whitespace
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default width
+        }
+
+        const width = svgElement.getAttribute('width');
+        return parseFloat(width) || 50; // Default width if not specified
+      },
+      'height': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default height
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim();
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default height
+        }
+
+        const height = svgElement.getAttribute('height');
+        return parseFloat(height) || 50; // Default height if not specified
+      },
+
+      'padding': '10px',
     }
   },
   {
-    selector: 'node[color="blue"]',
+    selector: 'node[color="blue"][type="category"]',
     style: {
-      'content': 'data(id)',
-      'color': 'back',
       'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
+      'background-image': (ele) => {
+        const svgString = ele.data('text'); // Retrieve the SVG string from data
+        console.log(`Node ${ele.data('id')} background-image:`, `data:image/svg+xml,${encodeURIComponent(svgString)}`);
+        return `data:image/svg+xml,${encodeURIComponent(svgString)}`;
+      },
+      'background-fit': 'contain contain',
+      'background-clip': 'none',
+      'background-opacity': 1,
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
-      "background-gradient-stop-positions": "0 30 60",
-      'width': 'label',  // Set the width based on the label size
-      'height': 'label',  // Set the height based on the label size
-      'padding': '10px' // Set the padding value as desired
+      "background-gradient-stop-positions": "0 30 60", // Fallback color
+      'width': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default width
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim(); // Trim to remove any extra whitespace
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default width
+        }
+
+        const width = svgElement.getAttribute('width');
+        return parseFloat(width) || 50; // Default width if not specified
+      },
+      'height': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default height
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim();
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default height
+        }
+
+        const height = svgElement.getAttribute('height');
+        return parseFloat(height) || 50; // Default height if not specified
+      },
+
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[color="blue"][type="connector"]',
+    style: {
+      'shape': 'circle',
+      'background-image': (ele) => {
+        const svgString = ele.data('text'); // Retrieve the SVG string from data
+        console.log(`Node ${ele.data('id')} background-image:`, `data:image/svg+xml,${encodeURIComponent(svgString)}`);
+        return `data:image/svg+xml,${encodeURIComponent(svgString)}`;
+      },
+      'background-fit': 'contain contain',
+      'background-clip': 'none',
+      'background-opacity': 1,
+      "background-fill": "linear-gradient",
+      "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
+      "background-gradient-stop-positions": "0 30 60", // Fallback color
+      'width': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default width
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim(); // Trim to remove any extra whitespace
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default width
+        }
+
+        const width = svgElement.getAttribute('width');
+        return parseFloat(width) || 50; // Default width if not specified
+      },
+      'height': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default height
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim();
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default height
+        }
+
+        const height = svgElement.getAttribute('height');
+        return parseFloat(height) || 50; // Default height if not specified
+      },
+
+      'padding': '10px'
     }
   },
   {
     selector: 'node[color="green"]',
     style: {
-      'content': 'data(id)',
-      'color': 'black',
       'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
+      'background-image': (ele) => {
+        const svgString = ele.data('text'); // Retrieve the SVG string from data
+        console.log(`Node ${ele.data('id')} background-image:`, `data:image/svg+xml,${encodeURIComponent(svgString)}`);
+        return `data:image/svg+xml,${encodeURIComponent(svgString)}`;
+      },
+      'background-fit': 'contain contain',
+      'background-clip': 'none',
+      'background-opacity': 1,
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': 'label',  // Set the width based on the label size
-      'height': 'label',  // Set the height based on the label size
-      'padding' : '10px' // Set the padding value as desired
+      'width': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default width
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim(); // Trim to remove any extra whitespace
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default width
+        }
+
+        const width = svgElement.getAttribute('width');
+        return parseFloat(width) || 50; // Default width if not specified
+      },
+      'height': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default height
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim();
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default height
+        }
+
+        const height = svgElement.getAttribute('height');
+        return parseFloat(height) || 50; // Default height if not specified
+      },
+
+      'padding': '10px'
     }
   },
   {
     selector: 'node[color="orange"]',
     style: {
-      'content': 'data(id)',
-      'color': 'black',
       'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
+      'background-image': (ele) => {
+        const svgString = ele.data('text'); // Retrieve the SVG string from data
+        console.log(`Node ${ele.data('id')} background-image:`, `data:image/svg+xml,${encodeURIComponent(svgString)}`);
+        return `data:image/svg+xml,${encodeURIComponent(svgString)}`;
+      },
+      'background-fit': 'contain contain',
+      'background-clip': 'none',
+      'background-opacity': 1,
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "orange white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': 'label',  // Set the width based on the label size
-      'height': 'label',  // Set the height based on the label size
-      'padding' : '10px' // Set the padding value as desired
+      'width': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default width
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim(); // Trim to remove any extra whitespace
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default width
+        }
+
+        const width = svgElement.getAttribute('width');
+        return parseFloat(width) || 50; // Default width if not specified
+      },
+      'height': (ele) => {
+        const svgString = ele.data('text');
+        if (!svgString) {
+          console.warn(`Node ${ele.data('id')} has no SVG string.`);
+          return 50; // Default height
+        }
+
+        const dummy = document.createElement('div');
+        dummy.innerHTML = svgString.trim();
+        const svgElement = dummy.firstElementChild;
+
+        if (!svgElement || svgElement.tagName !== 'svg') {
+          console.warn(`Node ${ele.data('id')} has invalid SVG content.`);
+          return 50; // Default height
+        }
+
+        const height = svgElement.getAttribute('height');
+        return parseFloat(height) || 50; // Default height if not specified
+      },
+
+      'padding': '10px'
     }
   },
   {
