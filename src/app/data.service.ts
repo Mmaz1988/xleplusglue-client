@@ -3,13 +3,14 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
-  , GrammarList, GrammarString, FileTree
+  , GrammarList, GrammarString, FileTree, PathString, vampireRequest
 } from './models/models';
 
 @Injectable({
   providedIn: 'root'
 })
 export class DataService {
+  private vampirepage = 'http://localhost:8082'
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
   constructor(private http: HttpClient) { }
@@ -52,14 +53,23 @@ export class DataService {
   }
    */
 
-  getGrammars(): Observable<FileTree> {
-    return this.http.get<FileTree>(`${this.ligerpage}/list_grammars1`);
+  getFileTree(pathString): Observable<any> {
+    return this.http.post<PathString>(`${this.ligerpage}/list_grammars1`, pathString);
   }
 
 
   changeGrammar(grammarString): Observable<any> {
     return this.http.post<GrammarString>(`${this.ligerpage}/change_grammar`, grammarString);
   }
+
+  loadRules(ruleString): Observable<any> {
+    return this.http.post<GrammarString>(`${this.ligerpage}/load_rules`, ruleString);
+  }
+
+  //calls to vampire
+callVampire(vampireRequest: vampireRequest){
+    return this.http.post<vampireRequest>(`${this.vampirepage}/vampire_request`,vampireRequest);
+}
 
 
 

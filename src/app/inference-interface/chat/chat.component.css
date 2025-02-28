@@ -1,0 +1,92 @@
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 600px;
+  margin: auto;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+/* Chat History */
+.chat-history {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: #f9f9f9;
+}
+
+/* User Messages */
+.user-message {
+  align-self: flex-end;
+  text-align: right;
+  background: #00a9e0;
+  color: white;
+  padding: 8px;
+  border-radius: 8px;
+  margin: 4px 0;
+  max-width: 75%;
+}
+
+/* Bot Messages */
+.bot-message {
+  align-self: flex-start;
+  text-align: left;
+  background: #ddd;
+  color: black;
+  padding: 8px;
+  border-radius: 8px;
+  margin: 4px 0;
+  max-width: 75%;
+}
+
+
+.message-text {
+  font-family: "Courier New", Courier, "Lucida Console", "DejaVu Sans Mono", Monaco, Menlo, Consolas, monospace;
+  white-space: pre-wrap; /* Preserve formatting but allow wrapping */
+  word-break: break-word; /* Prevents text from overflowing */
+  overflow-wrap: anywhere; /* Prevent horizontal scrolling */
+}
+
+
+/* Sender Labels */
+.message-sender {
+  font-size: 12px;
+  font-weight: bold;
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* Chat Input */
+.chat-input {
+  display: flex;
+  padding: 12px;
+  background: #fff;
+  border-top: 1px solid #ccc;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.chat-input button {
+  margin-left: 8px;
+  padding: 10px 16px;
+  border: none;
+  background: #00a9e0;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.chat-input button:hover {
+  background: #0079b3;
+}

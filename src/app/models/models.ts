@@ -70,4 +70,15 @@ export interface GrammarString {
   isDir: boolean;
 }
 
+export interface PathString {
+  grammar: string;
+  isDir: boolean;
+}
+
+export interface vampireRequest {
+  context: string;
+  axioms: string;
+  hypothesis: string;
+  pruning: boolean;
+}
 

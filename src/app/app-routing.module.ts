@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
 import {GlueInterfaceComponent} from "./glue-interface/glue-interface.component";
+import { InferenceVisComponent } from './inference-interface/inference-vis.component';
 import {
   RegressionTestingInterfaceComponent
 } from "./regression-testing-interface/regression-testing-interface.component";
@@ -12,6 +13,7 @@ const routes: Routes = [
   { path: '', redirectTo: 'home', pathMatch: 'full' },
   { path: 'demo', component: GlueInterfaceComponent },
   { path: 'regression', component: RegressionTestingInterfaceComponent },
+  {path: 'inference', component: InferenceVisComponent },
   {path: 'home', component: HomeComponent }
   // Add more routes as needed
 ];

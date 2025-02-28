@@ -1,0 +1,39 @@
+<div class="container">
+<h1>Semantig parser settings</h1>
+  <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show settings" hideText="Hide settings">
+<div class="grammar-loader-container">
+  <div>
+    <h2>Grammar selection:</h2>
+  <app-grammar-loader></app-grammar-loader>
+  </div>
+  <div>
+    <h2>Rule file selection:</h2>
+  <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
+</div>
+</div>
+ <app-gswb-settings #gswbPrefs></app-gswb-settings>
+</app-toggle-display>
+</div>
+
+<mat-tab-group>
+  <mat-tab label="Chat">
+    <div class="tab-content">
+      <!-- Placeholder for chat component -->
+      <app-chat [ruleString]="ruleFile" [gswbPreferences]="gswbPrefs" ></app-chat>
+    </div>
+  </mat-tab>
+
+  <mat-tab label="History">
+    <div class="tab-content">
+      <!-- Placeholder for history component -->
+     <app-history [history] = "history" > </app-history>
+    </div>
+  </mat-tab>
+
+  <mat-tab label="Info">
+    <div class="tab-content">
+      <!-- Placeholder for info component -->
+      <p>Other information will go here.</p>
+    </div>
+  </mat-tab>
+</mat-tab-group>

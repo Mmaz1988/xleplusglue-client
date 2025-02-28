@@ -29,11 +29,17 @@ import { HomeComponent } from './home/home.component';
 import { ToggleDisplayComponent } from './toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
 import { GrammarLoaderComponent } from './liger-vis/grammar-loader/grammar-loader.component';
-import { FileTreeComponent } from './liger-vis/grammar-loader/file-tree/file-tree.component';
+import { FileTreeComponent } from './file-tree/file-tree.component';
 
 import { MatTreeModule } from '@angular/material/tree';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { InferenceVisComponent } from './inference-interface/inference-vis.component';
+import { ChatTabsComponent } from './inference-interface/chat-tabs/chat-tabs.component';
+import {MatTabsModule} from "@angular/material/tabs";
+import { ChatComponent } from './inference-interface/chat/chat.component';
+import { RuleLoaderComponent } from './inference-interface/rule-loader/rule-loader.component';
+import { HistoryComponent } from './inference-interface/history/history.component';
 
 @NgModule({
   declarations: [
@@ -59,7 +65,12 @@ import { MatButtonModule } from '@angular/material/button';
     ToggleDisplayComponent,
     GswbSettingsComponent,
     GrammarLoaderComponent,
-    FileTreeComponent
+    FileTreeComponent,
+    InferenceVisComponent,
+    ChatTabsComponent,
+    ChatComponent,
+    RuleLoaderComponent,
+    HistoryComponent
 
   ],
   imports: [
@@ -71,7 +82,9 @@ import { MatButtonModule } from '@angular/material/button';
     AppRoutingModule,
     MatTreeModule,
     MatIconModule,
-    MatButtonModule],
+    MatButtonModule,
+    MatTabsModule,
+    BrowserAnimationsModule],
   providers: [],
   bootstrap: [AppComponent]
 })
