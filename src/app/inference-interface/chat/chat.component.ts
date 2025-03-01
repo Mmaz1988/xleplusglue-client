@@ -1,6 +1,6 @@
-import {Component, EventEmitter, Input, Output} from '@angular/core';
+import {ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from '@angular/core';
 import {DataService} from "../../data.service";
-import {GswbPreferences, GswbRequest, vampireRequest} from "../../models/models";
+import {context, GswbPreferences, GswbRequest, vampireRequest} from "../../models/models";
 import {GswbSettingsComponent} from "../../gswb-vis/gswb-settings/gswb-settings.component";
 import {error} from "@angular/compiler-cli/src/transformers/util";
 
@@ -16,21 +16,27 @@ interface ChatMessage {
 })
 export class ChatComponent {
 
-  constructor(private dataService: DataService) {
+  constructor(private dataService: DataService,  private changeDetector: ChangeDetectorRef) {
   }
+
+  @ViewChild('contextPruning') contextPruning!: ElementRef;
 
   @Input() ruleString: string = '';
   @Input() gswbPreferences: GswbSettingsComponent;
 
-  @Input() history: string[] = [];  // Received from parent
-  @Output() historyChange = new EventEmitter<string[]>(); // Event to notify updates
+  @Input() history: context[][] = [];  // Received from parent
+  @Output() historyChange = new EventEmitter<context[][]>(); // Event to notify updates
+
+  @Input() activeIndices: number[] = [];
+  @Output() clearSelection: EventEmitter<void> = new EventEmitter<void>();  // Event to clear selection
+
 
   chatHistory: ChatMessage[] = []; // Stores chat messages
   userInput: string = ''; // Stores user input
   meaningConstructors: string = '';
 
   // needs to be updated as chat goes on
-  context: string = '';
+  context: context[] = [];
   axioms: string = '';
 
 
@@ -65,9 +71,6 @@ export class ChatComponent {
           return
         }
 
-
-
-
         if (data.hasOwnProperty("meaningConstructors")) {
           console.log(data.meaningConstructors);
           this.meaningConstructors = data.meaningConstructors;
@@ -95,15 +98,31 @@ export class ChatComponent {
                 userSem = data.solutions.join('\n');
 
                 //dummy boolean for pruning context
-                let pruneContext: boolean = true;
 
-                const vampRequest: vampireRequest = { context : this.context, axioms: this.axioms, hypothesis : userSem , pruning : pruneContext};
+                const pruneContext: boolean = this.contextPruning.nativeElement.checked; // Read checkbox state
+
+                const vampRequest: vampireRequest = { text: userMessage, context : this.context,
+                                                      axioms: this.axioms, hypothesis : userSem , pruning : pruneContext,
+                                                      active_indices: this.activeIndices};
+
+                console.log("Vampire request: ", vampRequest)
 
                 this.dataService.callVampire(vampRequest).subscribe(
                   data => {
+                    this.clearSelected();
                     console.log("Vampire output: ", data)
                     if (data.hasOwnProperty("context")){
-                      this.history.push(data.context);
+                      const newContext = data.context;
+                      console.log("Current context: ", newContext)
+                      // Add to existing array without creating a new array reference
+                      this.history.push(newContext);
+                      this.context = newContext
+
+
+                      // Emit to parent to notify change
+                      this.historyChange.emit(this.history);
+                      // Manually trigger change detection
+                      this.changeDetector.detectChanges();
                     }
                   },
                   error => {
@@ -144,12 +163,14 @@ export class ChatComponent {
       }
     );
 
-
-
     // Clear user input before bot response
     this.userInput = '';
   }
 
+  clearSelected(): void {
+    this.clearSelection.emit();  // Emit event to clear selection
+    console.log("Selection cleared in chat component");
+  }
 
   callVampire(sem: string)
   {

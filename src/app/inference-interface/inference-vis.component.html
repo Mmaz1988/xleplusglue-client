@@ -19,14 +19,18 @@
   <mat-tab label="Chat">
     <div class="tab-content">
       <!-- Placeholder for chat component -->
-      <app-chat [ruleString]="ruleFile" [gswbPreferences]="gswbPrefs" ></app-chat>
+      <app-chat [ruleString]="ruleFile" [gswbPreferences]="gswbPrefs"
+                [history]="history" (historyChange)="updateHistory($event)"
+                [activeIndices]="selectedElements"
+                (clearSelection)="onClearSelection()">
+        ></app-chat>
     </div>
   </mat-tab>
 
   <mat-tab label="History">
     <div class="tab-content">
       <!-- Placeholder for history component -->
-     <app-history [history] = "history" > </app-history>
+     <app-history [history] = "history" (selectionChanged)="onSelectionChanged($event)"> </app-history>
     </div>
   </mat-tab>
 

@@ -76,9 +76,31 @@ export interface PathString {
 }
 
 export interface vampireRequest {
-  context: string;
+  text : string;
+  context: context[];
   axioms: string;
   hypothesis: string;
   pruning: boolean;
+  active_indices: number[];
+}
+
+export interface vampireResponse {
+  context: context[];
+  active_indices: number[];
+  context_checks_mapping: {[key: number]: check };
+}
+
+export interface check {
+  glyph: string;
+  informative: boolean;
+  consistent: boolean;
+}
+
+export interface context {
+  original: string;
+  prolog_drs: string;
+  prolog_fol: string;
+  tptp: string;
+  box: string;
 }
 

@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
-  , GrammarList, GrammarString, FileTree, PathString, vampireRequest
+  , GrammarList, GrammarString, FileTree, PathString, vampireRequest, vampireResponse
 } from './models/models';
 
 @Injectable({
@@ -68,7 +68,7 @@ export class DataService {
 
   //calls to vampire
 callVampire(vampireRequest: vampireRequest){
-    return this.http.post<vampireRequest>(`${this.vampirepage}/vampire_request`,vampireRequest);
+    return this.http.post<vampireResponse>(`${this.vampirepage}/vampire_request`,vampireRequest);
 }
 
 

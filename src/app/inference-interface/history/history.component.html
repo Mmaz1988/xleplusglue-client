@@ -1,1 +1,14 @@
-<p>history works!</p>
+<div class="history-container">
+  <!-- Display all history entries -->
+  <div class="history-row" *ngFor="let row of history; let rowIndex = index">
+    <div class="history-box"
+         *ngFor="let item of row; let i = index"
+         (click)="rowIndex === history.length - 1 ? toggleSelection(i) : null"
+         [class.selected]="isSelected(i) && rowIndex === history.length - 1">
+      {{ item.box }}
+    </div>
+  </div>
+</div>
+
+<!-- Select entire last history entry -->
+<button (click)="selectAllLastEntry()">Select All (Last Entry)</button>
