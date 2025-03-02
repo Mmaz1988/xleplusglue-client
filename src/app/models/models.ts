@@ -104,3 +104,12 @@ export interface context {
   box: string;
 }
 
+
+ export interface ChatMessage {
+  text: string;
+  sender: 'User' | 'Bot';
+  //optional glyph
+  glyph?: string;
+   showGlyph?: false
+ }
+

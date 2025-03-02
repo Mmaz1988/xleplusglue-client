@@ -20,16 +20,23 @@
   background: #f9f9f9;
 }
 
+/* Message Container */
+.message-container {
+  position: relative; /* Needed for glyph positioning */
+  display: flex;
+  flex-direction: column;
+  max-width: 75%;
+  padding: 8px;
+  border-radius: 8px;
+  margin: 4px 0;
+}
+
 /* User Messages */
 .user-message {
   align-self: flex-end;
   text-align: right;
   background: #00a9e0;
   color: white;
-  padding: 8px;
-  border-radius: 8px;
-  margin: 4px 0;
-  max-width: 75%;
 }
 
 /* Bot Messages */
@@ -38,20 +45,15 @@
   text-align: left;
   background: #ddd;
   color: black;
-  padding: 8px;
-  border-radius: 8px;
-  margin: 4px 0;
-  max-width: 75%;
 }
 
-
+/* Preserve Text Formatting */
 .message-text {
   font-family: "Courier New", Courier, "Lucida Console", "DejaVu Sans Mono", Monaco, Menlo, Consolas, monospace;
-  white-space: pre-wrap; /* Preserve formatting but allow wrapping */
-  word-break: break-word; /* Prevents text from overflowing */
-  overflow-wrap: anywhere; /* Prevent horizontal scrolling */
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
-
 
 /* Sender Labels */
 .message-sender {
@@ -59,6 +61,49 @@
   font-weight: bold;
   display: block;
   margin-bottom: 2px;
+}
+
+/* Glyph Styling (Expanded by Default) */
+/* Glyph Styling (Expanded by Default) */
+.message-glyph {
+  border-radius: 4px;
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 98px;  /* Full size */
+  height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border: 1px solid #ccc;
+  cursor: pointer; /* Clickable */
+  transition: all 0.3s ease-in-out; /* Smooth resizing */
+}
+
+/* Minimized Glyph (No SVG, Just Green Box) */
+.message-glyph.minimized {
+  width: 20px;
+  height: 20px;
+  background: green;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  overflow: hidden; /* Ensures SVG does not remain */
+  color: white;
+  text-align: center;
+}
+
+
+
+
+/* Make sure SVGs are properly sized */
+.message-glyph svg {
+  width: 100%;
+  height: 100%;
+  background: white;
 }
 
 /* Chat Input */

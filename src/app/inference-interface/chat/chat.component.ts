@@ -1,13 +1,10 @@
 import {ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from '@angular/core';
 import {DataService} from "../../data.service";
-import {context, GswbPreferences, GswbRequest, vampireRequest} from "../../models/models";
+import {context, GswbPreferences, GswbRequest, vampireRequest, ChatMessage} from "../../models/models";
 import {GswbSettingsComponent} from "../../gswb-vis/gswb-settings/gswb-settings.component";
 import {error} from "@angular/compiler-cli/src/transformers/util";
+import {DomSanitizer, SafeHtml} from "@angular/platform-browser";
 
-interface ChatMessage {
-  text: string;
-  sender: 'User' | 'Bot';
-}
 
 @Component({
   selector: 'app-chat',
@@ -16,7 +13,7 @@ interface ChatMessage {
 })
 export class ChatComponent {
 
-  constructor(private dataService: DataService,  private changeDetector: ChangeDetectorRef) {
+  constructor(private dataService: DataService,  private changeDetector: ChangeDetectorRef, private sanitizer: DomSanitizer) {
   }
 
   @ViewChild('contextPruning') contextPruning!: ElementRef;
@@ -43,13 +40,9 @@ export class ChatComponent {
   sendMessage() {
     if (!this.userInput.trim()) return;
 
-    const userMessage = this.userInput; // Store user input before clearing it
 
-    // 0 = parsing success
-    // 10 = parsing failure
-    // 11 derivation failure
-    // 12 no mcs
-    let responseStatus: number = 0
+    const userMessage = this.userInput; // Store user input before clearing it
+    var glyph = ''; // Initialize glyph
 
     // Add user message to history
     this.chatHistory.push({ text: userMessage, sender: 'User' });
@@ -58,6 +51,7 @@ export class ChatComponent {
 
     this.dataService.ligerAnnotate(ligerRequest).subscribe(
       data => {
+        // Check Syntactic analysis
         console.log("XLE output:", data.graph.graphElements);
         if (data.hasOwnProperty("graph")) {
           if (data.graph.hasOwnProperty("graphElements") && data.graph.graphElements.length > 0) {
@@ -71,17 +65,18 @@ export class ChatComponent {
           return
         }
 
+        // Check Semantic analysis
         if (data.hasOwnProperty("meaningConstructors")) {
           console.log(data.meaningConstructors);
           this.meaningConstructors = data.meaningConstructors;
 
-          // Prepare GSWB request
-
+          // Check whether user is using default settings for reasoning, if not adopt new settings
           if (this.gswbPreferences.gswbPreferences.prover !== 1 && this.gswbPreferences.gswbPreferences.outputstyle !== 4) {
             console.log("GSWB preferences not set to default values.")
             this.gswbPreferences.onSubmit();
           }
 
+          //Prepare semantic derivation
           const gswbRequest: GswbRequest = {
             premises: this.meaningConstructors,
             gswbPreferences: this.gswbPreferences.gswbPreferences
@@ -94,13 +89,11 @@ export class ChatComponent {
               console.log("GSWB result:", data);
               let userSem = '';
 
+              //Prepare reasoning if semantic analysis is successful
               if (data.hasOwnProperty('solutions') && data.solutions.length > 0 && data.solutions[0] != '') {
                 userSem = data.solutions.join('\n');
 
-                //dummy boolean for pruning context
-
                 const pruneContext: boolean = this.contextPruning.nativeElement.checked; // Read checkbox state
-
                 const vampRequest: vampireRequest = { text: userMessage, context : this.context,
                                                       axioms: this.axioms, hypothesis : userSem , pruning : pruneContext,
                                                       active_indices: this.activeIndices};
@@ -109,37 +102,66 @@ export class ChatComponent {
 
                 this.dataService.callVampire(vampRequest).subscribe(
                   data => {
+                    //ToDo History is not updated, likely because it is not initialized when in chat window
                     this.clearSelected();
+
+                    //A context describes the outcome of the reasoning process
                     console.log("Vampire output: ", data)
                     if (data.hasOwnProperty("context")){
                       const newContext = data.context;
                       console.log("Current context: ", newContext)
-                      // Add to existing array without creating a new array reference
+
+                      //Update context and history
                       this.history.push(newContext);
                       this.context = newContext
 
+                      //Setting up consistency and informativity checks
+                      var consistent: boolean = null;
+                      var info: boolean = null;
 
                       // Emit to parent to notify change
                       this.historyChange.emit(this.history);
                       // Manually trigger change detection
                       this.changeDetector.detectChanges();
+
+                      //check if checks dictionary is empty (which it shouldn't be if an informative utterance has been added)
+                      if (Object.keys(data.context_checks_mapping).length > 0) {
+                        //Use the first output by Vampire by default. Can be changed in history.
+                        glyph = data.context_checks_mapping[0].glyph;
+                        info = data.context_checks_mapping[0].informative
+                        consistent = data.context_checks_mapping[0].consistent;
+                      }
+
+                      //Analyze vampire output
+                      //if consistent is false, say your input doesn't make sense. If informative is false, say your input is not informative
+                      var message = "Okay ...";
+                      if (consistent === null) {
+                        "Okay ..."
+                      }
+                      else if (!consistent) {
+                        message = "Your input does not make sense."
+                      } else if (!info) {
+                        message = "Your input is not informative."
+                      } else {
+                        message = "Your input is consistent and informative."
+                      }
+
+                      // Ensure bot response is only pushed when `userSem` has data
+                      console.log(message, glyph);
+                      this.chatHistory.push({ text: message, sender: 'Bot',
+                        glyph: glyph, showGlyph: false });
+
                     }
                   },
                   error => {
                     console.log("An error occured during the call to vampire")
                   }                  );
 
-                /**
-                 * Insert reasoning here
-                 */
-
               } else {
                 this.chatHistory.push({text: "No semantic analyses found for this input!", sender: 'Bot'});
                 return
               }
 
-              // Ensure bot response is only pushed when `userSem` has data
-              this.chatHistory.push({ text: `Found the following analysis:\n "${userSem}"`, sender: 'Bot' });
             },
             error => {
               console.log('ERROR: ', error);
@@ -172,8 +194,11 @@ export class ChatComponent {
     console.log("Selection cleared in chat component");
   }
 
-  callVampire(sem: string)
-  {
+  sanitizeSvg(svg: string): SafeHtml {
+    return this.sanitizer.bypassSecurityTrustHtml(svg);
+  }
 
+  toggleGlyphVisibility(message: any) {
+    message.showGlyph = !message.showGlyph;
   }
 }
