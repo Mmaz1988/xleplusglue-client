@@ -16,7 +16,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit {
   @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
   grammarList: string[] = [];
-  defaultGrammar: string = "./grammars/hybrid-drt-tense.lfg.glue";
+  defaultGrammar: string = "./grammars/fracas_inference_grammar/main_fracas_grammar.lfg.glue";
   grammarsDirectory: string = "./grammars";
   currentStatusMessage: string = ""
   grammarFileTree: FileTree[] = [];  // Initialize as an empty array

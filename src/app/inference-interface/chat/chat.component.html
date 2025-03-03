@@ -3,28 +3,31 @@
   <input type="checkbox" #contextPruning id="contextPruning" />
   <label for="contextPruning">Pruning</label>
 </div>
+
 <div class="chat-container">
   <!-- Chat History -->
   <div class="chat-history">
     <div *ngFor="let message of chatHistory" [ngClass]="{'user-message': message.sender === 'User', 'bot-message': message.sender === 'Bot'}" class="message-container">
       <span class="message-sender">{{ message.sender }}:</span>
+      <pre class="message-text">{{ message.text }}</pre>
 
-      <pre class="message-text">{{ message.text }}</pre> <!-- Preserve formatting -->
-
-      <!-- Glyph Container (conditionally rendered if glyph exists) -->
+      <!-- Glyph Container -->
       <div *ngIf="message.glyph"
            class="message-glyph"
            [ngClass]="{'minimized': !message.showGlyph}"
            (click)="toggleGlyphVisibility(message)">
-      <!-- Show SVG only if NOT minimized -->
-        <ng-container *ngIf="message.showGlyph">
+        <ng-container *ngIf="message.showGlyph" (click)="toggleGlyphVisibility(message)">
           <div [innerHTML]="sanitizeSvg(message.glyph)"></div>
         </ng-container>
-      <ng-container *ngIf="!message.showGlyph">
-        <div>V</div>
-      </ng-container>
-
+        <ng-container *ngIf="!message.showGlyph">
+          <div>V</div>
+        </ng-container>
       </div>
+    </div>
+
+    <!-- LOADING INDICATOR (Shows while waiting for response) -->
+    <div *ngIf="loading" class="loading-container">
+      <div class="loading-spinner"></div>
     </div>
   </div>
 
