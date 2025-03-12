@@ -41,3 +41,14 @@
 }
 
 
+/* Highlight matching brackets with a background */
+.CodeMirror-matchingbracket {
+  background-color: rgba(255, 165, 0, 0.5) !important; /* Light orange background */
+  border-radius: 3px;
+}
+
+/* Highlight unmatched brackets with a stronger background */
+.CodeMirror-nonmatchingbracket {
+  background-color: rgba(255, 0, 0, 0.7) !important; /* Strong red background */
+  border-radius: 3px;
+}

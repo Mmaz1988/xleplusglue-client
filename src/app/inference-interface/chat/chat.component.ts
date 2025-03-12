@@ -66,6 +66,8 @@ export class ChatComponent {
             gswbPreferences: this.gswbPreferences.gswbPreferences
           };
 
+          console.log("Gswb request: ", gswbRequest);
+
           this.dataService.gswbDeduce(gswbRequest).subscribe(
             data => {
               let userSem = '';
@@ -75,9 +77,11 @@ export class ChatComponent {
 
                 const pruneContext: boolean = this.contextPruning.nativeElement.checked;
                 const vampRequest: vampireRequest = { text: userMessage, context: this.context, axioms: this.axioms, hypothesis: userSem, pruning: pruneContext, active_indices: this.activeIndices };
+                console.log("Vampire request: ", vampRequest);
 
                 this.dataService.callVampire(vampRequest).subscribe(
                   data => {
+                    console.log("Vampire response: ", data);
                     this.clearSelected();
                     if (data.hasOwnProperty("context")) {
                       const newContext = data.context;
@@ -137,6 +141,7 @@ export class ChatComponent {
         }
       },
       error => {
+        this.chatHistory.push({ text: "An unknown error occurred.", sender: 'Bot' });
         console.log('ERROR: ', error);
         this.loading = false;
       }

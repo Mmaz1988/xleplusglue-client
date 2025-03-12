@@ -1,6 +1,6 @@
 import { Component, ViewChild, ElementRef, AfterViewInit, Input, ViewEncapsulation } from '@angular/core';
 import * as CodeMirror from 'codemirror';
-
+import 'codemirror/addon/edit/matchbrackets.js';
 
 CodeMirror.defineMode("liger", function() {
   return {
@@ -70,31 +70,73 @@ CodeMirror.defineMode("glue", function() {
   };
 });
 
-const DEFAULT_TEST_SUITE = "John loves Mary.\n\n" +
-                            "Every man loved a woman.\n\n" +
-                            "Mary said that Susan was sick.\n\n" +
-                            "If Mary was sick, she would be sleeping.\n\n" +
-                            "Mary married a man who smiled.\n\n" +
-                            "Mary was dancing.\n\n" +
-                            "Mary seems to smile.\n\n" +
-                            "If Mary trained, she is sleeping.\n\n" +
-                            "A man saw the monkey with the telescope.\n\n" +
-                            "A woman will visit the cinema.\n\n" +
-                            "Peter had visited the cinema.\n\n" +
-                            "Peter wanted to visit Mary.\n\n" +
-                            "Mary gave Peter a letter.\n\n";
+const DEFAULT_TEST_SUITE = "#transitive\n" +
+  "\n" +
+  "a big black dog appeared.\n" +
+  "\n" +
+  "#optional transitives\n" +
+  "\n" +
+  "a dog escaped.\n" +
+  "\n" +
+  "a dog escaped the cage.\n" +
+  "\n" +
+  "#transitive\n" +
+  "\n" +
+  "every dog devoured a bone.\n" +
+  "\n" +
+  "#di-transitive\n" +
+  "\n" +
+  "Mary gave a student every grade.\n" +
+  "\n" +
+  "Mary gave a grade to a student.\n" +
+  "\n" +
+  "#COMP-verb\n" +
+  "\n" +
+  "Mary thinks that a cat meowed.\n" +
+  "\n" +
+  "#XCOMPs\n" +
+  "\n" +
+  "a cat seemed to meow.\n" +
+  "\n" +
+  "a dog tried to meow.\n" +
+  "\n" +
+  "#passives\n" +
+  "\n" +
+  "a bone was devoured by a dog.\n" +
+  "\n" +
+  "a program was implemented by a developer.\n" +
+  "\n" +
+  "a solution was implemented.\n" +
+  "\n" +
+  "# The following two sentences need fixing in the basic grammar (clash with OT mark and unwanted semantics)\n" +
+  "\n" +
+  "a grade was given to every student by Mary.\n" +
+  "\n" +
+  "a student was given every grade by Mary.\n" +
+  "\n" +
+  "#PP-attachment\n" +
+  "\n" +
+  "a big black dog appeared on the table.\n" +
+  "\n" +
+  "Peter saw the monkey with the telescope."
 
 
 
 
 const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
-  "#a TNS-ASP #b & #a s:: #c SIT #d & #c TEMP-REF #e ==> & #e T-REF 'undefined'.\n" +
+  "//Injection\n" +
+  "#a TNS-ASP #b & #a s:: #c SIT #d & #c EV #v  ==>\n" +
+  "#c TEMP-REF #e &\n" +
+  "#e T-REF 'undefined' &\n" +
+  "#d GLUE lam(V,lam(S,lam(E,merge(drs([],[rel(partOf,E,S)]),app(V,E))))) : ((#v_v -o #v_t) -o (#d_s -o (#v_v -o #v_t))).\n" +
+  "\n" +
+  "//Consumption\n" +
   "\n" +
   "//Tier 1 rules\n" +
-  "#a TNS-ASP #b TENSE 'past' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'past'.\n" +
-  "#a TNS-ASP #b TENSE 'pres' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'pres'.\n" +
-  "#a TNS-ASP #b TENSE 'fut' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'fut'.\n" +
+  "#a TNS-ASP #b TENSE 'past' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'past' & #d CHECK '-'.\n" +
+  "#a TNS-ASP #b TENSE 'pres' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'pres' & #d CHECK '-'.\n" +
+  "#a TNS-ASP #b TENSE 'fut' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'fut' & #d CHECK '-'.\n" +
   "\n" +
   "//#a TNS-ASP #b TENSE 'pres' & #a s:: #c ==> #c TEMP-REF #d & #d T-REF 'pres' & #d EVAL #e & #e TIME 'now'.\n" +
   "//#a TNS-ASP #b TENSE 'fut' & #a s:: #c ==> #c TEMP-REF #d & #d T-REF 'fut' & #d EVAL #e & #e TIME 'now'.\n" +
@@ -107,8 +149,22 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "//Present counterfactual\n" +
   "#a T-REF 'past' &\n" +
   "#a ^(TEMP-REF>s::>OBJ>in_set>ADJUNCT) #b & #b VTYPE 'modal' &\n" +
-  "#b !(>TEMP-REF) #c T-REF 'pres' \n" +
-  "==> #a T-REF 'non-past'.\n" +
+  "#b !(s::>TEMP-REF) #c T-REF 'pres' &\n" +
+  "#c CHECK '-'\n" +
+  "==> #a T-REF 'non-past' & #c CHECK '+' & #c EVAL #a.\n" +
+  "\n" +
+  "\n" +
+  "//Adding evals\n" +
+  "#a T-REF %a ==> #a EVAL #b.\n" +
+  "\n" +
+  "//COMP and XCOMP INJECTION\n" +
+  "#m COMP #a TNS-ASP #b & #a s:: #c TEMP-REF #e EVAL #f &\n" +
+  "#m s:: #n EV #v & #n SIT #d\n" +
+  "==> #d GLUE lam(V,lam(S,lam(E,merge(drs([],[rel(partOf,E,S)]),app(app(V,S),E))))) : ((#f_s -o (#v_v -o #v_t)) -o (#d_s -o (#v_v -o #v_t))).\n" +
+  "\n" +
+  "#m XCOMP #a TNS-ASP #b & #a s:: #c TEMP-REF #e EVAL #f &\n" +
+  "#m s:: #n EV #v & #n SIT #d\n" +
+  "==> #d GLUE lam(V,lam(S,lam(E,merge(drs([],[rel(partOf,E,S)]),app(app(V,S),E))))) : ((#f_s -o (#v_v -o #v_t)) -o (#d_s -o (#v_v -o #v_t))).\n" +
   "\n" +
   "//Aspect rules\n" +
   "#a TNS-ASP #b PROG '+_' & #a s:: #c ==> #c VIEWPOINT #d & #d ASPECT 'impv' & #d A-RESTR 'ongoing'.\n" +
@@ -146,7 +202,7 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "#b SIT #g\n" +
   " ==>  #c GLUE lam(M,lam(P,lam(S,drs([],[imp(merge(drs([Z],[]),app(app(M,S),Z)),app(P,Z))])))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #g_t) -o (#f_s -o #f_t))).\n" +
   "\n" +
-  "//prv closure -- fixed \n" +
+  "//prv closure -- fixed\n" +
   "#a s:: #b VIEWPOINT #c ASPECT 'prv' &\n" +
   "#c VAR #d & #c RESTR #e &\n" +
   "#b TEMP-REF #f &\n" +
@@ -156,7 +212,7 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "#a s:: #b VIEWPOINT #c ASPECT 'undefined' &\n" +
   "#b TEMP-REF #f &\n" +
   "#b SIT #g\n" +
-  " ==>  #c GLUE lam(P,lam(S,merge(drs([],[]),app(P,S)))) : ((#g_s -o #b_t) -o (#f_s -o #b_t)).\n" +
+  " ==>  #c GLUE lam(P,lam(S,merge(drs([],[]),app(P,S)))) : ((#g_s -o #g_t) -o (#f_s -o #f_t)).\n" +
   "\n" +
   "//Tense values\n" +
   "\n" +
@@ -188,8 +244,8 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(after,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
   "\n" +
   "\n" +
-  "//absolute tense closure -- fixed \n" +
-  "#a s:: #b TEMP-REF #c T-REF %a & %a != 'undefined' & #c EVAL #d \n" +
+  "//absolute tense closure -- fixed\n" +
+  "#a s:: #b TEMP-REF #c T-REF %a & %a != 'undefined' & #c EVAL #d\n" +
   "==> #c GLUE lam(T,lam(P,lam(S,merge(drs([R],[]),merge(app(app(T,R),S),app(P,R)))))) : ((#c_s -o (#d_s -o #c_t)) -o ((#c_s -o #c_t) -o (#d_s -o #d_t))).\n" +
   "\n" +
   "//aspectual tense closure\n" +
@@ -200,16 +256,16 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
   "//unspec absolute closure\n" +
   "#a s:: #b TEMP-REF #c T-REF %a & %a == 'undefined' & #c EVAL #d\n" +
-  "==> #c GLUE lam(P,lam(S,merge(app(P,S),drs([],[])))) : ((#c_s -o #b_t) -o (#d_s -o #b_t)).\n" +
+  "==> #c GLUE lam(P,lam(S,merge(app(P,S),drs([],[])))) : ((#c_s -o #c_t) -o (#d_s -o #d_t)).\n" +
   "\n" +
+  "#a EVAL #b\n" +
+  "==> #b GLUE lam(P,merge(drs([T],[eq(T,now)]),app(P,T))) : ((#b_s -o #b_t) -o #b_t).\n" +
   "\n" +
+  "#m COMP #n s:: #o TEMP-REF #a EVAL #b & #o SIT #s\n" +
+  "==> #b GLUE lam(P,P) : ((#b_s -o #b_t) -o (#b_s -o #s_t)).\n" +
   "\n" +
-  "//#a s:: #b TEMP-REF #c T-REF 'pres' & #c EVAL #d ==> #c GLUE [/P_<s,t>.[/s_s.Er_s[equals(r,s) \\& P(r)]]] : ((#c -o #b) -o (#d -o #b)).\n" +
-  "\n" +
-  "// #a s:: #b ASP-TENSE #c A-REF 'past' & #b TEMP-REF #d ==>  #c GLUE [/P_<s,t>.[/s_s.Er_s[before(r,s) \\& P(r)]]] : ((#d -o #b) -o (#d -o #b)).\n" +
-  "\n" +
-  "//#a s:: #b ASP-TENSE #c A-REF 'undefined' & #b TEMP-REF #d ==>  #c GLUE [/P_<s,t>.[/s_s.P(s)]] : ((#d -o #b) -o (#d -o #b)).\n" +
-  "#a s:: #b ASP-TENSE #c A-REF 'undefined' & #b TEMP-REF #d ==>  #c GLUE lam(P,lam(S,merge(app(P,S),drs([],[])))) : ((#d_s -o #b_t) -o (#d_s -o #b_t)).\n";
+  "#m XCOMP #n s:: #o TEMP-REF #a EVAL #b & #o SIT #s\n" +
+  "==> #b GLUE lam(P,P) : ((#b_s -o #b_t) -o (#b_s -o #s_t)).";
 
 @Component({
   selector: 'app-editor',
@@ -239,24 +295,19 @@ export class EditorComponent implements AfterViewInit {
 
     this.codeMirror = CodeMirror.fromTextArea(this.host.nativeElement, {
       mode: this.mode,
-      viewPortMargin: Infinity
+      viewportMargin: Infinity,
+      lineNumbers: true,
+      matchBrackets: true,  // Enables bracket matching
+      autoCloseBrackets: true  // Auto-closes brackets
     });
 
-    if (this.mode == "liger" ) {
+    if (this.mode === "liger") {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
-
-    }
-
-    if (this.mode == "text")  {
+    } else if (this.mode === "text") {
       this.codeMirror.setValue(DEFAULT_TEST_SUITE);
     }
-
-
-      this.codeMirror.setOption("lineNumbers", true);
-
-
-
   }
+
 
 
   updateContent(value: string): void {
