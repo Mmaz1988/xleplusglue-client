@@ -10,6 +10,7 @@ import {
   GswbPreferences, GswbMultipleRequest
 } from '../models/models';
 import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.component";
+import {EditorComponent} from "../editor/editor.component";
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -26,6 +27,7 @@ export class RegressionTestingInterfaceComponent {
   @ViewChild('ligerreport') ligerreport: ElementRef;
   @ViewChild('gswbreport') gswbreport: ElementRef;
   @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent
+  @ViewChild('ligerRules') ligerRules: EditorComponent;
 
   gswbMultipleRequest: GswbMultipleRequest;
 
@@ -42,7 +44,7 @@ export class RegressionTestingInterfaceComponent {
     //map from id to sentences
     let sentenceMap = {};
     for (let i = 0; i < sentencesArray.length; i++) {
-      sentenceMap["S" + i] = sentencesArray[i];
+      sentenceMap["S" + (i + 1)] = sentencesArray[i];
     }
 
     const ligerMultipleRequest = {sentences: sentenceMap, ruleString: rules};
@@ -151,6 +153,10 @@ export class RegressionTestingInterfaceComponent {
 
 
 
+  }
+
+  updateData(ruleFile: string) {
+    this.ligerRules.updateContent(ruleFile);
   }
 
 

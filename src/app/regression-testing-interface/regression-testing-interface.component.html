@@ -1,11 +1,20 @@
 <div class="frame">
 
-<h3>
-  Grammar:
-</h3>
-
-  <app-grammar-loader></app-grammar-loader>
-
+  <div class="container">
+    <h1>Semantig parser settings</h1>
+    <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show settings" hideText="Hide settings">
+      <div class="grammar-loader-container">
+        <div>
+          <h2>Grammar selection:</h2>
+          <app-grammar-loader></app-grammar-loader>
+        </div>
+        <div>
+          <h2>Rule file selection:</h2>
+          <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
+        </div>
+      </div>
+    </app-toggle-display>
+  </div>
 <h3>
   Testsuite:
 </h3>

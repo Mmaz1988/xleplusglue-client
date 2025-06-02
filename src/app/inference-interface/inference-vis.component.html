@@ -34,10 +34,12 @@
     </div>
   </mat-tab>
 
-  <mat-tab label="Info">
+  <mat-tab label="Axioms">
     <div class="tab-content">
-      <!-- Placeholder for info component -->
-      <p>Other information will go here.</p>
+      <div class="editor-restr">
+        <app-editor #axiomEdit [mode]="'glue'" >
+        </app-editor>
+      </div>
     </div>
   </mat-tab>
 </mat-tab-group>
