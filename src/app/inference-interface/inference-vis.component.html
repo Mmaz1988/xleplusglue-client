@@ -15,11 +15,13 @@
 </app-toggle-display>
 </div>
 
-<mat-tab-group>
+<mat-tab-group *ngIf="tabsInitialized" (selectedIndexChange)="onTabChange($event)">
   <mat-tab label="Chat">
     <div class="tab-content">
       <!-- Placeholder for chat component -->
-      <app-chat [ruleString]="ruleFile" [gswbPreferences]="gswbPrefs"
+      <app-chat [ruleString]="ruleFile"
+                [axioms]="axioms"
+                [gswbPreferences]="gswbPrefs"
                 [history]="history" (historyChange)="updateHistory($event)"
                 [activeIndices]="selectedElements"
                 (clearSelection)="onClearSelection()">

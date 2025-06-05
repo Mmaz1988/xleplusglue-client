@@ -3,6 +3,8 @@ import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.c
 import {context, GswbPreferences} from "../models/models";
 import {ChatComponent} from "./chat/chat.component";
 import {HistoryComponent} from "./history/history.component";
+import {EditorComponent} from "../editor/editor.component";
+import {ChangeDetectorRef} from "@angular/core";
 
 @Component({
   selector: 'app-inference-vis',
@@ -17,12 +19,20 @@ export class InferenceVisComponent implements AfterViewInit {
   @ViewChild('gswbPrefs') gswbPreferences!: GswbSettingsComponent; // Ensures it is initialized later
   @ViewChild('chat') chatComponent: ChatComponent;
   @ViewChild('history') historyComponent: HistoryComponent;
+  @ViewChild('axiomEdit') editor: EditorComponent;
+
+  axioms: string = '';
 
   selectedElements: number[] = []; // Stores selected box indices from history
 
+  tabsInitialized = false;
 
+  constructor(private cdRef: ChangeDetectorRef) {}
 
   ngAfterViewInit() {
+
+    this.cdRef.detectChanges();
+
     if (this.gswbPreferences) {
       this.gswbPreferences.gswbPreferences = {
         prover: 1,
@@ -38,6 +48,9 @@ export class InferenceVisComponent implements AfterViewInit {
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }
+
+    this.tabsInitialized = true;
+
   }
 
 
@@ -62,6 +75,16 @@ export class InferenceVisComponent implements AfterViewInit {
       this.historyComponent.clearSelection();  // Call method in HistoryComponent
     }
     console.log("Called onClearSelection in parent component");
+  }
+
+  onTabChange(index: number) {
+    setTimeout(() => {
+      if (this.editor?.getContent) {
+        console.log("Updating axioms to: ",this.editor.getContent())
+        this.axioms = this.editor.getContent();
+        this.cdRef.detectChanges();
+      }
+    });
   }
 
 }

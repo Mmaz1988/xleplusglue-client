@@ -24,9 +24,10 @@ export class ChatComponent {
   @Input() history: context[][] = [];  // Received from parent
   @Output() historyChange = new EventEmitter<context[][]>(); // Event to notify updates
 
+  @Input() axioms: string = '';
+
   @Input() activeIndices: number[] = [];
   @Output() clearSelection: EventEmitter<void> = new EventEmitter<void>();  // Event to clear selection
-
 
   chatHistory: ChatMessage[] = []; // Stores chat messages
   userInput: string = ''; // Stores user input
@@ -34,7 +35,6 @@ export class ChatComponent {
 
   // needs to be updated as chat goes on
   context: context[] = [];
-  axioms: string = '';
 
   loading: boolean = false; // Tracks whether the bot is responding
 
