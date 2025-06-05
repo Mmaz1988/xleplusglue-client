@@ -5,13 +5,16 @@
   left: 50%;
   transform: translate(-50%, -50%);
   min-width: 800px;
-  max-width: 100vw;
+  max-width: 90%;
+  border-style: solid;
+  border-radius: 25px;
+  border-color: #00a9e0;
 }
 
 dialog {
-  max-width: 100vw;
+  max-width: 90%;
 }
 
 div {
-  max-width: 100%;
+  max-width: 90%;
 }

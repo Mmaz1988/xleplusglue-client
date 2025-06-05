@@ -45,19 +45,29 @@
 <app-gswb-settings #gswbSettings></app-gswb-settings>
 
 
-<button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">Parse all</button>
-  <button class="button beta" (click)="batchMultistage(testsuite.getContent())">Multi stage</button>
+<button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">
+  <span *ngIf="!loading">Parse all</span>
+  <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+  <span *ngIf="loading">Loading...</span>
+</button>
+  <button class="button beta" (click)="batchMultistage(testsuite.getContent())">
+    <span *ngIf="!loading">Multistage</span>
+    <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    <span *ngIf="loading">Loading...</span>
+  </button>
 
+  <div class="errorhandling" #errorhandle></div>
 
 <h3>
   Report:
 </h3>
 
-<textarea class="log" #ligerreport>
-</textarea>
-  <textarea class="log" #gswbreport>
-
-  </textarea>
+  <div>
+    <div class="result-container" *ngFor="let element of regressionTestResults; let i = index">
+      <app-test-result [data]="element" >
+      </app-test-result>
+    </div>
+  </div>
   <br>
   <br>
   <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">

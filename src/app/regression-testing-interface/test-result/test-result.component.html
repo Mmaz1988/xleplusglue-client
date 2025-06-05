@@ -1,0 +1,10 @@
+<p [ngClass]="{
+      'highlight-block': numberOfAppliedRules === 0 || numberOfMCsets === 0 || noOfSolutions === 0
+    }">
+  {{sentence_id}}: {{sentence}}<br>
+  Number of applied rules: {{numberOfAppliedRules}} <br>
+  Number of meaning constructor sets: {{numberOfMCsets}} <br>
+  Number of solutions: {{noOfSolutions}}
+</p>
+
+<app-dialog #solution></app-dialog>

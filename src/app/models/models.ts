@@ -14,9 +14,11 @@ export interface LigerRule {
 }
 
 export interface LigerRuleAnnotation {
+  sentence?: string;
   graph: LigerWebGraph;
   appliedRules: LigerRule[];
   meaningConstructors?: string;
+  numberOfMCsets?: number;
 }
 
 export interface LigerWebGraph {
@@ -29,7 +31,8 @@ export interface LigerGraphComponent {
 }
 
 export interface GswbBatchOutput {
-
+outputs: { [key: string]: GswbOutput };
+report: string;
 }
 
 export interface GswbRequest {
@@ -52,6 +55,13 @@ export interface GswbPreferences {
   meaningOnly: boolean;
   explainFail: boolean;
   naturalDeductionStyle: number;
+}
+
+
+export interface GswbOutput {
+  solutions: string[];
+  log: string;
+  derivation: any;
 }
 
 export interface GrammarList {

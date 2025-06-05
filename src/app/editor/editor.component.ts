@@ -309,14 +309,15 @@ export class EditorComponent implements AfterViewInit {
   }
 
 
-
   updateContent(value: string): void {
     if (this.codeMirror) {
-      this.codeMirror.setValue("");
-      this.codeMirror.clearHistory();
-      this.codeMirror.setValue(value);
+      this.codeMirror.setValue("");        // optional: clear first
+      this.codeMirror.clearHistory();      // optional: reset undo stack
+      this.codeMirror.setValue(value);     // set new content
+      this.codeMirror.refresh();
     }
   }
+
 
   public getContent(): string {
     return this.codeMirror.getValue();

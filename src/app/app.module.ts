@@ -40,6 +40,7 @@ import {MatTabsModule} from "@angular/material/tabs";
 import { ChatComponent } from './inference-interface/chat/chat.component';
 import { RuleLoaderComponent } from './inference-interface/rule-loader/rule-loader.component';
 import { HistoryComponent } from './inference-interface/history/history.component';
+import { TestResultComponent } from './regression-testing-interface/test-result/test-result.component';
 
 @NgModule({
   declarations: [
@@ -70,8 +71,8 @@ import { HistoryComponent } from './inference-interface/history/history.componen
     ChatTabsComponent,
     ChatComponent,
     RuleLoaderComponent,
-    HistoryComponent
-
+    HistoryComponent,
+    TestResultComponent
   ],
   imports: [
     BrowserModule,

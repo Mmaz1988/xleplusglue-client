@@ -24,31 +24,40 @@ export class DialogComponent {
   }
 
 
-  setContent(content: any)
-  {
-    console.log(content)
-    if (!(typeof content === 'string' || content instanceof String))
-    {
-      this.showGraph = true;
-      this.showEdit = false;
+  setContent(content: any) {
+    console.log("Content of dialog window:", content);
 
-      setTimeout(() => {
-        this.graphVis.renderGraph(content);
-      }, 0);
-
-    } else
-    {
+    if (typeof content === 'string' || content instanceof String) {
+      // Prepare editor
       this.showGraph = false;
       this.showEdit = true;
 
-      content = content.toString()
+      content = content.toString();
+
+      // Wait for view to update and <app-editor> to be instantiated
+      setTimeout(() => {
+        if (this.editorVis) {
+          this.editorVis.updateContent(content);
+        } else {
+          console.warn('Editor component not initialized yet');
+        }
+      }, 0);
+
+    } else {
+      // Prepare graph
+      this.showEdit = false;
+      this.showGraph = true;
 
       setTimeout(() => {
-        this.editorVis.updateContent(content);
+        if (this.graphVis) {
+          this.graphVis.renderGraph(content);
+        } else {
+          console.warn('Graph component not initialized yet');
+        }
       }, 0);
     }
-
   }
+
 
   showDialog(){
     this.dialog.nativeElement.show();

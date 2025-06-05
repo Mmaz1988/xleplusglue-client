@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
-  , GrammarList, GrammarString, FileTree, PathString, vampireRequest, vampireResponse
+  , GrammarList, GrammarString, FileTree, PathString, vampireRequest, vampireResponse, GswbBatchOutput
 } from './models/models';
 
 @Injectable({

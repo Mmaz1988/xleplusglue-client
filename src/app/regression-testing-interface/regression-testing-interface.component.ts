@@ -7,10 +7,12 @@ import {
   LigerRuleAnnotation,
   LigerWebGraph,
   LigerGraphComponent,
-  GswbPreferences, GswbMultipleRequest
+  GswbPreferences, GswbMultipleRequest, GswbBatchOutput, GswbOutput
 } from '../models/models';
 import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.component";
 import {EditorComponent} from "../editor/editor.component";
+import {catchError, map, Observable} from "rxjs";
+import {tap} from "rxjs/operators";
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -28,10 +30,19 @@ export class RegressionTestingInterfaceComponent {
   @ViewChild('gswbreport') gswbreport: ElementRef;
   @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent
   @ViewChild('ligerRules') ligerRules: EditorComponent;
+  @ViewChild('errorhandle') errorhandle: ElementRef;
 
   gswbMultipleRequest: GswbMultipleRequest;
 
+  regressionTestResults: any[] = [];
+
+  loading: boolean = false;
+
   batchParse(sentences: String, rules: String) {
+
+    this.errorhandle.nativeElement.innerHTML = "";
+    this.loading = true;
+    this.regressionTestResults = [];
 
     this.gswbPreferences.onSubmit()
 
@@ -51,9 +62,10 @@ export class RegressionTestingInterfaceComponent {
 
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
-        console.log(data);
+        // console.log(data);
         if (data.hasOwnProperty("annotations")) {
-          console.log(data.annotations);
+
+          console.log("Annotations:",data.annotations);
 
           let mcMap = {}
           for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
@@ -87,15 +99,46 @@ export class RegressionTestingInterfaceComponent {
           this.cy1.renderGraph(data.ruleApplicationGraph);
         }
 
-        if (data.hasOwnProperty("report")) {
-          this.ligerreport.nativeElement.innerHTML = data.report;
-        }
+        // if (data.hasOwnProperty("report")) {
+        //   this.ligerreport.nativeElement.innerHTML = data.report;
+        // }
 
-        this.batchDeduce(this.gswbMultipleRequest);
+        this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
+          const outputs = result.outputs;
+          console.log("GSWB outputs: ", outputs);
+          const gswbMap = new Map<string, GswbOutput>();
+          for (const key in outputs) {
+            gswbMap.set(key, outputs[key]);
+          }
 
+          console.log("GSWB Map: ", gswbMap);
+
+          //Iterate through sentenceMap keys
+          for (let key of Object.keys(sentenceMap)){
+
+            let regressionTestResult: {}
+            = {
+              sentence_id: key,
+              sentence: sentenceMap[key],
+              noOfAppliedRules : data.annotations[key].appliedRules.length,
+              noOfMCsets: data.annotations[key].numberOfMCsets,
+              noOfSolutions: gswbMap.get(key).solutions.length,
+              ligerGraph: data.annotations[key].graph,
+              ligerMCsets: data.annotations[key].meaningConstructors,
+              gswbSolutions: gswbMap.get(key).solutions,
+              gswbDerivation: gswbMap.get(key).derivation
+            }
+            console.log("Regression test result for " + key + ": ", regressionTestResult);
+            this.regressionTestResults.push(regressionTestResult);
+          }
+         this.loading = false;
+          this.displayMessage("Batch processing completed successfully.", "green");
+        });
       },
       error => {
         console.error('An error occurred:', error);
+        this.displayMessage("An error occurred during batch parsing.", "red");
+        this.loading = false;
       });
 
 
@@ -149,6 +192,7 @@ export class RegressionTestingInterfaceComponent {
       },
       error => {
         console.error('An error occurred:', error);
+        this.loading = false;
       });
 
 
@@ -161,19 +205,28 @@ export class RegressionTestingInterfaceComponent {
 
 
 
-  batchDeduce(gswbMultipleRequest: GswbMultipleRequest){
-    console.log("gswbRequest: ",gswbMultipleRequest);
-    this.dataService.gswbBatchDeduce(gswbMultipleRequest).subscribe(
-      data => {
-        console.log(data);
-
-        if (data.hasOwnProperty("report")) {
-          this.gswbreport.nativeElement.innerHTML = data.report;
+  batchDeduce(gswbMultipleRequest: GswbMultipleRequest): Observable<GswbBatchOutput> {
+    return this.dataService.gswbBatchDeduce(gswbMultipleRequest).pipe(
+      tap(data => {
+        console.log("Full data:", data);
+        if (data.hasOwnProperty("outputs")) {
+          console.log("Outputs map:");
+          for (const key in data.outputs) {
+            console.log(key, data.outputs[key]);
+          }
         }
-      },
-      error => {
-        console.error('An error occurred:', error);
-      });
+      }),
+      catchError(err => {
+        console.error("An error occurred:", err);
+        this.displayMessage("An error occurred during GSWB deduction.", "red");
+        throw err;
+      })
+    );
+  }
+
+  displayMessage(message: string, color: string) {
+    this.errorhandle.nativeElement.style.color = color;
+    this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
 }
