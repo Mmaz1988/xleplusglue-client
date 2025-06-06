@@ -1,0 +1,41 @@
+<h3>Settings:</h3>
+
+<form [formGroup]="vampirePreferencesForm" (ngSubmit)="onSubmit()" novalidate>
+  <div>
+    <label for="logic_type">Logic type:</label>
+    <select formControlName="logic_type" id="logic_type" name="logic_type">
+      <option value="0">first-order logic (fof)</option>
+      <option value="1">typed first-order logic (tff)</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="duration">Proof search duration:</label>
+    <select formControlName="max_duration" id="duration" name="duration">
+      <option value="1">1s</option>
+      <option value="2">2s</option>
+      <option value="3">3s</option>
+      <option value="4">4s</option>
+      <option value="5">5s</option>
+      <option value="6">6s</option>
+      <option value="7">7s</option>
+      <option value="8">8s</option>
+      <option value="9">9s</option>
+      <option value="10">10s</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="model-building">
+      <input type="checkbox" formControlName="model_building" id="model-building" name="model-building">
+      Try model building
+    </label>
+  </div>
+
+  <div>
+    <label for="layered">
+      <input type="checkbox" formControlName="layered" id="layered" name="layered">
+      Layered analysis
+    </label>
+  </div>
+</form>
