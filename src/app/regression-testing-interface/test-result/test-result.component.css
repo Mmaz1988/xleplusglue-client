@@ -12,3 +12,8 @@ textarea {
   border-radius: 4px;
   padding: 6px;
 }
+
+.zero-value {
+  color: red;
+  font-weight: bold;
+}

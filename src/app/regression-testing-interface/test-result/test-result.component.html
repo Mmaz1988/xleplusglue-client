@@ -1,10 +1,21 @@
 <p [ngClass]="{
-      'highlight-block': numberOfAppliedRules === 0 || numberOfMCsets === 0 || noOfSolutions === 0
+      'highlight-block': numberOfMCsets === 0 || noOfSolutions === 0
     }">
   {{sentence_id}}: {{sentence}}<br>
-  Number of applied rules: {{numberOfAppliedRules}} <br>
-  Number of meaning constructor sets: {{numberOfMCsets}} <br>
-  Number of solutions: {{noOfSolutions}}
+  Number of applied rules:
+  <span [ngClass]="{ 'zero-value': numberOfAppliedRules === 0 }">
+    {{numberOfAppliedRules}}
+  </span> <br>
+
+  Number of meaning constructor sets:
+  <span [ngClass]="{ 'zero-value': numberOfMCsets === 0 }">
+    {{numberOfMCsets}}
+  </span> <br>
+
+  Number of solutions:
+  <span [ngClass]="{ 'zero-value': noOfSolutions === 0 }">
+    {{noOfSolutions}}
+  </span>
 </p>
 
 <app-dialog #solution></app-dialog>

@@ -11,7 +11,7 @@ import {
 } from '../models/models';
 import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.component";
 import {EditorComponent} from "../editor/editor.component";
-import {catchError, map, Observable} from "rxjs";
+import {catchError, EMPTY, map, Observable} from "rxjs";
 import {tap} from "rxjs/operators";
 
 @Component({
@@ -58,6 +58,8 @@ export class RegressionTestingInterfaceComponent {
       sentenceMap["S" + (i + 1)] = sentencesArray[i];
     }
 
+    this.displayMessage("Sending testsuite to LiGER for parsing ...", "blue");
+
     const ligerMultipleRequest = {sentences: sentenceMap, ruleString: rules};
 
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
@@ -103,6 +105,8 @@ export class RegressionTestingInterfaceComponent {
         //   this.ligerreport.nativeElement.innerHTML = data.report;
         // }
 
+        this.displayMessage("Sending parsing results to GSWB for deduction ...", "blue");
+
         this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
           const outputs = result.outputs;
           console.log("GSWB outputs: ", outputs);
@@ -113,8 +117,16 @@ export class RegressionTestingInterfaceComponent {
 
           console.log("GSWB Map: ", gswbMap);
 
+          let successCount = 0;
+          let successFullKeys = [];
+
           //Iterate through sentenceMap keys
           for (let key of Object.keys(sentenceMap)){
+
+            if (gswbMap.get(key).solutions.length > 0) {
+              successCount++;
+              successFullKeys.push(key);
+            }
 
             let regressionTestResult: {}
             = {
@@ -131,8 +143,13 @@ export class RegressionTestingInterfaceComponent {
             console.log("Regression test result for " + key + ": ", regressionTestResult);
             this.regressionTestResults.push(regressionTestResult);
           }
+
+          console.log("Successful keys: ", successFullKeys);
+          let quickReport = "Parsed " + successCount + " of " + (Object.keys(sentenceMap).length) + " sentences! \n"
+
          this.loading = false;
-          this.displayMessage("Batch processing completed successfully.", "green");
+          this.displayMessage(  quickReport +
+            "Batch processing completed successfully.", "green");
         });
       },
       error => {
@@ -219,7 +236,8 @@ export class RegressionTestingInterfaceComponent {
       catchError(err => {
         console.error("An error occurred:", err);
         this.displayMessage("An error occurred during GSWB deduction.", "red");
-        throw err;
+        this.loading = false;
+        return EMPTY;
       })
     );
   }

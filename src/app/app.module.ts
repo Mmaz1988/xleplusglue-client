@@ -34,13 +34,15 @@ import { FileTreeComponent } from './file-tree/file-tree.component';
 import { MatTreeModule } from '@angular/material/tree';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
-import { InferenceVisComponent } from './inference-interface/inference-vis.component';
-import { ChatTabsComponent } from './inference-interface/chat-tabs/chat-tabs.component';
+import { ChatInterfaceComponent } from './chat-interface/chat-interface.component';
+import { ChatTabsComponent } from './chat-interface/chat-tabs/chat-tabs.component';
 import {MatTabsModule} from "@angular/material/tabs";
-import { ChatComponent } from './inference-interface/chat/chat.component';
-import { RuleLoaderComponent } from './inference-interface/rule-loader/rule-loader.component';
-import { HistoryComponent } from './inference-interface/history/history.component';
+import { ChatComponent } from './chat-interface/chat/chat.component';
+import { RuleLoaderComponent } from './chat-interface/rule-loader/rule-loader.component';
+import { HistoryComponent } from './chat-interface/history/history.component';
 import { TestResultComponent } from './regression-testing-interface/test-result/test-result.component';
+import { InferenceInterfaceComponent } from './inference-interface/inference-interface.component';
+import { InferenceSettingsComponent } from './inference-interface/inference-settings/inference-settings.component';
 
 @NgModule({
   declarations: [
@@ -67,12 +69,14 @@ import { TestResultComponent } from './regression-testing-interface/test-result/
     GswbSettingsComponent,
     GrammarLoaderComponent,
     FileTreeComponent,
-    InferenceVisComponent,
+    ChatInterfaceComponent,
     ChatTabsComponent,
     ChatComponent,
     RuleLoaderComponent,
     HistoryComponent,
-    TestResultComponent
+    TestResultComponent,
+    InferenceInterfaceComponent,
+    InferenceSettingsComponent
   ],
   imports: [
     BrowserModule,

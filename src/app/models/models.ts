@@ -57,6 +57,13 @@ export interface GswbPreferences {
   naturalDeductionStyle: number;
 }
 
+export interface VampirePreferences {
+  logic_type: number;
+  model_building: boolean;
+  max_duration: number;
+  layered: boolean; //Processes with and without additional axioms
+}
+
 
 export interface GswbOutput {
   solutions: string[];

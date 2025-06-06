@@ -8,10 +8,10 @@ import {ChangeDetectorRef} from "@angular/core";
 
 @Component({
   selector: 'app-inference-vis',
-  templateUrl: './inference-vis.component.html',
-  styleUrls: ['./inference-vis.component.css']
+  templateUrl: './chat-interface.component.html',
+  styleUrls: ['./chat-interface.component.css']
 })
-export class InferenceVisComponent implements AfterViewInit {
+export class ChatInterfaceComponent implements AfterViewInit {
 
   ruleFile: string = '';
   history: context[][] = [];
