@@ -19,6 +19,7 @@ export interface LigerRuleAnnotation {
   appliedRules: LigerRule[];
   meaningConstructors?: string;
   numberOfMCsets?: number;
+  axioms?: string[];
 }
 
 export interface LigerWebGraph {
@@ -99,6 +100,7 @@ export interface vampireRequest {
   hypothesis: string;
   pruning: boolean;
   active_indices: number[];
+  vampire_preferences?: VampirePreferences;
 }
 
 export interface vampireResponse {

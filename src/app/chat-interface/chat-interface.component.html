@@ -12,6 +12,7 @@
 </div>
 </div>
  <app-gswb-settings #gswbPrefs></app-gswb-settings>
+ <app-inference-settings  #vampirePrefs></app-inference-settings>
 </app-toggle-display>
 </div>
 
@@ -22,6 +23,7 @@
       <app-chat [ruleString]="ruleFile"
                 [axioms]="axioms"
                 [gswbPreferences]="gswbPrefs"
+                [vampirePreferences]="vampirePrefs"
                 [history]="history" (historyChange)="updateHistory($event)"
                 [activeIndices]="selectedElements"
                 (clearSelection)="onClearSelection()">

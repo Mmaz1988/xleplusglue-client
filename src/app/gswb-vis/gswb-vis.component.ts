@@ -102,6 +102,7 @@ export class GswbVisComponent {
             this.dialog.setContent(data.derivation.toString());
           }
                   // Update your component's property bound to your logContainerElement here...
+
         }
       },
       error => {

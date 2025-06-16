@@ -4,6 +4,8 @@ import {context, GswbPreferences, GswbRequest, vampireRequest, ChatMessage} from
 import {GswbSettingsComponent} from "../../gswb-vis/gswb-settings/gswb-settings.component";
 import {error} from "@angular/compiler-cli/src/transformers/util";
 import {DomSanitizer, SafeHtml} from "@angular/platform-browser";
+import {coerceStringArray} from "@angular/cdk/coercion";
+import {InferenceSettingsComponent} from "../../inference-interface/inference-settings/inference-settings.component";
 
 
 @Component({
@@ -20,6 +22,7 @@ export class ChatComponent {
 
   @Input() ruleString: string = '';
   @Input() gswbPreferences: GswbSettingsComponent;
+  @Input() vampirePreferences: InferenceSettingsComponent;
 
   @Input() history: context[][] = [];  // Received from parent
   @Output() historyChange = new EventEmitter<context[][]>(); // Event to notify updates
@@ -33,6 +36,8 @@ export class ChatComponent {
   userInput: string = ''; // Stores user input
   meaningConstructors: string = '';
 
+  axiomCounter = 0;
+
   // needs to be updated as chat goes on
   context: context[] = [];
 
@@ -41,6 +46,9 @@ export class ChatComponent {
   sendMessage() {
     if (!this.userInput.trim()) return;
 
+    console.log("Gswb preferences: ", this.gswbPreferences.gswbPreferences);
+    console.log("Vampire preferences: ", this.vampirePreferences.vampirePreferences);
+
     this.loading = true; // Show loading indicator
     const userMessage = this.userInput;
     var glyph = '';
@@ -48,10 +56,16 @@ export class ChatComponent {
     // Add user message to history
     this.chatHistory.push({ text: userMessage, sender: 'User' });
 
-    const ligerRequest = { sentence: userMessage, ruleString: this.ruleString };
+    // If logicType is 0 create string 'fof' if 1 create string 'tff'
+    const logicType = this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
+
+    const ligerRequest = { sentence: userMessage, ruleString: this.ruleString, logicType: logicType };
+
+    console.log("Liger request: ", ligerRequest);
 
     this.dataService.ligerAnnotate(ligerRequest).subscribe(
       data => {
+        console.log("Liger response: ", data);
         if (!data.hasOwnProperty("graph") || !data.graph.hasOwnProperty("graphElements") || data.graph.graphElements.length === 0) {
           this.chatHistory.push({ text: "Syntactic analysis failed for this input!", sender: 'Bot' });
           this.loading = false; // Hide loading indicator
@@ -60,6 +74,28 @@ export class ChatComponent {
 
         if (data.hasOwnProperty("meaningConstructors")) {
           this.meaningConstructors = data.meaningConstructors;
+
+
+
+        if (data.hasOwnProperty("axioms") && data.axioms != null) {
+          console.log("Axioms: ", data.axioms);
+
+          let extractedAxioms = '';
+          // enumerate and create axioms from ligerAxioms
+
+          for (let axiom of data.axioms) {
+            if (axiom.trim() !== '' && !this.axioms.includes(axiom.trim())) {
+              extractedAxioms += logicType + "(" +
+                "axiom" + this.axiomCounter + ",axiom," + axiom + ').\n';
+              this.axiomCounter++;
+            }
+          }
+
+          if (extractedAxioms.trim() !== '') {
+            this.axioms += extractedAxioms + '\n';
+          }
+
+        }
 
           const gswbRequest: GswbRequest = {
             premises: this.meaningConstructors,
@@ -76,7 +112,9 @@ export class ChatComponent {
                 userSem = data.solutions.join('\n');
 
                 const pruneContext: boolean = this.contextPruning.nativeElement.checked;
-                const vampRequest: vampireRequest = { text: userMessage, context: this.context, axioms: this.axioms, hypothesis: userSem, pruning: pruneContext, active_indices: this.activeIndices };
+                const vampRequest: vampireRequest = { text: userMessage, context: this.context, axioms: this.axioms,
+                  hypothesis: userSem, pruning: pruneContext, active_indices: this.activeIndices,
+                   vampire_preferences: this.vampirePreferences.vampirePreferences };
                 console.log("Vampire request: ", vampRequest);
 
                 this.dataService.callVampire(vampRequest).subscribe(

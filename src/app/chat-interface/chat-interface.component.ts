@@ -5,6 +5,7 @@ import {ChatComponent} from "./chat/chat.component";
 import {HistoryComponent} from "./history/history.component";
 import {EditorComponent} from "../editor/editor.component";
 import {ChangeDetectorRef} from "@angular/core";
+import {InferenceSettingsComponent} from "../inference-interface/inference-settings/inference-settings.component";
 
 @Component({
   selector: 'app-inference-vis',
@@ -17,6 +18,7 @@ export class ChatInterfaceComponent implements AfterViewInit {
   history: context[][] = [];
 
   @ViewChild('gswbPrefs') gswbPreferences!: GswbSettingsComponent; // Ensures it is initialized later
+  @ViewChild('vampirePrefs') vampirePreferences!: InferenceSettingsComponent; // Ensures it is initialized later
   @ViewChild('chat') chatComponent: ChatComponent;
   @ViewChild('history') historyComponent: HistoryComponent;
   @ViewChild('axiomEdit') editor: EditorComponent;
@@ -47,6 +49,17 @@ export class ChatInterfaceComponent implements AfterViewInit {
       };
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
+    }
+
+    if (this.vampirePreferences) {
+      this.vampirePreferences.vampirePreferences = {
+        logic_type: 0,
+        model_building: true,
+        max_duration: 10,
+        layered: false
+      };
+    } else {
+      console.error("ERROR: `vampirePreferences` ViewChild not initialized!");
     }
 
     this.tabsInitialized = true;

@@ -33,7 +33,7 @@ export class DataService {
   }
 
   //currently used for multistage
-  ligerParse(ligerRequest): Observable<any> {
+  ligerMulti(ligerRequest): Observable<any> {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_xle`, ligerRequest);
   }
 

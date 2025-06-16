@@ -88,6 +88,10 @@ export class LigerVisComponent {
           this.changeDetector.emit(data.meaningConstructors);
         }
 
+        if (data.hasOwnProperty('axioms')) {
+          console.log("Axioms: ", data.axioms);
+        }
+
 
       },
       error => {
@@ -141,6 +145,7 @@ x
   }
    */
 
+  //Used for multistage parsing button
   parseSentence(inputValue: string, ruleString: string) {
     // console.log(inputValue)
     // console.log(this.editor1.getContent())
@@ -152,7 +157,7 @@ x
 
     // console.log(ligerRequest);
 
-    this.dataService.ligerParse(ligerRequest).subscribe(
+    this.dataService.ligerMulti(ligerRequest).subscribe(
       data => {
         this.loading = false;
 

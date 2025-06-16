@@ -24,6 +24,11 @@ export class InferenceSettingsComponent {
       max_duration: [10, Validators.required], // Default value is 10
       layered: [false] // Default value is false
     });
+
+    // Call onSubmit whenever any value changes
+    this.vampirePreferencesForm.valueChanges.subscribe(() => {
+      this.onSubmit();
+    });
   }
 
   onSubmit(): void {
