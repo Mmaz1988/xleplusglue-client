@@ -27,8 +27,8 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
   @Output() dataEmitter = new EventEmitter<string>();
 
   grammarList: string[] = [];
-  defaultRules: string = "./liger_resources/test_rules.txt";
-  grammarsDirectory: string = "./liger_resources";
+  defaultRules: string = "./liger_resources/rules/degree_rules_ev.txt";
+  grammarsDirectory: string = "./liger_resources/rules";
   currentStatusMessage: string = ""
   grammarFileTree: FileTree[] = [];  // Initialize as an empty array
   selectedPath: string = "";  // This will store the selected file or folder path

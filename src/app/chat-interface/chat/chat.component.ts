@@ -92,6 +92,10 @@ export class ChatComponent {
           }
 
           if (extractedAxioms.trim() !== '') {
+            if (this.axioms != '') {
+              this.axioms += '\n';
+            }
+
             this.axioms += extractedAxioms + '\n';
           }
 
@@ -131,11 +135,13 @@ export class ChatComponent {
                       var message = "Okay ...";
                       var consistent: boolean = null;
                       var info: boolean = null;
+                      var relevant: boolean = null;
 
                       if (Object.keys(data.context_checks_mapping).length > 0) {
                         glyph = data.context_checks_mapping[0].glyph;
                         info = data.context_checks_mapping[0].informative;
                         consistent = data.context_checks_mapping[0].consistent;
+                        relevant = data.context_checks_mapping[0].relevant;
                       }
 
                       if (consistent === null) {
@@ -144,8 +150,10 @@ export class ChatComponent {
                         message = "Your input does not make sense.";
                       } else if (!info) {
                         message = "Your input is not informative.";
+                      } else if (relevant) {
+                        message = "I may not fully understand your input. I assume it is informative and consistent";
                       } else {
-                        message = "Your input is consistent and informative.";
+                        message = "Your input is informative and consistent.";
                       }
 
                       this.chatHistory.push({ text: message, sender: 'Bot', glyph: glyph, showGlyph: false });

@@ -113,6 +113,7 @@ export interface check {
   glyph: string;
   informative: boolean;
   consistent: boolean;
+  relevant: boolean;
 }
 
 export interface context {

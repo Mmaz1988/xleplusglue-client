@@ -125,147 +125,80 @@ const DEFAULT_TEST_SUITE = "#transitive\n" +
 
 const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
-  "//Injection\n" +
-  "#a TNS-ASP #b & #a s:: #c SIT #d & #c EV #v  ==>\n" +
-  "#c TEMP-REF #e &\n" +
-  "#e T-REF 'undefined' &\n" +
-  "#d GLUE lam(V,lam(S,lam(E,merge(drs([],[rel(partOf,E,S)]),app(V,E))))) : ((#v_v -o #v_t) -o (#d_s -o (#v_v -o #v_t))).\n" +
-  "\n" +
-  "//Consumption\n" +
-  "\n" +
-  "//Tier 1 rules\n" +
-  "#a TNS-ASP #b TENSE 'past' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'past' & #d CHECK '-'.\n" +
-  "#a TNS-ASP #b TENSE 'pres' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'pres' & #d CHECK '-'.\n" +
-  "#a TNS-ASP #b TENSE 'fut' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'fut' & #d CHECK '-'.\n" +
-  "\n" +
-  "//#a TNS-ASP #b TENSE 'pres' & #a s:: #c ==> #c TEMP-REF #d & #d T-REF 'pres' & #d EVAL #e & #e TIME 'now'.\n" +
-  "//#a TNS-ASP #b TENSE 'fut' & #a s:: #c ==> #c TEMP-REF #d & #d T-REF 'fut' & #d EVAL #e & #e TIME 'now'.\n" +
-  "\n" +
-  "//Tier 2 rules\n" +
-  "//SOT rule\n" +
-  "#a T-REF 'past' &\n" +
-  "#a ^(TEMP-REF>s::>COMP) #b & #b !(s::>TEMP-REF) #c T-REF 'past' ==> #a T-REF 'non-future'.\n" +
-  "\n" +
-  "//Present counterfactual\n" +
-  "#a T-REF 'past' &\n" +
-  "#a ^(TEMP-REF>s::>OBJ>in_set>ADJUNCT) #b & #b VTYPE 'modal' &\n" +
-  "#b !(s::>TEMP-REF) #c T-REF 'pres' &\n" +
-  "#c CHECK '-'\n" +
-  "==> #a T-REF 'non-past' & #c CHECK '+' & #c EVAL #a.\n" +
+  "//Nounmodifiers\n" +
+  "#n MOD #m in_set #p PRED %p & #p TYPE %k & #n s:: #s ==>\n" +
+  "#p GLUE lam(P,lam(X,merge(drs([],[rel(%k,'strip(%p)',X)]),app(P,X)))) : ((#s_e -o #s_t) -o (#s_e -o #s_t)) || noscope.\n" +
   "\n" +
   "\n" +
-  "//Adding evals\n" +
-  "#a T-REF %a ==> #a EVAL #b.\n" +
+  "//Degree (gradable) adjectives\n" +
+  "#x PREDLINK #a & #x s:: #y EV #z &\n" +
+  "#a ATYPE 'predicative' & #a SEMTYPE 'degree' &\n" +
+  "#a SUBJ #b s:: #c &\n" +
+  "#a PRED %a &  #a s:: #s\n" +
+  "==> & #s DEGREE #d & #s DEGREE-HOLDER #z & #s DEGREE-PRED #p &\n" +
+  "#p GLUE lam(P,lam(D,lam(X,drs([],[rel(strip(%a),X,D)])))) : ((#s_v -o #s_t) -o (#d_d -o (#s_v -o #s_t))).\n" +
   "\n" +
-  "//COMP and XCOMP INJECTION\n" +
-  "#m COMP #a TNS-ASP #b & #a s:: #c TEMP-REF #e EVAL #f &\n" +
-  "#m s:: #n EV #v & #n SIT #d\n" +
-  "==> #d GLUE lam(V,lam(S,lam(E,merge(drs([],[rel(partOf,E,S)]),app(app(V,S),E))))) : ((#f_s -o (#v_v -o #v_t)) -o (#d_s -o (#v_v -o #v_t))).\n" +
-  "\n" +
-  "#m XCOMP #a TNS-ASP #b & #a s:: #c TEMP-REF #e EVAL #f &\n" +
-  "#m s:: #n EV #v & #n SIT #d\n" +
-  "==> #d GLUE lam(V,lam(S,lam(E,merge(drs([],[rel(partOf,E,S)]),app(app(V,S),E))))) : ((#f_s -o (#v_v -o #v_t)) -o (#d_s -o (#v_v -o #v_t))).\n" +
-  "\n" +
-  "//Aspect rules\n" +
-  "#a TNS-ASP #b PROG '+_' & #a s:: #c ==> #c VIEWPOINT #d & #d ASPECT 'impv' & #d A-RESTR 'ongoing'.\n" +
-  "#a TNS-ASP #b PROG '-_' & #a s:: #c ==> #c VIEWPOINT #d & #d ASPECT 'undefined'.\n" +
-  "#a TNS-ASP #b TENSE %x & #b PROG '-_' & #a s:: #c VIEWPOINT #d ASPECT 'undefined' ==> #d ASPECT 'prv' & #d A-RESTR 'bounded'.\n" +
-  "#a TNS-ASP #b PERF '+_' & #a s:: #c ==> #c ASP-TENSE #d & #d A-REF 'past'.\n" +
-  "\n" +
-  "//Tier 2 aspect example\n" +
-  "#a T-REF 'undefined' &\n" +
-  "#a ^(TEMP-REF) #b ^(s::>XCOMP) #c & #c !(s::>TEMP-REF) #d EVAL #e &\n" +
-  "#b VIEWPOINT #f ASPECT 'prv'\n" +
-  "==>  #a T-REF 'future' & #a EVAL #d.\n" +
-  "\n" +
-  "//Semantic interpretation\n" +
-  "\n" +
-  "//Rules for interpreting grammatical aspect\n" +
-  "#a s:: #b VIEWPOINT #c ==>\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f.\n" +
-  "\n" +
-  "#a s:: #b VIEWPOINT #c A-RESTR 'ongoing' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f ==>\n" +
-  "#f GLUE lam(S,lam(T,drs([],[rel(ongoing,T,S)]))) : (#d_s -o (#e_s -o #c_t)).\n" +
-  "\n" +
-  "#a s:: #b VIEWPOINT #c A-RESTR 'bounded' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f ==>\n" +
-  "#f GLUE lam(S,lam(T,drs([],[rel(bounded,T,S)]))) : (#d_s -o (#e_s -o #c_t)).\n" +
+  "//This works\n" +
+  "#x ADJUNCT #n in_set #a & #x s:: #y &\n" +
+  "#a ATYPE 'attributive' & #a SEMTYPE 'degree' &\n" +
+  "#a PRED %a & #a s:: #s\n" +
+  "==> #s DEGREE #d & #s DEGREE-HOLDER #y & #s DEGREE-PRED #p &\n" +
+  "#p GLUE lam(P,lam(D,lam(X,drs([],[rel(strip(%a),X,D)])))) : ((#s_e -o #s_t) -o (#d_d -o (#s_e -o #s_t))).\n" +
   "\n" +
   "\n" +
-  "#a s:: #b VIEWPOINT #c ASPECT 'impv' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE lam(M,lam(P,lam(S,drs([],[imp(merge(drs([Z],[]),app(app(M,S),Z)),app(P,Z))])))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #g_t) -o (#f_s -o #f_t))).\n" +
+  "// Rules for positive uses\n" +
+  "// attributive\n" +
+  "#x ADJUNCT #n in_set #a & #x PRED %x &\n" +
+  "#a ATYPE 'attributive' &\n" +
+  "#a PRED %a & #a s:: #b DEGREE #d & #b DEGREE-HOLDER #e\n" +
+  "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
   "\n" +
-  "//prv closure -- fixed\n" +
-  "#a s:: #b VIEWPOINT #c ASPECT 'prv' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE lam(M,lam(P,lam(S,merge(drs([Z],[]),merge(app(app(M,S),Z),app(P,Z)))))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #g_t) -o (#f_s -o #f_t))).\n" +
+  "// predicative\n" +
+  "#x PREDLINK #a & #x SUBJ #y PRED %x &\n" +
+  "#a ATYPE 'predicative' &\n" +
+  "#a PRED %a & #a s:: #b DEGREE #d & #b DEGREE-HOLDER #e\n" +
+  "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
   "\n" +
-  "#a s:: #b VIEWPOINT #c ASPECT 'undefined' &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE lam(P,lam(S,merge(drs([],[]),app(P,S)))) : ((#g_s -o #g_t) -o (#f_s -o #f_t)).\n" +
+  "//Rules for comparative uses\n" +
+  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p &\n" +
+  "#a s:: #b DEGREE #d & #b DEGREE-HOLDER #e & #b DEGREE-PRED #p &\n" +
+  "#a ADJUNCT #f in_set #c OBL-COMP #m OBJ #n s:: #o\n" +
+  "==>\n" +
+  "#o DEGREE #x & #o DEGREE-HOLDER #y &\n" +
+  "#d GLUE lam(P,lam(Q,lam(E,\n" +
+  "\t\tmerge(drs([D:d],[]),merge(app(app(P,D),E),drs([],[not(merge(drs([V],[]),app(app(Q,D),V)))])))))) :\n" +
+  "\t\t((#d_d -o (#b_v -o #b_t)) -o ((#x_d -o (#y_v -o #m_t)) -o (#b_v -o #b_t))) || noscope &\n" +
+  "#m GLUE lam(D,lam(E,drs([],[rel(strip(%p),E,D)]))) : (#x_d -o (#y_v -o #m_t)) &\n" +
+  "#n GLUE lam(V,lam(X,lam(E,merge(app(V,E),drs([],[rel(arg1,E,X)]))))) :\n" +
+  "\t\t((#y_v -o #m_t) -o (#o_e -o (#y_v -o #m_t))).\n" +
   "\n" +
-  "//Tense values\n" +
+  "//Axioms\n" +
   "\n" +
-  "//Past reference\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'past' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(before,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
+  "//Be equality axiom\n" +
+  "#p PRED %p & strip(%p) == 'be' & #p PREDLINK #c s:: #s TYPE 'entity' ==>\n" +
+  "#p AXIOM all(X,all(Y,all(Z,imp(and(be(X),and(arg1(X,Y),arg2(X,Z))),eq(Y,Z))))).\n" +
   "\n" +
-  "//Aspectual tense\n" +
-  "#a s:: #b TEMP-REF #c EVAL #d &\n" +
-  "#b ASP-TENSE #e A-REF 'past' &\n" +
-  " ==>\n" +
-  "#e A-REF' #f & #f GLUE lam(T,lam(T2,drs([],[rel(before,T,T2)]))) :(#e_s -o (#c_s -o #e_t)) .\n" +
+  "//Comparative axioms\n" +
+  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p ==>\n" +
+  "#a AXIOM all(X, all(Y, all(D:d, imp(and(arg1(X, Y), fast(X, D)), fast(Y, D))))).\n" +
   "\n" +
-  "//Present reference\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'pres' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(overlap,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
+  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p &\n" +
+  "#a s:: #b DEGREE #d & #b DEGREE-HOLDER #e & #b DEGREE-PRED #p &\n" +
+  "#a ADJUNCT #f in_set #c OBL-COMP #m OBJ #n s:: #o ==>\n" +
+  "#a MONO #q & #q AXIOM all(X, all(Delta1:d, iff(strip(%p)(X, Delta1), all(Delta2:d, imp(lessEq(Delta2, Delta1), strip(%p)(X, Delta2)))))) &\n" +
+  "#a CP #r & #r AXIOM all(X, all(Y, imp(some(D:d, and(strip(%p)(X, D), not(strip(%p)(Y, D)))), all(D2:d, imp(strip(%p)(Y, D2), strip(%p)(X, D2)))))) &\n" +
+  "#a MAX #s & #s AXIOM all(X, some(Delta1:d, and(strip(%p)(X, Delta1), not(some(Delta2:d, and(greater(Delta2, Delta1), strip(%p)(X, Delta2))))))).\n" +
+  "\n";
+
+const VAMPIRE_DEFAULT_AXIOMS = "tff(fast_type, type, fast: ($i * $int) > $o).\n" +
+  "tff(kind_type, type, kind: ($i * $i) > $o).\n" +
+  "tff(arg1_type, type, arg1: ($i * $i) > $o).\n" +
+  "tff(arg2_type, type, arg2: ($i * $i) > $o).\n" +
+  "tff(computer_type, type, computer: $i > $o).\n" +
+  "tff(be_type, type, be: $i > $o).\n" +
   "\n" +
-  "//Non-future\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'non-future' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(nonfut,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "\n" +
-  "//Non-past\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'non-past' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(nonpast,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "//Future reference\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'future' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(after,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "\n" +
-  "//absolute tense closure -- fixed\n" +
-  "#a s:: #b TEMP-REF #c T-REF %a & %a != 'undefined' & #c EVAL #d\n" +
-  "==> #c GLUE lam(T,lam(P,lam(S,merge(drs([R],[]),merge(app(app(T,R),S),app(P,R)))))) : ((#c_s -o (#d_s -o #c_t)) -o ((#c_s -o #c_t) -o (#d_s -o #d_t))).\n" +
-  "\n" +
-  "//aspectual tense closure\n" +
-  "#a s:: #b ASP-TENSE #c A-REF %a &\n" +
-  "#b TEMP-REF #e &\n" +
-  " %a != 'undefined'\n" +
-  "==> #c GLUE lam(T,lam(P,lam(S,merge(drs([R],[]),merge(app(app(T,R),S),app(P,R)))))) : ((#c_s -o (#e_s -o #c_t)) -o ((#e_s -o #b_t) -o (#e_s -o #b_t))).\n" +
-  "\n" +
-  "//unspec absolute closure\n" +
-  "#a s:: #b TEMP-REF #c T-REF %a & %a == 'undefined' & #c EVAL #d\n" +
-  "==> #c GLUE lam(P,lam(S,merge(app(P,S),drs([],[])))) : ((#c_s -o #c_t) -o (#d_s -o #d_t)).\n" +
-  "\n" +
-  "#a EVAL #b\n" +
-  "==> #b GLUE lam(P,merge(drs([T],[eq(T,now)]),app(P,T))) : ((#b_s -o #b_t) -o #b_t).\n" +
-  "\n" +
-  "#m COMP #n s:: #o TEMP-REF #a EVAL #b & #o SIT #s\n" +
-  "==> #b GLUE lam(P,P) : ((#b_s -o #b_t) -o (#b_s -o #s_t)).\n" +
-  "\n" +
-  "#m XCOMP #n s:: #o TEMP-REF #a EVAL #b & #o SIT #s\n" +
-  "==> #b GLUE lam(P,P) : ((#b_s -o #b_t) -o (#b_s -o #s_t)).";
+  "tff(pn_type1, type, 'pc-6082': $i).\n" +
+  "tff(pn_type2, type, 'itel-zx': $i).\n"
 
 @Component({
   selector: 'app-editor',
@@ -305,6 +238,8 @@ export class EditorComponent implements AfterViewInit {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
     } else if (this.mode === "text") {
       this.codeMirror.setValue(DEFAULT_TEST_SUITE);
+    } else if (this.mode === "vampire") {
+      this.codeMirror.setValue(VAMPIRE_DEFAULT_AXIOMS);
     }
   }
 
