@@ -23,7 +23,15 @@ export class ChatInterfaceComponent implements AfterViewInit {
   @ViewChild('history') historyComponent: HistoryComponent;
   @ViewChild('axiomEdit') editor: EditorComponent;
 
-  axioms: string = '';
+  axioms: string = "tff(fast_type, type, fast: ($i * $int) > $o).\n" +
+      "tff(kind_type, type, kind: ($i * $i) > $o).\n" +
+      "tff(arg1_type, type, arg1: ($i * $i) > $o).\n" +
+      "tff(arg2_type, type, arg2: ($i * $i) > $o).\n" +
+      "tff(computer_type, type, computer: $i > $o).\n" +
+      "tff(be_type, type, be: $i > $o).\n" +
+      "\n" +
+      "tff(pn_type1, type, 'pc-6082': $i).\n" +
+      "tff(pn_type2, type, 'itel-zx': $i).\n";
 
   selectedElements: number[] = []; // Stores selected box indices from history
 
