@@ -6,11 +6,14 @@ mat-tab-group {
 }
 
 .tab-content {
-  flex: 1;
+  display: flex;
+  justify-content: center;
   padding: 16px;
   overflow: auto;
   background: #f5f5f5;
   height: calc(85vh - 48px); /* Adjust height, considering tab header */
+  width: 100%;
+  flex-shrink: 0;
 }
 
 .page-container {
@@ -33,3 +36,12 @@ app-chat {
 }
 
 .container { padding: 15px; }
+
+/*Center editor in the page*/
+.editor-restr {
+  flex: 1;
+  width: 800px;
+  justify-content: center;
+  align-items: center;
+
+}

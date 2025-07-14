@@ -53,4 +53,16 @@ export class GswbSettingsComponent {
     this.gswbPreferences = gswbPreferences;
 
   }
+
+  updateFormFromPreferences(prefs: GswbPreferences) {
+    this.gswbPreferencesForm.patchValue({
+      prover: prefs.prover,
+      outputstyle: prefs.outputstyle,
+      parseSem: prefs.parseSem,
+      explain: prefs.explainFail,
+      debugging: prefs.debugging,
+      ndstyle: prefs.naturalDeductionStyle
+    });
+  }
+
 }

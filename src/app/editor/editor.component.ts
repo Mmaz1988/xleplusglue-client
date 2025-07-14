@@ -277,6 +277,9 @@ export class EditorComponent implements AfterViewInit {
     setTimeout(() => window.URL.revokeObjectURL(url), 10000);
   }
 
-
+  //Getter function for codemirror
+  get codeMirrorInstance(): CodeMirror.EditorFromTextArea {
+    return this.codeMirror;
+  }
   }
 

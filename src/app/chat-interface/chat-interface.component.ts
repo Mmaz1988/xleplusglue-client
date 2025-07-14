@@ -47,17 +47,19 @@ export class ChatInterfaceComponent implements AfterViewInit {
         explainFail: false,
         naturalDeductionStyle: 0,
       };
+      this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences)
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }
 
     if (this.vampirePreferences) {
       this.vampirePreferences.vampirePreferences = {
-        logic_type: 0,
+        logic_type: 1,
         model_building: true,
         max_duration: 10,
         layered: false
       };
+        this.vampirePreferences.updateFormFromPreferences(this.vampirePreferences.vampirePreferences);
     } else {
       console.error("ERROR: `vampirePreferences` ViewChild not initialized!");
     }
@@ -95,9 +97,17 @@ export class ChatInterfaceComponent implements AfterViewInit {
       if (this.editor?.getContent) {
         console.log("Updating axioms to: ",this.editor.getContent())
         this.axioms = this.editor.getContent();
-        this.cdRef.detectChanges();
+        this.editor.codeMirrorInstance.refresh();
       }
     });
+  }
+
+  updateAxioms(value: string): void {
+    this.axioms = value;
+    if (this.editor) {
+      this.editor.updateContent(value);
+      this.editor.codeMirrorInstance.refresh();
+    }
   }
 
 }

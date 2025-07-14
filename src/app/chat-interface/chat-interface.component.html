@@ -26,7 +26,8 @@
                 [vampirePreferences]="vampirePrefs"
                 [history]="history" (historyChange)="updateHistory($event)"
                 [activeIndices]="selectedElements"
-                (clearSelection)="onClearSelection()">
+                (clearSelection)="onClearSelection()"
+                (axiomsChanged)="updateAxioms($event)">
         ></app-chat>
     </div>
   </mat-tab>
@@ -41,7 +42,7 @@
   <mat-tab label="Axioms">
     <div class="tab-content">
       <div class="editor-restr">
-        <app-editor #axiomEdit [mode]="'vampire'" >
+        <app-editor #axiomEdit [mode]="'vampire'">
         </app-editor>
       </div>
     </div>

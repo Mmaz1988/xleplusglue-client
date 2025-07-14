@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import {FormBuilder, FormGroup, Validators} from "@angular/forms";
-import {VampirePreferences} from "../../models/models";
+import {GswbPreferences, VampirePreferences} from "../../models/models";
 
 @Component({
   selector: 'app-inference-settings',
@@ -44,6 +44,16 @@ export class InferenceSettingsComponent {
 
     this.vampirePreferences = vampirePreferences;
 
+  }
+
+
+  updateFormFromPreferences(prefs: VampirePreferences) {
+    this.vampirePreferencesForm.patchValue({
+      logic_type: prefs.logic_type,
+      model_building: prefs.model_building,
+      max_duration: prefs.max_duration,
+      layered: prefs.layered
+    });
   }
 
 }

@@ -28,6 +28,7 @@ export class ChatComponent {
   @Output() historyChange = new EventEmitter<context[][]>(); // Event to notify updates
 
   @Input() axioms: string = '';
+  @Output() axiomsChanged = new EventEmitter<string>(); // Event to notify updates to axioms
 
   @Input() activeIndices: number[] = [];
   @Output() clearSelection: EventEmitter<void> = new EventEmitter<void>();  // Event to clear selection
@@ -97,6 +98,7 @@ export class ChatComponent {
             }
 
             this.axioms += extractedAxioms + '\n';
+            this.updateAxioms(this.axioms);
           }
 
         }
@@ -208,5 +210,11 @@ export class ChatComponent {
 
   toggleGlyphVisibility(message: any) {
     message.showGlyph = !message.showGlyph;
+  }
+
+  updateAxioms(value: string): void {
+    this.axioms = value;
+    this.axiomsChanged.emit(this.axioms); // Emit the updated axioms
+    console.log("Axioms updated in chat component:", this.axioms);
   }
 }
