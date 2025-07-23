@@ -8,6 +8,9 @@ import {
 import {NavigationComponent} from "./navigation/navigation.component";
 import {HomeComponent} from "./home/home.component";
 import {InferenceInterfaceComponent} from "./inference-interface/inference-interface.component";
+import {GswbVisComponent} from "./gswb-vis/gswb-vis.component";
+import {GswbVisContainerComponent} from "./center-container/gswb-vis-container/gswb-vis-container.component";
+import {LigerVisContainerComponent} from "./center-container/liger-vis-container/liger-vis-container.component";
 
 
 const routes: Routes = [
@@ -16,7 +19,9 @@ const routes: Routes = [
   { path: 'regression', component: RegressionTestingInterfaceComponent },
   {path: 'inference', component: InferenceInterfaceComponent },
   {path: 'chat', component: ChatInterfaceComponent },
-  {path: 'home', component: HomeComponent }
+  {path: 'home', component: HomeComponent },
+  {path: 'glue', component: GswbVisContainerComponent},
+  {path: 'liger', component: LigerVisContainerComponent}
   // Add more routes as needed
 ];
 

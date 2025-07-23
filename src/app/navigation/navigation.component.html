@@ -11,11 +11,16 @@
   <div class="navigation-content" *ngIf="isNavigationVisible">
     <ul>
       <!-- Navigation items -->
-      <li><a routerLink="/demo">Analysis</a></li>
+      <li class="has-submenu">
+        <a routerLink="/demo">Analysis</a>
+        <ul class="submenu">
+          <li><a routerLink="/glue">GSWB</a></li>
+          <li><a routerLink="/liger">LiGER</a></li>
+        </ul>
+      </li>
       <li><a routerLink="/regression">Regression testing</a></li>
       <!-- <li><a routerLink="/inference">Inference</a></li> deactivated for demo -->
       <li><a routerLink="/chat">Chat</a></li>
-      <!-- Add more li elements for each additional link -->
       <li><a routerLink="/home">Home</a></li>
     </ul>
   </div>

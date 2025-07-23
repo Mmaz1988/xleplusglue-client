@@ -43,6 +43,9 @@ import { HistoryComponent } from './chat-interface/history/history.component';
 import { TestResultComponent } from './regression-testing-interface/test-result/test-result.component';
 import { InferenceInterfaceComponent } from './inference-interface/inference-interface.component';
 import { InferenceSettingsComponent } from './inference-interface/inference-settings/inference-settings.component';
+import { GswbVisContainerComponent } from './center-container/gswb-vis-container/gswb-vis-container.component';
+import { CenterContainerComponent } from './center-container/center-container/center-container.component';
+import { LigerVisContainerComponent } from './center-container/liger-vis-container/liger-vis-container.component';
 
 @NgModule({
   declarations: [
@@ -76,7 +79,10 @@ import { InferenceSettingsComponent } from './inference-interface/inference-sett
     HistoryComponent,
     TestResultComponent,
     InferenceInterfaceComponent,
-    InferenceSettingsComponent
+    InferenceSettingsComponent,
+    GswbVisContainerComponent,
+    CenterContainerComponent,
+    LigerVisContainerComponent
   ],
   imports: [
     BrowserModule,

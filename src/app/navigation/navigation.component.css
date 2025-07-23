@@ -92,3 +92,33 @@
   transform: translateX(0); /* Move the slider circle to the left for OFF */
 }
 
+
+.has-submenu {
+  position: relative;
+}
+
+.has-submenu .submenu {
+  display: none;                /* Hide initially */
+  list-style-type: square;
+  margin: 0;
+  padding-left: 20px;
+  background-color: #ffffff;
+  border-left: 2px solid #00a9e0;
+}
+
+.has-submenu:hover .submenu {
+  display: block;               /* Show on hover */
+}
+
+.submenu li {
+  line-height: 2;
+}
+
+.submenu li a {
+  font-weight: normal;
+  font-size: 1em;
+  text-decoration: none;
+  white-space: nowrap;
+  display: block;
+}
+
