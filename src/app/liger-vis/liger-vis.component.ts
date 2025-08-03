@@ -29,6 +29,8 @@ export class LigerVisComponent {
 
 
 
+
+
   analyzeSentence(inputValue: string, ruleString: string) {
    // console.log(inputValue)
     // console.log(this.editor1.getContent())
@@ -41,7 +43,19 @@ export class LigerVisComponent {
 
     // console.log(ligerRequest);
 
-    this.dataService.ligerAnnotate(ligerRequest).subscribe(
+    const stanzaRequest = {sentence: sentence, language: "en"};
+
+
+    this.dataService.stanzaParse(stanzaRequest).subscribe(
+      stanza_data => {
+        console.log("Stanza parse result: ", stanza_data);
+
+        //Translate stanza data into a json string
+        let stanza_json = JSON.stringify(stanza_data);
+
+        const ligerRequest = {sentence: stanza_json, ruleString: ruleString};
+
+    this.dataService.ligerAnnotateStanza(ligerRequest).subscribe(
       data => {
         this.loading = false;
         this.errorhandle.nativeElement.innerHTML = "";
@@ -97,11 +111,18 @@ export class LigerVisComponent {
       error => {
         this.loading = false;
         console.log('ERROR: ', error);
-        this.displayMessage("An error occurred...", "red");
+        this.displayMessage("An error occurred while calling LiGER...", "red");
       }
-    );
+        );
+      },
+      error => {
+        this.loading = false;
+        console.log('ERROR: ', error);
+        this.displayMessage("An error occurred while calling Stanza...", "red");
+      }
+      )
   }
-x
+
   /*
   hybridAnalysis(inputValue: string, ruleString: string) {
     const sentence = inputValue;

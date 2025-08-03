@@ -7,14 +7,8 @@
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
 </button>
-<button class="button beta" (click)="parseSentence(textareaElement.value, edit1.getContent())">
-  <span *ngIf="!loading">Extract multi-stage</span>
-  <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-  <span *ngIf="loading">Loading...</span>
-</button>
-<br>
-<app-grammar-loader></app-grammar-loader>
 
+<br>
 
 <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
   <h3> Input rules: </h3>

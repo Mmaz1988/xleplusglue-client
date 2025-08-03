@@ -133,3 +133,11 @@ export interface context {
    showGlyph?: false
  }
 
+ // Stanza stuff
+export interface StanzaAnnotation {
+  linguisticStructure: string;
+  conllu?: string;
+}
+
+
+

@@ -60,140 +60,159 @@ export class ChatComponent {
     // If logicType is 0 create string 'fof' if 1 create string 'tff'
     const logicType = this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
 
-    const ligerRequest = { sentence: userMessage, ruleString: this.ruleString, logicType: logicType };
+    const stanzaRequest = { sentence: userMessage, language: "en" };
 
-    console.log("Liger request: ", ligerRequest);
-
-    this.dataService.ligerAnnotate(ligerRequest).subscribe(
-      data => {
-        console.log("Liger response: ", data);
-        if (!data.hasOwnProperty("graph") || !data.graph.hasOwnProperty("graphElements") || data.graph.graphElements.length === 0) {
-          this.chatHistory.push({ text: "Syntactic analysis failed for this input!", sender: 'Bot' });
-          this.loading = false; // Hide loading indicator
-          return;
-        }
-
-        if (data.hasOwnProperty("meaningConstructors")) {
-          this.meaningConstructors = data.meaningConstructors;
+    console.log("Stanza request: ", stanzaRequest);
 
 
+    this.dataService.stanzaParse(stanzaRequest).subscribe(
+      stanza_data => {
+        console.log("Stanza parse result: ", stanza_data);
 
-        if (data.hasOwnProperty("axioms") && data.axioms != null) {
-          console.log("Axioms: ", data.axioms);
+        //Translate stanza data into a json string
+        let stanza_json = JSON.stringify(stanza_data);
 
-          let extractedAxioms = '';
-          // enumerate and create axioms from ligerAxioms
+        const ligerRequest = {sentence: stanza_json, ruleString: this.ruleString, logicType: logicType};
 
-          for (let axiom of data.axioms) {
-            if (axiom.trim() !== '' && !this.axioms.includes(axiom.trim())) {
-              extractedAxioms += logicType + "(" +
-                "axiom" + this.axiomCounter + ",axiom," + axiom + ').\n';
-              this.axiomCounter++;
-            }
-          }
-
-          if (extractedAxioms.trim() !== '') {
-            if (this.axioms != '') {
-              this.axioms += '\n';
+        this.dataService.ligerAnnotateStanza(ligerRequest).subscribe(
+          data => {
+            console.log("Liger response: ", data);
+            if (!data.hasOwnProperty("graph") || !data.graph.hasOwnProperty("graphElements") || data.graph.graphElements.length === 0) {
+              this.chatHistory.push({text: "Syntactic analysis failed for this input!", sender: 'Bot'});
+              this.loading = false; // Hide loading indicator
+              return;
             }
 
-            this.axioms += extractedAxioms + '\n';
-            this.updateAxioms(this.axioms);
-          }
+            if (data.hasOwnProperty("meaningConstructors")) {
+              this.meaningConstructors = data.meaningConstructors;
 
-        }
 
-          const gswbRequest: GswbRequest = {
-            premises: this.meaningConstructors,
-            gswbPreferences: this.gswbPreferences.gswbPreferences
-          };
+              if (data.hasOwnProperty("axioms") && data.axioms != null) {
+                console.log("Axioms: ", data.axioms);
 
-          console.log("Gswb request: ", gswbRequest);
+                let extractedAxioms = '';
+                // enumerate and create axioms from ligerAxioms
 
-          this.dataService.gswbDeduce(gswbRequest).subscribe(
-            data => {
-              let userSem = '';
-
-              if (data.hasOwnProperty('solutions') && data.solutions.length > 0 && data.solutions[0] != '') {
-                userSem = data.solutions.join('\n');
-
-                const pruneContext: boolean = this.contextPruning.nativeElement.checked;
-                const vampRequest: vampireRequest = { text: userMessage, context: this.context, axioms: this.axioms,
-                  hypothesis: userSem, pruning: pruneContext, active_indices: this.activeIndices,
-                   vampire_preferences: this.vampirePreferences.vampirePreferences };
-                console.log("Vampire request: ", vampRequest);
-
-                this.dataService.callVampire(vampRequest).subscribe(
-                  data => {
-                    console.log("Vampire response: ", data);
-                    this.clearSelected();
-                    if (data.hasOwnProperty("context")) {
-                      const newContext = data.context;
-                      this.history.push(newContext);
-                      this.context = newContext;
-                      this.historyChange.emit(this.history);
-                      this.changeDetector.detectChanges();
-
-                      var message = "Okay ...";
-                      var consistent: boolean = null;
-                      var info: boolean = null;
-                      var relevant: boolean = null;
-
-                      if (Object.keys(data.context_checks_mapping).length > 0) {
-                        glyph = data.context_checks_mapping[0].glyph;
-                        info = data.context_checks_mapping[0].informative;
-                        consistent = data.context_checks_mapping[0].consistent;
-                        relevant = data.context_checks_mapping[0].relevant;
-                      }
-
-                      if (consistent === null) {
-                        message = "Okay ...";
-                      } else if (!consistent) {
-                        message = "Your input does not make sense.";
-                      } else if (!info) {
-                        message = "Your input is not informative.";
-                      } else if (relevant) {
-                        message = "I may not fully understand your input. I assume it is informative and consistent";
-                      } else {
-                        message = "Your input is informative and consistent.";
-                      }
-
-                      this.chatHistory.push({ text: message, sender: 'Bot', glyph: glyph, showGlyph: false });
-                    }
-
-                    this.loading = false; // Hide loading indicator
-                  },
-                  error => {
-                    console.log("An error occurred during the call to Vampire");
-                    this.loading = false;
+                for (let axiom of data.axioms) {
+                  if (axiom.trim() !== '' && !this.axioms.includes(axiom.trim())) {
+                    extractedAxioms += logicType + "(" +
+                      "axiom" + this.axiomCounter + ",axiom," + axiom + ').\n';
+                    this.axiomCounter++;
                   }
-                );
+                }
 
-              } else {
-                this.chatHistory.push({ text: "No semantic analyses found for this input!", sender: 'Bot' });
-                this.loading = false;
-                return;
+                if (extractedAxioms.trim() !== '') {
+                  if (this.axioms != '') {
+                    this.axioms += '\n';
+                  }
+
+                  this.axioms += extractedAxioms + '\n';
+                  this.updateAxioms(this.axioms);
+                }
+
               }
-            },
-            error => {
-              console.log('ERROR: ', error);
-              this.chatHistory.push({ text: "An error occurred during the semantic analysis", sender: 'Bot' });
+
+              const gswbRequest: GswbRequest = {
+                premises: this.meaningConstructors,
+                gswbPreferences: this.gswbPreferences.gswbPreferences
+              };
+
+              console.log("Gswb request: ", gswbRequest);
+
+              this.dataService.gswbDeduce(gswbRequest).subscribe(
+                data => {
+                  let userSem = '';
+
+                  if (data.hasOwnProperty('solutions') && data.solutions.length > 0 && data.solutions[0] != '') {
+                    userSem = data.solutions.join('\n');
+
+                    const pruneContext: boolean = this.contextPruning.nativeElement.checked;
+                    const vampRequest: vampireRequest = {
+                      text: userMessage, context: this.context, axioms: this.axioms,
+                      hypothesis: userSem, pruning: pruneContext, active_indices: this.activeIndices,
+                      vampire_preferences: this.vampirePreferences.vampirePreferences
+                    };
+                    console.log("Vampire request: ", vampRequest);
+
+                    this.dataService.callVampire(vampRequest).subscribe(
+                      data => {
+                        console.log("Vampire response: ", data);
+                        this.clearSelected();
+                        if (data.hasOwnProperty("context")) {
+                          const newContext = data.context;
+                          this.history.push(newContext);
+                          this.context = newContext;
+                          this.historyChange.emit(this.history);
+                          this.changeDetector.detectChanges();
+
+                          var message = "Okay ...";
+                          var consistent: boolean = null;
+                          var info: boolean = null;
+                          var relevant: boolean = null;
+
+                          if (Object.keys(data.context_checks_mapping).length > 0) {
+                            glyph = data.context_checks_mapping[0].glyph;
+                            info = data.context_checks_mapping[0].informative;
+                            consistent = data.context_checks_mapping[0].consistent;
+                            relevant = data.context_checks_mapping[0].relevant;
+                          }
+
+                          if (consistent === null) {
+                            message = "Okay ...";
+                          } else if (!consistent) {
+                            message = "Your input does not make sense.";
+                          } else if (!info) {
+                            message = "Your input is not informative.";
+                          } else if (relevant) {
+                            message = "I may not fully understand your input. I assume it is informative and consistent";
+                          } else {
+                            message = "Your input is informative and consistent.";
+                          }
+
+                          this.chatHistory.push({text: message, sender: 'Bot', glyph: glyph, showGlyph: false});
+                        }
+
+                        this.loading = false; // Hide loading indicator
+                      },
+                      error => {
+                        console.log("An error occurred during the call to Vampire");
+                        this.loading = false;
+                      }
+                    );
+
+                  } else {
+                    this.chatHistory.push({text: "No semantic analyses found for this input!", sender: 'Bot'});
+                    this.loading = false;
+                    return;
+                  }
+                },
+                error => {
+                  console.log('ERROR: ', error);
+                  this.chatHistory.push({text: "An error occurred during the semantic analysis", sender: 'Bot'});
+                  this.loading = false;
+                  return;
+                }
+              );
+            } else {
+              this.chatHistory.push({text: "Could not find meaning constructors for this input!", sender: 'Bot'});
               this.loading = false;
               return;
             }
-          );
-        } else {
-          this.chatHistory.push({ text: "Could not find meaning constructors for this input!", sender: 'Bot' });
-          this.loading = false;
-          return;
-        }
+          },
+          error => {
+            this.chatHistory.push({text: "An unknown error occurred.", sender: 'Bot'});
+            console.log('ERROR: ', error);
+            this.loading = false;
+          }
+        );
       },
-      error => {
-        this.chatHistory.push({ text: "An unknown error occurred.", sender: 'Bot' });
+        error => {
+        this.chatHistory.push({text: "An error occurred during the stanza parsing", sender: 'Bot'});
         console.log('ERROR: ', error);
         this.loading = false;
       }
-    );
+      );
+
 
     this.userInput = ''; // Clear input
   }

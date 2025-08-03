@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
-  , GrammarList, GrammarString, FileTree, PathString, vampireRequest, vampireResponse, GswbBatchOutput
+  , GrammarList, GrammarString, FileTree, PathString, vampireRequest, vampireResponse, GswbBatchOutput, StanzaAnnotation
 } from './models/models';
 
 @Injectable({
@@ -13,6 +13,8 @@ export class DataService {
   private vampirepage = 'http://localhost:8082'
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
+  private stanzapage = 'http://localhost:8083';
+
   constructor(private http: HttpClient) { }
 
   //gswb models
@@ -72,6 +74,14 @@ callVampire(vampireRequest: vampireRequest){
 }
 
 
+// Call to Stanza parser
 
+  stanzaParse(stanzaRequest): Observable<any> {
+    return this.http.post<StanzaAnnotation>(`${this.stanzapage}/parse_to_liger`, stanzaRequest);
+  }
+
+  ligerAnnotateStanza(ligerRequest): Observable<any> {
+    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/apply_rules_base`, ligerRequest);
+  }
 
 }
