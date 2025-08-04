@@ -10,6 +10,7 @@
   border-style: solid;
   border-color: #00a9e0;
   overflow: hidden;
+  min-width: 780px; /* Minimum width for the editor */
   max-width: 100%; /* Ensure the div doesn't exceed parent's width */
   max-height: 100%; /* Ensure the div doesn't exceed parent's height */
   background-color: lightblue;

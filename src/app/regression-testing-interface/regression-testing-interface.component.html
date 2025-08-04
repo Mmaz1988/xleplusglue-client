@@ -46,11 +46,6 @@
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
 </button>
-  <button class="button beta" (click)="batchMultistage(testsuite.getContent())">
-    <span *ngIf="!loading">Multistage</span>
-    <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-    <span *ngIf="loading">Loading...</span>
-  </button>
 
   <div class="errorhandling" #errorhandle></div>
 
