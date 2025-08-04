@@ -27,7 +27,7 @@ export class RegressionTestingInterfaceComponent {
   }
 
 
-  @ViewChild('arcy') cy1: AppliedRulesGraphComponent;
+  @ViewChild('arcy') cy1: GraphVisComponent;
   @ViewChild('ligerreport') ligerreport: ElementRef;
   @ViewChild('gswbreport') gswbreport: ElementRef;
   @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent

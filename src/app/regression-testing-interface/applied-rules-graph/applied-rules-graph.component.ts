@@ -139,9 +139,16 @@ export class AppliedRulesGraphComponent {
     nodes.sort((a, b) => (a.data['id'] > b.data['id']) ? 1 : -1)
 
     console.log("Sorted nodes: ", nodes);
+    console.log("Number of nodes: ", nodes.length);
 
     //divide number of elements in graphData by 10 and return corresponding int
-    const nodeBucket = Math.floor(nodes.length / 10);
+
+    let bucketDivider = 10;
+    while (nodes.length < bucketDivider) {
+      bucketDivider = bucketDivider / 2;
+    }
+
+    const nodeBucket = Math.floor(nodes.length / bucketDivider);
     console.log("NodeBucket: ", nodeBucket)
 
 

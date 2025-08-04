@@ -122,6 +122,9 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "#d DEFINITE Ind & #d ^(DET) #n SEM #s & #n ^(%) #p SEM #q  ==>  \n" +
   "#d SEM #t & #t GLUE [/P_<e,t>.[/Q_<e,t>.Ex_e[P(x) \\& Q(x)]]] : \n" +
   "\t\t\t\t\t\t((#s_e -o #s_t) -o ((#s_e -o #q_t) -o #q_t)).\n" +
+  "\n" +
+  "#d DEFINITE Def & #d ^(DET) #n SEM #s & #n ^(%) #p SEM #q  ==>  \n" +
+  "#d SEM #t & #t GLUE [/P_<e,t>.Ix_e[P(x)]] : ((#s_e -o #s_t) -o #s_e).\n" +
   "                        \n" +
   "#d UPOS 'DET' & #d LEMMA every & #d ^(DET) #n SEM #s & #n ^(%) #p SEM #q  ==>  \n" +
   "#d SEM #t & #t GLUE [/P_<e,t>.[/Q_<e,t>.Ax_e[P(x) -> Q(x)]]] : \n" +
