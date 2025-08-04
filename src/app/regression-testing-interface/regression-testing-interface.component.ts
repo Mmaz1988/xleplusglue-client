@@ -114,7 +114,7 @@ export class RegressionTestingInterfaceComponent {
             }
             if (data.hasOwnProperty("ruleApplicationGraph")) {
 
-              console.log(data.ruleApplicationGraph);
+              console.log("Rendering graph: ", data.ruleApplicationGraph);
               this.cy1.renderGraph(data.ruleApplicationGraph);
             }
 

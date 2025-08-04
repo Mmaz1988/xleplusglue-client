@@ -72,7 +72,7 @@ CodeMirror.defineMode("glue", function() {
 
 const DEFAULT_TEST_SUITE = "#transitive\n" +
   "\n" +
-  "a big black dog appeared.\n" +
+  "a dog appeared.\n" +
   "\n" +
   "#optional transitives\n" +
   "\n" +
@@ -89,116 +89,45 @@ const DEFAULT_TEST_SUITE = "#transitive\n" +
   "Mary gave a student every grade.\n" +
   "\n" +
   "Mary gave a grade to a student.\n" +
-  "\n" +
-  "#COMP-verb\n" +
-  "\n" +
-  "Mary thinks that a cat meowed.\n" +
-  "\n" +
-  "#XCOMPs\n" +
-  "\n" +
-  "a cat seemed to meow.\n" +
-  "\n" +
-  "a dog tried to meow.\n" +
-  "\n" +
-  "#passives\n" +
-  "\n" +
-  "a bone was devoured by a dog.\n" +
-  "\n" +
-  "a program was implemented by a developer.\n" +
-  "\n" +
-  "a solution was implemented.\n" +
-  "\n" +
-  "# The following two sentences need fixing in the basic grammar (clash with OT mark and unwanted semantics)\n" +
-  "\n" +
-  "a grade was given to every student by Mary.\n" +
-  "\n" +
-  "a student was given every grade by Mary.\n" +
-  "\n" +
-  "#PP-attachment\n" +
-  "\n" +
-  "a big black dog appeared on the table.\n" +
-  "\n" +
-  "Peter saw the monkey with the telescope."
-
-
+  "\n";
 
 
 const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
-  "//Nounmodifiers\n" +
-  "#n MOD #m in_set #p PRED %p & #p TYPE %k & #n s:: #s ==>\n" +
-  "#p GLUE lam(P,lam(X,merge(drs([],[rel(%k,'strip(%p)',X)]),app(P,X)))) : ((#s_e -o #s_t) -o (#s_e -o #s_t)) || noscope.\n" +
+  "#e UPOS VERB & #e LEMMA %l ==> #e SEM #s & \n" +
+  "\t\t\t\t\t\t\t   \t#s CLOSURE #c &\n" +
+  "\t\t\t\t\t\t\t\t#s GLUE [/e_v.%l(e)] : (#s_v -o #s_t) &\n" +
+  "                                #c GLUE [/P_<v,t>.Ee_v[P(v)]] : ((#s_v -o #s_t) -o #s_t) || noscope.\n" +
   "\n" +
+  "#e NSUBJ #a & #e SEM #v ==> #a SEM #s & #v ARG1 #b & \n" +
+  "\t\t\t\t\t\t\t\t#b GLUE [/P_<v,t>.[/x_e.[/e_v.(arg1(e,x) \\& P(e))]]] : \n" +
+  "\t\t\t\t\t\t\t\t((#v_v -o #v_t) -o (#s_e -o (#v_v -o #v_t))) || noscope.\n" +
+  "                                  \n" +
+  "#e OBJ #a & #e SEM #v ==> #a SEM #s & #v ARG2 #b &\n" +
+  "\t\t\t\t\t\t\t\t#b GLUE [/P_<v,t>.[/x_e.[/e_v.(arg2(e,x) \\& P(e))]]] : \n" +
+  "\t\t\t\t\t\t\t\t((#v_v -o #v_t) -o (#s_e -o (#v_v -o #v_t))) || noscope.\n" +
+  "                                \n" +
+  " #e OBL:UNMARKED #a & #e SEM #v ==> #a SEM #s & #v ARG3 #b &\n" +
+  "\t\t\t\t\t\t\t\t#b GLUE [/P_<v,t>.[/x_e.[/e_v.(arg3(e,x) \\& P(e))]]] : \n" +
+  "\t\t\t\t\t\t\t\t((#v_v -o #v_t) -o (#s_e -o (#v_v -o #v_t))) || noscope.\n" +
   "\n" +
-  "//Degree (gradable) adjectives\n" +
-  "#x PREDLINK #a & #x s:: #y EV #z &\n" +
-  "#a ATYPE 'predicative' & #a SEMTYPE 'degree' &\n" +
-  "#a SUBJ #b s:: #c &\n" +
-  "#a PRED %a &  #a s:: #s\n" +
-  "==> & #s DEGREE #d & #s DEGREE-HOLDER #z & #s DEGREE-PRED #p &\n" +
-  "#p GLUE lam(P,lam(D,lam(X,drs([],[rel(strip(%a),X,D)])))) : ((#s_v -o #s_t) -o (#d_d -o (#s_v -o #s_t))).\n" +
+  " #e OBL #a & #e SEM #v ==> #a SEM #s & #v ARG3 #b &\n" +
+  "\t\t\t\t\t\t\t\t#b GLUE [/P_<v,t>.[/x_e.[/e_v.(arg3(e,x) \\& P(e))]]] : \n" +
+  "\t\t\t\t\t\t\t\t((#v_v -o #v_t) -o (#s_e -o (#v_v -o #v_t))) || noscope.\n" +
   "\n" +
-  "//This works\n" +
-  "#x ADJUNCT #n in_set #a & #x s:: #y &\n" +
-  "#a ATYPE 'attributive' & #a SEMTYPE 'degree' &\n" +
-  "#a PRED %a & #a s:: #s\n" +
-  "==> #s DEGREE #d & #s DEGREE-HOLDER #y & #s DEGREE-PRED #p &\n" +
-  "#p GLUE lam(P,lam(D,lam(X,drs([],[rel(strip(%a),X,D)])))) : ((#s_e -o #s_t) -o (#d_d -o (#s_e -o #s_t))).\n" +
+  "#n UPOS PROPN & #n LEMMA %l & #n SEM #s ==> #s GLUE %l : #s_e.\n" +
   "\n" +
+  "#n UPOS NOUN & #n LEMMA %l & #n SEM #s ==> #s GLUE [/x_e.%l(x)] : (#s_e -o #s_t).\n" +
   "\n" +
-  "// Rules for positive uses\n" +
-  "// attributive\n" +
-  "#x ADJUNCT #n in_set #a & #x PRED %x &\n" +
-  "#a ATYPE 'attributive' &\n" +
-  "#a PRED %a & #a s:: #b DEGREE #d & #b DEGREE-HOLDER #e\n" +
-  "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
-  "\n" +
-  "// predicative\n" +
-  "#x PREDLINK #a & #x SUBJ #y PRED %x &\n" +
-  "#a ATYPE 'predicative' &\n" +
-  "#a PRED %a & #a s:: #b DEGREE #d & #b DEGREE-HOLDER #e\n" +
-  "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
-  "\n" +
-  "//Rules for comparative uses\n" +
-  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p &\n" +
-  "#a s:: #b DEGREE #d & #b DEGREE-HOLDER #e & #b DEGREE-PRED #p &\n" +
-  "#a ADJUNCT #f in_set #c OBL-COMP #m OBJ #n s:: #o\n" +
-  "==>\n" +
-  "#o DEGREE #x & #o DEGREE-HOLDER #y &\n" +
-  "#d GLUE lam(P,lam(Q,lam(E,\n" +
-  "\t\tmerge(drs([D:d],[]),merge(app(app(P,D),E),drs([],[not(merge(drs([V],[]),app(app(Q,D),V)))])))))) :\n" +
-  "\t\t((#d_d -o (#b_v -o #b_t)) -o ((#x_d -o (#y_v -o #m_t)) -o (#b_v -o #b_t))) || noscope &\n" +
-  "#m GLUE lam(D,lam(E,drs([],[rel(strip(%p),E,D)]))) : (#x_d -o (#y_v -o #m_t)) &\n" +
-  "#n GLUE lam(V,lam(X,lam(E,merge(app(V,E),drs([],[rel(arg1,E,X)]))))) :\n" +
-  "\t\t((#y_v -o #m_t) -o (#o_e -o (#y_v -o #m_t))).\n" +
-  "\n" +
-  "//Axioms\n" +
-  "\n" +
-  "//Be equality axiom\n" +
-  "#p PRED %p & strip(%p) == 'be' & #p PREDLINK #c s:: #s TYPE 'entity' ==>\n" +
-  "#p AXIOM all(X,all(Y,all(Z,imp(and(be(X),and(arg1(X,Y),arg2(X,Z))),eq(Y,Z))))).\n" +
-  "\n" +
-  "//Comparative axioms\n" +
-  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p ==>\n" +
-  "#a AXIOM all(X, all(Y, all(D:d, imp(and(arg1(X, Y), fast(X, D)), fast(Y, D))))).\n" +
-  "\n" +
-  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p &\n" +
-  "#a s:: #b DEGREE #d & #b DEGREE-HOLDER #e & #b DEGREE-PRED #p &\n" +
-  "#a ADJUNCT #f in_set #c OBL-COMP #m OBJ #n s:: #o ==>\n" +
-  "#a MONO #q & #q AXIOM all(X, all(Delta1:d, iff(strip(%p)(X, Delta1), all(Delta2:d, imp(lessEq(Delta2, Delta1), strip(%p)(X, Delta2)))))) &\n" +
-  "#a CP #r & #r AXIOM all(X, all(Y, imp(some(D:d, and(strip(%p)(X, D), not(strip(%p)(Y, D)))), all(D2:d, imp(strip(%p)(Y, D2), strip(%p)(X, D2)))))) &\n" +
-  "#a MAX #s & #s AXIOM all(X, some(Delta1:d, and(strip(%p)(X, Delta1), not(some(Delta2:d, and(greater(Delta2, Delta1), strip(%p)(X, Delta2))))))).\n" +
-  "\n";
+  "#d DEFINITE Ind & #d ^(DET) #n SEM #s & #n ^(%) #p SEM #q  ==>  \n" +
+  "#d SEM #t & #t GLUE [/P_<e,t>.[/Q_<e,t>.Ex_e[P(x) \\& Q(x)]]] : \n" +
+  "\t\t\t\t\t\t((#s_e -o #s_t) -o ((#s_e -o #q_t) -o #q_t)).\n" +
+  "                        \n" +
+  "#d UPOS 'DET' & #d LEMMA every & #d ^(DET) #n SEM #s & #n ^(%) #p SEM #q  ==>  \n" +
+  "#d SEM #t & #t GLUE [/P_<e,t>.[/Q_<e,t>.Ax_e[P(x) -> Q(x)]]] : \n" +
+  "\t\t\t\t\t\t((#s_e -o #s_t) -o ((#s_e -o #q_t) -o #q_t)).";
 
-const VAMPIRE_DEFAULT_AXIOMS = "tff(fast_type, type, fast: ($i * $int) > $o).\n" +
-  "tff(kind_type, type, kind: ($i * $i) > $o).\n" +
-  "tff(arg1_type, type, arg1: ($i * $i) > $o).\n" +
-  "tff(arg2_type, type, arg2: ($i * $i) > $o).\n" +
-  "tff(computer_type, type, computer: $i > $o).\n" +
-  "tff(be_type, type, be: $i > $o).\n" +
-  "\n" +
-  "tff(pn_type1, type, 'pc-6082': $i).\n" +
-  "tff(pn_type2, type, 'itel-zx': $i).\n"
+const VAMPIRE_DEFAULT_AXIOMS = "";
 
 @Component({
   selector: 'app-editor',
