@@ -1,13 +1,9 @@
 <div class="frame">
 
   <div class="container">
-    <h1>Semantig parser settings</h1>
+    <h1>Semantic parser settings</h1>
     <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show settings" hideText="Hide settings">
       <div class="grammar-loader-container">
-        <div>
-          <h2>Grammar selection:</h2>
-          <app-grammar-loader></app-grammar-loader>
-        </div>
         <div>
           <h2>Rule file selection:</h2>
           <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>

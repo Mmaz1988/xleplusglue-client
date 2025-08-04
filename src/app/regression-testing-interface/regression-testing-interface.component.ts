@@ -7,12 +7,13 @@ import {
   LigerRuleAnnotation,
   LigerWebGraph,
   LigerGraphComponent,
-  GswbPreferences, GswbMultipleRequest, GswbBatchOutput, GswbOutput
+  GswbPreferences, GswbMultipleRequest, GswbBatchOutput, GswbOutput, StanzaMultipleAnnotation
 } from '../models/models';
 import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.component";
 import {EditorComponent} from "../editor/editor.component";
 import {catchError, EMPTY, map, Observable} from "rxjs";
 import {tap} from "rxjs/operators";
+import {error} from "@angular/compiler-cli/src/transformers/util";
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -58,108 +59,127 @@ export class RegressionTestingInterfaceComponent {
       sentenceMap["S" + (i + 1)] = sentencesArray[i];
     }
 
-    this.displayMessage("Sending testsuite to LiGER for parsing ...", "blue");
+    this.displayMessage("Sending testsuite to Stanza for parsing ...", "blue");
 
-    const ligerMultipleRequest = {sentences: sentenceMap, ruleString: rules};
+    const stanzaMultipleRequest = {sentences: sentenceMap, language : "en"};
 
-    this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
-      data => {
-        // console.log(data);
-        if (data.hasOwnProperty("annotations")) {
+    this.dataService.stanzaBatchParse(stanzaMultipleRequest).subscribe(
+      stanza_data => {
+        console.log("Stanza parse result: ", stanza_data);
 
-          console.log("Annotations:",data.annotations);
+        const stanza_json_string_obj: { [key: string]: string } = {};
 
-          let mcMap = {}
-          for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
-            mcMap[key] = value.meaningConstructors;
-          }
+        //Stringify stanza_data to send to LiGER
+        for (let [key, value] of Object.entries(stanza_data.annotations)) {
+          stanza_json_string_obj[key] = JSON.stringify(value);
+        }
+
+        const ligerMultipleRequest = {sentences: stanza_json_string_obj, ruleString: rules};
+
+        console.log("Liger request: ", ligerMultipleRequest);
+
+        this.displayMessage("Sending testsuite to LiGER for analyzing ...", "blue");
+        this.dataService.ligerBatchAnnotateDependencies(ligerMultipleRequest).subscribe(
+          data => {
+            // console.log(data);
+            if (data.hasOwnProperty("annotations")) {
+
+              console.log("Annotations:", data.annotations);
+
+              let mcMap = {}
+              for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
+                mcMap[key] = value.meaningConstructors;
+              }
 
 // sort mcMap by key where keys are of the form S0, S1, S2, ...
 // sort by the entire numeric portion of the key
-          let sortedMcMap = {};
-          Object.keys(mcMap).sort((a, b) => {
-            let aNum = parseInt(a.match(/\d+/)[0]);
-            let bNum = parseInt(b.match(/\d+/)[0]);
-            return aNum - bNum;
-          }).forEach(key => {
-            sortedMcMap[key] = mcMap[key];
+              let sortedMcMap = {};
+              Object.keys(mcMap).sort((a, b) => {
+                let aNum = parseInt(a.match(/\d+/)[0]);
+                let bNum = parseInt(b.match(/\d+/)[0]);
+                return aNum - bNum;
+              }).forEach(key => {
+                sortedMcMap[key] = mcMap[key];
+              });
+
+              console.log("sorted MCs", sortedMcMap);
+
+              this.gswbMultipleRequest = {
+                premises: sortedMcMap,
+                gswbPreferences: this.gswbPreferences.gswbPreferences
+              }
+
+              console.log("Specified request: ", this.gswbMultipleRequest);
+
+            }
+            if (data.hasOwnProperty("ruleApplicationGraph")) {
+
+              console.log(data.ruleApplicationGraph);
+              this.cy1.renderGraph(data.ruleApplicationGraph);
+            }
+
+            // if (data.hasOwnProperty("report")) {
+            //   this.ligerreport.nativeElement.innerHTML = data.report;
+            // }
+
+            this.displayMessage("Sending parsing results to GSWB for deduction ...", "blue");
+
+            this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
+              const outputs = result.outputs;
+              console.log("GSWB outputs: ", outputs);
+              const gswbMap = new Map<string, GswbOutput>();
+              for (const key in outputs) {
+                gswbMap.set(key, outputs[key]);
+              }
+
+              console.log("GSWB Map: ", gswbMap);
+
+              let successCount = 0;
+              let successFullKeys = [];
+
+              //Iterate through sentenceMap keys
+              for (let key of Object.keys(sentenceMap)) {
+
+                if (gswbMap.get(key).solutions.length > 0) {
+                  successCount++;
+                  successFullKeys.push(key);
+                }
+
+                let regressionTestResult: {}
+                  = {
+                  sentence_id: key,
+                  sentence: sentenceMap[key],
+                  noOfAppliedRules: data.annotations[key].appliedRules.length,
+                  noOfMCsets: data.annotations[key].numberOfMCsets,
+                  noOfSolutions: gswbMap.get(key).solutions.length,
+                  ligerGraph: data.annotations[key].graph,
+                  ligerMCsets: data.annotations[key].meaningConstructors,
+                  gswbSolutions: gswbMap.get(key).solutions,
+                  gswbDerivation: gswbMap.get(key).derivation
+                }
+                console.log("Regression test result for " + key + ": ", regressionTestResult);
+                this.regressionTestResults.push(regressionTestResult);
+              }
+
+              console.log("Successful keys: ", successFullKeys);
+              let quickReport = "Parsed " + successCount + " of " + (Object.keys(sentenceMap).length) + " sentences! \n"
+
+              this.loading = false;
+              this.displayMessage(quickReport +
+                "Batch processing completed successfully.", "green");
+            });
+          },
+          error => {
+            console.error('An error occurred:', error);
+            this.displayMessage("An error occurred during batch parsing.", "red");
+            this.loading = false;
           });
-
-          console.log("sorted MCs",sortedMcMap);
-
-          this.gswbMultipleRequest = {
-            premises: sortedMcMap,
-            gswbPreferences: this.gswbPreferences.gswbPreferences
-          }
-
-          console.log("Specified request: ",this.gswbMultipleRequest);
-
-        }
-        if (data.hasOwnProperty("ruleApplicationGraph")) {
-
-          console.log(data.ruleApplicationGraph);
-          this.cy1.renderGraph(data.ruleApplicationGraph);
-        }
-
-        // if (data.hasOwnProperty("report")) {
-        //   this.ligerreport.nativeElement.innerHTML = data.report;
-        // }
-
-        this.displayMessage("Sending parsing results to GSWB for deduction ...", "blue");
-
-        this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
-          const outputs = result.outputs;
-          console.log("GSWB outputs: ", outputs);
-          const gswbMap = new Map<string, GswbOutput>();
-          for (const key in outputs) {
-            gswbMap.set(key, outputs[key]);
-          }
-
-          console.log("GSWB Map: ", gswbMap);
-
-          let successCount = 0;
-          let successFullKeys = [];
-
-          //Iterate through sentenceMap keys
-          for (let key of Object.keys(sentenceMap)){
-
-            if (gswbMap.get(key).solutions.length > 0) {
-              successCount++;
-              successFullKeys.push(key);
-            }
-
-            let regressionTestResult: {}
-            = {
-              sentence_id: key,
-              sentence: sentenceMap[key],
-              noOfAppliedRules : data.annotations[key].appliedRules.length,
-              noOfMCsets: data.annotations[key].numberOfMCsets,
-              noOfSolutions: gswbMap.get(key).solutions.length,
-              ligerGraph: data.annotations[key].graph,
-              ligerMCsets: data.annotations[key].meaningConstructors,
-              gswbSolutions: gswbMap.get(key).solutions,
-              gswbDerivation: gswbMap.get(key).derivation
-            }
-            console.log("Regression test result for " + key + ": ", regressionTestResult);
-            this.regressionTestResults.push(regressionTestResult);
-          }
-
-          console.log("Successful keys: ", successFullKeys);
-          let quickReport = "Parsed " + successCount + " of " + (Object.keys(sentenceMap).length) + " sentences! \n"
-
-         this.loading = false;
-          this.displayMessage(  quickReport +
-            "Batch processing completed successfully.", "green");
-        });
       },
       error => {
-        console.error('An error occurred:', error);
-        this.displayMessage("An error occurred during batch parsing.", "red");
+        console.error('An error occurred during Stanza parsing:', error);
+        this.displayMessage("An error occurred during Stanza parsing.", "red");
         this.loading = false;
       });
-
-
-
   }
 
   batchMultistage(sentences: String) {

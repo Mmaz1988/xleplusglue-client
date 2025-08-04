@@ -139,5 +139,11 @@ export interface StanzaAnnotation {
   conllu?: string;
 }
 
+export interface StanzaMultipleAnnotation {
+  annotations: { [key: string]: StanzaAnnotation };
+}
+
+
+
 
 

@@ -6,18 +6,44 @@
   Concretely, it presents the
 <a href="https://github.com/Mmaz1988/GlueSemWorkbench_v2"> Glue semantics workbench </a>and the <a href="https://github.com/Mmaz1988/liger">
     LiGER rewrite system </a>. As all of these resources, this frontend is open source.
-It is available at: <a href="https://github.com/Mmaz1988/xleplusglue-client"><s>XLE</s> UD+Glue client</a> </p>
+It is available at: <a href="https://github.com/Mmaz1988/xleplusglue/tree/ESSLLI2025_glue_course"><s>XLE</s> UD+Glue client</a> </p>
 
 <h2>Quick start</h2>
 
   <ul>
     <li>Download the UD+Glue  repository</li>
     <li>Install Docker</li>
+    <li> Download the English Stanza model and put it in the corresponding folder (see below)</li>
     <li>
       Navigate to the Docker folder in the repository on your computer in a terminal and execute<br>
       <code>docker compose up --build</code>
     </li>
   </ul>
+
+  <h2>Installing Stanza</h2>
+
+  <p>If not already there, create a directory named <code>models</code> in the Stanza directory.</p>
+
+  <p>
+    Download the English model from
+    <a href="https://huggingface.co/stanfordnlp/stanza-en/blob/main/models/default.zip" target="_blank">Stanza English model</a>.
+  </p>
+
+  <p>
+    Download the resources file from
+    <a href="https://github.com/stanfordnlp/stanza-resources/blob/main/resources_1.10.0.json" target="_blank">Stanza resources</a>.
+  </p>
+
+  <p>
+    Put the download files in the models folder.
+    The structure should look like this:
+  </p>
+
+  <pre><code>Stanza/
+ └── models/
+     ├── English/          ← contents of the English model in the default.zip file
+     └── resources.json    ← contents of the resources_1.10.0.json file
+</code></pre>
 
 
 </div>
