@@ -14,6 +14,7 @@ import {EditorComponent} from "../editor/editor.component";
 import {catchError, EMPTY, map, Observable} from "rxjs";
 import {tap} from "rxjs/operators";
 import {error} from "@angular/compiler-cli/src/transformers/util";
+import {AppliedRulesGraphComponent} from "./applied-rules-graph/applied-rules-graph.component";
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -26,7 +27,7 @@ export class RegressionTestingInterfaceComponent {
   }
 
 
-  @ViewChild('arcy') cy1: GraphVisComponent;
+  @ViewChild('arcy') cy1: AppliedRulesGraphComponent;
   @ViewChild('ligerreport') ligerreport: ElementRef;
   @ViewChild('gswbreport') gswbreport: ElementRef;
   @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent
