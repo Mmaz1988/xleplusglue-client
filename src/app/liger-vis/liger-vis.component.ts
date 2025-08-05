@@ -15,7 +15,7 @@ export class LigerVisComponent {
   constructor(private dataService: DataService) {
   }
 
-  defaultValue: string = 'Every man hugged a woman.';
+  defaultValue: string = 'Every dog sniffed a tree.';
   meaningConstructors: string;
   changeDetector: EventEmitter<any> = new EventEmitter();
   graphElements: any
@@ -45,7 +45,7 @@ export class LigerVisComponent {
 
     const stanzaRequest = {sentence: sentence, language: "en"};
 
-
+    this.displayMessage("Sending sentence to Stanza for parsing ...", "blue");
     this.dataService.stanzaParse(stanzaRequest).subscribe(
       stanza_data => {
         console.log("Stanza parse result: ", stanza_data);
@@ -55,6 +55,7 @@ export class LigerVisComponent {
 
         const ligerRequest = {sentence: stanza_json, ruleString: ruleString};
 
+        this.displayMessage("Sending dependency parse to LiGER for annotation ...", "blue");
     this.dataService.ligerAnnotateStanza(ligerRequest).subscribe(
       data => {
         this.loading = false;

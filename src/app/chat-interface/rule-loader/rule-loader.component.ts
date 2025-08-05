@@ -27,7 +27,7 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
   @Output() dataEmitter = new EventEmitter<string>();
 
   grammarList: string[] = [];
-  defaultRules: string = "./liger_resources/rules/degree_rules_ev.txt";
+  defaultRules: string = "./liger_resources/rules/simple_ud.txt";
   grammarsDirectory: string = "./liger_resources/rules";
   currentStatusMessage: string = ""
   grammarFileTree: FileTree[] = [];  // Initialize as an empty array
