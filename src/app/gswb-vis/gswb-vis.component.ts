@@ -1,4 +1,4 @@
-import { Component, ViewChild } from '@angular/core';
+import {Component, ElementRef, ViewChild} from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { SemComponent } from './sem/sem.component';
 import { LogComponent } from './log/log.component';
@@ -24,6 +24,7 @@ export class GswbVisComponent {
   @ViewChild('log1') log: EditorComponent;
   @ViewChild('dialog') dialog: DialogComponent;
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
+  @ViewChild('errorhandle') errorhandle: ElementRef;
 
 
   constructor(private dataService: DataService) {
@@ -40,6 +41,7 @@ export class GswbVisComponent {
       gswbPreferences: this.gswbPreferences.gswbPreferences
     }
 
+    this.displayMessage("[" +  new Date().toLocaleTimeString() + "] Sending request to GSWB ...", "blue");
     this.dataService.gswbDeduce(gswbRequest).subscribe(
       data => {
         this.loading = false;
@@ -104,21 +106,26 @@ export class GswbVisComponent {
                   // Update your component's property bound to your logContainerElement here...
 
         }
+        this.displayMessage("GSWB deduction completed.", "green");
       },
       error => {
         console.log('ERROR: ', error);
         this.loading = false;
-        this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] An error occurred.");
+        // this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] An error occurred.");
+        this.displayMessage( "An error occurred during GSWB deduction.", "red");
         console.log("Sent following request: ", gswbRequest);
       }
     );
 
-
-
-
     // Now, you can send 'editorContent' to your backend.
     // Use your preferred method to send data to backend (for instance, HttpClient).
   }
+
+  displayMessage(message: string, color: string) {
+    this.errorhandle.nativeElement.style.color = color;
+    this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
+  }
+
 
 }
 // Inside ParentComponent

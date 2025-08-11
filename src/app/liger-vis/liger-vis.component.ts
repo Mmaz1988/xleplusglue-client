@@ -97,7 +97,7 @@ export class LigerVisComponent {
       error => {
         this.loading = false;
         console.log('ERROR: ', error);
-        this.displayMessage("An error occurred...", "red");
+        this.displayMessage("An error occurred while calling LiGER...", "red");
       }
     );
   }
