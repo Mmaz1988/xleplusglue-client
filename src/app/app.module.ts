@@ -46,6 +46,7 @@ import { InferenceSettingsComponent } from './inference-interface/inference-sett
 import { GswbVisContainerComponent } from './center-container/gswb-vis-container/gswb-vis-container.component';
 import { CenterContainerComponent } from './center-container/center-container/center-container.component';
 import { LigerVisContainerComponent } from './center-container/liger-vis-container/liger-vis-container.component';
+import { TestItemComponent } from './regression-testing-interface/test-item/test-item.component';
 
 @NgModule({
   declarations: [
@@ -82,7 +83,8 @@ import { LigerVisContainerComponent } from './center-container/liger-vis-contain
     InferenceSettingsComponent,
     GswbVisContainerComponent,
     CenterContainerComponent,
-    LigerVisContainerComponent
+    LigerVisContainerComponent,
+    TestItemComponent
   ],
   imports: [
     BrowserModule,

@@ -1,4 +1,4 @@
-import {Component, ViewChild, ElementRef} from '@angular/core';
+import {Component, ViewChild, ElementRef, AfterViewInit} from '@angular/core';
 import {DataService} from "../data.service";
 import {GraphVisComponent} from "../liger-vis/liger-graph-vis/graph-vis.component";
 import {
@@ -13,6 +13,7 @@ import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.com
 import {EditorComponent} from "../editor/editor.component";
 import {catchError, EMPTY, map, Observable} from "rxjs";
 import {tap} from "rxjs/operators";
+
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -29,20 +30,30 @@ export class RegressionTestingInterfaceComponent {
   @ViewChild('ligerreport') ligerreport: ElementRef;
   @ViewChild('gswbreport') gswbreport: ElementRef;
   @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent
+  @ViewChild('testfile') testfile: EditorComponent;
   @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
 
   gswbMultipleRequest: GswbMultipleRequest;
 
   regressionTestResults: any[] = [];
+  regressionTestItems: any[] = [];
 
   loading: boolean = false;
+
+//  ngAfterViewInit() {
+//    this.regressionTestItems = this.parse_testfile(this.testfile.getContent());
+//  }
+
+
+
 
   batchParse(sentences: String, rules: String) {
 
     this.errorhandle.nativeElement.innerHTML = "";
     this.loading = true;
     this.regressionTestResults = [];
+    this.regressionTestItems =[];
 
     this.gswbPreferences.onSubmit()
 
@@ -247,4 +258,69 @@ export class RegressionTestingInterfaceComponent {
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
+
+  parse_testfile(testfile: string){
+    // Split into lines and iterate over them
+
+    //empty regressionTestItems
+    this.regressionTestItems = [];
+
+    let parseItems: any[] = [];
+
+    let lines  = testfile.split('\n');
+
+    //iterate over lines by index
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (line.trim() === '') continue; // Skip empty lines
+      if (line.trim().startsWith('#')) continue; // Skip comment lines
+      if (line.trim().length > 2) {
+        let sentences: string[] = [];
+        sentences.push(line.trim())
+        let item = {sentences: sentences}
+        parseItems.push(item);
+      }
+      if (line.trim() === "{") {
+         i++;
+         let sentences: string[] = [];
+         let premise_ids = [];
+          let conclusion_ids = [];
+          let gold_label = null; // 1 for entailment, 0 for neutral, -1 for contradiction
+         let premises: boolean = true;
+         let no_of_sentences = 0;
+         while (lines[i].trim() !== "}" && i < lines.length) {
+           const innerLine = lines[i];
+           if (innerLine.trim() === '') { i++; continue;} // Skip empty lines
+           if (innerLine.trim().startsWith('}')) break;
+           if (innerLine.trim().startsWith('#')) {
+             i++;
+             continue; // Skip comment lines
+           }
+           if (innerLine.trim() === "====") {
+             premises = false;
+             i++;
+             continue;
+           } else if (innerLine.trim().startsWith(">>>"))
+           {
+             // Take rest of line and check whether 1, 0, or -1
+              let label = innerLine.trim().substring(3).trim();
+           } else if (innerLine.trim().length > 2){
+             sentences.push(innerLine.trim())
+             if (premises) {
+               premise_ids.push(no_of_sentences);
+             } else {
+                conclusion_ids.push(no_of_sentences);
+             }
+              no_of_sentences++;
+           }
+           i++;
+        }
+        let item = {sentences: sentences, premises: premise_ids,
+                                            conclusion: conclusion_ids, gold_label: gold_label};
+        parseItems.push(item);
+      }
+    }
+    console.log("Parsed items:", parseItems);
+    this.regressionTestItems.push(...parseItems);
+  }
 }

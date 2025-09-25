@@ -24,6 +24,15 @@
   </div>
   <br>
 
+  <div>
+    <div class="result-container" *ngFor="let element of regressionTestItems; let i = index">
+      <app-test-item [data]="element" >
+      </app-test-item>
+    </div>
+  </div>
+  <br>
+  <button (click)="parse_testfile(testsuite.getContent())">parse testfile</button>
+
   <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
 <h3>
   Test rules:
