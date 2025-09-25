@@ -131,5 +131,8 @@ export interface context {
   //optional glyph
   glyph?: string;
    showGlyph?: false
+
+   detailText?: string;        // for chat analysis
+   showDetail?: boolean;
  }
 

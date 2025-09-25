@@ -1,158 +1,82 @@
-.chat-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  max-width: 600px;
-  margin: auto;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  overflow: hidden;
-  background: white;
+/* 0) Make sure no ancestor clips horizontally */
+.chat-container { overflow-x: visible; }
+.chat-history  { position: relative; overflow: visible; isolation: isolate; }
+
+/* 1) Bubble must not clip; also ensure the role-classes don't override it */
+.message-container,
+.message-container.user-message,
+.message-container.bot-message {
+  position: relative;
+  overflow: visible !important;   /* prevent clipping by the bubble */
+  z-index: 0;                     /* baseline */
+  padding-bottom: 28px;           /* small reserve for minimized pills */
 }
 
-/* Chat History */
-.chat-history {
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  background: #f9f9f9;
+/* 2) Raise ONLY the bubble that has an expanded pill (pure CSS) */
+.message-container:has(.message-glyph:not(.minimized), .message-detail:not(.minimized)) {
+  z-index: 3;                     /* above neighboring bubbles */
 }
 
-/* Message Container */
-.message-container {
-  position: relative; /* Needed for glyph positioning */
-  display: flex;
-  flex-direction: column;
-  max-width: 75%;
-  padding: 8px;
-  border-radius: 8px;
-  margin: 4px 0;
-}
-
-/* User Messages */
-.user-message {
-  align-self: flex-end;
-  text-align: right;
-  background: #00a9e0;
-  color: white;
-}
-
-/* Bot Messages */
-.bot-message {
-  align-self: flex-start;
-  text-align: left;
-  background: #ddd;
-  color: black;
-}
-
-/* Preserve Text Formatting */
-.message-text {
-  font-family: "Courier New", Courier, "Lucida Console", "DejaVu Sans Mono", Monaco, Menlo, Consolas, monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-/* Sender Labels */
-.message-sender {
-  font-size: 12px;
-  font-weight: bold;
-  display: block;
-  margin-bottom: 2px;
-}
-
-/* Glyph Styling (Expanded by Default) */
-/* Glyph Styling (Expanded by Default) */
-.message-glyph {
-  border-radius: 4px;
+/* 3) Pill row anchored bottom-right, slightly outside so expansion is clearly beyond the bubble */
+.pill-container {
   position: absolute;
   bottom: 4px;
-  right: 4px;
-  width: 98px;  /* Full size */
+  right: -4px;                    /* nudge outside the bubble edge */
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow: visible;              /* allow children to extend left */
+  z-index: 2;                     /* above its own bubble bg */
+}
+
+/* 4) Pills as flex items (not absolute) */
+.message-glyph,
+.message-detail {
+  position: static;
+  border-radius: 4px;
   height: 82px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: white;
-  border: 1px solid #ccc;
-  cursor: pointer; /* Clickable */
-  transition: all 0.3s ease-in-out; /* Smooth resizing */
-}
-
-/* Minimized Glyph (No SVG, Just Green Box) */
-.message-glyph.minimized {
-  width: 20px;
-  height: 20px;
-  background: green;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  overflow: hidden; /* Ensures SVG does not remain */
-  color: white;
-  text-align: center;
-}
-
-
-
-
-/* Make sure SVGs are properly sized */
-.message-glyph svg {
-  width: 100%;
-  height: 100%;
-  background: white;
-}
-
-/* Chat Input */
-.chat-input {
-  display: flex;
-  padding: 12px;
   background: #fff;
-  border-top: 1px solid #ccc;
-}
-
-.chat-input input {
-  flex: 1;
-  padding: 10px;
   border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.chat-input button {
-  margin-left: 8px;
-  padding: 10px 16px;
-  border: none;
-  background: #00a9e0;
-  color: white;
-  border-radius: 4px;
   cursor: pointer;
-  font-weight: bold;
+  transition: all .2s ease-in-out;
+  margin: 0 2pt;
+  overflow: auto; /* content may overhang */
 }
 
-.chat-input button:hover {
-  background: #0079b3;
+/* Fixed vs. wide */
+.message-glyph  { width: 98px; }
+.message-detail { width: 600px; } /* can spill left; adjust as needed */
+
+/* Minimized states */
+.message-glyph.minimized {
+  width: 20px; height: 20px; background: green; border: none; color: #fff;
+}
+.message-detail.minimized {
+  width: 40px; height: 20px; background: blue; border: none; color: #fff;
 }
 
-.loading-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 16px;
-}
+/* SVG fills its pill */
+.message-glyph svg { width: 100%; height: 100%; background: #fff; }
 
-.loading-spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid rgba(0, 0, 0, 0.1);
-  border-top-color: #00a9e0;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+/* — existing styles kept — */
+.chat-container {
+  display: flex; flex-direction: column; height: 100%; max-width: 600px; margin: auto;
+  border: 1px solid #ccc; border-radius: 8px; background: #fff;
 }
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+.chat-history { flex: 1; padding: 16px; display: flex; flex-direction: column; background: #f9f9f9; }
+.message-container { display: flex; flex-direction: column; max-width: 75%; padding: 8px; border-radius: 8px; margin: 4px 0; }
+.user-message { align-self: flex-end; text-align: right; background: #00a9e0; color: #fff; }
+.bot-message  { align-self: flex-start; text-align: left; background: #ddd; color: #000; }
+.message-text { font-family: "Courier New", Courier, "Lucida Console", "DejaVu Sans Mono", Monaco, Menlo, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.message-sender { font-size: 12px; font-weight: bold; display: block; margin-bottom: 2px; }
+.chat-input { display: flex; padding: 12px; background: #fff; border-top: 1px solid #ccc; }
+.chat-input input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+.chat-input button { margin-left: 8px; padding: 10px 16px; border: none; background: #00a9e0; color: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
+.chat-input button:hover { background: #0079b3; }
+.loading-container { display: flex; justify-content: center; align-items: center; padding: 16px; }
+.loading-spinner { width: 24px; height: 24px; border: 3px solid rgba(0,0,0,0.1); border-top-color: #00a9e0; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }

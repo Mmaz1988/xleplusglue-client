@@ -53,6 +53,7 @@ export class ChatComponent {
     this.loading = true; // Show loading indicator
     const userMessage = this.userInput;
     var glyph = '';
+    var tptp = '';
 
     // Add user message to history
     this.chatHistory.push({ text: userMessage, sender: 'User' });
@@ -145,6 +146,14 @@ export class ChatComponent {
                         consistent = data.context_checks_mapping[0].consistent;
                         relevant = data.context_checks_mapping[0].relevant;
                       }
+                      //Check if elements in data.context have property 'tptp' and display line by line in tptp
+                      if (data.context.length > 0) {
+                        for (let i = 0; i < data.context.length; i++) {
+                          if (data.context[i].hasOwnProperty('tptp')) {
+                            tptp += data.context[i].tptp + '\n';
+                          }
+                        }
+                      }
 
                       if (consistent === null) {
                         message = "Okay ...";
@@ -158,7 +167,7 @@ export class ChatComponent {
                         message = "Your input is informative and consistent.";
                       }
 
-                      this.chatHistory.push({ text: message, sender: 'Bot', glyph: glyph, showGlyph: false });
+                      this.chatHistory.push({ text: message, sender: 'Bot', glyph: glyph, showGlyph: false, detailText: tptp, showDetail: false });
                     }
 
                     this.loading = false; // Hide loading indicator
@@ -217,4 +226,11 @@ export class ChatComponent {
     this.axiomsChanged.emit(this.axioms); // Emit the updated axioms
     console.log("Axioms updated in chat component:", this.axioms);
   }
+
+  toggleDetailVisibility(message: any) {
+    message.showDetail = !message.showDetail;
+  }
+
+
+
 }

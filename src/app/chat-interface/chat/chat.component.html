@@ -11,6 +11,8 @@
       <span class="message-sender">{{ message.sender }}:</span>
       <pre class="message-text">{{ message.text }}</pre>
 
+
+      <div class="pill-container">
       <!-- Glyph Container -->
       <div *ngIf="message.glyph"
            class="message-glyph"
@@ -23,7 +25,23 @@
           <div>V</div>
         </ng-container>
       </div>
+
+      <!-- Detail Container (text-based glyph) -->
+      <div *ngIf="message.detailText"
+           class="message-detail"
+           [ngClass]="{'minimized': !message.showDetail}"
+           (click)="toggleDetailVisibility(message)">
+        <ng-container *ngIf="message.showDetail" (click)="toggleDetailVisibility(message)">
+          <!-- Use <pre> for preserved formatting; or a <div> if you want normal wrapping -->
+          <div>{{ message.detailText }}</div>
+        </ng-container>
+        <ng-container *ngIf="!message.showDetail">
+          <div>TPTP</div>
+        </ng-container>
+      </div>
     </div>
+    </div>
+
 
     <!-- LOADING INDICATOR (Shows while waiting for response) -->
     <div *ngIf="loading" class="loading-container">
