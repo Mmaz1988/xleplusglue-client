@@ -26,7 +26,7 @@
 
   <div>
     <div class="result-container" *ngFor="let element of regressionTestItems; let i = index">
-      <app-test-item [data]="element" >
+      <app-test-item [data]="element" [sentenceMap]="this.sentenceMap" >
       </app-test-item>
     </div>
   </div>

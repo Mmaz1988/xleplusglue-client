@@ -39,6 +39,8 @@ export class RegressionTestingInterfaceComponent {
   regressionTestResults: any[] = [];
   regressionTestItems: any[] = [];
 
+  sentenceMap = {};
+
   loading: boolean = false;
 
 //  ngAfterViewInit() {
@@ -63,15 +65,17 @@ export class RegressionTestingInterfaceComponent {
       return trimmedLine !== '' && !trimmedLine.startsWith("#");
     });
 
+    //this.sentenceMap = this.parse_testfile(this.testfile.getContent());
+
     //map from id to sentences
-    let sentenceMap = {};
-    for (let i = 0; i < sentencesArray.length; i++) {
-      sentenceMap["S" + (i + 1)] = sentencesArray[i];
-    }
+    // let sentenceMap = {};
+    // for (let i = 0; i < sentencesArray.length; i++) {
+    //   sentenceMap["S" + (i + 1)] = sentencesArray[i];
+    // }
 
     this.displayMessage("Sending testsuite to LiGER for parsing ...", "blue");
 
-    const ligerMultipleRequest = {sentences: sentenceMap, ruleString: rules};
+    const ligerMultipleRequest = {sentences: this.sentenceMap, ruleString: rules};
 
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
@@ -132,7 +136,7 @@ export class RegressionTestingInterfaceComponent {
           let successFullKeys = [];
 
           //Iterate through sentenceMap keys
-          for (let key of Object.keys(sentenceMap)){
+          for (let key of Object.keys(this.sentenceMap)){
 
             if (gswbMap.get(key).solutions.length > 0) {
               successCount++;
@@ -142,7 +146,7 @@ export class RegressionTestingInterfaceComponent {
             let regressionTestResult: {}
             = {
               sentence_id: key,
-              sentence: sentenceMap[key],
+              sentence: this.sentenceMap[key],
               noOfAppliedRules : data.annotations[key].appliedRules.length,
               noOfMCsets: data.annotations[key].numberOfMCsets,
               noOfSolutions: gswbMap.get(key).solutions.length,
@@ -156,7 +160,7 @@ export class RegressionTestingInterfaceComponent {
           }
 
           console.log("Successful keys: ", successFullKeys);
-          let quickReport = "Parsed " + successCount + " of " + (Object.keys(sentenceMap).length) + " sentences! \n"
+          let quickReport = "Parsed " + successCount + " of " + (Object.keys(this.sentenceMap).length) + " sentences! \n"
 
          this.loading = false;
           this.displayMessage(  quickReport +
@@ -269,16 +273,23 @@ export class RegressionTestingInterfaceComponent {
 
     let lines  = testfile.split('\n');
 
+    let sentence_map = {};
+    let item_id = 0;
+
     //iterate over lines by index
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       if (line.trim() === '') continue; // Skip empty lines
       if (line.trim().startsWith('#')) continue; // Skip comment lines
       if (line.trim().length > 2) {
-        let sentences: string[] = [];
-        sentences.push(line.trim())
-        let item = {sentences: sentences}
-        parseItems.push(item);
+
+       // let sentences: string[] = [];
+       // sentences.push(line.trim())
+       // let item = {sentences: sentences}
+       // parseItems.push(item);
+
+        sentence_map["S" + item_id] = line.trim();
+        item_id++;
       }
       if (line.trim() === "{") {
          i++;
@@ -287,7 +298,6 @@ export class RegressionTestingInterfaceComponent {
           let conclusion_ids = [];
           let gold_label = null; // 1 for entailment, 0 for neutral, -1 for contradiction
          let premises: boolean = true;
-         let no_of_sentences = 0;
          while (lines[i].trim() !== "}" && i < lines.length) {
            const innerLine = lines[i];
            if (innerLine.trim() === '') { i++; continue;} // Skip empty lines
@@ -303,15 +313,18 @@ export class RegressionTestingInterfaceComponent {
            } else if (innerLine.trim().startsWith(">>>"))
            {
              // Take rest of line and check whether 1, 0, or -1
-              let label = innerLine.trim().substring(3).trim();
+              gold_label = innerLine.trim().substring(3).trim();
            } else if (innerLine.trim().length > 2){
              sentences.push(innerLine.trim())
              if (premises) {
-               premise_ids.push(no_of_sentences);
+               premise_ids.push('S' + item_id);
+               sentence_map['S' + item_id] = innerLine.trim();
+               item_id++;
              } else {
-                conclusion_ids.push(no_of_sentences);
+                conclusion_ids.push('S' + item_id);
+                sentence_map['S' + item_id] = innerLine.trim();
+                item_id++;
              }
-              no_of_sentences++;
            }
            i++;
         }
@@ -321,6 +334,8 @@ export class RegressionTestingInterfaceComponent {
       }
     }
     console.log("Parsed items:", parseItems);
+    console.log("Sentence map:", sentence_map);
+    this.sentenceMap = sentence_map
     this.regressionTestItems.push(...parseItems);
   }
 }
