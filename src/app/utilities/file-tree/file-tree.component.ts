@@ -1,6 +1,6 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges } from '@angular/core';
 import { NestedTreeControl } from '@angular/cdk/tree';
-import { FileTree } from "../models/models";
+import { FileTree } from "../../models/models";
 import { MatTreeNestedDataSource } from '@angular/material/tree';
 
 @Component({

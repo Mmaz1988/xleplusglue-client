@@ -2,8 +2,19 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  GswbRequest, GswbMultipleRequest, LigerBatchParsingAnalysis, LigerRuleAnnotation
-  , GrammarList, GrammarString, FileTree, PathString, vampireRequest, vampireResponse, GswbBatchOutput
+  GswbRequest,
+  GswbMultipleRequest,
+  LigerBatchParsingAnalysis,
+  LigerRuleAnnotation
+  ,
+  GrammarList,
+  GrammarString,
+  FileTree,
+  PathString,
+  vampireRequest,
+  vampireResponse,
+  GswbBatchOutput,
+  vampireMultipleRequest, vampireMultipleResponse
 } from './models/models';
 
 @Injectable({
@@ -70,6 +81,10 @@ export class DataService {
 callVampire(vampireRequest: vampireRequest){
     return this.http.post<vampireResponse>(`${this.vampirepage}/vampire_request`,vampireRequest);
 }
+
+  callBatchVampire(vampireRequest: vampireMultipleRequest): Observable<any> {
+    return this.http.post<vampireMultipleResponse>(`${this.vampirepage}/vampire_multiple_request`,vampireRequest);
+  }
 
 
 

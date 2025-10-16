@@ -24,6 +24,8 @@
   </div>
   <br>
 
+
+  <!--
   <div>
     <div class="result-container" *ngFor="let element of regressionTestItems; let i = index">
       <app-test-item [data]="element" [sentenceMap]="this.sentenceMap" >
@@ -32,6 +34,7 @@
   </div>
   <br>
   <button (click)="parse_testfile(testsuite.getContent())">parse testfile</button>
+-->
 
   <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
 <h3>
@@ -52,7 +55,11 @@
 
 
 <app-gswb-settings #gswbSettings></app-gswb-settings>
-
+<app-inference-settings  #vampirePrefs></app-inference-settings>
+  <div class="pruning-container">
+    <input type="checkbox" #contextPruning id="contextPruning" />
+    <label for="contextPruning">Pruning</label>
+  </div>
 
 <button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">
   <span *ngIf="!loading">Parse all</span>
@@ -68,17 +75,33 @@
   <div class="errorhandling" #errorhandle></div>
 
 <h3>
-  Report:
+  Parsing report:
 </h3>
-
+  <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
   <div>
     <div class="result-container" *ngFor="let element of regressionTestResults; let i = index">
       <app-test-result [data]="element" >
       </app-test-result>
     </div>
   </div>
+  </app-toggle-display>
   <br>
   <br>
+  <h3>
+    Inference report:
+  </h3>
+  <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
+    <div>
+      <div class="result-container" *ngFor="let element of inferenceResults; let i = index">
+        <app-inference-result [data]="element" >
+        </app-inference-result>
+      </div>
+    </div>
+  </app-toggle-display>
+  <br>
+  <br>
+<pre>
+{{this.inferenceSummary}}</pre>
   <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
 <h3>
   Applied rules:

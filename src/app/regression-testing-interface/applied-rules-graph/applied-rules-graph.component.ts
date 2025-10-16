@@ -151,7 +151,6 @@ export class AppliedRulesGraphComponent {
     console.log("NodeBucket: ", nodeBucket)
 
 
-
     /*
     {
       selector: 'node[node_type="rule"]',
@@ -194,7 +193,13 @@ export class AppliedRulesGraphComponent {
 
     let cytoStyles = [];
 
-    let colors = this.calculateColorStops("#FFFF00","#FF0000", styles.length);
+    let colors: string[] = []
+
+    if (nodes.length > 1) {
+     colors = this.calculateColorStops("#FFFF00", "#FF0000", styles.length);
+  } else {
+      colors = ["#FFFF00"];
+    }
 
     for (let i = 0; i < styles.length; i++) {
 

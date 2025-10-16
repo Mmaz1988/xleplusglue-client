@@ -70,55 +70,25 @@ CodeMirror.defineMode("glue", function() {
   };
 });
 
-const DEFAULT_TEST_SUITE = "#transitive\n" +
-  "\n" +
-  "a big black dog appeared.\n" +
-  "\n" +
-  "#optional transitives\n" +
-  "\n" +
-  "a dog escaped.\n" +
-  "\n" +
-  "a dog escaped the cage.\n" +
-  "\n" +
-  "#transitive\n" +
-  "\n" +
-  "every dog devoured a bone.\n" +
-  "\n" +
-  "#di-transitive\n" +
-  "\n" +
-  "Mary gave a student every grade.\n" +
-  "\n" +
-  "Mary gave a grade to a student.\n" +
-  "\n" +
-  "#COMP-verb\n" +
-  "\n" +
-  "Mary thinks that a cat meowed.\n" +
-  "\n" +
-  "#XCOMPs\n" +
-  "\n" +
-  "a cat seemed to meow.\n" +
-  "\n" +
-  "a dog tried to meow.\n" +
-  "\n" +
-  "#passives\n" +
-  "\n" +
-  "a bone was devoured by a dog.\n" +
-  "\n" +
-  "a program was implemented by a developer.\n" +
-  "\n" +
-  "a solution was implemented.\n" +
-  "\n" +
-  "# The following two sentences need fixing in the basic grammar (clash with OT mark and unwanted semantics)\n" +
-  "\n" +
-  "a grade was given to every student by Mary.\n" +
-  "\n" +
-  "a student was given every grade by Mary.\n" +
-  "\n" +
-  "#PP-attachment\n" +
-  "\n" +
-  "a big black dog appeared on the table.\n" +
-  "\n" +
-  "Peter saw the monkey with the telescope."
+const DEFAULT_TEST_SUITE = "{\n" +
+  "A Swede won a Nobel prize.\n" +
+  "Every Swede is a Scandinavian.  \n" +
+  "====\n" +
+  "A Scandinavian won a Nobel prize.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "{\n" +
+  "A dog appeared.\n" +
+  "====\n" +
+  "No dog appeared.\n" +
+  ">>> -1\n" +
+  "}\n" +
+  "{\n" +
+  "A dog appeared.\n" +
+  "====\n" +
+  "No cat appeared.\n" +
+  ">>> 0\n" +
+  "}"
 
 
 

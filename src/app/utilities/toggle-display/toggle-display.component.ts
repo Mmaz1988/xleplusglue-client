@@ -1,5 +1,5 @@
 import { Component, Input, OnInit, OnDestroy } from '@angular/core';
-import { HideComponentsService, ToggleAction } from '../hide-components.service'
+import { HideComponentsService, ToggleAction } from '../../hide-components.service'
 import { Subscription } from 'rxjs';
 
 

@@ -103,10 +103,38 @@ export interface vampireRequest {
   vampire_preferences?: VampirePreferences;
 }
 
+/*
+
+class VampireMultipleRequest(BaseModel):
+nli_items: dict  # A dictionary mapping ids to VampireNLI objects
+axioms: str
+pruning: bool
+vampire_preferences: dict
+*/
+export interface vampireMultipleRequest {
+  nli_items: { [key: string]: nliItem };
+  pruning: boolean;
+  vampire_preferences?: VampirePreferences;
+}
+
+/*class VampireNLI(BaseModel):
+premises: List[str]
+hypothesis: str*/
+
+export interface nliItem {
+  premises: string[];
+  hypothesis: string[];
+  axioms: string;
+}
+
 export interface vampireResponse {
   context: context[];
   active_indices: number[];
   context_checks_mapping: {[key: number]: check };
+}
+
+export interface vampireMultipleResponse {
+  results: { [key: string]: check[] };
 }
 
 export interface check {
