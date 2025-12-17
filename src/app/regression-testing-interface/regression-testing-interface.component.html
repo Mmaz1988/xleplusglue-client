@@ -53,6 +53,13 @@
 
 </app-toggle-display>
 
+  <app-toggle-display type="liger" showText="Show default axioms" hideText="Hide default axioms">
+    <div class="editor-restr">
+      <app-editor #axiomEdit [mode]="'vampire'">
+      </app-editor>
+    </div>
+  </app-toggle-display>
+
 
 <app-gswb-settings #gswbSettings></app-gswb-settings>
 <app-inference-settings  #vampirePrefs></app-inference-settings>

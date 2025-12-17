@@ -1,6 +1,6 @@
 import {ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from '@angular/core';
 import {DataService} from "../../data.service";
-import {context, GswbPreferences, GswbRequest, vampireRequest, ChatMessage} from "../../models/models";
+import {context, GswbRequest, vampireRequest, ChatMessage} from "../../models/models";
 import {GswbSettingsComponent} from "../../gswb-vis/gswb-settings/gswb-settings.component";
 import {error} from "@angular/compiler-cli/src/transformers/util";
 import {DomSanitizer, SafeHtml} from "@angular/platform-browser";
@@ -174,6 +174,7 @@ export class ChatComponent {
                   },
                   error => {
                     console.log("An error occurred during the call to Vampire");
+                    this.chatHistory.push({ text: "An error occurred during the inference process", sender: 'Bot' });
                     this.loading = false;
                   }
                 );

@@ -41,6 +41,7 @@ export class RegressionTestingInterfaceComponent {
 
   @ViewChild('vampirePrefs') vampirePreferences!: InferenceSettingsComponent;
   @ViewChild('contextPruning') contextPruning!: ElementRef;
+  @ViewChild('axiomEdit') axiomEdit: EditorComponent;
 
   @ViewChild('testfile') testfile: EditorComponent;
   @ViewChild('ligerRules') ligerRules: EditorComponent;
@@ -64,7 +65,8 @@ export class RegressionTestingInterfaceComponent {
         debugging: false,
         outputstyle: 4,
         parseSem: false,
-        noreduce: false,
+        resolveDrs: true,
+        betaReduce: true,
         glueOnly: false,
         meaningOnly: false,
         explainFail: false,
@@ -216,23 +218,17 @@ export class RegressionTestingInterfaceComponent {
           this.displayMessage("Sending NLI items to Vampire ...", "blue");
           console.log("Preparing call to Vampire ...");
 
-
-
-
           //a map from string to NLI items
           let inference_items = {};
 
           //          for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
           //             mcMap[key] = value.meaningConstructors;
 
-
-
-
           console.log("Current regression test items:", this.regressionTestItems);
           // Produce a dictionary from ids for regression test items to solutions
           for (let item of this.regressionTestItems){
 
-            let axioms = "";
+            let axioms = this.axiomEdit.getContent();
             let axiomCounter = 0;
 
             //console.log("Current item:", item);
@@ -260,23 +256,32 @@ export class RegressionTestingInterfaceComponent {
             console.log("Finished processing premises")
 
             let conclusion_strings: string[] = [];
+
+            console.log("Item conclusions:", item.conclusion);
+
             for (let conclusion of item.conclusion){
               if (gswbMap.has(conclusion) && gswbMap.get(conclusion).solutions.length > 0) {
                 conclusion_strings.push(gswbMap.get(conclusion).solutions.join('\n'));
                 console.log("Extracting axioms for conclusion:", conclusion);
                 const liger_data = data.annotations[conclusion];
+                console.log("LiGER data:", liger_data)
                 if (liger_data.axioms != null && liger_data.axioms.length > 0) {
-                  for (let axiom of data.annotations.axioms) {
+                  for (let axiom of liger_data.axioms) {
                     if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
                       axioms += logicType + "(" +
                         "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
                       axiomCounter++;
                     }
                   }
+
+                  console.log("Axioms after processing conclusion:", axioms);
+
                 } else {console.log("No axioms for conclusion:", conclusion);}
 
               }
             }
+
+            console.log("Finished processing conclusion")
 
             console.log("premise strings:", premise_strings);
             console.log("conclusion strings:", conclusion_strings);

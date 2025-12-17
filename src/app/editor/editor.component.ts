@@ -88,6 +88,77 @@ const DEFAULT_TEST_SUITE = "{\n" +
   "====\n" +
   "No cat appeared.\n" +
   ">>> 0\n" +
+  "}\n" +
+  "{\n" +
+  "Vincent knows every boxer.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Vincent knows Butch.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "If Mia snorts, then Vincent smokes.\n" +
+  "Vincent smokes.\n" +
+  "====\n" +
+  "Mia snorts.\n" +
+  ">>> 0\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "A woman loves every man.\n" +
+  "Every boxer is a man.\n" +
+  "====\n" +
+  "A woman loves every boxer.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are crazy.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch is crazy.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are slow.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch is not slow.\n" +
+  ">>> -1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are slow.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Mia likes Butch.\n" +
+  ">>> 0\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are crazy.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch is crazy.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are crazy.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch loves Fabian.\n" +
+  ">>> 0\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are slow.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Mia likes Butch.\n" +
+  ">>> 0\n" +
   "}"
 
 

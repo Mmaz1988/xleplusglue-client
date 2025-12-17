@@ -26,8 +26,30 @@ export class GswbVisComponent {
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
 
+  ngAfterViewInit() {
+    if (this.gswbPreferences) {
+      this.gswbPreferences.gswbPreferences = {
+        prover: 1,
+        debugging: false,
+        outputstyle: 4,
+        parseSem: false,
+        resolveDrs: true,
+        betaReduce: true,
+        glueOnly: false,
+        meaningOnly: false,
+        explainFail: false,
+        naturalDeductionStyle: 0,
+      };
+      this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences)
+    } else {
+      console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
+    }
+  }
+
+
 
   constructor(private dataService: DataService) {
+
   }
   loading: boolean = false;
 

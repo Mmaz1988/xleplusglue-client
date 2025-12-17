@@ -51,7 +51,8 @@ export interface GswbPreferences {
   debugging: boolean;
   outputstyle: number;
   parseSem: boolean;
-  noreduce: boolean;
+  betaReduce: boolean;
+  resolveDrs: boolean;
   glueOnly: boolean;
   meaningOnly: boolean;
   explainFail: boolean;

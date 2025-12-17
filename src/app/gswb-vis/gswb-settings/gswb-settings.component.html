@@ -29,6 +29,21 @@
   </div>
 
   <div>
+    <label for="betaReduce">
+      <input type="checkbox" formControlName="betaReduce" id="betaReduce" name="betaReduce">
+      Beta Reduce
+    </label>
+  </div>
+
+  <div *ngIf="showResolveDrs">
+    <label for="resolveDrs">
+      <input type="checkbox" formControlName="resolveDrs" id="resolveDrs" name="resolveDrs">
+      Resolve DRS
+    </label>
+  </div>
+
+
+  <div>
     <label for="explain">
       <input type="checkbox" formControlName="explain" id="explain" name="explain">
       Explanation
