@@ -9,9 +9,23 @@
           <app-grammar-loader></app-grammar-loader>
         </div>
         <div>
+        <h2>Test suite selection:</h2>
+        <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
+      </div>
+        <div>
           <h2>Rule file selection:</h2>
           <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
         </div>
+        <div>
+        <h2>Default axioms selection:</h2>
+        <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
+      </div>
+      </div>
+      <app-gswb-settings #gswbSettings></app-gswb-settings>
+      <app-inference-settings  #vampirePrefs></app-inference-settings>
+      <div class="pruning-container">
+        <input type="checkbox" #contextPruning id="contextPruning" />
+        <label for="contextPruning">Pruning</label>
       </div>
     </app-toggle-display>
   </div>
@@ -54,6 +68,7 @@
 </app-toggle-display>
 
   <app-toggle-display type="liger" showText="Show default axioms" hideText="Hide default axioms">
+    Axioms:
     <div class="editor-restr">
       <app-editor #axiomEdit [mode]="'vampire'">
       </app-editor>
@@ -61,12 +76,7 @@
   </app-toggle-display>
 
 
-<app-gswb-settings #gswbSettings></app-gswb-settings>
-<app-inference-settings  #vampirePrefs></app-inference-settings>
-  <div class="pruning-container">
-    <input type="checkbox" #contextPruning id="contextPruning" />
-    <label for="contextPruning">Pruning</label>
-  </div>
+
 
 <button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">
   <span *ngIf="!loading">Parse all</span>

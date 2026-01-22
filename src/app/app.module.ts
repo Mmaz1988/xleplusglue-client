@@ -48,6 +48,7 @@ import { CenterContainerComponent } from './center-container/center-container/ce
 import { LigerVisContainerComponent } from './center-container/liger-vis-container/liger-vis-container.component';
 import { TestItemComponent } from './regression-testing-interface/test-item/test-item.component';
 import { InferenceResultComponent } from './regression-testing-interface/inference-result/inference-result.component';
+import { FileLoaderComponent } from './utilities/file-loader/file-loader.component';
 
 @NgModule({
   declarations: [
@@ -86,7 +87,8 @@ import { InferenceResultComponent } from './regression-testing-interface/inferen
     CenterContainerComponent,
     LigerVisContainerComponent,
     TestItemComponent,
-    InferenceResultComponent
+    InferenceResultComponent,
+    FileLoaderComponent
   ],
   imports: [
     BrowserModule,

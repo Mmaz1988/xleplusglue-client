@@ -264,7 +264,7 @@ export class RegressionTestingInterfaceComponent {
                 conclusion_strings.push(gswbMap.get(conclusion).solutions.join('\n'));
                 console.log("Extracting axioms for conclusion:", conclusion);
                 const liger_data = data.annotations[conclusion];
-                console.log("LiGER data:", liger_data)
+               // console.log("LiGER data:", liger_data)
                 if (liger_data.axioms != null && liger_data.axioms.length > 0) {
                   for (let axiom of liger_data.axioms) {
                     if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
@@ -274,7 +274,7 @@ export class RegressionTestingInterfaceComponent {
                     }
                   }
 
-                  console.log("Axioms after processing conclusion:", axioms);
+                  // console.log("Axioms after processing conclusion:", axioms);
 
                 } else {console.log("No axioms for conclusion:", conclusion);}
 
