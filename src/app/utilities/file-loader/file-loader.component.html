@@ -1,0 +1,14 @@
+<div #statusMessage class="status-message">
+  {{currentStatusMessage}}
+</div>
+<app-toggle-display #toggleDisplayComponent type="fileTree" showText="Select file" hideText="Hide file selection">
+  <div>
+    <app-file-tree [fileTree]="grammarFileTree"
+                   (nodeSelected)="onFileSelected($event)"
+                   (nodeDoubleClicked)="updateFile()"></app-file-tree>
+    <button (click)="updateFile()">Update</button>
+  </div>
+
+</app-toggle-display>
+
+

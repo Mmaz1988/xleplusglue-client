@@ -26,14 +26,29 @@ import { RegressionTestingInterfaceComponent } from './regression-testing-interf
 import {AppRoutingModule} from "./app-routing.module";
 import { AppliedRulesGraphComponent } from './regression-testing-interface/applied-rules-graph/applied-rules-graph.component';
 import { HomeComponent } from './home/home.component';
-import { ToggleDisplayComponent } from './toggle-display/toggle-display.component';
+import { ToggleDisplayComponent } from './utilities/toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
-import { GrammarLoaderComponent } from './liger-vis/grammar-loader/grammar-loader.component';
-import { FileTreeComponent } from './liger-vis/grammar-loader/file-tree/file-tree.component';
+import { GrammarLoaderComponent } from './utilities/grammar-loader/grammar-loader.component';
+import { FileTreeComponent } from './utilities/file-tree/file-tree.component';
 
 import { MatTreeModule } from '@angular/material/tree';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { ChatInterfaceComponent } from './chat-interface/chat-interface.component';
+import { ChatTabsComponent } from './chat-interface/chat-tabs/chat-tabs.component';
+import {MatTabsModule} from "@angular/material/tabs";
+import { ChatComponent } from './chat-interface/chat/chat.component';
+import { RuleLoaderComponent } from './utilities/rule-loader/rule-loader.component';
+import { HistoryComponent } from './chat-interface/history/history.component';
+import { TestResultComponent } from './regression-testing-interface/parse-result/test-result.component';
+import { InferenceInterfaceComponent } from './inference-interface/inference-interface.component';
+import { InferenceSettingsComponent } from './inference-interface/inference-settings/inference-settings.component';
+import { GswbVisContainerComponent } from './center-container/gswb-vis-container/gswb-vis-container.component';
+import { CenterContainerComponent } from './center-container/center-container/center-container.component';
+import { LigerVisContainerComponent } from './center-container/liger-vis-container/liger-vis-container.component';
+import { TestItemComponent } from './regression-testing-interface/test-item/test-item.component';
+import { InferenceResultComponent } from './regression-testing-interface/inference-result/inference-result.component';
+import { FileLoaderComponent } from './utilities/file-loader/file-loader.component';
 
 @NgModule({
   declarations: [
@@ -59,8 +74,21 @@ import { MatButtonModule } from '@angular/material/button';
     ToggleDisplayComponent,
     GswbSettingsComponent,
     GrammarLoaderComponent,
-    FileTreeComponent
-
+    FileTreeComponent,
+    ChatInterfaceComponent,
+    ChatTabsComponent,
+    ChatComponent,
+    RuleLoaderComponent,
+    HistoryComponent,
+    TestResultComponent,
+    InferenceInterfaceComponent,
+    InferenceSettingsComponent,
+    GswbVisContainerComponent,
+    CenterContainerComponent,
+    LigerVisContainerComponent,
+    TestItemComponent,
+    InferenceResultComponent,
+    FileLoaderComponent
   ],
   imports: [
     BrowserModule,
@@ -71,7 +99,9 @@ import { MatButtonModule } from '@angular/material/button';
     AppRoutingModule,
     MatTreeModule,
     MatIconModule,
-    MatButtonModule],
+    MatButtonModule,
+    MatTabsModule,
+    BrowserAnimationsModule],
   providers: [],
   bootstrap: [AppComponent]
 })

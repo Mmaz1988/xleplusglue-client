@@ -1,22 +1,23 @@
-import { Component, ElementRef, ViewChild, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, ElementRef, ViewChild, OnInit, AfterViewInit, ChangeDetectorRef } from '@angular/core';
 import { DataService } from "../../data.service";
 import { FileTree } from "../../models/models";
 import { tap } from 'rxjs/operators';
-import {ToggleDisplayComponent} from "../../toggle-display/toggle-display.component";  // Import tap operator
+import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component";  // Import tap operator
 
 @Component({
   selector: 'app-grammar-loader',
   templateUrl: './grammar-loader.component.html',
   styleUrls: ['./grammar-loader.component.css']
 })
-export class GrammarLoaderComponent implements OnInit {
+export class GrammarLoaderComponent implements OnInit,AfterViewInit {
 
   @ViewChild('grammarListSelector') grammarListSelector: ElementRef;
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
   @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
   grammarList: string[] = [];
-  defaultGrammar: string = "./grammars/hybrid-drt-tense.lfg.glue";
+  defaultGrammar: string = "./grammars/fracas_inference_grammar/main_fracas_grammar.lfg.glue";
+  grammarsDirectory: string = "./grammars";
   currentStatusMessage: string = ""
   grammarFileTree: FileTree[] = [];  // Initialize as an empty array
   selectedPath: string = "";  // This will store the selected file or folder path
@@ -25,17 +26,19 @@ export class GrammarLoaderComponent implements OnInit {
   constructor(private dataService: DataService, private cd: ChangeDetectorRef) {}
 
   ngOnInit() {
-    this.getGrammars().subscribe(
-      () => {
-        console.log("Grammar file tree: ", this.grammarFileTree);
-        this.toggleDisplayComponent.isHidden = true;
-        this.selectedPath = this.defaultGrammar;
-        this.updateGrammar()
-      },
-      error => {
-        console.log('ERROR: ', error);
-      }
-    );
+    this.getGrammars(this.grammarsDirectory);
+    console.log("Initial file tree:", this.grammarFileTree);
+    this.selectedPath = this.defaultGrammar;
+    this.updateGrammar();
+  }
+
+  ngAfterViewInit() {
+    // Ensure toggleDisplayComponent is available
+    if (this.toggleDisplayComponent) {
+      this.toggleDisplayComponent.isHidden = true;
+    } else {
+      console.error("toggleDisplayComponent is still undefined in ngAfterViewInit.");
+    }
   }
 
   // Method to handle the file/folder selection from the file tree
@@ -75,17 +78,23 @@ export class GrammarLoaderComponent implements OnInit {
     );
   }
 
-  getGrammars() {
-    console.log("Getting grammars");
-    return this.dataService.getGrammars().pipe(
-      tap(data => {
+  getGrammars(directory: string) {
+    console.log("Fetching grammars via POST request");
+
+    this.dataService.getFileTree({ grammar : directory }).subscribe(
+      data => {
+        console.log(data)
         if (data.hasOwnProperty("children")) {
-          console.log("Grammar file tree: ", this.grammarFileTree);
-          this.grammarFileTree = this.buildFileTree(data.children);  // Pass only children
+          console.log("Grammar file tree:", data.children);
+          this.grammarFileTree = this.buildFileTree(data.children); // Pass only children
         }
-      })
+      },
+      error => {
+        console.error("Failed to fetch grammars:", error);
+      }
     );
   }
+
 
   buildFileTree(nodes: any[]): FileTree[] {
     return nodes.map(node => ({

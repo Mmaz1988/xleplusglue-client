@@ -14,9 +14,12 @@ export interface LigerRule {
 }
 
 export interface LigerRuleAnnotation {
+  sentence?: string;
   graph: LigerWebGraph;
   appliedRules: LigerRule[];
   meaningConstructors?: string;
+  numberOfMCsets?: number;
+  axioms?: string[];
 }
 
 export interface LigerWebGraph {
@@ -29,7 +32,8 @@ export interface LigerGraphComponent {
 }
 
 export interface GswbBatchOutput {
-
+outputs: { [key: string]: GswbOutput };
+report: string;
 }
 
 export interface GswbRequest {
@@ -47,11 +51,26 @@ export interface GswbPreferences {
   debugging: boolean;
   outputstyle: number;
   parseSem: boolean;
-  noreduce: boolean;
+  betaReduce: boolean;
+  resolveDrs: boolean;
   glueOnly: boolean;
   meaningOnly: boolean;
   explainFail: boolean;
   naturalDeductionStyle: number;
+}
+
+export interface VampirePreferences {
+  logic_type: number;
+  model_building: boolean;
+  max_duration: number;
+  layered: boolean; //Processes with and without additional axioms
+}
+
+
+export interface GswbOutput {
+  solutions: string[];
+  log: string;
+  derivation: any;
 }
 
 export interface GrammarList {
@@ -70,4 +89,79 @@ export interface GrammarString {
   isDir: boolean;
 }
 
+export interface PathString {
+  grammar: string;
+  isDir: boolean;
+}
+
+export interface vampireRequest {
+  text : string;
+  context: context[];
+  axioms: string;
+  hypothesis: string;
+  pruning: boolean;
+  active_indices: number[];
+  vampire_preferences?: VampirePreferences;
+}
+
+/*
+
+class VampireMultipleRequest(BaseModel):
+nli_items: dict  # A dictionary mapping ids to VampireNLI objects
+axioms: str
+pruning: bool
+vampire_preferences: dict
+*/
+export interface vampireMultipleRequest {
+  nli_items: { [key: string]: nliItem };
+  pruning: boolean;
+  vampire_preferences?: VampirePreferences;
+}
+
+/*class VampireNLI(BaseModel):
+premises: List[str]
+hypothesis: str*/
+
+export interface nliItem {
+  premises: string[];
+  hypothesis: string[];
+  axioms: string;
+}
+
+export interface vampireResponse {
+  context: context[];
+  active_indices: number[];
+  context_checks_mapping: {[key: number]: check };
+}
+
+export interface vampireMultipleResponse {
+  results: { [key: string]: check[] };
+}
+
+export interface check {
+  glyph: string;
+  informative: boolean;
+  consistent: boolean;
+  relevant: boolean;
+}
+
+export interface context {
+  original: string;
+  prolog_drs: string;
+  prolog_fol: string;
+  tptp: string;
+  box: string;
+}
+
+
+ export interface ChatMessage {
+  text: string;
+  sender: 'User' | 'Bot';
+  //optional glyph
+  glyph?: string;
+   showGlyph?: false
+
+   detailText?: string;        // for chat analysis
+   showDetail?: boolean;
+ }
 

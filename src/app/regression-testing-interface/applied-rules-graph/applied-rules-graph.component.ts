@@ -141,9 +141,14 @@ export class AppliedRulesGraphComponent {
     console.log("Sorted nodes: ", nodes);
 
     //divide number of elements in graphData by 10 and return corresponding int
-    const nodeBucket = Math.floor(nodes.length / 10);
-    console.log("NodeBucket: ", nodeBucket)
 
+    let bucketDivider = 10;
+    while (nodes.length < bucketDivider) {
+      bucketDivider = bucketDivider / 2;
+    }
+
+    const nodeBucket = Math.floor(nodes.length / bucketDivider);
+    console.log("NodeBucket: ", nodeBucket)
 
 
     /*
@@ -188,7 +193,13 @@ export class AppliedRulesGraphComponent {
 
     let cytoStyles = [];
 
-    let colors = this.calculateColorStops("#FFFF00","#FF0000", styles.length);
+    let colors: string[] = []
+
+    if (nodes.length > 1) {
+     colors = this.calculateColorStops("#FFFF00", "#FF0000", styles.length);
+  } else {
+      colors = ["#FFFF00"];
+    }
 
     for (let i = 0; i < styles.length; i++) {
 

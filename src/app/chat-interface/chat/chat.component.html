@@ -1,0 +1,57 @@
+<!-- Pruning Checkbox Above Chat Window -->
+<div class="pruning-container">
+  <input type="checkbox" #contextPruning id="contextPruning" />
+  <label for="contextPruning">Pruning</label>
+</div>
+
+<div class="chat-container">
+  <!-- Chat History -->
+  <div class="chat-history">
+    <div *ngFor="let message of chatHistory" [ngClass]="{'user-message': message.sender === 'User', 'bot-message': message.sender === 'Bot'}" class="message-container">
+      <span class="message-sender">{{ message.sender }}:</span>
+      <pre class="message-text">{{ message.text }}</pre>
+
+
+      <div class="pill-container">
+      <!-- Glyph Container -->
+      <div *ngIf="message.glyph"
+           class="message-glyph"
+           [ngClass]="{'minimized': !message.showGlyph}"
+           (click)="toggleGlyphVisibility(message)">
+        <ng-container *ngIf="message.showGlyph" (click)="toggleGlyphVisibility(message)">
+          <div [innerHTML]="sanitizeSvg(message.glyph)"></div>
+        </ng-container>
+        <ng-container *ngIf="!message.showGlyph">
+          <div>V</div>
+        </ng-container>
+      </div>
+
+      <!-- Detail Container (text-based glyph) -->
+      <div *ngIf="message.detailText"
+           class="message-detail"
+           [ngClass]="{'minimized': !message.showDetail}"
+           (click)="toggleDetailVisibility(message)">
+        <ng-container *ngIf="message.showDetail" (click)="toggleDetailVisibility(message)">
+          <!-- Use <pre> for preserved formatting; or a <div> if you want normal wrapping -->
+          <div>{{ message.detailText }}</div>
+        </ng-container>
+        <ng-container *ngIf="!message.showDetail">
+          <div>TPTP</div>
+        </ng-container>
+      </div>
+    </div>
+    </div>
+
+
+    <!-- LOADING INDICATOR (Shows while waiting for response) -->
+    <div *ngIf="loading" class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+  </div>
+
+  <!-- Chat Input -->
+  <div class="chat-input">
+    <input [(ngModel)]="userInput" (keyup.enter)="sendMessage()" placeholder="Type your message..." />
+    <button (click)="sendMessage()">Send</button>
+  </div>
+</div>

@@ -10,6 +10,7 @@
   border-style: solid;
   border-color: #00a9e0;
   overflow: hidden;
+  min-width: 780px; /* Minimum width for the editor */
   max-width: 100%; /* Ensure the div doesn't exceed parent's width */
   max-height: 100%; /* Ensure the div doesn't exceed parent's height */
   background-color: lightblue;
@@ -41,3 +42,14 @@
 }
 
 
+/* Highlight matching brackets with a background */
+.CodeMirror-matchingbracket {
+  background-color: rgba(255, 165, 0, 0.5) !important; /* Light orange background */
+  border-radius: 3px;
+}
+
+/* Highlight unmatched brackets with a stronger background */
+.CodeMirror-nonmatchingbracket {
+  background-color: rgba(255, 0, 0, 0.7) !important; /* Strong red background */
+  border-radius: 3px;
+}
