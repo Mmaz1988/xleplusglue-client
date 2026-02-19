@@ -49,6 +49,7 @@ import { LigerVisContainerComponent } from './center-container/liger-vis-contain
 import { TestItemComponent } from './regression-testing-interface/test-item/test-item.component';
 import { InferenceResultComponent } from './regression-testing-interface/inference-result/inference-result.component';
 import { FileLoaderComponent } from './utilities/file-loader/file-loader.component';
+import { SemVisComponent } from './sem-vis/sem-vis.component';
 
 @NgModule({
   declarations: [
@@ -88,7 +89,8 @@ import { FileLoaderComponent } from './utilities/file-loader/file-loader.compone
     LigerVisContainerComponent,
     TestItemComponent,
     InferenceResultComponent,
-    FileLoaderComponent
+    FileLoaderComponent,
+    SemVisComponent
   ],
   imports: [
     BrowserModule,

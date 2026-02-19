@@ -72,42 +72,101 @@ export class AppliedRulesGraphComponent {
   }
 
   makePopper(ele: any): void {
-    //   console.log("Element: ",ele);
-    //   console.log("popper: ",ele.popperRef());
-    const ref = ele.popperRef()
-    //   console.log("Ref value:",ref)
-    ele.tippy = tippy(ref, { // tippy options:
-      content: () => {
-        let content = document.createElement('div');
+    const ref = ele.popperRef();
 
-        var attributes = ele._private.data;
-       //  console.log("Attributes: ",  attributes);
+    ele.tippy = tippy(ref, {
+      content: () => {
+        const content = document.createElement('div');
+        const attributes = ele._private.data;
 
         if (attributes.hasOwnProperty("rule")) {
-          content.innerHTML = content.innerHTML + "Rule " + attributes.id + ": " + attributes.rule + "at line: " + attributes.line + "<br>";
+          content.innerHTML +=
+            "Rule " + attributes.id + ": " + attributes.rule +
+            " at line: " + attributes.line + "<br>";
         }
 
-        //content.innerHTML = ele.id();
+        if (attributes.hasOwnProperty("sentences")) {
+          attributes.sentences.forEach((sentence: string) => {
+            content.innerHTML += sentence + "<br>";
+          });
+        }
 
         return content;
       },
-      trigger: 'manual' // probably want manual mode
+      trigger: "manual",
+      // optional but usually helpful for “pinned” poppers:
+      interactive: true,
+      // appendTo: document.body, // sometimes helps with clipping
     });
-    //  console.log("Tippy: ",ele.tippy);
+
+    // track whether this element is “pinned” open by click
+    ele._popperPinned = false;
+  }
+
+  private showPopper(ele: any) {
+    if (ele.tippy) ele.tippy.show();
+  }
+
+  private hidePopper(ele: any) {
+    if (ele.tippy) ele.tippy.hide();
+  }
+
+  private togglePopper(ele: any) {
+    ele._popperPinned = !ele._popperPinned;
+    if (ele._popperPinned) this.showPopper(ele);
+    else this.hidePopper(ele);
   }
 
   createAndBindPoppers(): void {
+    const bind = (ele: any) => {
+      // ensure popper exists
+      this.makePopper(ele);
+
+      // hover behavior (unchanged, except: don't hide when pinned)
+      ele.bind("mouseover", (event: any) => {
+        event.target._hovering = true;
+        this.showPopper(event.target);
+      });
+
+      ele.bind("mouseout", (event: any) => {
+        event.target._hovering = false;
+        if (!event.target._popperPinned) {
+          this.hidePopper(event.target);
+        }
+      });
+
+      // click/tap toggles pinned state
+      ele.bind("tap", (event: any) => {
+        this.togglePopper(event.target);
+      });
+
+      // (optional) hide if element is removed
+      ele.on("remove", () => {
+        if (ele.tippy) ele.tippy.destroy();
+      });
+    };
+
+    // Nodes
     this.cy.nodes().forEach((ele) => {
-
       const data = ele.data();
+      if (data.hasOwnProperty("rule")) bind(ele);
+    });
 
-      if (data.hasOwnProperty('rule')) {
-        //  console.log("Making popper for: ", data);
-        this.makePopper(ele);
-        //   console.log("Element with tippy: ",data);
+    // Edges
+    this.cy.edges().forEach((ele) => {
+      const data = ele.data();
+      if (data.hasOwnProperty("sentences")) bind(ele);
+    });
 
-        ele.bind('mouseover', (event) => event.target.tippy.show());
-        ele.bind('mouseout', (event) => event.target.tippy.hide());
+    // (optional) click on background closes all pinned poppers
+    this.cy.on("tap", (evt: any) => {
+      if (evt.target === this.cy) {
+        this.cy.elements().forEach((ele: any) => {
+          if (ele._popperPinned) {
+            ele._popperPinned = false;
+            this.hidePopper(ele);
+          }
+        });
       }
     });
   }

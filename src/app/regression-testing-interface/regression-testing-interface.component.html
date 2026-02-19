@@ -1,8 +1,9 @@
 <div class="frame">
 
   <div class="container">
-    <h1>Semantic parser settings</h1>
-    <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show settings" hideText="Hide settings">
+    <h1>Files</h1>
+    <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show file selection"
+                        hideText="Hide file selection">
       <div class="grammar-loader-container">
         <div>
           <h2>Grammar selection:</h2>
@@ -20,12 +21,6 @@
         <h2>Default axioms selection:</h2>
         <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
       </div>
-      </div>
-      <app-gswb-settings #gswbSettings></app-gswb-settings>
-      <app-inference-settings  #vampirePrefs></app-inference-settings>
-      <div class="pruning-container">
-        <input type="checkbox" #contextPruning id="contextPruning" />
-        <label for="contextPruning">Pruning</label>
       </div>
     </app-toggle-display>
   </div>
@@ -76,6 +71,17 @@
   </app-toggle-display>
 
 
+  <app-toggle-display type="liger" showText="Show settings" hideText="Hide settings">
+  <h1>Settings</h1>
+  <app-gswb-settings #gswbSettings></app-gswb-settings>
+  <app-inference-settings  #vampirePrefs></app-inference-settings>
+  <div class="pruning-container">
+    <input type="checkbox" #contextPruning id="contextPruning" />
+    <label for="contextPruning">Pruning</label>
+  </div>
+  </app-toggle-display>
+
+<br>
 
 
 <button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">

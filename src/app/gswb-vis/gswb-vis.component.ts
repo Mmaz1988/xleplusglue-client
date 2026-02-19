@@ -8,6 +8,7 @@ import {DerivationContainerComponent} from "./derivation-container/derivation-co
 import {DialogComponent} from "../dialog/dialog.component";
 import {GswbRequest,GswbPreferences} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
+import {SemVisComponent} from "../sem-vis/sem-vis.component";
 
 
 @Component({
@@ -21,6 +22,7 @@ export class GswbVisComponent {
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
   @ViewChild('sem1') sem: EditorComponent;
+  @ViewChild('semvis') semvis: SemVisComponent;
   @ViewChild('log1') log: EditorComponent;
   @ViewChild('dialog') dialog: DialogComponent;
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
@@ -75,14 +77,15 @@ export class GswbVisComponent {
           //Check if data.solutions is not null and not empty
           if (data.solutions.length > 0) {
 
-            data.solutions.forEach(element => {
-              console.log(element);
-              //print solutions line by line to sem
-              this.sem.updateContent(element);
-            });
+            // data.solutions.forEach(element => {
+            //   console.log(element);
+            //   //print solutions line by line to sem
+            //   this.sem.updateContent(element);
+            // });
             //translate data.solutions to string with each solution in a new line
-            let solutions = data.solutions.join('\n');
-            this.sem.updateContent(solutions);
+            //let solutions = data.solutions.join('\n');
+            this.semvis.setItems(data.solutions);
+           // this.sem.updateContent(solutions);
           } else {
             //create error message with request time stamp
             this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] No solutions found.");

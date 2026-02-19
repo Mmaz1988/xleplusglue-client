@@ -147,19 +147,19 @@ export class RegressionTestingInterfaceComponent {
             sortedMcMap[key] = mcMap[key];
           });
 
-          console.log("sorted MCs",sortedMcMap);
+         // console.log("sorted MCs",sortedMcMap);
 
           this.gswbMultipleRequest = {
             premises: sortedMcMap,
             gswbPreferences: this.gswbPreferences.gswbPreferences
           }
 
-          console.log("Specified request: ",this.gswbMultipleRequest);
+         // console.log("Specified request: ",this.gswbMultipleRequest);
 
         }
         if (data.hasOwnProperty("ruleApplicationGraph")) {
 
-          console.log(data.ruleApplicationGraph);
+          console.log("Rule application graph: ", data.ruleApplicationGraph);
           this.cy1.renderGraph(data.ruleApplicationGraph);
         }
 
@@ -171,13 +171,13 @@ export class RegressionTestingInterfaceComponent {
 
         this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
           const outputs = result.outputs;
-          console.log("GSWB outputs: ", outputs);
+          //console.log("GSWB outputs: ", outputs);
           const gswbMap = new Map<string, GswbOutput>();
           for (const key in outputs) {
             gswbMap.set(key, outputs[key]);
           }
 
-          console.log("GSWB Map: ", gswbMap);
+          //console.log("GSWB Map: ", gswbMap);
 
           let successCount = 0;
           let successFullKeys = [];
@@ -239,7 +239,7 @@ export class RegressionTestingInterfaceComponent {
               if (gswbMap.has(premise) && gswbMap.get(premise).solutions.length > 0) {
                 premise_strings.push(gswbMap.get(premise).solutions.join('\n'));
 
-              console.log("Extracting axioms for premise:", premise);
+              // console.log("Extracting axioms for premise:", premise);
               const liger_data = data.annotations[premise];
               if (liger_data.axioms != null && liger_data.axioms.length > 0) {
                   for (let axiom of liger_data.axioms) {
@@ -257,7 +257,7 @@ export class RegressionTestingInterfaceComponent {
 
             let conclusion_strings: string[] = [];
 
-            console.log("Item conclusions:", item.conclusion);
+            //console.log("Item conclusions:", item.conclusion);
 
             for (let conclusion of item.conclusion){
               if (gswbMap.has(conclusion) && gswbMap.get(conclusion).solutions.length > 0) {
@@ -299,7 +299,7 @@ export class RegressionTestingInterfaceComponent {
               inference_items[item.id] = nli_item;
             }
           }
-          console.log("Inference items: ", inference_items);
+          // console.log("Inference items: ", inference_items);
 
           let pruning = this.contextPruning.nativeElement.checked
 
@@ -308,7 +308,7 @@ export class RegressionTestingInterfaceComponent {
                                                         vampire_preferences: this.vampirePreferences.vampirePreferences,
                                                         pruning: pruning};
 
-          console.log("Vampire multiple request:",vampireRequest);
+          // console.log("Vampire multiple request:",vampireRequest);
 
           this.batchVampire(vampireRequest).subscribe((vampireResult: vampireMultipleResponse) => {
             console.log("Vampire results: ", vampireResult);
@@ -572,7 +572,7 @@ export class RegressionTestingInterfaceComponent {
         parseItems.push(item);
       }
     }
-    console.log("Parsed items:", parseItems);
+   // console.log("Parsed items:", parseItems);
     console.log("Sentence map:", sentence_map);
     this.sentenceMap = sentence_map
     this.regressionTestItems.push(...parseItems);
