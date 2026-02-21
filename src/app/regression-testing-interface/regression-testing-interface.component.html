@@ -11,15 +11,17 @@
         </div>
         <div>
         <h2>Test suite selection:</h2>
-        <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
+        <app-file-loader (dataEmitter)="updateTestsuite($event)"
+                         defaultFilePath="./testsuites/inference/inference-basic.lfg" filesDirectory="./testsuites/"> </app-file-loader>
       </div>
         <div>
           <h2>Rule file selection:</h2>
-          <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
+          <app-rule-loader (dataEmitter)="updateRules($event)"></app-rule-loader>
         </div>
         <div>
         <h2>Default axioms selection:</h2>
-        <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
+        <app-file-loader (dataEmitter)="updateAxioms($event)"
+                         filesDirectory="./axioms/"></app-file-loader>
       </div>
       </div>
     </app-toggle-display>
@@ -62,6 +64,8 @@
 
 </app-toggle-display>
 
+  <br>
+
   <app-toggle-display type="liger" showText="Show default axioms" hideText="Hide default axioms">
     Axioms:
     <div class="editor-restr">
@@ -70,6 +74,7 @@
     </div>
   </app-toggle-display>
 
+  <br>
 
   <app-toggle-display type="liger" showText="Show settings" hideText="Hide settings">
   <h1>Settings</h1>

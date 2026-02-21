@@ -74,6 +74,8 @@ export class GswbVisComponent {
         if (data.hasOwnProperty('solutions')) {
           // log each element in data.solutions individually
 
+          console.log("Solutions:", data.solutions)
+
           //Check if data.solutions is not null and not empty
           if (data.solutions.length > 0) {
 
@@ -85,6 +87,7 @@ export class GswbVisComponent {
             //translate data.solutions to string with each solution in a new line
             //let solutions = data.solutions.join('\n');
             this.semvis.setItems(data.solutions);
+            this.semvis.setDiscriminants(data.discriminants);
            // this.sem.updateContent(solutions);
           } else {
             //create error message with request time stamp

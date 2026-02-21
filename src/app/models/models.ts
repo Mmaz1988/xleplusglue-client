@@ -46,6 +46,26 @@ export interface GswbMultipleRequest {
   gswbPreferences: GswbPreferences;
 }
 
+export interface GswbDiscriminant {
+  id: string;
+  type: string;
+  identifier: string;
+  associatedSolutions: string[];
+}
+
+export interface GswbSolution {
+solution: string;
+id: string;
+}
+
+export interface GswbOutput {
+  solutions: GswbSolution[];
+  log: string;
+  derivation: any;
+  discriminants: GswbDiscriminant[];
+}
+
+
 export interface GswbPreferences {
   prover: number;
   debugging: boolean;
@@ -66,12 +86,6 @@ export interface VampirePreferences {
   layered: boolean; //Processes with and without additional axioms
 }
 
-
-export interface GswbOutput {
-  solutions: string[];
-  log: string;
-  derivation: any;
-}
 
 export interface GrammarList {
   grammarList: string[];

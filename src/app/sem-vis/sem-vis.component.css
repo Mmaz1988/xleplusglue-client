@@ -1,0 +1,54 @@
+.discriminants {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.disc-block {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.disc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.disc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  border: 1px solid #bbb;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.chip.selected {
+  border-color: #333;
+  border-width: 3px;
+  font-weight: 600;
+  border-color: darkblue;
+
+}
+
+.disc-empty {
+  color: #777;
+  font-style: italic;
+}
+
+.chip.inactive {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

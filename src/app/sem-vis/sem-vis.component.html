@@ -1,11 +1,13 @@
 <div class="editor-restr">
   <div class="sem-vis">
+
+    <!-- Your existing controls -->
     <div class="controls" *ngIf="items?.length; else noItems">
       <button type="button" (click)="prev()">◀ Prev</button>
 
       <span class="status">
-      {{ index + 1 }} / {{ items.length }}
-    </span>
+        {{ index + 1 }} / {{ items.length }} out of {{allItems.length}}
+      </span>
 
       <button type="button" (click)="next()">Next ▶</button>
     </div>
@@ -15,7 +17,72 @@
         <span>No items.</span>
       </div>
     </ng-template>
-  <app-editor #sem [mode]="'glue'">  </app-editor>
-</div>
-</div>
+
+    <app-editor #sem [mode]="'glue'"></app-editor>
+  </div>
+
+  <!-- Discriminant selectors -->
+  <div class="discriminants">
+
+    <!-- Scope -->
+    <div class="disc-block">
+      <div class="disc-header">
+        <h4>Scope discriminants</h4>
+        <button type="button" (click)="clearScope()" [disabled]="!selectedScopeIds.length">
+          Clear
+        </button>
+      </div>
+
+      <!-- Scope discriminants -->
+      <div class="disc-list" *ngIf="scope_discriminants?.length; else noScope">
+        <button
+          type="button"
+          class="chip"
+          *ngFor="let d of scope_view"
+          [class.selected]="isScopeSelected(d)"
+          [class.inactive]="!wouldFurtherFilter(d)"
+          [disabled]="!isScopeSelected(d) && !wouldFurtherFilter(d)"
+          (click)="toggleScope(d)"
+          [title]="d.identifier"
+        >
+          {{ d.identifier }}
+        </button>
+      </div>
+
+      <ng-template #noScope>
+        <div class="disc-empty">No scope discriminants.</div>
+      </ng-template>
+
+    </div>
+
+    <!-- MC -->
+    <div class="disc-block">
+      <div class="disc-header">
+        <h4>MC discriminants</h4>
+        <button type="button" (click)="clearMc()" [disabled]="!selectedMcIds.length">
+          Clear
+        </button>
+      </div>
+
+      <!-- MC discriminants -->
+      <div class="disc-list" *ngIf="mc_discriminants?.length; else noMc">
+        <button
+          type="button"
+          class="chip"
+          *ngFor="let d of mc_view"
+          [class.selected]="isMcSelected(d)"
+          [class.inactive]="!wouldFurtherFilter(d)"
+          [disabled]="!isMcSelected(d) && !wouldFurtherFilter(d)"
+          (click)="toggleMc(d)"
+          [title]="d.identifier"
+        >
+          {{ d.identifier }}
+        </button>
+      </div>
+
+      <ng-template #noMc>
+        <div class="disc-empty">No MC discriminants.</div>
+      </ng-template>
+
+  </div>
 

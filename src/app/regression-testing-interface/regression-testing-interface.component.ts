@@ -452,8 +452,16 @@ export class RegressionTestingInterfaceComponent {
 
   }
 
-  updateData(ruleFile: string) {
+  updateRules(ruleFile: string) {
     this.ligerRules.updateContent(ruleFile);
+  }
+
+  updateTestsuite(ruleFile: string) {
+    this.testfile.updateContent(ruleFile);
+  }
+
+  updateAxioms(ruleFile: string) {
+    this.axiomEdit.updateContent(ruleFile);
   }
 
 

@@ -4,10 +4,10 @@
 </div>
 <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Select file" hideText="Hide file selection">
   <div>
-    <app-file-tree [fileTree]="grammarFileTree"
+    <app-file-tree [fileTree]="rulesFileTree"
                    (nodeSelected)="onFileSelected($event)"
-                   (nodeDoubleClicked)="updateGrammar()"></app-file-tree>
-    <button (click)="updateGrammar()">Update</button>
+                   (nodeDoubleClicked)="updateRules()"></app-file-tree>
+    <button (click)="updateRules()">Update</button>
   </div>
 
 </app-toggle-display>

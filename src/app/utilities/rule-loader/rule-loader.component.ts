@@ -20,17 +20,16 @@ import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component
 })
 export class RuleLoaderComponent implements OnInit,AfterViewInit {
 
-  @ViewChild('grammarListSelector') grammarListSelector: ElementRef;
+  @ViewChild('ruleListSelector') ruleListSelector: ElementRef;
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
   @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
   @Output() dataEmitter = new EventEmitter<string>();
 
-  grammarList: string[] = [];
   defaultRules: string = "./liger_resources/rules/be_axiom_rule.txt";
-  grammarsDirectory: string = "./liger_resources/rules";
+  rulesDirectory: string = "./liger_resources/rules";
   currentStatusMessage: string = ""
-  grammarFileTree: FileTree[] = [];  // Initialize as an empty array
+  rulesFileTree: FileTree[] = [];  // Initialize as an empty array
   selectedPath: string = "";  // This will store the selected file or folder path
   rules: string = "";
   // selectedIsDirectory: boolean = false;  // This will store if the selected path is a directory
@@ -38,10 +37,10 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
   constructor(private dataService: DataService, private cd: ChangeDetectorRef) {}
 
   ngOnInit() {
-    this.getGrammars(this.grammarsDirectory);
-    console.log("Initial file tree:", this.grammarFileTree);
+    this.getRules(this.rulesDirectory);
+    console.log("Initial file tree:", this.rulesFileTree);
     this.selectedPath = this.defaultRules
-    this.updateGrammar();
+    this.updateRules();
     this.sendRules()
   }
 
@@ -62,7 +61,7 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
   }
 
   // Method to change the grammar using the selected path
-  updateGrammar() {
+  updateRules() {
     if (!this.selectedPath) {
       console.error("No file or folder selected!");
       return;
@@ -83,7 +82,7 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
           this.rules = data.grammar;
           this.sendRules()
         } else {
-          this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
+          this.currentStatusMessage = "Failed to load rules: " + this.selectedPath;
         }
       },
       error => {
@@ -93,19 +92,19 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
     );
   }
 
-  getGrammars(directory: string) {
+  getRules(directory: string) {
     console.log("Fetching grammars via POST request");
 
     this.dataService.getFileTree({ grammar : directory }).subscribe(
       data => {
         console.log(data)
         if (data.hasOwnProperty("children")) {
-          console.log("Grammar file tree:", data.children);
-          this.grammarFileTree = this.buildFileTree(data.children); // Pass only children
+          console.log("Rule file tree:", data.children);
+          this.rulesFileTree = this.buildFileTree(data.children); // Pass only children
         }
       },
       error => {
-        console.error("Failed to fetch grammars:", error);
+        console.error("Failed to fetch rules:", error);
       }
     );
   }
