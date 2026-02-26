@@ -166,82 +166,11 @@ const DEFAULT_TEST_SUITE = "{\n" +
 
 const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
-  "//Nounmodifiers\n" +
-  "#n MOD #m in_set #p PRED %p & #p TYPE %k & #n s:: #s ==>\n" +
-  "#p GLUE lam(P,lam(X,merge(drs([],[rel(%k,'strip(%p)',X)]),app(P,X)))) : ((#s_e -o #s_t) -o (#s_e -o #s_t)) || noscope.\n" +
-  "\n" +
-  "\n" +
-  "//Degree (gradable) adjectives\n" +
-  "#x PREDLINK #a & #x s:: #y EV #z &\n" +
-  "#a ATYPE 'predicative' & #a SEMTYPE 'degree' &\n" +
-  "#a SUBJ #b s:: #c &\n" +
-  "#a PRED %a &  #a s:: #s\n" +
-  "==> & #s DEGREE #d & #s DEGREE-HOLDER #z & #s DEGREE-PRED #p &\n" +
-  "#p GLUE lam(P,lam(D,lam(X,drs([],[rel(strip(%a),X,D)])))) : ((#s_v -o #s_t) -o (#d_d -o (#s_v -o #s_t))).\n" +
-  "\n" +
-  "//This works\n" +
-  "#x ADJUNCT #n in_set #a & #x s:: #y &\n" +
-  "#a ATYPE 'attributive' & #a SEMTYPE 'degree' &\n" +
-  "#a PRED %a & #a s:: #s\n" +
-  "==> #s DEGREE #d & #s DEGREE-HOLDER #y & #s DEGREE-PRED #p &\n" +
-  "#p GLUE lam(P,lam(D,lam(X,drs([],[rel(strip(%a),X,D)])))) : ((#s_e -o #s_t) -o (#d_d -o (#s_e -o #s_t))).\n" +
-  "\n" +
-  "\n" +
-  "// Rules for positive uses\n" +
-  "// attributive\n" +
-  "#x ADJUNCT #n in_set #a & #x PRED %x &\n" +
-  "#a ATYPE 'attributive' &\n" +
-  "#a PRED %a & #a s:: #b DEGREE #d & #b DEGREE-HOLDER #e\n" +
-  "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
-  "\n" +
-  "// predicative\n" +
-  "#x PREDLINK #a & #x PRED %x &\n" +
-  "#a ATYPE 'predicative' &\n" +
-  "#a PRED %a & #a s:: #b DEGREE #d & #b DEGREE-HOLDER #e\n" +
-  "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
-  "\n" +
-  "//Rules for comparative uses\n" +
-  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p &\n" +
-  "#a s:: #b DEGREE #d & #b DEGREE-HOLDER #e & #b DEGREE-PRED #p &\n" +
-  "#a ADJUNCT #f in_set #c OBL-COMP #m OBJ #n s:: #o\n" +
-  "==>\n" +
-  "#o DEGREE #x & #o DEGREE-HOLDER #y &\n" +
-  "#d GLUE lam(P,lam(Q,lam(E,\n" +
-  "\t\tmerge(drs([D:d],[]),merge(app(app(P,D),E),drs([],[not(merge(drs([V],[]),app(app(Q,D),V)))])))))) :\n" +
-  "\t\t((#d_d -o (#b_v -o #b_t)) -o ((#x_d -o (#y_v -o #m_t)) -o (#b_v -o #b_t))) || noscope &\n" +
-  "#m GLUE lam(D,lam(E,drs([],[rel(strip(%p),E,D)]))) : (#x_d -o (#y_v -o #m_t)) &\n" +
-  "#n GLUE lam(V,lam(X,lam(E,merge(app(V,E),drs([],[rel(arg1,E,X)]))))) :\n" +
-  "\t\t((#y_v -o #m_t) -o (#o_e -o (#y_v -o #m_t))).\n" +
-  "\n" +
-  "//Axioms\n" +
-  "\n" +
   "//Be equality axiom\n" +
   "#p PRED %p & strip(%p) == 'be' & #p PREDLINK #c s:: #s TYPE 'entity' ==>\n" +
-  "#p AXIOM all(X,all(Y,all(Z,imp(and(be(X),and(arg1(X,Y),arg2(X,Z))),eq(Y,Z))))).\n" +
-  "\n" +
-  "//Comparative axioms\n" +
-  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p ==>\n" +
-  "#a AXIOM all(X, all(Y, all(D:d, imp(and(arg1(X, Y), fast(X, D)), fast(Y, D))))).\n" +
-  "\n" +
-  "#a ATYPE %u & #a DEGREE 'comparative' & #a PRED %p &\n" +
-  "#a s:: #b DEGREE #d & #b DEGREE-HOLDER #e & #b DEGREE-PRED #p &\n" +
-  "#a ADJUNCT #f in_set #c OBL-COMP #m OBJ #n s:: #o ==>\n" +
-  "#a MONO #q & #q AXIOM all(X, all(Delta1:d, iff(strip(%p)(X, Delta1), all(Delta2:d, imp(lessEq(Delta2, Delta1), strip(%p)(X, Delta2)))))) &\n" +
-  "#a CP #r & #r AXIOM all(X, all(Y, imp(some(D:d, and(strip(%p)(X, D), not(strip(%p)(Y, D)))), all(D2:d, imp(strip(%p)(Y, D2), strip(%p)(X, D2)))))) &\n" +
-  "#a MAX #s & #s AXIOM all(X, some(Delta1:d, and(strip(%p)(X, Delta1), not(some(Delta2:d, and(greater(Delta2, Delta1), strip(%p)(X, Delta2))))))).\n" +
-  "\n";
+  "#p AXIOM all(X,all(Y,all(Z,imp(and(be(X),and(arg1(X,Y),arg2(X,Z))),eq(Y,Z))))).\n"
 
-const VAMPIRE_DEFAULT_AXIOMS = "tff(fast_type, type, fast: ($i * $int) > $o).\n" +
-  "tff(kind_type, type, kind: ($i * $i) > $o).\n" +
-  "tff(arg1_type, type, arg1: ($i * $i) > $o).\n" +
-  "tff(arg2_type, type, arg2: ($i * $i) > $o).\n" +
-  "tff(computer_type, type, computer: $i > $o).\n" +
-  "tff(be_type, type, be: $i > $o).\n" +
-  "\n" +
-  "tff(pn_type1, type, 'pc-6082': $i).\n" +
-  "tff(pn_type2, type, 'itel-xz': $i).\n" +
-  "\n" +
-  "tff(th_fast_type, type, th_fast: $i > $int)."
+const VAMPIRE_DEFAULT_AXIOMS = ""
 
 @Component({
   selector: 'app-editor',
