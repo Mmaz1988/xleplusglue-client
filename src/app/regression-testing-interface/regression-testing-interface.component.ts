@@ -58,6 +58,25 @@ export class RegressionTestingInterfaceComponent {
 
   loading: boolean = false;
 
+  labels = ['1', '0', '-1'] as const;
+  labelName = { '1': 'Entailment', '0': 'Neutral', '-1': 'Contradiction' } as const;
+
+
+  cmView: {
+    gold: string;
+    rows: {
+      pred: string;
+      v: number;
+      pct: string;        // e.g. "33.3"
+      intensity: number;  // 0..1
+      diag: boolean;
+    }[];
+  }[] = [];
+
+  cellIds: string[][][] = Array.from({ length: 3 }, () =>
+    Array.from({ length: 3 }, () => [])
+  );
+
   ngAfterViewInit() {
     if (this.gswbPreferences) {
       this.gswbPreferences.gswbPreferences = {
@@ -99,6 +118,7 @@ export class RegressionTestingInterfaceComponent {
     this.loading = true;
     this.regressionTestResults = [];
     this.regressionTestItems =[];
+    this.inferenceResults = [];
 
     this.gswbPreferences.onSubmit()
 
@@ -171,7 +191,7 @@ export class RegressionTestingInterfaceComponent {
 
         this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
           const outputs = result.outputs;
-          //console.log("GSWB outputs: ", outputs);
+          console.log("GSWB outputs: ", outputs);
           const gswbMap = new Map<string, GswbOutput>();
           for (const key in outputs) {
             gswbMap.set(key, outputs[key]);
@@ -199,7 +219,7 @@ export class RegressionTestingInterfaceComponent {
               noOfSolutions: gswbMap.get(key).solutions.length,
               ligerGraph: data.annotations[key].graph,
               ligerMCsets: data.annotations[key].meaningConstructors,
-              gswbSolutions: gswbMap.get(key).solutions,
+              gswbSolutions: gswbMap.get(key).solutions.map(x => x.solution),
               gswbDerivation: gswbMap.get(key).derivation,
               result_type: 'parseResult'
             }
@@ -213,6 +233,9 @@ export class RegressionTestingInterfaceComponent {
          this.loading = false;
           this.displayMessage(  quickReport +
             "Batch processing completed successfully.", "green");
+
+
+          //Todo implement intervention for disambiguating before call to Vampire
 
 
           this.displayMessage("Sending NLI items to Vampire ...", "blue");
@@ -237,7 +260,7 @@ export class RegressionTestingInterfaceComponent {
               //console.log("current premise:", premise);
               //console.log("Boolean", gswbMap.get(premise).solutions.length > 0);
               if (gswbMap.has(premise) && gswbMap.get(premise).solutions.length > 0) {
-                premise_strings.push(gswbMap.get(premise).solutions.join('\n'));
+                premise_strings.push(gswbMap.get(premise).solutions.map(x => x.solution).join('\n'));
 
               // console.log("Extracting axioms for premise:", premise);
               const liger_data = data.annotations[premise];
@@ -261,7 +284,7 @@ export class RegressionTestingInterfaceComponent {
 
             for (let conclusion of item.conclusion){
               if (gswbMap.has(conclusion) && gswbMap.get(conclusion).solutions.length > 0) {
-                conclusion_strings.push(gswbMap.get(conclusion).solutions.join('\n'));
+                conclusion_strings.push(gswbMap.get(conclusion).solutions.map(x => x.solution).join('\n'));
                 console.log("Extracting axioms for conclusion:", conclusion);
                 const liger_data = data.annotations[conclusion];
                // console.log("LiGER data:", liger_data)
@@ -314,6 +337,19 @@ export class RegressionTestingInterfaceComponent {
             console.log("Vampire results: ", vampireResult);
             this.displayMessage("Batch processing completed successfully.", "green");
 
+            // const labels = ['1', '0', '-1']; // entailment, neutral, contradiction
+            // const labelName = { '1': 'Entailment', '0': 'Neutral', '-1': 'Contradiction' };
+             const idx = { '1': 0, '0': 1, '-1': 2 };
+            //
+             const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
+            // alongside cm:
+            this.cellIds = Array.from({ length: 3 }, () =>
+              Array.from({ length: 3 }, () => [])
+            );
+
+            this.selectedIds.clear();
+            this.selectedGoldIdx = this.selectedPredIdx = null;
+
             let all_entailment_predictions = 0;
             let all_neutral_predictions = 0;
             let all_contradiction_predictions = 0;
@@ -350,7 +386,7 @@ export class RegressionTestingInterfaceComponent {
               console.log("Entailment label for " + key + ": ", entailment_label);
 
               //if test items has key, then compare results
-              let testItem = this.regressionTestItems.find(item => item.id === key);
+              const testItem = this.regressionTestItems.find(item => item.id === key);
               console.log("Gold label: ",testItem.gold_label)
 
               if (testItem.gold_label === entailment_label) {
@@ -371,9 +407,56 @@ export class RegressionTestingInterfaceComponent {
                 all_contradiction_predictions++;
               }
 
+              // ... inside your loop, once you have:
+              const gold = testItem.gold_label;     // '1' | '0' | '-1'
+              const pred = entailment_label;        // your predicted label as string
 
+
+              // ... inside your vampireResult loop, after entailment_label is computed:
+            //  const testItem = this.regressionTestItems.find(item => item.id === key);
+
+// Pull the human-readable premise/hypothesis strings you already built for Vampire
+// Plain-language premises/conclusion from sentenceMap via IDs (e.g., "S12")
+              const premiseSentences: string[] = (testItem?.premises ?? [])
+                .map((sid: string) => this.sentenceMap[sid])
+                .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+
+              const conclusionSentences: string[] = (testItem?.conclusion ?? [])
+                .map((sid: string) => this.sentenceMap[sid])
+                .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+
+// If your component expects a single conclusion string, join them:
+              const conclusionString = conclusionSentences.join(' '); // or '\n' if you prefer
+
+              this.inferenceResults.push({
+                id: key,
+                premises: premiseSentences,
+                conclusion: conclusionString,
+                predictedLabel: entailment_label,
+                goldLabel: testItem?.gold_label ?? 'unknown',
+
+                // optional debug fields
+                premiseIds: testItem?.premises ?? [],
+                conclusionIds: testItem?.conclusion ?? [],
+                mismatch: (testItem?.gold_label ?? '') !== entailment_label,
+              });
+
+              if (idx[gold] !== undefined && idx[pred] !== undefined) {
+                const gi = idx[gold];
+                const pj = idx[pred];
+                cm[gi][pj] += 1;
+                this.cellIds[gi][pj].push(key);
+
+
+
+              } else {
+                // optional: track unknown labels
+                console.warn('Unknown label', { gold, pred });
+              }
 
             }
+
+            this.updateConfusionMatrixView(cm,Object.keys(vampireResult.results).length);
 
             this.inferenceSummary = "Inference results summary:\n" +
                                     "Successful entailment prediction ratio: " + successful_entailment_predictions / all_entailment_predictions + " (" + successful_entailment_predictions + " of " + all_entailment_predictions + ")\n" +
@@ -611,5 +694,47 @@ export class RegressionTestingInterfaceComponent {
       .length;
   }
 
+  updateConfusionMatrixView(cm: number[][], total?: number): void {
+    const denom =
+      (typeof total === 'number' && total > 0)
+        ? total
+        : cm.reduce((acc, row) => acc + row.reduce((a, b) => a + b, 0), 0);
+
+    this.cmView = this.labels.map((g, i) => ({
+      gold: g,
+      rows: this.labels.map((p, j) => {
+        const v = cm[i][j];
+        const pctNum = denom ? (100 * v) / denom : 0;
+        return {
+          pred: p,
+          v,
+          pct: pctNum.toFixed(1),
+          intensity: pctNum / 100,
+          diag: i === j,
+        };
+      }),
+    }));
+  }
+
+  selectedGoldIdx: number | null = null;
+  selectedPredIdx: number | null = null;
+  selectedIds = new Set<string>();
+
+
+
+  selectCell(gi: number, pj: number): void {
+    if (this.selectedGoldIdx === gi && this.selectedPredIdx === pj) {
+      this.clearSelection();
+      return;
+    }
+    this.selectedGoldIdx = gi;
+    this.selectedPredIdx = pj;
+    this.selectedIds = new Set(this.cellIds[gi][pj] ?? []);
+  }
+
+  clearSelection(): void {
+    this.selectedGoldIdx = this.selectedPredIdx = null;
+    this.selectedIds.clear();
+  }
 
 }

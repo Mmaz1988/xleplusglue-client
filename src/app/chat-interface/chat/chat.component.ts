@@ -116,7 +116,8 @@ export class ChatComponent {
               let userSem = '';
 
               if (data.hasOwnProperty('solutions') && data.solutions.length > 0 && data.solutions[0] != '') {
-                userSem = data.solutions.join('\n');
+                console.log("Gswb output:", data.solutions)
+                userSem = data.solutions.map(x => x.solution).join('\n');
 
                 const pruneContext: boolean = this.contextPruning.nativeElement.checked;
                 const vampRequest: vampireRequest = { text: userMessage, context: this.context, axioms: this.axioms,

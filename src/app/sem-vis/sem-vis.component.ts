@@ -116,7 +116,7 @@ export class SemVisComponent implements AfterViewInit {
   }
 
 
-  private applyFiltersAndResetIndex(startIndex = 0): void {
+   applyFiltersAndResetIndex(startIndex = 0): void {
     const filtered = this.filterItemsBySelectedDiscriminants(this.allItems);
 
     this.items = filtered;

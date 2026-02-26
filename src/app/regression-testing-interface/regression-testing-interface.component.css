@@ -45,3 +45,62 @@ div.errorhandling {
   color: red;
   padding-bottom: 10px;
 }
+
+
+.cm-table {
+  border-collapse: collapse;
+  font-family: system-ui, sans-serif;
+}
+
+.cm-table th,
+.cm-table td {
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.cm-table thead th,
+.cm-table tbody th {
+  background: #f6f6f6;
+  font-weight: 600;
+}
+
+.hm-cell {
+  transition: background-color 150ms ease, color 150ms ease;
+  min-width: 90px;
+}
+
+.count {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.pct {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* optional: keep diagonal subtly emphasized */
+.hm-cell.diag {
+  outline: 2px solid rgba(0, 0, 0, 0.15);
+  outline-offset: -2px;
+}
+
+/* shows selected confusion-matrix cell */
+.hm-cell.selected {
+  outline: 3px solid rgba(33, 150, 243, 1);
+  outline-offset: -2px;
+  cursor: pointer;
+}
+
+.hm-cell { cursor: pointer; }
+
+
+.result-container.highlight {
+  background-color: rgba(33, 150, 243, 0.08);
+  border: 1px solid rgba(33, 150, 243, 0.25);
+  border-radius: 6px;
+  padding: 4px;
+}

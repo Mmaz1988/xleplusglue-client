@@ -120,7 +120,8 @@
   </h3>
   <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
     <div>
-      <div class="result-container" *ngFor="let element of inferenceResults; let i = index">
+      <div class="result-container" *ngFor="let element of inferenceResults; let i = index"
+           [class.highlight]="selectedIds.has(element.id)">
         <app-inference-result [data]="element" >
         </app-inference-result>
       </div>
@@ -130,6 +131,39 @@
   <br>
 <pre>
 {{this.inferenceSummary}}</pre>
+
+  <table class="cm-table">
+    <thead>
+    <tr>
+      <th>Gold \ Pred</th>
+      <th *ngFor="let p of labels">
+        {{ labelName[p] }}<br /><small>{{ p }}</small>
+      </th>
+    </tr>
+    </thead>
+
+    <tbody>
+    <tr *ngFor="let r of cmView; let i = index">
+      <th>
+        {{ labelName[r.gold] }}<br /><small>{{ r.gold }}</small>
+      </th>
+
+      <td
+        *ngFor="let c of r.rows; let j = index"
+        (click)="selectCell(i, j)"
+        [class.selected]="i === selectedGoldIdx && j === selectedPredIdx"
+        class="hm-cell"
+        [style.backgroundColor]="'rgba(33, 150, 243, ' + (0.05 + 0.75 * c.intensity) + ')'"
+        [style.color]="(0.05 + 0.75 * c.intensity) > 0.45 ? 'white' : 'black'"
+      >
+
+        <div class="count">{{ c.v }}</div>
+        <div class="pct">{{ c.pct }}%</div>
+      </td>
+    </tr>
+    </tbody>
+  </table>
+
   <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
 <h3>
   Applied rules:

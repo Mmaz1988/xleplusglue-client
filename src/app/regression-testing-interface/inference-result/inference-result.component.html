@@ -1,0 +1,37 @@
+<div class="inf-block" [ngClass]="{ 'highlight-block': mismatch }">
+  <div class="row">
+    <span class="title">Premises:</span>
+  </div>
+
+  <div *ngIf="premises?.length; else noPremises">
+    <ol class="premises">
+      <li *ngFor="let p of premises">{{ p }}</li>
+    </ol>
+  </div>
+  <ng-template #noPremises>
+    <div class="empty">(none)</div>
+  </ng-template>
+
+  <div class="row">
+    <span class="title">Conclusion:</span>
+  </div>
+  <div class="conclusion">{{ conclusion }}</div>
+
+  <div class="labels">
+    <div class="label-row">
+      <span class="title">Gold:</span>
+      <span [ngClass]="[labelClass(goldLabel), mismatch ? 'mismatch' : '']">
+        {{ labelName(goldLabel) }} ({{ goldLabel }})
+      </span>
+    </div>
+
+    <div class="label-row">
+      <span class="title">Pred:</span>
+      <span [ngClass]="[labelClass(predictedLabel), mismatch ? 'mismatch' : '']">
+        {{ labelName(predictedLabel) }} ({{ predictedLabel }})
+      </span>
+
+      <span *ngIf="mismatch" class="mismatch-note">— mismatch</span>
+    </div>
+  </div>
+</div>

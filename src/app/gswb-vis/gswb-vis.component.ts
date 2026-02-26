@@ -86,6 +86,11 @@ export class GswbVisComponent {
             // });
             //translate data.solutions to string with each solution in a new line
             //let solutions = data.solutions.join('\n');
+
+            this.semvis.clearMc();
+            this.semvis.clearScope();
+            this.semvis.applyFiltersAndResetIndex();
+
             this.semvis.setItems(data.solutions);
             this.semvis.setDiscriminants(data.discriminants);
            // this.sem.updateContent(solutions);

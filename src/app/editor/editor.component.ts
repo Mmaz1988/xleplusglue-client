@@ -195,7 +195,7 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
   "\n" +
   "// predicative\n" +
-  "#x PREDLINK #a & #x SUBJ #y PRED %x &\n" +
+  "#x PREDLINK #a & #x PRED %x &\n" +
   "#a ATYPE 'predicative' &\n" +
   "#a PRED %a & #a s:: #b DEGREE #d & #b DEGREE-HOLDER #e\n" +
   "==> #d GLUE lam(P,merge(drs([D],[]),merge(drs([],[eq(th_strip(%a)('strip(%x)'),D)]),app(P,D)))) : ((#d_d -o #e_t) -o #e_t) || noscope.\n" +
@@ -239,7 +239,9 @@ const VAMPIRE_DEFAULT_AXIOMS = "tff(fast_type, type, fast: ($i * $int) > $o).\n"
   "tff(be_type, type, be: $i > $o).\n" +
   "\n" +
   "tff(pn_type1, type, 'pc-6082': $i).\n" +
-  "tff(pn_type2, type, 'itel-zx': $i).\n"
+  "tff(pn_type2, type, 'itel-xz': $i).\n" +
+  "\n" +
+  "tff(th_fast_type, type, th_fast: $i > $int)."
 
 @Component({
   selector: 'app-editor',

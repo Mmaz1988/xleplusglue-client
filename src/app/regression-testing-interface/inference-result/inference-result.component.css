@@ -1,0 +1,82 @@
+.inf-block {
+  width: 100%;
+  border-radius: 4px;
+  padding: 6px;
+}
+
+.row {
+  margin-top: 4px;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.premises {
+  margin: 4px 0 10px 18px;
+  padding: 0;
+}
+
+.conclusion {
+  margin-top: 2px;
+}
+
+.empty {
+  color: #666;
+  font-style: italic;
+  margin: 4px 0 10px 0;
+}
+
+/* Highlight entire block on label mismatch */
+.highlight-block {
+  background-color: rgba(255, 0, 0, 0.08);
+}
+
+.labels {
+  margin-top: 10px;
+}
+
+.label-row {
+  margin-top: 4px;
+}
+
+/* Base label colors */
+.label-entailment {
+  color: #1b5e20; /* dark green */
+  font-weight: 700;
+}
+
+.label-neutral {
+  color: #424242; /* dark gray */
+  font-weight: 700;
+}
+
+.label-contradiction {
+  color: #b71c1c; /* dark red */
+  font-weight: 700;
+}
+
+.label-unknown {
+  color: #6a1b9a; /* purple */
+  font-weight: 700;
+}
+
+/* Mismatch emphasis (like your zero-value) */
+.mismatch {
+  color: red;
+  font-weight: 800;
+}
+
+.mismatch-note {
+  margin-left: 6px;
+  color: red;
+  font-weight: 800;
+}
+
+/* --- Highlight inference items that belong to the selected confusion-matrix cell --- */
+.result-container.highlight {
+  outline: 2px solid rgba(33, 150, 243, 0.9);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
