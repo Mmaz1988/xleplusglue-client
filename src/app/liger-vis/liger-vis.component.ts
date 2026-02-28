@@ -21,7 +21,7 @@ export class LigerVisComponent {
   graphElements: any
   loading: boolean = false;
 
-  @ViewChild('edit1') editor1: EditorComponent;
+  @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('textareaElement') textarea: ElementRef;
@@ -223,6 +223,9 @@ x
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
+  updateRules(ruleFile: string) {
+    this.ligerRules.updateContent(ruleFile);
+  }
 
 }
 

@@ -74,11 +74,10 @@ export class GswbVisComponent {
         if (data.hasOwnProperty('solutions')) {
           // log each element in data.solutions individually
 
-          console.log("Solutions:", data.solutions)
 
           //Check if data.solutions is not null and not empty
           if (data.solutions.length > 0) {
-
+            console.log("Solutions:", data.solutions)
             // data.solutions.forEach(element => {
             //   console.log(element);
             //   //print solutions line by line to sem
@@ -96,10 +95,11 @@ export class GswbVisComponent {
            // this.sem.updateContent(solutions);
           } else {
             //create error message with request time stamp
-            this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] No solutions found.");
+            //create gswb solution with no solutions found and create list to treat as semvis
+            this.semvis.setItems([{solution: "[" +  new Date().toLocaleTimeString() + "] No solutions found.", id: "S0"}]);
           }
         } else {
-          this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] No solutions found.");
+          this.semvis.setItems([{solution: "[" +  new Date().toLocaleTimeString() + "] No solutions found.", id: "S0"}]);
         }
 
         if (data.hasOwnProperty('log'))

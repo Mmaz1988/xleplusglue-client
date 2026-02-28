@@ -31,7 +31,7 @@
 </h3>
 
   <div class="editor-restr">
-<app-editor #testsuite [mode]="'text'"> </app-editor>
+<app-editor #testfile [mode]="'text'"> </app-editor>
   </div>
   <br>
 
@@ -89,12 +89,12 @@
 <br>
 
 
-<button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">
+<button (click)="batchParse(testfile.getContent(), ligerRules.getContent())">
   <span *ngIf="!loading">Parse all</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
 </button>
-  <button class="button beta" (click)="batchMultistage(testsuite.getContent())">
+  <button class="button beta" (click)="batchMultistage(testfile.getContent())">
     <span *ngIf="!loading">Multistage</span>
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
     <span *ngIf="loading">Loading...</span>

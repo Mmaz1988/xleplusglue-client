@@ -2,7 +2,7 @@
 <div #statusMessage class="status-message">
   {{currentStatusMessage}}
 </div>
-<app-toggle-display #toggleDisplayComponent type="fileTree" showText="Select file" hideText="Hide file selection">
+<app-toggle-display #toggleDisplayComponent type="fileTree" showText="Select grammar" hideText="Hide grammar selection">
 <div>
   <app-file-tree [fileTree]="grammarFileTree"
                  (nodeSelected)="onFileSelected($event)"

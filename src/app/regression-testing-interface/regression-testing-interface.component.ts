@@ -119,6 +119,9 @@ export class RegressionTestingInterfaceComponent {
     this.regressionTestResults = [];
     this.regressionTestItems =[];
     this.inferenceResults = [];
+    this.inferenceSummary = "";
+    this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
+
 
     this.gswbPreferences.onSubmit()
 
@@ -343,10 +346,6 @@ export class RegressionTestingInterfaceComponent {
             //
              const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
             // alongside cm:
-            this.cellIds = Array.from({ length: 3 }, () =>
-              Array.from({ length: 3 }, () => [])
-            );
-
             this.selectedIds.clear();
             this.selectedGoldIdx = this.selectedPredIdx = null;
 
