@@ -1,5 +1,6 @@
 <p [ngClass]="{
-      'highlight-block': numberOfMCsets === 0 || noOfSolutions === 0
+      'highlight-block': numberOfMCsets === 0 || noOfSolutions === 0,
+      'multi-selected': disambiguationActive && noOfSelectedSolutions > 1
     }">
   {{sentence_id}}: {{sentence}}<br>
   Number of applied rules:

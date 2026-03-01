@@ -129,9 +129,9 @@
       <div class="result-container" *ngFor="let element of regressionTestResults; let i = index">
         <app-test-result
           [data]="element"
+          [disambiguationActive]="enableDisambiguation && disambiguationMode"
           (selectionChange)="onSelectionChange($event)"
-        >
-        </app-test-result>
+        ></app-test-result>
       </div>
     </div>
   </app-toggle-display>

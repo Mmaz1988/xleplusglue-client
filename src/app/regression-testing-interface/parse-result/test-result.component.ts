@@ -20,6 +20,8 @@ export class TestResultComponent implements OnInit, AfterViewInit {
     selectedSolutionIds: string[];
   }>();
 
+  @Input() disambiguationActive = false;
+
   sentence_id: string = '';
   sentence: string = '';
   numberOfAppliedRules: number = 0;

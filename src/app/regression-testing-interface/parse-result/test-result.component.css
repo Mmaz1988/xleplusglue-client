@@ -17,3 +17,9 @@ textarea {
   color: red;
   font-weight: bold;
 }
+
+.multi-selected {
+  background-color: rgba(250, 217, 0, 0.25); /* light red tint */
+  border-radius: 4px;
+  padding: 6px;
+}
