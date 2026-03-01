@@ -1,20 +1,32 @@
+/* BAD globally: div { max-width: 90%; } */
+
+/* Replace with: */
 .center-dialog {
   position: fixed;
-  z-index: 9999; /* Adjust the value as needed */
+  z-index: 9999;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  min-width: 800px;
-  max-width: 90%;
+  width: min(1100px, 90vw);   /* explicit width works better than min-width */
+  max-width: 90vw;
   border-style: solid;
   border-radius: 25px;
   border-color: #00a9e0;
+  padding: 12px;
 }
 
-dialog {
-  max-width: 90%;
+/* Make dialog itself fill the width you set */
+.center-dialog::backdrop {
+  background: rgba(0,0,0,0.35);
 }
 
-div {
-  max-width: 90%;
+/* Scope inner sizing to dialog content only */
+.center-dialog > * {
+  max-width: 100%;
+}
+
+/* If you need a content wrapper, make it stretch */
+.dialog-body {
+  width: 100%;
+  max-width: 100%;
 }

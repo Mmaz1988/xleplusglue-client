@@ -15,7 +15,15 @@
   Number of solutions:
   <span [ngClass]="{ 'zero-value': noOfSolutions === 0 }">
     {{noOfSolutions}}
+  </span> <br>
+
+  Number of selected solutions:
+  <span [ngClass]="{ 'zero-value': noOfSelectedSolutions === 0 }">
+    {{noOfSelectedSolutions}}
   </span>
 </p>
 
-<app-dialog #solution></app-dialog>
+<app-dialog
+  #solution
+  (semvisSelectionChange)="onSemvisSelectionChange($event)"
+></app-dialog>

@@ -1,43 +1,35 @@
-import {Component, ViewChild, ElementRef, AfterViewInit} from '@angular/core';
-import {DataService} from "../data.service";
-import {GraphVisComponent} from "../liger-vis/liger-graph-vis/graph-vis.component";
+import { Component, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { DataService } from "../data.service";
+import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
 import {
-  LigerBatchParsingAnalysis,
-  LigerRule,
   LigerRuleAnnotation,
-  LigerWebGraph,
-  LigerGraphComponent,
-  GswbPreferences,
   GswbMultipleRequest,
   GswbBatchOutput,
   GswbOutput,
   nliItem,
   vampireMultipleRequest,
-  vampireMultipleResponse, context, check
+  vampireMultipleResponse,
+  check
 } from '../models/models';
-import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.component";
-import {EditorComponent} from "../editor/editor.component";
-import {catchError, EMPTY, map, Observable} from "rxjs";
-import {tap} from "rxjs/operators";
-import {InferenceSettingsComponent} from "../inference-interface/inference-settings/inference-settings.component";
-import {coerceStringArray} from "@angular/cdk/coercion";
-
+import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
+import { EditorComponent } from "../editor/editor.component";
+import { catchError, EMPTY, Observable } from "rxjs";
+import { tap } from "rxjs/operators";
+import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 
 @Component({
   selector: 'app-regression-testing-interface',
   templateUrl: './regression-testing-interface.component.html',
   styleUrls: ['./regression-testing-interface.component.css']
 })
-export class RegressionTestingInterfaceComponent {
+export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
-  constructor(private dataService: DataService) {
-  }
-
+  constructor(private dataService: DataService) {}
 
   @ViewChild('arcy') cy1: GraphVisComponent;
   @ViewChild('ligerreport') ligerreport: ElementRef;
   @ViewChild('gswbreport') gswbreport: ElementRef;
-  @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent
+  @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent;
 
   @ViewChild('vampirePrefs') vampirePreferences!: InferenceSettingsComponent;
   @ViewChild('contextPruning') contextPruning!: ElementRef;
@@ -55,20 +47,18 @@ export class RegressionTestingInterfaceComponent {
   regressionTestItems: any[] = [];
 
   sentenceMap = {};
-
   loading: boolean = false;
 
   labels = ['1', '0', '-1'] as const;
   labelName = { '1': 'Entailment', '0': 'Neutral', '-1': 'Contradiction' } as const;
-
 
   cmView: {
     gold: string;
     rows: {
       pred: string;
       v: number;
-      pct: string;        // e.g. "33.3"
-      intensity: number;  // 0..1
+      pct: string;
+      intensity: number;
       diag: boolean;
     }[];
   }[] = [];
@@ -76,6 +66,26 @@ export class RegressionTestingInterfaceComponent {
   cellIds: string[][][] = Array.from({ length: 3 }, () =>
     Array.from({ length: 3 }, () => [])
   );
+
+  // =========================
+  // NEW: disambiguation controls
+  // =========================
+  enableDisambiguation = false; // bind to checkbox in HTML
+  disambiguationMode = false;   // show "Continue" button when true
+
+  // sentenceId -> selected solution IDs
+  private selectedSolutionIdsBySentence = new Map<string, string[]>();
+
+  // stash state after GSWB so we can resume later
+  private lastGswbMap: Map<string, GswbOutput> | null = null;
+  private lastAnnotations: Record<string, LigerRuleAnnotation> | null = null;
+  private lastLogicType: 'fof' | 'tff' = 'fof';
+
+  // Called from template on each <app-test-result ... (selectionChange)="onSelectionChange($event)">
+  onSelectionChange(ev: { sentenceId: string; selectedSolutionIds: string[] }) {
+    if (!ev?.sentenceId) return;
+    this.selectedSolutionIdsBySentence.set(ev.sentenceId, ev.selectedSolutionIds ?? []);
+  }
 
   ngAfterViewInit() {
     if (this.gswbPreferences) {
@@ -91,7 +101,7 @@ export class RegressionTestingInterfaceComponent {
         explainFail: false,
         naturalDeductionStyle: 0,
       };
-      this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences)
+      this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences);
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }
@@ -109,58 +119,53 @@ export class RegressionTestingInterfaceComponent {
     }
   }
 
+  // Button handler (appears only when disambiguationMode is true)
+  continueAfterDisambiguation(): void {
+    this.runVampireFromCurrentState(/*useDisambiguated*/ true);
+  }
 
-
+  // Optional: allow skipping disambiguation
+  skipDisambiguation(): void {
+    this.runVampireFromCurrentState(/*useDisambiguated*/ false);
+  }
 
   batchParse(sentences: string, rules: string) {
-
     this.errorhandle.nativeElement.innerHTML = "";
     this.loading = true;
+
     this.regressionTestResults = [];
-    this.regressionTestItems =[];
+    this.regressionTestItems = [];
     this.inferenceResults = [];
     this.inferenceSummary = "";
     this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
 
+    // reset disambiguation state per run
+    this.disambiguationMode = false;
+    this.selectedSolutionIdsBySentence.clear();
+    this.lastGswbMap = null;
+    this.lastAnnotations = null;
 
-    this.gswbPreferences.onSubmit()
+    this.gswbPreferences.onSubmit();
 
-    const logicType = this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
-
-    //Split sentences into lines and add all non-empty lines to an array
-    // let sentencesArray = sentences.split("\n").filter(line => {
-    //   let trimmedLine = line.trim();
-    //   return trimmedLine !== '' && !trimmedLine.startsWith("#");
-    // });
-
-    //this.sentenceMap = this.parse_testfile(this.testfile.getContent());
-
-    //map from id to sentences
-    // let sentenceMap = {};
-    // for (let i = 0; i < sentencesArray.length; i++) {
-    //   sentenceMap["S" + (i + 1)] = sentencesArray[i];
-    // }
+    const logicType: 'fof' | 'tff' =
+      this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
 
     this.parse_testfile(sentences);
 
     this.displayMessage("Sending testsuite to LiGER for parsing ...", "blue");
 
-    const ligerMultipleRequest = {sentences: this.sentenceMap, ruleString: rules, logicType: logicType};
+    const ligerMultipleRequest = { sentences: this.sentenceMap, ruleString: rules, logicType: logicType };
 
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
-        // console.log(data);
         if (data.hasOwnProperty("annotations")) {
+          console.log("Annotations:", data.annotations);
 
-          console.log("Annotations:",data.annotations);
-
-          let mcMap = {}
+          let mcMap = {};
           for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
             mcMap[key] = value.meaningConstructors;
           }
 
-// sort mcMap by key where keys are of the form S0, S1, S2, ...
-// sort by the entire numeric portion of the key
           let sortedMcMap = {};
           Object.keys(mcMap).sort((a, b) => {
             let aNum = parseInt(a.match(/\d+/)[0]);
@@ -170,333 +175,311 @@ export class RegressionTestingInterfaceComponent {
             sortedMcMap[key] = mcMap[key];
           });
 
-         // console.log("sorted MCs",sortedMcMap);
-
           this.gswbMultipleRequest = {
             premises: sortedMcMap,
             gswbPreferences: this.gswbPreferences.gswbPreferences
-          }
-
-         // console.log("Specified request: ",this.gswbMultipleRequest);
-
+          };
         }
-        if (data.hasOwnProperty("ruleApplicationGraph")) {
 
+        if (data.hasOwnProperty("ruleApplicationGraph")) {
           console.log("Rule application graph: ", data.ruleApplicationGraph);
           this.cy1.renderGraph(data.ruleApplicationGraph);
         }
-
-        // if (data.hasOwnProperty("report")) {
-        //   this.ligerreport.nativeElement.innerHTML = data.report;
-        // }
 
         this.displayMessage("Sending parsing results to GSWB for deduction ...", "blue");
 
         this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
           const outputs = result.outputs;
           console.log("GSWB outputs: ", outputs);
+
           const gswbMap = new Map<string, GswbOutput>();
           for (const key in outputs) {
             gswbMap.set(key, outputs[key]);
           }
 
-          //console.log("GSWB Map: ", gswbMap);
-
           let successCount = 0;
-          let successFullKeys = [];
+          let successFullKeys: string[] = [];
 
-          //Iterate through sentenceMap keys
-          for (let key of Object.keys(this.sentenceMap)){
+          for (let key of Object.keys(this.sentenceMap)) {
+            const out = gswbMap.get(key);
+            const sols = out?.solutions ?? [];
 
-            if (gswbMap.get(key).solutions.length > 0) {
+            if (sols.length > 0) {
               successCount++;
               successFullKeys.push(key);
             }
 
-            let regressionTestResult: {}
-            = {
+            // Seed selection map to "ALL solution IDs" initially.
+            // TestResult will later emit updates if user filters.
+            this.selectedSolutionIdsBySentence.set(key, sols.map(s => s.id));
+
+            const regressionTestResult = {
               sentence_id: key,
               sentence: this.sentenceMap[key],
-              noOfAppliedRules : data.annotations[key].appliedRules.length,
+              noOfAppliedRules: data.annotations[key].appliedRules.length,
               noOfMCsets: data.annotations[key].numberOfMCsets,
-              noOfSolutions: gswbMap.get(key).solutions.length,
+              noOfSolutions: sols.length,
               ligerGraph: data.annotations[key].graph,
               ligerMCsets: data.annotations[key].meaningConstructors,
-              gswbSolutions: gswbMap.get(key).solutions.map(x => x.solution),
-              gswbDerivation: gswbMap.get(key).derivation,
-              result_type: 'parseResult'
-            }
-            console.log("Regression test result for " + key + ": ", regressionTestResult);
+              gswbSolutions: sols,
+              gswbDerivation: out.derivation,
+              result_type: 'parseResult',
+              discriminants: out.discriminants
+            };
+
             this.regressionTestResults.push(regressionTestResult);
           }
 
           console.log("Successful keys: ", successFullKeys);
-          let quickReport = "Parsed " + successCount + " of " + (Object.keys(this.sentenceMap).length) + " sentences! \n"
+          const quickReport =
+            "Parsed " + successCount + " of " + (Object.keys(this.sentenceMap).length) + " sentences! \n";
 
-         this.loading = false;
-          this.displayMessage(  quickReport +
-            "Batch processing completed successfully.", "green");
+          this.loading = false;
+          this.displayMessage(quickReport + "Batch processing completed successfully.", "green");
 
+          // Stash state for resuming after disambiguation
+          this.lastGswbMap = gswbMap;
+          this.lastAnnotations = data.annotations;
+          this.lastLogicType = logicType;
 
-          //Todo implement intervention for disambiguating before call to Vampire
-
-
-          this.displayMessage("Sending NLI items to Vampire ...", "blue");
-          console.log("Preparing call to Vampire ...");
-
-          //a map from string to NLI items
-          let inference_items = {};
-
-          //          for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
-          //             mcMap[key] = value.meaningConstructors;
-
-          console.log("Current regression test items:", this.regressionTestItems);
-          // Produce a dictionary from ids for regression test items to solutions
-          for (let item of this.regressionTestItems){
-
-            let axioms = this.axiomEdit.getContent();
-            let axiomCounter = 0;
-
-            //console.log("Current item:", item);
-            let premise_strings: string[] = [];
-            for (let premise of item.premises) {
-              //console.log("current premise:", premise);
-              //console.log("Boolean", gswbMap.get(premise).solutions.length > 0);
-              if (gswbMap.has(premise) && gswbMap.get(premise).solutions.length > 0) {
-                premise_strings.push(gswbMap.get(premise).solutions.map(x => x.solution).join('\n'));
-
-              // console.log("Extracting axioms for premise:", premise);
-              const liger_data = data.annotations[premise];
-              if (liger_data.axioms != null && liger_data.axioms.length > 0) {
-                  for (let axiom of liger_data.axioms) {
-                    if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
-                      axioms += logicType + "(" +
-                        "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
-                      axiomCounter++;
-                    }
-                }
-              } else {console.log("No axioms for premise:", premise);}
-              }
-            }
-
-            console.log("Finished processing premises")
-
-            let conclusion_strings: string[] = [];
-
-            //console.log("Item conclusions:", item.conclusion);
-
-            for (let conclusion of item.conclusion){
-              if (gswbMap.has(conclusion) && gswbMap.get(conclusion).solutions.length > 0) {
-                conclusion_strings.push(gswbMap.get(conclusion).solutions.map(x => x.solution).join('\n'));
-                console.log("Extracting axioms for conclusion:", conclusion);
-                const liger_data = data.annotations[conclusion];
-               // console.log("LiGER data:", liger_data)
-                if (liger_data.axioms != null && liger_data.axioms.length > 0) {
-                  for (let axiom of liger_data.axioms) {
-                    if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
-                      axioms += logicType + "(" +
-                        "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
-                      axiomCounter++;
-                    }
-                  }
-
-                  // console.log("Axioms after processing conclusion:", axioms);
-
-                } else {console.log("No axioms for conclusion:", conclusion);}
-
-              }
-            }
-
-            console.log("Finished processing conclusion")
-
-            console.log("premise strings:", premise_strings);
-            console.log("conclusion strings:", conclusion_strings);
-
-
-
-            // let conclusion: string = '';
-            // if (item.conclusion in gswbMap.keys() && gswbMap.get(item.conclusion).solutions.length > 0) {
-            //   //data.solutions.join('\n');
-            //   conclusion = gswbMap.get(item.conclusion).solutions.join('\n');
-            // }
-
-            if (premise_strings.length > 0 && conclusion_strings.length > 0) {
-              let nli_item: nliItem = {premises: premise_strings, hypothesis: conclusion_strings, axioms: axioms}
-              inference_items[item.id] = nli_item;
-            }
+          // ========= PAUSE HERE if flag is set =========
+          if (this.enableDisambiguation) {
+            this.disambiguationMode = true;
+            this.displayMessage(
+              "Disambiguation enabled: open solutions dialogs, select discriminants, then click Continue.",
+              "blue"
+            );
+            return;
           }
-          // console.log("Inference items: ", inference_items);
 
-          let pruning = this.contextPruning.nativeElement.checked
-
-
-          let vampireRequest: vampireMultipleRequest = {nli_items: inference_items,
-                                                        vampire_preferences: this.vampirePreferences.vampirePreferences,
-                                                        pruning: pruning};
-
-          // console.log("Vampire multiple request:",vampireRequest);
-
-          this.batchVampire(vampireRequest).subscribe((vampireResult: vampireMultipleResponse) => {
-            console.log("Vampire results: ", vampireResult);
-            this.displayMessage("Batch processing completed successfully.", "green");
-
-            // const labels = ['1', '0', '-1']; // entailment, neutral, contradiction
-            // const labelName = { '1': 'Entailment', '0': 'Neutral', '-1': 'Contradiction' };
-             const idx = { '1': 0, '0': 1, '-1': 2 };
-            //
-             const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
-            // alongside cm:
-            this.selectedIds.clear();
-            this.selectedGoldIdx = this.selectedPredIdx = null;
-
-            let all_entailment_predictions = 0;
-            let all_neutral_predictions = 0;
-            let all_contradiction_predictions = 0;
-
-            let successful_entailment_predictions = 0;
-            let successful_neutral_predictions = 0;
-            let successful_contradiction_predictions = 0;
-
-            //vampireResult is a map with strings as keys, iterate over map
-            for (let [key, value] of Object.entries(vampireResult.results) as [string, check[]][]) {
-
-              //Number of info checks with value true
-              let infoCount = value.filter(check => check.informative).length;
-              //Number of consistent checks with value true
-              let consistentCount = value.filter(check => check.consistent).length;
-              //Number of relevant checks with value true
-              //let relevantCount = value.filter(check => check.relevant).length;
-
-              // if more than half of checks are true per property, then they are successful
-              let infoSuccess = infoCount > value.length / 2;
-              let consistentSuccess = consistentCount > value.length / 2;
-              //let relevantSuccess = relevantCount > value.length / 2;
-
-              let entailment_label = '0';
-
-              if (infoSuccess && consistentSuccess) {
-                entailment_label = '0';
-              } else if (!infoSuccess && consistentSuccess) {
-                entailment_label = '1';
-              } else if (!consistentSuccess) {
-                entailment_label = '-1';
-              }
-
-              console.log("Entailment label for " + key + ": ", entailment_label);
-
-              //if test items has key, then compare results
-              const testItem = this.regressionTestItems.find(item => item.id === key);
-              console.log("Gold label: ",testItem.gold_label)
-
-              if (testItem.gold_label === entailment_label) {
-                if (entailment_label === '1') {
-                  successful_entailment_predictions++;
-                } else if (entailment_label === '0') {
-                  successful_neutral_predictions++;
-                } else if (entailment_label === '-1') {
-                  successful_contradiction_predictions++;
-                }
-              }
-
-              if (testItem.gold_label === '1') {
-                all_entailment_predictions++;
-              } else if (testItem.gold_label === '0') {
-                all_neutral_predictions++;
-              } else if (testItem.gold_label === '-1') {
-                all_contradiction_predictions++;
-              }
-
-              // ... inside your loop, once you have:
-              const gold = testItem.gold_label;     // '1' | '0' | '-1'
-              const pred = entailment_label;        // your predicted label as string
-
-
-              // ... inside your vampireResult loop, after entailment_label is computed:
-            //  const testItem = this.regressionTestItems.find(item => item.id === key);
-
-// Pull the human-readable premise/hypothesis strings you already built for Vampire
-// Plain-language premises/conclusion from sentenceMap via IDs (e.g., "S12")
-              const premiseSentences: string[] = (testItem?.premises ?? [])
-                .map((sid: string) => this.sentenceMap[sid])
-                .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
-
-              const conclusionSentences: string[] = (testItem?.conclusion ?? [])
-                .map((sid: string) => this.sentenceMap[sid])
-                .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
-
-// If your component expects a single conclusion string, join them:
-              const conclusionString = conclusionSentences.join(' '); // or '\n' if you prefer
-
-              this.inferenceResults.push({
-                id: key,
-                premises: premiseSentences,
-                conclusion: conclusionString,
-                predictedLabel: entailment_label,
-                goldLabel: testItem?.gold_label ?? 'unknown',
-
-                // optional debug fields
-                premiseIds: testItem?.premises ?? [],
-                conclusionIds: testItem?.conclusion ?? [],
-                mismatch: (testItem?.gold_label ?? '') !== entailment_label,
-              });
-
-              if (idx[gold] !== undefined && idx[pred] !== undefined) {
-                const gi = idx[gold];
-                const pj = idx[pred];
-                cm[gi][pj] += 1;
-                this.cellIds[gi][pj].push(key);
-
-
-
-              } else {
-                // optional: track unknown labels
-                console.warn('Unknown label', { gold, pred });
-              }
-
-            }
-
-            this.updateConfusionMatrixView(cm,Object.keys(vampireResult.results).length);
-
-            this.inferenceSummary = "Inference results summary:\n" +
-                                    "Successful entailment prediction ratio: " + successful_entailment_predictions / all_entailment_predictions + " (" + successful_entailment_predictions + " of " + all_entailment_predictions + ")\n" +
-                                    "Successful neutral prediction ratio: " + successful_neutral_predictions / all_neutral_predictions + " (" + successful_neutral_predictions + " of " + all_neutral_predictions + ")\n" +
-                                    "Successful contradiction prediction ratio: " + successful_contradiction_predictions / all_contradiction_predictions + " (" + successful_contradiction_predictions + " of " + all_contradiction_predictions + ")\n" +
-                                    "Overall accuracy: " + (successful_entailment_predictions + successful_neutral_predictions + successful_contradiction_predictions) /  Object.keys(vampireResult.results).length
-
-            this.loading = false;
-          });
-
-
-
+          // Otherwise proceed immediately with ALL solutions
+          this.runVampireFromCurrentState(false);
         });
       },
       error => {
         console.error('An error occurred:', error);
         this.displayMessage("An error occurred during batch parsing.", "red");
         this.loading = false;
-      });
-
-
-
+      }
+    );
   }
 
+  // Builds NLI items + runs Vampire.
+  // If useDisambiguated=true, filters each sentence’s solutions by selectedSolutionIdsBySentence.
+  private runVampireFromCurrentState(useDisambiguated: boolean): void {
+    if (!this.lastGswbMap || !this.lastAnnotations) {
+      console.warn("No stored GSWB/LiGER state to proceed to Vampire.");
+      return;
+    }
+
+    const gswbMap = this.lastGswbMap;
+    const annotations = this.lastAnnotations;
+    const logicType = this.lastLogicType;
+
+    this.disambiguationMode = false;
+
+    this.displayMessage("Sending NLI items to Vampire ...", "blue");
+    console.log("Preparing call to Vampire ...");
+
+    const inference_items: Record<string, nliItem> = {};
+
+    for (let item of this.regressionTestItems) {
+      let axioms = this.axiomEdit.getContent();
+      let axiomCounter = 0;
+
+      const premise_strings: string[] = [];
+      for (let premise of item.premises) {
+        if (gswbMap.has(premise) && gswbMap.get(premise).solutions.length > 0) {
+          const sols = this.getSolutionsText(premise, gswbMap, useDisambiguated);
+          if (sols.length > 0) premise_strings.push(sols.join('\n'));
+
+          const liger_data = annotations[premise];
+          if (liger_data?.axioms?.length) {
+            for (let axiom of liger_data.axioms) {
+              if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
+                axioms += logicType + "(" +
+                  "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
+                axiomCounter++;
+              }
+            }
+          } else {
+            // optional: console.log("No axioms for premise:", premise);
+          }
+        }
+      }
+
+      const conclusion_strings: string[] = [];
+      for (let conclusion of item.conclusion) {
+        if (gswbMap.has(conclusion) && gswbMap.get(conclusion).solutions.length > 0) {
+          const sols = this.getSolutionsText(conclusion, gswbMap, useDisambiguated);
+          if (sols.length > 0) conclusion_strings.push(sols.join('\n'));
+
+          const liger_data = annotations[conclusion];
+          if (liger_data?.axioms?.length) {
+            for (let axiom of liger_data.axioms) {
+              if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
+                axioms += logicType + "(" +
+                  "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
+                axiomCounter++;
+              }
+            }
+          } else {
+            // optional: console.log("No axioms for conclusion:", conclusion);
+          }
+        }
+      }
+
+      if (premise_strings.length > 0 && conclusion_strings.length > 0) {
+        inference_items[item.id] = { premises: premise_strings, hypothesis: conclusion_strings, axioms: axioms };
+      }
+    }
+
+    const pruning = this.contextPruning.nativeElement.checked;
+
+    const vampireRequest: vampireMultipleRequest = {
+      nli_items: inference_items,
+      vampire_preferences: this.vampirePreferences.vampirePreferences,
+      pruning: pruning
+    };
+
+    console.log("Vampire request: ", vampireRequest);
+    this.loading = true;
+
+    this.batchVampire(vampireRequest).subscribe((vampireResult: vampireMultipleResponse) => {
+      this.handleVampireResult(vampireResult);
+    });
+  }
+
+  private getSolutionsText(
+    sentenceId: string,
+    gswbMap: Map<string, GswbOutput>,
+    useDisambiguated: boolean
+  ): string[] {
+    const sols = gswbMap.get(sentenceId)?.solutions ?? [];
+
+    if (!useDisambiguated) return sols.map(x => x.solution);
+
+    const selectedIds = this.selectedSolutionIdsBySentence.get(sentenceId);
+
+    // If nothing selected, default to ALL (safe fallback)
+    if (!selectedIds || selectedIds.length === 0) return sols.map(x => x.solution);
+
+    const sel = new Set(selectedIds);
+    return sols.filter(x => sel.has(x.id)).map(x => x.solution);
+  }
+
+  // ===== Vampire handling: kept from your code (moved into a method to avoid duplication) =====
+  private handleVampireResult(vampireResult: vampireMultipleResponse): void {
+    console.log("Vampire results: ", vampireResult);
+    this.displayMessage("Batch processing completed successfully.", "green");
+
+    const idx = { '1': 0, '0': 1, '-1': 2 };
+    const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
+
+    this.selectedIds.clear();
+    this.selectedGoldIdx = this.selectedPredIdx = null;
+
+    let all_entailment_predictions = 0;
+    let all_neutral_predictions = 0;
+    let all_contradiction_predictions = 0;
+
+    let successful_entailment_predictions = 0;
+    let successful_neutral_predictions = 0;
+    let successful_contradiction_predictions = 0;
+
+    for (let [key, value] of Object.entries(vampireResult.results) as [string, check[]][]) {
+      let infoCount = value.filter(check => check.informative).length;
+      let consistentCount = value.filter(check => check.consistent).length;
+
+      let infoSuccess = infoCount > value.length / 2;
+      let consistentSuccess = consistentCount > value.length / 2;
+
+      let entailment_label = '0';
+      if (infoSuccess && consistentSuccess) entailment_label = '0';
+      else if (!infoSuccess && consistentSuccess) entailment_label = '1';
+      else if (!consistentSuccess) entailment_label = '-1';
+
+      const testItem = this.regressionTestItems.find(item => item.id === key);
+
+      if (testItem.gold_label === entailment_label) {
+        if (entailment_label === '1') successful_entailment_predictions++;
+        else if (entailment_label === '0') successful_neutral_predictions++;
+        else if (entailment_label === '-1') successful_contradiction_predictions++;
+      }
+
+      if (testItem.gold_label === '1') all_entailment_predictions++;
+      else if (testItem.gold_label === '0') all_neutral_predictions++;
+      else if (testItem.gold_label === '-1') all_contradiction_predictions++;
+
+      const gold = testItem.gold_label;
+      const pred = entailment_label;
+
+      const premiseSentences: string[] = (testItem?.premises ?? [])
+        .map((sid: string) => this.sentenceMap[sid])
+        .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+
+      const conclusionSentences: string[] = (testItem?.conclusion ?? [])
+        .map((sid: string) => this.sentenceMap[sid])
+        .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+
+      const conclusionString = conclusionSentences.join(' ');
+
+      this.inferenceResults.push({
+        id: key,
+        premises: premiseSentences,
+        conclusion: conclusionString,
+        predictedLabel: entailment_label,
+        goldLabel: testItem?.gold_label ?? 'unknown',
+        premiseIds: testItem?.premises ?? [],
+        conclusionIds: testItem?.conclusion ?? [],
+        mismatch: (testItem?.gold_label ?? '') !== entailment_label,
+      });
+
+      if (idx[gold] !== undefined && idx[pred] !== undefined) {
+        const gi = idx[gold];
+        const pj = idx[pred];
+        cm[gi][pj] += 1;
+        this.cellIds[gi][pj].push(key);
+      } else {
+        console.warn('Unknown label', { gold, pred });
+      }
+    }
+
+    this.updateConfusionMatrixView(cm, Object.keys(vampireResult.results).length);
+
+    this.inferenceSummary =
+      "Inference results summary:\n" +
+      "Successful entailment prediction ratio: " + successful_entailment_predictions / all_entailment_predictions +
+      " (" + successful_entailment_predictions + " of " + all_entailment_predictions + ")\n" +
+      "Successful neutral prediction ratio: " + successful_neutral_predictions / all_neutral_predictions +
+      " (" + successful_neutral_predictions + " of " + all_neutral_predictions + ")\n" +
+      "Successful contradiction prediction ratio: " + successful_contradiction_predictions / all_contradiction_predictions +
+      " (" + successful_contradiction_predictions + " of " + all_contradiction_predictions + ")\n" +
+      "Overall accuracy: " +
+      (successful_entailment_predictions + successful_neutral_predictions + successful_contradiction_predictions) /
+      Object.keys(vampireResult.results).length;
+
+    this.loading = false;
+  }
+
+  // =========================
+  // KEEP YOUR EXISTING FUNCTIONS BELOW (unchanged)
+  // =========================
+
   batchMultistage(sentences: String) {
+    this.gswbPreferences.onSubmit();
 
-    this.gswbPreferences.onSubmit()
-
-    //Split sentences into lines and add all non-empty lines and comment lines to an array
     let sentencesArray = sentences.split("\n").filter(line => {
       let trimmedLine = line.trim();
       return trimmedLine !== '' && !trimmedLine.startsWith("#");
     });
 
-    //map from id to sentences
     let sentenceMap = {};
     for (let i = 0; i < sentencesArray.length; i++) {
       sentenceMap["S" + i] = sentencesArray[i];
     }
 
-    const ligerMultipleRequest = {sentences: sentenceMap, ruleString: null};
+    const ligerMultipleRequest = { sentences: sentenceMap, ruleString: null };
 
     this.dataService.ligerBatchMultistage(ligerMultipleRequest).subscribe(
       data => {
@@ -504,7 +487,7 @@ export class RegressionTestingInterfaceComponent {
         if (data.hasOwnProperty("annotations")) {
           console.log(data.annotations);
 
-          let mcMap = {}
+          let mcMap = {};
           for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
             mcMap[key] = value.meaningConstructors;
           }
@@ -512,10 +495,9 @@ export class RegressionTestingInterfaceComponent {
           this.gswbMultipleRequest = {
             premises: mcMap,
             gswbPreferences: this.gswbPreferences.gswbPreferences
-          }
+          };
 
-          console.log("Specified request: ",this.gswbMultipleRequest);
-
+          console.log("Specified request: ", this.gswbMultipleRequest);
         }
 
         if (data.hasOwnProperty("report")) {
@@ -523,15 +505,12 @@ export class RegressionTestingInterfaceComponent {
         }
 
         this.batchDeduce(this.gswbMultipleRequest);
-
       },
       error => {
         console.error('An error occurred:', error);
         this.loading = false;
-      });
-
-
-
+      }
+    );
   }
 
   updateRules(ruleFile: string) {
@@ -546,7 +525,6 @@ export class RegressionTestingInterfaceComponent {
     this.axiomEdit.updateContent(ruleFile);
   }
 
-
   batchVampire(vampireMultipleRequest: vampireMultipleRequest): Observable<vampireMultipleResponse> {
     return this.dataService.callBatchVampire(vampireMultipleRequest).pipe(
       tap(data => {
@@ -558,10 +536,8 @@ export class RegressionTestingInterfaceComponent {
         this.loading = false;
         return EMPTY;
       })
-    )
+    );
   }
-
-
 
   batchDeduce(gswbMultipleRequest: GswbMultipleRequest): Observable<GswbBatchOutput> {
     return this.dataService.gswbBatchDeduce(gswbMultipleRequest).pipe(
@@ -588,109 +564,82 @@ export class RegressionTestingInterfaceComponent {
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
-
-  parse_testfile(testfile: string){
-    // Split into lines and iterate over them
-
-    //empty regressionTestItems
+  parse_testfile(testfile: string) {
     this.regressionTestItems = [];
 
     let parseItems: any[] = [];
-
-    let lines  = testfile.split('\n');
+    let lines = testfile.split('\n');
 
     let sentence_map = {};
     let sentence_id = 0;
     let item_id = 0;
 
-    //iterate over lines by index
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      if (line.trim() === '') continue; // Skip empty lines
-      if (line.trim().startsWith('#')) continue; // Skip comment lines
+      const line = lines[i];
+      if (line.trim() === '') continue;
+      if (line.trim().startsWith('#')) continue;
       if (line.trim().length > 2) {
-
-       // let sentences: string[] = [];
-       // sentences.push(line.trim())
-       // let item = {sentences: sentences}
-       // parseItems.push(item);
-
         sentence_map["S" + sentence_id] = line.trim();
         sentence_id++;
       }
       if (line.trim() === "{") {
-         i++;
-         let sentences: string[] = [];
-         let premise_ids = [];
-          let conclusion_ids = [];
-          let gold_label = null; // 1 for entailment, 0 for neutral, -1 for contradiction
-         let premises: boolean = true;
-         while (lines[i].trim() !== "}" && i < lines.length) {
-           const innerLine = lines[i];
-           if (innerLine.trim() === '') { i++; continue;} // Skip empty lines
-           if (innerLine.trim().startsWith('}')) {break;}
-             if (innerLine.trim().startsWith('#')) {
-             i++;
-             continue; // Skip comment lines
-           }
-           if (innerLine.trim() === "====") {
-             premises = false;
-             i++;
-             continue;
-           } else if (innerLine.trim().startsWith(">>>"))
-           {
-             // Take rest of line and check whether 1, 0, or -1
-              gold_label = innerLine.trim().substring(3).trim();
-           } else if (innerLine.trim().length > 2){
-             sentences.push(innerLine.trim())
-             if (premises) {
-               premise_ids.push('S' + sentence_id);
-               sentence_map['S' + sentence_id] = innerLine.trim();
-               sentence_id++;
-             } else {
-                conclusion_ids.push('S' + sentence_id);
-                sentence_map['S' + sentence_id] = innerLine.trim();
-                sentence_id++;
-             }
-           }
-           i++;
+        i++;
+        let sentences: string[] = [];
+        let premise_ids = [];
+        let conclusion_ids = [];
+        let gold_label = null;
+        let premises: boolean = true;
+
+        while (lines[i].trim() !== "}" && i < lines.length) {
+          const innerLine = lines[i];
+          if (innerLine.trim() === '') { i++; continue; }
+          if (innerLine.trim().startsWith('}')) { break; }
+          if (innerLine.trim().startsWith('#')) { i++; continue; }
+
+          if (innerLine.trim() === "====") {
+            premises = false;
+            i++;
+            continue;
+          } else if (innerLine.trim().startsWith(">>>")) {
+            gold_label = innerLine.trim().substring(3).trim();
+          } else if (innerLine.trim().length > 2) {
+            sentences.push(innerLine.trim());
+            if (premises) {
+              premise_ids.push('S' + sentence_id);
+              sentence_map['S' + sentence_id] = innerLine.trim();
+              sentence_id++;
+            } else {
+              conclusion_ids.push('S' + sentence_id);
+              sentence_map['S' + sentence_id] = innerLine.trim();
+              sentence_id++;
+            }
+          }
+          i++;
         }
-        let item = {id: "n" + item_id,
-                                            sentences: sentences, premises: premise_ids,
-                                            conclusion: conclusion_ids, gold_label: gold_label};
+
+        let item = { id: "n" + item_id, sentences, premises: premise_ids, conclusion: conclusion_ids, gold_label };
         item_id++;
         parseItems.push(item);
       }
     }
-   // console.log("Parsed items:", parseItems);
+
     console.log("Sentence map:", sentence_map);
-    this.sentenceMap = sentence_map
+    this.sentenceMap = sentence_map;
     this.regressionTestItems.push(...parseItems);
   }
 
-  /**
-   * Sorts result entries by number of true boolean values (descending).
-   */
   sortResultsByTrueCount(resultsObj: any): any {
-    // Copy to avoid mutating original
     const sortedResults: any = { ...resultsObj };
-
     Object.keys(sortedResults.results).forEach(key => {
       sortedResults.results[key] = sortedResults.results[key].sort(
         (a: any, b: any) => this.countTrues(b) - this.countTrues(a)
       );
     });
-
     return sortedResults;
   }
 
-  /**
-   * Helper: counts how many boolean properties are true in an object.
-   */
   private countTrues(obj: any): number {
-    return Object.values(obj)
-      .filter(v => v === true)
-      .length;
+    return Object.values(obj).filter(v => v === true).length;
   }
 
   updateConfusionMatrixView(cm: number[][], total?: number): void {
@@ -719,8 +668,6 @@ export class RegressionTestingInterfaceComponent {
   selectedPredIdx: number | null = null;
   selectedIds = new Set<string>();
 
-
-
   selectCell(gi: number, pj: number): void {
     if (this.selectedGoldIdx === gi && this.selectedPredIdx === pj) {
       this.clearSelection();
@@ -735,5 +682,4 @@ export class RegressionTestingInterfaceComponent {
     this.selectedGoldIdx = this.selectedPredIdx = null;
     this.selectedIds.clear();
   }
-
 }

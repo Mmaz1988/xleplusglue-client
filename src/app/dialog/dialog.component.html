@@ -1,16 +1,22 @@
 <dialog class="center-dialog" #dialog>
-    <h3>Derivation:</h3>
-    <div *ngIf="showEdit">
-       <app-editor #editorVis [mode]="'glue'">
-        </app-editor>
+  <h3>Derivation:</h3>
+
+  <div class="dialog-body">
+    <div [hidden]="!showEdit">
+      <app-editor #editorVis [mode]="'glue'"></app-editor>
     </div>
-    <div *ngIf="showGraph">
+
+    <div [hidden]="!showGraph">
       <app-gswb-graph-vis #graphVis [graphID]="'gswbCy2'"></app-gswb-graph-vis>
     </div>
 
+    <div [hidden]="!showSemVis">
+      <app-sem-vis #semVis (selectionChange)="onSemVisSelection($event)"></app-sem-vis>
+    </div>
+  </div>
 
-  <button (click)="dialog.close()">
-    OK
-  </button>
+  <button type="button" (click)="dialog.close()">OK</button>
 </dialog>
-<button (click)="showDialog()">Open in new window</button>
+
+<!-- MUST be outside the dialog -->
+<button type="button" (click)="showDialog()">Open in new window</button>

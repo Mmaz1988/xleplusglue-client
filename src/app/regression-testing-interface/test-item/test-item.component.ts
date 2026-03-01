@@ -1,5 +1,5 @@
 import {Component, Input, ViewChild} from '@angular/core';
-import {DialogComponent} from "../../dialog/dialog.component";
+//import {DialogComponent} from "../../dialog/dialog.component";
 
 @Component({
   selector: 'app-test-item',

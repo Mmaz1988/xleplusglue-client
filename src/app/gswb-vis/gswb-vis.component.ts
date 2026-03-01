@@ -124,7 +124,8 @@ export class GswbVisComponent {
               this.derivationContainer.graphVisUpdateContent(graphElements);
             }, 0);
 
-            this.dialog.setContent(graphElements)
+            //this.dialog.setContent(graphElements)
+            this.dialog.setContent({ kind: 'graph', graph: graphElements });
 
           } else
           {

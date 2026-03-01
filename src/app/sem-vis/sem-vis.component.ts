@@ -1,4 +1,4 @@
-import { Component, ViewChild, AfterViewInit } from '@angular/core';
+import {Component, ViewChild, AfterViewInit, Output, EventEmitter} from '@angular/core';
 import { EditorComponent } from '../editor/editor.component';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
 
@@ -14,6 +14,12 @@ type DiscView = GswbDiscriminant & { _order: number; _bucket: DiscBucket };
 
 export class SemVisComponent implements AfterViewInit {
   @ViewChild('sem') sem!: EditorComponent;
+
+  @Output() selectionChange = new EventEmitter<{
+    items: GswbSolution[];
+    selectedScopeIds: string[];
+    selectedMcIds: string[];
+  }>();
 
   items: GswbSolution[] = [];
 
@@ -116,7 +122,7 @@ export class SemVisComponent implements AfterViewInit {
   }
 
 
-   applyFiltersAndResetIndex(startIndex = 0): void {
+  applyFiltersAndResetIndex(startIndex = 0): void {
     const filtered = this.filterItemsBySelectedDiscriminants(this.allItems);
 
     this.items = filtered;
@@ -126,6 +132,13 @@ export class SemVisComponent implements AfterViewInit {
 
     this.applyCurrent();
     this.rebuildDiscriminantViews();
+
+    //notify parent(s)
+    this.selectionChange.emit({
+      items: this.items,
+      selectedScopeIds: [...this.selectedScopeIds],
+      selectedMcIds: [...this.selectedMcIds],
+    });
   }
 
   clearScope(): void {

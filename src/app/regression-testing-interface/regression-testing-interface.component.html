@@ -72,6 +72,7 @@
       <app-editor #axiomEdit [mode]="'vampire'">
       </app-editor>
     </div>
+
   </app-toggle-display>
 
   <br>
@@ -100,18 +101,34 @@
     <span *ngIf="loading">Loading...</span>
   </button>
 
+  <label>
+    <input type="checkbox" [(ngModel)]="enableDisambiguation">
+    Disambiguate before Vampire
+  </label>
+
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()">
+    Continue
+  </button>
+
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()">
+    Skip
+  </button>
+
   <div class="errorhandling" #errorhandle></div>
 
 <h3>
   Parsing report:
 </h3>
   <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
-  <div>
-    <div class="result-container" *ngFor="let element of regressionTestResults; let i = index">
-      <app-test-result [data]="element" >
-      </app-test-result>
+    <div>
+      <div class="result-container" *ngFor="let element of regressionTestResults; let i = index">
+        <app-test-result
+          [data]="element"
+          (selectionChange)="onSelectionChange($event)"
+        >
+        </app-test-result>
+      </div>
     </div>
-  </div>
   </app-toggle-display>
   <br>
   <br>

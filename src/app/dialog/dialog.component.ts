@@ -1,6 +1,12 @@
-import { Component,ViewChild, ElementRef } from '@angular/core';
-import {GswbGraphVisComponent} from "../gswb-vis/gswb-graph-vis/gswb-graph-vis.component";
-import {EditorComponent} from "../editor/editor.component";
+import {Component, ViewChild, ElementRef, Output, EventEmitter} from '@angular/core';
+import { GswbGraphVisComponent } from "../gswb-vis/gswb-graph-vis/gswb-graph-vis.component";
+import { EditorComponent } from "../editor/editor.component";
+import { SemVisComponent } from "../sem-vis/sem-vis.component"; // <-- adjust path
+
+type DialogContent =
+  | string
+  | { kind: 'graph', graph: any }
+  | { kind: 'semvis', items: any[], discriminants?: any[], startIndex?: number };
 
 @Component({
   selector: 'app-dialog',
@@ -8,59 +14,105 @@ import {EditorComponent} from "../editor/editor.component";
   styleUrls: ['./dialog.component.css']
 })
 export class DialogComponent {
+  @ViewChild('dialog') dialog!: ElementRef<HTMLDialogElement>;
 
-  @ViewChild('dialog') dialog: ElementRef
-  @ViewChild('graphVis') graphVis: GswbGraphVisComponent
-  @ViewChild('editorVis') editorVis: EditorComponent
+  @ViewChild('graphVis') graphVis?: GswbGraphVisComponent;
+  @ViewChild('editorVis') editorVis?: EditorComponent;
+  @ViewChild('semVis') semVis?: SemVisComponent;
 
-  showEdit: boolean;
-  showGraph: boolean;
-  content:any;
+  @Output() semvisSelectionChange = new EventEmitter<{
+    items: any[];
+    selectedScopeIds: string[];
+    selectedMcIds: string[];
+  }>();
+
+  showEdit = false;
+  showGraph = false;
+  showSemVis = false;
+
+  private lastContent: any = null;
 
   ngAfterViewInit(): void {
-    // Check if the child components are available
-    this.showEdit = false;
-    this.showGraph = false;
+    // keep defaults as-is
   }
 
+  private resetViews(): void {
+    this.showEdit = false;
+    this.showGraph = false;
+    this.showSemVis = false;
+  }
 
-  setContent(content: any) {
+  setContent(content: DialogContent | any) {
     console.log("Content of dialog window:", content);
-
+    this.lastContent = content;
+    // 1) String => editor
     if (typeof content === 'string' || content instanceof String) {
-      // Prepare editor
-      this.showGraph = false;
+      this.resetViews();
       this.showEdit = true;
 
-      content = content.toString();
-
-      // Wait for view to update and <app-editor> to be instantiated
+      const text = content.toString();
       setTimeout(() => {
-        if (this.editorVis) {
-          this.editorVis.updateContent(content);
-        } else {
-          console.warn('Editor component not initialized yet');
-        }
+        if (this.editorVis) this.editorVis.updateContent(text);
+        else console.warn('Editor component not initialized yet');
       }, 0);
 
-    } else {
-      // Prepare graph
-      this.showEdit = false;
+      return;
+    }
+
+    // 2) Explicit "kind" routing
+    if (content?.kind === 'semvis') {
+      this.resetViews();
+      this.showSemVis = true;
+
+      const items = Array.isArray(content.items) ? content.items : [];
+      const discriminants = Array.isArray(content.discriminants) ? content.discriminants : [];
+      const startIndex = Number.isFinite(content.startIndex) ? content.startIndex : 0;
+
+      setTimeout(() => {
+        if (!this.semVis) {
+          console.warn('SemVis component not initialized yet');
+          return;
+        }
+        // Order doesn’t matter much, but discriminants first can help if you rely on initial filtering
+        if (discriminants.length) this.semVis.setDiscriminants(discriminants);
+        this.semVis.setItems(items, startIndex);
+      }, 0);
+
+      return;
+    }
+
+    if (content?.kind === 'graph') {
+      this.resetViews();
       this.showGraph = true;
 
       setTimeout(() => {
-        if (this.graphVis) {
-          this.graphVis.renderGraph(content);
-        } else {
-          console.warn('Graph component not initialized yet');
-        }
+        if (this.graphVis) this.graphVis.renderGraph(content.graph);
+        else console.warn('Graph component not initialized yet');
       }, 0);
+
+      return;
     }
+
+    // 3) Backward-compatible fallback:
+    // If it’s not a string and doesn’t declare kind, treat it as a graph payload (your previous behavior).
+    this.resetViews();
+    this.showGraph = true;
+
+    setTimeout(() => {
+      if (this.graphVis) this.graphVis.renderGraph(content);
+      else console.warn('Graph component not initialized yet');
+    }, 0);
   }
 
-
-  showDialog(){
+  showDialog() {
+    if (this.lastContent !== null) {
+      // ensures flags + child renders are correct at open time
+      this.setContent(this.lastContent);
+    }
     this.dialog.nativeElement.show();
   }
 
+  onSemVisSelection(ev: { items: any[]; selectedScopeIds: string[]; selectedMcIds: string[] }) {
+    this.semvisSelectionChange.emit(ev);
+  }
 }
