@@ -130,6 +130,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   }
 
   batchParse(sentences: string, rules: string) {
+    if (this.runLocked) return;
     this.errorhandle.nativeElement.innerHTML = "";
     this.loading = true;
 
@@ -467,6 +468,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   // =========================
 
   batchMultistage(sentences: String) {
+    if (this.runLocked) return;
     this.gswbPreferences.onSubmit();
 
     let sentencesArray = sentences.split("\n").filter(line => {
@@ -681,5 +683,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   clearSelection(): void {
     this.selectedGoldIdx = this.selectedPredIdx = null;
     this.selectedIds.clear();
+  }
+
+  get runLocked(): boolean {
+    return this.loading || (this.enableDisambiguation && this.disambiguationMode);
   }
 }

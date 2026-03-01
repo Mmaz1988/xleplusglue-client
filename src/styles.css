@@ -101,6 +101,12 @@ button:active, input.submitbutton:active {
   border-color: #007b8a;  /* A darker shade of the original color */
 }
 
+button:disabled,
+input.submitbutton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 button.hide-button {
   border-style: solid;
   border-radius: 25px;

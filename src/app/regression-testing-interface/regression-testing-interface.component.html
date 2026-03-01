@@ -81,38 +81,43 @@
   <h1>Settings</h1>
   <app-gswb-settings #gswbSettings></app-gswb-settings>
   <app-inference-settings  #vampirePrefs></app-inference-settings>
+
+
+    <h3>Ambiguity management:</h3>
   <div class="pruning-container">
     <input type="checkbox" #contextPruning id="contextPruning" />
-    <label for="contextPruning">Pruning</label>
-  </div>
+    <label for="contextPruning">Pruning</label> <br>
+    <label>
+      <input type="checkbox" [(ngModel)]="enableDisambiguation">
+      Disambiguate before Vampire
+    </label>
+  </div> <br>
+
   </app-toggle-display>
 
 <br>
 
+  <h1>Run:</h1>
 
-<button (click)="batchParse(testfile.getContent(), ligerRules.getContent())">
+
+<button (click)="batchParse(testfile.getContent(), ligerRules.getContent())" [disabled]="runLocked">
   <span *ngIf="!loading">Parse all</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
 </button>
-  <button class="button beta" (click)="batchMultistage(testfile.getContent())">
+  <button class="button beta" (click)="batchMultistage(testfile.getContent())" [disabled]="runLocked">
     <span *ngIf="!loading">Multistage</span>
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
     <span *ngIf="loading">Loading...</span>
   </button>
-
-  <label>
-    <input type="checkbox" [(ngModel)]="enableDisambiguation">
-    Disambiguate before Vampire
-  </label>
-
   <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()">
-    Continue
-  </button>
-
+  Continue
+</button>
   <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()">
     Skip
   </button>
+
+
 
   <div class="errorhandling" #errorhandle></div>
 
