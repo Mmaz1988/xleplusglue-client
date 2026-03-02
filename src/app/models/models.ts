@@ -1,3 +1,5 @@
+import { SafeHtml } from '@angular/platform-browser';
+
 export interface LigerBatchParsingAnalysis {
   annotations: { [key: number]: LigerRuleAnnotation };
   ruleApplicationGraph: LigerGraphComponent[];
@@ -176,7 +178,10 @@ export interface context {
    showGlyph?: false
    detailText?: string;        // for chat analysis
    showDetail?: boolean;
-   glyphs?: string[];        // array of SVG strings
-   glyphGridSize?: number;   // computed grid size
+
+   glyphs?: string[];        // raw svg strings (optional to keep)
+   safeGlyphs?: SafeHtml[];
+   glyphGridSize?: number;
+
  }
 

@@ -34,14 +34,24 @@
       <span *ngIf="mismatch" class="mismatch-note">— mismatch</span>
     </div>
   </div>
-  <!-- Glyph pills bottom-right -->
+
+  <div class="pill-container">
+    <app-pill
+      badge="V"
+      variant="glyph-grid"
+      [glyphs]="safeGlyphs"
+      [gridSize]="glyphGridSize"
+      [minimizedColor]="'#2e7d32'">
+    </app-pill>
+  </div>
+
+  <!-- Glyph pills bottom-right
   <div class="pill-container" *ngIf="glyphs?.length">
     <div class="message-glyph"
          [ngClass]="{ 'minimized': !showGlyph }"
          (click)="toggleGlyphVisibility()">
 
       <ng-container *ngIf="showGlyph; else collapsed">
-        <!-- close button -->
         <button class="pill-close"
                 type="button"
                 (click)="closeGlyph($event)"
@@ -62,5 +72,5 @@
       </ng-template>
 
     </div>
-  </div>
+  </div> -->
 </div>

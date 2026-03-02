@@ -13,49 +13,27 @@
 
 
       <div class="pill-container">
-        <!-- Glyph Container -->
-        <div *ngIf="message.glyphs?.length"
-             class="message-glyph"
-             [ngClass]="{ 'minimized': !message.showGlyph }"
-             (click)="toggleGlyphVisibility(message)">
+        <div class="pill-container">
+          <!-- SVG glyph grid pill -->
+          <app-pill
+            *ngIf="message.glyphs?.length"
+            badge="V"
+            variant="glyph-grid"
+            [glyphs]="message.safeGlyphs"
+            [gridSize]="message.glyphGridSize"
+            [minimizedColor]="'#2e7d32'">
+          </app-pill>
 
-          <ng-container *ngIf="message.showGlyph; else collapsed">
-            <!-- close button -->
-            <button class="pill-close"
-                    type="button"
-                    (click)="closeGlyph(message,$event)"
-                    aria-label="Close">
-              ×
-            </button>
-            <div class="glyph-grid"
-                 [style.gridTemplateColumns]="'repeat(' + message.glyphGridSize + ', 1fr)'">
-              <div class="glyph-cell"
-                   *ngFor="let g of message.glyphs"
-                   [innerHTML]="sanitizeSvg(g)">
-              </div>
-            </div>
-          </ng-container>
-
-          <ng-template #collapsed>
-            <div>V</div>
-          </ng-template>
-
+          <!-- Text pill -->
+          <app-pill
+            *ngIf="message.detailText"
+            badge="TPTP"
+            variant="text"
+            [text]="message.detailText"
+            [minimizedColor]="'#1565c0'"
+            [closeOnly]="true">
+          </app-pill>
         </div>
-
-
-      <!-- Detail Container (text-based glyph) -->
-      <div *ngIf="message.detailText"
-           class="message-detail"
-           [ngClass]="{'minimized': !message.showDetail}"
-           (click)="toggleDetailVisibility(message)">
-        <ng-container *ngIf="message.showDetail" (click)="toggleDetailVisibility(message)">
-          <!-- Use <pre> for preserved formatting; or a <div> if you want normal wrapping -->
-          <div>{{ message.detailText }}</div>
-        </ng-container>
-        <ng-container *ngIf="!message.showDetail">
-          <div>TPTP</div>
-        </ng-container>
-      </div>
     </div>
     </div>
 

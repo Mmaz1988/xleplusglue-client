@@ -1,0 +1,35 @@
+<div class="pill-anchor"
+     cdkOverlayOrigin
+     #origin="cdkOverlayOrigin"
+     [style.--pill-min-color]="minimizedColor">
+
+  <div class="pill-badge-btn" (click)="toggle()">
+    <span class="pill-badge">{{ badge }}</span>
+  </div>
+</div>
+
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="origin"
+  [cdkConnectedOverlayOpen]="open"
+  [cdkConnectedOverlayHasBackdrop]="true"
+  (backdropClick)="open = false"
+  [cdkConnectedOverlayPositions]="positions">
+
+  <div class="pill-panel" (click)="$event.stopPropagation()">
+    <button class="pill-close" type="button" (click)="close($event)" aria-label="Close">
+      &times;
+    </button>
+
+    <ng-container [ngSwitch]="variant">
+      <div *ngSwitchCase="'glyph-grid'" class="glyph-grid"
+           [style.gridTemplateColumns]="'repeat(' + gridSize + ', 1fr)'">
+        <div class="glyph-cell" *ngFor="let g of glyphs; trackBy: trackByIdx" [innerHTML]="g"></div>
+      </div>
+
+      <div *ngSwitchCase="'text'" class="detail-body">
+        {{ text }}
+      </div>
+    </ng-container>
+  </div>
+</ng-template>

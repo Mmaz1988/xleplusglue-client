@@ -200,10 +200,18 @@ export class ChatComponent {
                         message = "Your input is informative and consistent.";
                       }
 
-                      this.chatHistory.push({ text: message, sender: 'Bot', glyph: glyph, showGlyph: false, detailText: tptp,
-                        showDetail: false, glyphs: glyphs, glyphGridSize: Math.ceil(Math.sqrt(glyphs.length)) });
-                    }
+                      const glyphGridSize = Math.max(1, Math.ceil(Math.sqrt(glyphs.length)));
+                      const safeGlyphs = glyphs.map(g => this.sanitizer.bypassSecurityTrustHtml(g));
 
+                      this.chatHistory.push({
+                        text: message,
+                        sender: 'Bot',
+                        detailText: tptp,
+                        glyphs,
+                        safeGlyphs,
+                        glyphGridSize
+                      });
+                    }
                     this.loading = false; // Hide loading indicator
                   },
                   error => {
@@ -248,27 +256,12 @@ export class ChatComponent {
     console.log("Selection cleared in chat component");
   }
 
-  sanitizeSvg(svg: string): SafeHtml {
-    return this.sanitizer.bypassSecurityTrustHtml(svg);
-  }
 
-  toggleGlyphVisibility(message: any) {
-    message.showGlyph = !message.showGlyph;
-  }
 
   updateAxioms(value: string): void {
     this.axioms = value;
     this.axiomsChanged.emit(this.axioms); // Emit the updated axioms
     console.log("Axioms updated in chat component:", this.axioms);
-  }
-
-  toggleDetailVisibility(message: any) {
-    message.showDetail = !message.showDetail;
-  }
-
-  closeGlyph(message: ChatMessage, e: MouseEvent): void {
-    e.stopPropagation();          // don’t bubble to the pill click
-    message.showGlyph = false;    // close this message’s pill
   }
 
 }

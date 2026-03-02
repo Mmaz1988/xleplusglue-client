@@ -12,14 +12,13 @@ export class InferenceResultComponent implements OnInit {
   @Input() data: any;
 
   premises: string[] = [];
-  conclusion: string = '';
-  predictedLabel: string = '';
-  goldLabel: string = '';
+  conclusion = '';
+  predictedLabel = '';
+  goldLabel = '';
 
-  // NEW: glyph pill state
   glyphs: string[] = [];
+  safeGlyphs: SafeHtml[] = [];
   glyphGridSize = 1;
-  showGlyph = false;
 
   constructor(private sanitizer: DomSanitizer) {}
 
@@ -31,24 +30,15 @@ export class InferenceResultComponent implements OnInit {
     this.predictedLabel = String(this.data.predictedLabel ?? this.data.predicted ?? '');
     this.goldLabel = String(this.data.goldLabel ?? this.data.gold ?? '');
 
-    // normalize glyphs -> string[]
     const raw = this.data.glyphs ?? [];
     const glyphArr: string[] = Array.isArray(raw) ? raw : Object.values(raw);
 
-    this.glyphs = glyphArr
-      .filter((g): g is string => typeof g === 'string' && g.trim().length > 0);
+    this.glyphs = glyphArr.filter((g): g is string => typeof g === 'string' && g.trim().length > 0);
+
+    // cache sanitized glyphs once
+    this.safeGlyphs = this.glyphs.map(g => this.sanitizer.bypassSecurityTrustHtml(g));
 
     this.glyphGridSize = Math.max(1, Math.ceil(Math.sqrt(this.glyphs.length)));
-  }
-
-  toggleGlyphVisibility(): void {
-    this.showGlyph = !this.showGlyph;
-  }
-
-  sanitizeSvg(svg: string): SafeHtml {
-    // Use your existing sanitizer logic if you already have one elsewhere.
-    // If you're already using DOMPurify, keep that.
-    return this.sanitizer.bypassSecurityTrustHtml(svg);
   }
 
   get mismatch(): boolean {
@@ -76,11 +66,4 @@ export class InferenceResultComponent implements OnInit {
     if (s === '1' || s === '0' || s === '-1') return s;
     return 'unknown';
   }
-
-  closeGlyph(e: MouseEvent): void {
-    e.stopPropagation();   // don’t also toggle via the pill click
-    this.showGlyph = false;
-  }
-
 }
-

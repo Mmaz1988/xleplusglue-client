@@ -50,6 +50,9 @@ import { TestItemComponent } from './regression-testing-interface/test-item/test
 import { InferenceResultComponent } from './regression-testing-interface/inference-result/inference-result.component';
 import { FileLoaderComponent } from './utilities/file-loader/file-loader.component';
 import { SemVisComponent } from './sem-vis/sem-vis.component';
+import { PillComponent } from './utilities/pill/pill.component';
+import { OverlayModule } from '@angular/cdk/overlay';
+
 
 @NgModule({
   declarations: [
@@ -90,7 +93,8 @@ import { SemVisComponent } from './sem-vis/sem-vis.component';
     TestItemComponent,
     InferenceResultComponent,
     FileLoaderComponent,
-    SemVisComponent
+    SemVisComponent,
+    PillComponent
   ],
   imports: [
     BrowserModule,
@@ -103,8 +107,9 @@ import { SemVisComponent } from './sem-vis/sem-vis.component';
     MatIconModule,
     MatButtonModule,
     MatTabsModule,
-    BrowserAnimationsModule],
+    BrowserAnimationsModule,
+    OverlayModule],
   providers: [],
-  bootstrap: [AppComponent]
+  bootstrap: [AppComponent],
 })
 export class AppModule { }
