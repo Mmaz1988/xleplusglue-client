@@ -46,10 +46,6 @@
   overflow: auto; /* content may overhang */
 }
 
-/* Fixed vs. wide */
-.message-glyph  { width: 98px; }
-.message-detail { width: 600px; } /* can spill left; adjust as needed */
-
 /* Minimized states */
 .message-glyph.minimized {
   width: 20px; height: 20px; background: green; border: none; color: #fff;
@@ -58,8 +54,85 @@
   width: 40px; height: 20px; background: blue; border: none; color: #fff;
 }
 
+/* Expanded pills: allow growth up to a cap, then scroll */
+.message-glyph:not(.minimized),
+.message-detail:not(.minimized) {
+  overflow: auto;            /* scroll only when hitting max */
+  max-width: min(80vw, 520px);
+  max-height: min(70vh, 520px);
+}
+
+/* Give each expanded pill a larger “preferred” size */
+.message-glyph:not(.minimized) {
+  width: 240px;              /* was 98px */
+  height: 240px;             /* was 82px */
+  aspect-ratio: 1 / 1;       /* keep it square if you want */
+}
+
+.message-detail:not(.minimized) {
+  width: 720px;              /* was 600px */
+  height: 280px;             /* was 82px */
+}
+
+/* Grid fills the pill and scrolls if too much content */
+.glyph-grid {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: auto;          /* scroll inside the pill */
+}
+
+/* Each cell is square */
+.glyph-cell {
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+}
+
+/* SVG fits within a cell */
+.glyph-cell svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 /* SVG fills its pill */
 .message-glyph svg { width: 100%; height: 100%; background: #fff; }
+
+.pill-close {
+  all: unset;              /* wipes global button styles */
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 5;
+
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid #ccc;
+  background: #fff;
+
+  color: #000;             /* ensure visible */
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.pill-close:hover {
+  filter: brightness(0.95);
+}
+
+.message-glyph:not(.minimized) {
+  position: relative; /* needed for absolute close button */
+}
+
 
 /* — existing styles kept — */
 .chat-container {

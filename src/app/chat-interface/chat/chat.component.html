@@ -13,18 +13,35 @@
 
 
       <div class="pill-container">
-      <!-- Glyph Container -->
-      <div *ngIf="message.glyph"
-           class="message-glyph"
-           [ngClass]="{'minimized': !message.showGlyph}"
-           (click)="toggleGlyphVisibility(message)">
-        <ng-container *ngIf="message.showGlyph" (click)="toggleGlyphVisibility(message)">
-          <div [innerHTML]="sanitizeSvg(message.glyph)"></div>
-        </ng-container>
-        <ng-container *ngIf="!message.showGlyph">
-          <div>V</div>
-        </ng-container>
-      </div>
+        <!-- Glyph Container -->
+        <div *ngIf="message.glyphs?.length"
+             class="message-glyph"
+             [ngClass]="{ 'minimized': !message.showGlyph }"
+             (click)="toggleGlyphVisibility(message)">
+
+          <ng-container *ngIf="message.showGlyph; else collapsed">
+            <!-- close button -->
+            <button class="pill-close"
+                    type="button"
+                    (click)="closeGlyph(message,$event)"
+                    aria-label="Close">
+              ×
+            </button>
+            <div class="glyph-grid"
+                 [style.gridTemplateColumns]="'repeat(' + message.glyphGridSize + ', 1fr)'">
+              <div class="glyph-cell"
+                   *ngFor="let g of message.glyphs"
+                   [innerHTML]="sanitizeSvg(g)">
+              </div>
+            </div>
+          </ng-container>
+
+          <ng-template #collapsed>
+            <div>V</div>
+          </ng-template>
+
+        </div>
+
 
       <!-- Detail Container (text-based glyph) -->
       <div *ngIf="message.detailText"

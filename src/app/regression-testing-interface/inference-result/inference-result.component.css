@@ -1,8 +1,13 @@
+
 .inf-block {
+  position: relative;
+  overflow: visible;
+  padding-bottom: 28px;
   width: 100%;
   border-radius: 4px;
   padding: 6px;
 }
+
 
 .row {
   margin-top: 4px;
@@ -80,3 +85,99 @@
   border-radius: 6px;
 }
 
+
+/* Pill row in bottom-right */
+.pill-container {
+  position: absolute;
+  bottom: 4px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow: visible;
+  z-index: 2;
+}
+
+/* Pill itself */
+.message-glyph {
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  transition: all .2s ease-in-out;
+  overflow: auto;
+
+  width: 240px;
+  height: 240px;
+  aspect-ratio: 1 / 1;
+
+  max-width: min(80vw, 520px);
+  max-height: min(70vh, 520px);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message-glyph.minimized {
+  width: 20px;
+  height: 20px;
+  background: green;
+  border: none;
+  color: #fff;
+  overflow: hidden;
+}
+
+/* Grid */
+.glyph-grid {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.glyph-cell {
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+}
+
+.glyph-cell svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pill-close {
+  all: unset;              /* wipes global button styles */
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 5;
+
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid #ccc;
+  background: #fff;
+
+  color: #000;             /* ensure visible */
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.pill-close:hover {
+  filter: brightness(0.95);
+}
+
+.message-glyph:not(.minimized) {
+  position: relative; /* needed for absolute close button */
+}

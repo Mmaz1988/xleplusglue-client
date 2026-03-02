@@ -34,4 +34,33 @@
       <span *ngIf="mismatch" class="mismatch-note">— mismatch</span>
     </div>
   </div>
+  <!-- Glyph pills bottom-right -->
+  <div class="pill-container" *ngIf="glyphs?.length">
+    <div class="message-glyph"
+         [ngClass]="{ 'minimized': !showGlyph }"
+         (click)="toggleGlyphVisibility()">
+
+      <ng-container *ngIf="showGlyph; else collapsed">
+        <!-- close button -->
+        <button class="pill-close"
+                type="button"
+                (click)="closeGlyph($event)"
+                aria-label="Close">
+          ×
+        </button>
+        <div class="glyph-grid"
+             [style.gridTemplateColumns]="'repeat(' + glyphGridSize + ', 1fr)'">
+          <div class="glyph-cell"
+               *ngFor="let g of glyphs"
+               [innerHTML]="sanitizeSvg(g)">
+          </div>
+        </div>
+      </ng-container>
+
+      <ng-template #collapsed>
+        <div>V</div>
+      </ng-template>
+
+    </div>
+  </div>
 </div>

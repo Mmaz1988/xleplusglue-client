@@ -174,8 +174,9 @@ export interface context {
   //optional glyph
   glyph?: string;
    showGlyph?: false
-
    detailText?: string;        // for chat analysis
    showDetail?: boolean;
+   glyphs?: string[];        // array of SVG strings
+   glyphGridSize?: number;   // computed grid size
  }
 

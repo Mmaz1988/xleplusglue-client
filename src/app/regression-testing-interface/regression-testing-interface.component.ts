@@ -392,6 +392,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
       let infoCount = value.filter(check => check.informative).length;
       let consistentCount = value.filter(check => check.consistent).length;
 
+      let glyphs: string[] = value.map(check => check.glyph);
+
       let infoSuccess = infoCount > value.length / 2;
       let consistentSuccess = consistentCount > value.length / 2;
 
@@ -434,6 +436,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
         premiseIds: testItem?.premises ?? [],
         conclusionIds: testItem?.conclusion ?? [],
         mismatch: (testItem?.gold_label ?? '') !== entailment_label,
+        glyphs: glyphs
       });
 
       if (idx[gold] !== undefined && idx[pred] !== undefined) {

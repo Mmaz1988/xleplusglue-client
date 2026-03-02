@@ -52,6 +52,7 @@ export class ChatComponent {
 
     this.loading = true; // Show loading indicator
     const userMessage = this.userInput;
+    var glyphs: string[]  = [];
     var glyph = '';
     var tptp = '';
 
@@ -141,11 +142,42 @@ export class ChatComponent {
                       var info: boolean = null;
                       var relevant: boolean = null;
 
-                      if (Object.keys(data.context_checks_mapping).length > 0) {
-                        glyph = data.context_checks_mapping[0].glyph;
-                        info = data.context_checks_mapping[0].informative;
-                        consistent = data.context_checks_mapping[0].consistent;
-                        relevant = data.context_checks_mapping[0].relevant;
+                      const mappings = Array.isArray(data.context_checks_mapping)
+                        ? data.context_checks_mapping
+                        : Object.values(data.context_checks_mapping ?? {});
+
+                      if (mappings.length > 0) {
+                        // collect glyph SVGs
+                        glyphs = mappings
+                          .map(m => m?.glyph)
+                          .filter((g): g is string => typeof g === 'string' && g.trim().length > 0);
+
+                        // majority vote helper (ties => false)
+                        const majorityFalseOnTie = (vals: boolean[]) => {
+                          const trueCount = vals.reduce((acc, v) => acc + (v ? 1 : 0), 0);
+                          const falseCount = vals.length - trueCount;
+                          return trueCount > falseCount; // tie -> false
+                        };
+
+                        const informativeVals = mappings
+                          .map(m => !!m?.informative);
+
+                        const consistentVals = mappings
+                          .map(m => !!m?.consistent);
+
+                        const relevantVals = mappings
+                          .map(m => !!m?.relevant);
+
+                        info = majorityFalseOnTie(informativeVals);
+                        consistent = majorityFalseOnTie(consistentVals);
+                        relevant = majorityFalseOnTie(relevantVals);
+
+                        // If you still need a single glyph string somewhere, keep it separate,
+                        // but ideally store glyphs array on the message.
+                       // message.glyphs = glyphs;
+
+                        // grid dimension: smallest square that fits N glyphs
+                      //  message.glyphGridSize = Math.ceil(Math.sqrt(glyphs.length));
                       }
                       //Check if elements in data.context have property 'tptp' and display line by line in tptp
                       if (data.context.length > 0) {
@@ -168,7 +200,8 @@ export class ChatComponent {
                         message = "Your input is informative and consistent.";
                       }
 
-                      this.chatHistory.push({ text: message, sender: 'Bot', glyph: glyph, showGlyph: false, detailText: tptp, showDetail: false });
+                      this.chatHistory.push({ text: message, sender: 'Bot', glyph: glyph, showGlyph: false, detailText: tptp,
+                        showDetail: false, glyphs: glyphs, glyphGridSize: Math.ceil(Math.sqrt(glyphs.length)) });
                     }
 
                     this.loading = false; // Hide loading indicator
@@ -233,6 +266,9 @@ export class ChatComponent {
     message.showDetail = !message.showDetail;
   }
 
-
+  closeGlyph(message: ChatMessage, e: MouseEvent): void {
+    e.stopPropagation();          // don’t bubble to the pill click
+    message.showGlyph = false;    // close this message’s pill
+  }
 
 }
