@@ -10,8 +10,8 @@
       <app-gswb-graph-vis #graphVis [graphID]="'gswbCy2'"></app-gswb-graph-vis>
     </div>
 
-    <div [hidden]="!showSemVis">
-      <app-sem-vis #semVis (selectionChange)="onSemVisSelection($event)"></app-sem-vis>
+    <div [hidden]="!showSemVis" class="semvis-wrapper">
+      <app-sem-vis #semVis [meaningConstructors]="" (selectionChange)="onSemVisSelection($event)"></app-sem-vis>
     </div>
   </div>
 

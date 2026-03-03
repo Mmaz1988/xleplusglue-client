@@ -52,3 +52,26 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* each item is a row with 2 columns: chip + pill */
+.disc-item{
+  display: grid;
+  grid-template-columns: 1fr auto; /* chip takes remaining width, pill keeps its width */
+  align-items: center;              /* pill aligns to top of chip when chip wraps */
+  column-gap: 6px;
+  width: 100%;
+}
+
+/* chip can wrap onto multiple lines */
+.disc-item .chip{
+  width: 100%;
+  white-space: normal;   /* allow wrapping */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* keep pill from shrinking/wrapping */
+.disc-item app-pill{
+  justify-self: end;     /* pin to the right edge */
+  align-self: center;
+}

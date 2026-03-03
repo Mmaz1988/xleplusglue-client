@@ -51,8 +51,7 @@ import { InferenceResultComponent } from './regression-testing-interface/inferen
 import { FileLoaderComponent } from './utilities/file-loader/file-loader.component';
 import { SemVisComponent } from './sem-vis/sem-vis.component';
 import { PillComponent } from './utilities/pill/pill.component';
-import { OverlayModule } from '@angular/cdk/overlay';
-
+import {OverlayModule} from "@angular/cdk/overlay";
 
 @NgModule({
   declarations: [

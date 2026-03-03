@@ -38,14 +38,7 @@
 
 /* Expanded popover: centered horizontally => grows left/right evenly */
 .pill-panel {
-  position: absolute;
-
-  /* open above the badge; center horizontally */
-  left: 50%;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
-
-  z-index: 1000;
+  z-index: 9999;
   background: #fff;
   border: 1px solid #ccc;
   border-radius: 6px;
@@ -84,6 +77,16 @@
   height: 280px;
   max-width: min(70vw, 720px);
   max-height: min(80vh, 520px);
+  overflow: auto;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.editor-body {
+  width: 820px;
+  height: 520px;
+  max-width: min(80vw, 820px);
+  max-height: min(90vh, 520px);
   overflow: auto;
   padding: 8px;
   box-sizing: border-box;

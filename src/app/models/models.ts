@@ -53,6 +53,7 @@ export interface GswbDiscriminant {
   type: string;
   identifier: string;
   associatedSolutions: string[];
+  instantiations?: string[];
 }
 
 export interface GswbSolution {

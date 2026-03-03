@@ -1,4 +1,4 @@
-import {Component, ViewChild, AfterViewInit, Output, EventEmitter} from '@angular/core';
+import {Component, ViewChild, AfterViewInit, Output,Input, EventEmitter} from '@angular/core';
 import { EditorComponent } from '../editor/editor.component';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
 
@@ -14,6 +14,8 @@ type DiscView = GswbDiscriminant & { _order: number; _bucket: DiscBucket };
 
 export class SemVisComponent implements AfterViewInit {
   @ViewChild('sem') sem!: EditorComponent;
+
+  @Input() meaningConstructors:string = '';
 
   @Output() selectionChange = new EventEmitter<{
     items: GswbSolution[];
@@ -242,4 +244,12 @@ export class SemVisComponent implements AfterViewInit {
     this.mc_view = decorate(this.mc_discriminants);
   }
 
+  repeat(s: string, n: number): string {
+    return s.repeat(n);
+  }
+
+
+  public replaceLollipop(s: string | null | undefined): string {
+    return (s ?? '').replaceAll('⊸', '-o');
+  }
 }

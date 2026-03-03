@@ -81,6 +81,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   private lastAnnotations: Record<string, LigerRuleAnnotation> | null = null;
   private lastLogicType: 'fof' | 'tff' = 'fof';
 
+  private sortedMCmap= {};
+
   // Called from template on each <app-test-result ... (selectionChange)="onSelectionChange($event)">
   onSelectionChange(ev: { sentenceId: string; selectedSolutionIds: string[] }) {
     if (!ev?.sentenceId) return;
@@ -145,6 +147,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.selectedSolutionIdsBySentence.clear();
     this.lastGswbMap = null;
     this.lastAnnotations = null;
+    this.sortedMCmap = {};
 
     this.gswbPreferences.onSubmit();
 
@@ -175,6 +178,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
           }).forEach(key => {
             sortedMcMap[key] = mcMap[key];
           });
+
+          this.sortedMCmap = sortedMcMap;
 
           this.gswbMultipleRequest = {
             premises: sortedMcMap,
@@ -222,6 +227,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
               noOfSolutions: sols.length,
               ligerGraph: data.annotations[key].graph,
               ligerMCsets: data.annotations[key].meaningConstructors,
+              allMCs: this.sortedMCmap[key],
               gswbSolutions: sols,
               gswbDerivation: out.derivation,
               result_type: 'parseResult',

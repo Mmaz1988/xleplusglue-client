@@ -14,7 +14,11 @@
   [cdkConnectedOverlayOpen]="open"
   [cdkConnectedOverlayHasBackdrop]="true"
   (backdropClick)="open = false"
-  [cdkConnectedOverlayPositions]="positions">
+  [cdkConnectedOverlayPositions]="positions"
+  [cdkConnectedOverlayFlexibleDimensions]="true"
+  [cdkConnectedOverlayGrowAfterOpen]="false"
+  [cdkConnectedOverlayPush]="true"
+  [cdkConnectedOverlayViewportMargin]="8">
 
   <div class="pill-panel" (click)="$event.stopPropagation()">
     <button class="pill-close" type="button" (click)="close($event)" aria-label="Close">
@@ -28,8 +32,15 @@
       </div>
 
       <div *ngSwitchCase="'text'" class="detail-body">
-        {{ text }}
+        <pre> {{ text }} </pre>
       </div>
+
+      <div *ngSwitchCase="'editor'" class="editor-body">
+        <div class="editor-restr">
+        <app-editor #glue [mode]="'glue'">  </app-editor>
+        </div>
+      </div>
+
     </ng-container>
   </div>
 </ng-template>

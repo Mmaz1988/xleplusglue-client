@@ -33,6 +33,7 @@ export class TestResultComponent implements OnInit, AfterViewInit {
 
   ligerGraph: any;
   ligerMCsets: string = '';
+  allMCs: string[] = [];
   gswbDerivation: any;
 
   private semvisItems: GswbSolution[] = [];
@@ -50,6 +51,7 @@ export class TestResultComponent implements OnInit, AfterViewInit {
     this.gswbDerivation = this.data.gswbDerivation;
     this.ligerGraph = this.data.ligerGraph;
     this.ligerMCsets = this.data.ligerMCsets;
+    this.allMCs = this.data.allMCs;
 
     this.semvisItems = (this.data.gswbSolutions ?? []) as GswbSolution[];
 
@@ -73,6 +75,7 @@ export class TestResultComponent implements OnInit, AfterViewInit {
         kind: 'semvis',
         items: this.semvisItems,
         discriminants: this.discriminants,
+        meaningConstructors: this.allMCs,
         startIndex: 0
       });
     }, 0);
@@ -86,6 +89,7 @@ export class TestResultComponent implements OnInit, AfterViewInit {
       kind: 'semvis',
       items: this.semvisItems,
       discriminants: this.discriminants,
+      meaningConstructors: this.allMCs,
       startIndex
     });
 

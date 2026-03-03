@@ -148,4 +148,10 @@ button.hide-button {
   height: 400px;
   }
 
+/* styles.css */
+.cdk-overlay-container,
+.cdk-global-overlay-wrapper {
+  z-index: 20000 !important;
+}
+
 

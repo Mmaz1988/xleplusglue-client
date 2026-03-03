@@ -3,7 +3,7 @@
 /* Replace with: */
 .center-dialog {
   position: fixed;
-  z-index: 9999;
+  z-index: 9998;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -29,4 +29,11 @@
 .dialog-body {
   width: 100%;
   max-width: 100%;
+}
+
+/* Only semvis area scrolls when it’s tall */
+.semvis-wrapper {
+  overflow: auto;
+  max-height: 70vh;   /* adjust to taste */
+  border: 1px solid #eee; /* optional visual separation */
 }

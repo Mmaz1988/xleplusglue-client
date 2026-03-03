@@ -27,6 +27,7 @@ export class GswbVisComponent {
   @ViewChild('dialog') dialog: DialogComponent;
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
+  meaningConstructors = '';
 
   ngAfterViewInit() {
     if (this.gswbPreferences) {
@@ -57,6 +58,8 @@ export class GswbVisComponent {
 
   calculateSemantics(){
     this.loading = true;
+
+    this.updateMeaningConstructors();
 
     this.gswbPreferences.onSubmit();
 
@@ -161,7 +164,13 @@ export class GswbVisComponent {
   }
 
 
+  updateMeaningConstructors() {
+    this.meaningConstructors = this.editor1?.getContent() ?? '';
+  }
+
 }
+
+
 // Inside ParentComponent
 
 
