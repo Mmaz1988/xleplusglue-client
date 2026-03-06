@@ -1,5 +1,7 @@
 import { Component, Input, OnInit, ViewChild, AfterViewInit, Output, EventEmitter } from '@angular/core';
 
+
+
 type GswbSolution = { id: string; solution: string };
 type GswbDiscriminant = any;
 
@@ -8,9 +10,8 @@ type GswbDiscriminant = any;
   templateUrl: './test-result.component.html',
   styleUrls: ['./test-result.component.css']
 })
-export class TestResultComponent implements OnInit {
+export class TestResultComponent  {
 
-  @Input() data: any;
   @Input() selectedSolutionIds: string[] = [];
 
   // NEW: emitter to parent
@@ -46,32 +47,38 @@ export class TestResultComponent implements OnInit {
   private semvisItems: GswbSolution[] = [];
   private discriminants: GswbDiscriminant[] = [];
 
-  ngOnInit(): void {
-    if (!this.data) return;
+  // test-result.component.ts
+  private _data: any;
 
-    this.sentence_id = this.data.sentence_id;
-    this.sentence = this.data.sentence;
-    this.numberOfAppliedRules = this.data.noOfAppliedRules;
-    this.numberOfMCsets = this.data.noOfMCsets;
-    this.noOfSolutions = this.data.noOfSolutions;
+  @Input()
+  set data(v: any) {
+    this._data = v;
+    this.hydrateFromData();
+  }
+  get data(): any { return this._data; }
 
-    this.gswbDerivation = this.data.gswbDerivation;
-    this.ligerGraph = this.data.ligerGraph;
-    this.ligerMCsets = this.data.ligerMCsets;
-    this.allMCs = this.data.allMCs;
+  private hydrateFromData(): void {
+    if (!this._data) return;
 
-    this.semvisItems = (this.data.gswbSolutions ?? []) as GswbSolution[];
+    this.sentence_id = this._data.sentence_id;
+    this.sentence = this._data.sentence;
+    this.numberOfAppliedRules = this._data.noOfAppliedRules;
+    this.numberOfMCsets = this._data.noOfMCsets;
+    this.noOfSolutions = this._data.noOfSolutions;
 
-    this.discriminants = Array.isArray(this.data.discriminants)
-      ? this.data.discriminants
-      : [];
+    this.gswbDerivation = this._data.gswbDerivation;
+    this.ligerGraph = this._data.ligerGraph;
+    this.ligerMCsets = this._data.ligerMCsets;
+    this.allMCs = this._data.allMCs;
 
-    // Default: all solutions selected
+    this.semvisItems = (this._data.gswbSolutions ?? []) as GswbSolution[];
+    this.discriminants = Array.isArray(this._data.discriminants) ? this._data.discriminants : [];
+
+    // If you still want defaults:
     this.selectedSolutions = this.semvisItems.map(s => s.id);
     this.noOfSelectedSolutions = this.selectedSolutions.length;
 
-    // Emit initial state so parent has a selection even if user doesn't open dialog
-    this.emitSelection();
+    this.emitSelection(); // only if you really want this on every recycle; otherwise guard it
   }
 
 

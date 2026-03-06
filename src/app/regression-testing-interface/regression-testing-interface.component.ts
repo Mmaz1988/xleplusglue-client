@@ -162,6 +162,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.lastGswbMap = null;
     this.lastAnnotations = null;
     this.sortedMCmap = {};
+    this.selectedSolutionIdsBySentence = new Map<string, string[]>();
+    this.selectedScopeIdsBySentence = new Map<string, string[]>();
+    this.selectedMcIdsBySentence = new Map<string, string[]>();
+
+
 
     this.gswbPreferences.onSubmit();
 
@@ -720,8 +725,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     return this.loading || (this.enableDisambiguation && this.disambiguationMode);
   }
 
-  trackBySentenceId = (_: number, x: any) => x.sentence_id;
-  trackByInferenceId = (_: number, x: any) => x.id;
+  trackBySentenceId = (_: number, x: any) => x?.sentence_id ?? _;
+  trackByInferenceId = (_: number, x: any) => x?.id ?? _;
 
 
 

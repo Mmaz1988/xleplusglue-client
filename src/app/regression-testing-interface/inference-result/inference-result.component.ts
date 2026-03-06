@@ -1,4 +1,4 @@
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
 type Label = '1' | '0' | '-1';
@@ -8,7 +8,7 @@ type Label = '1' | '0' | '-1';
   templateUrl: './inference-result.component.html',
   styleUrls: ['./inference-result.component.css'],
 })
-export class InferenceResultComponent implements OnInit {
+export class InferenceResultComponent implements OnChanges {
   @Input() data: any;
 
   premises: string[] = [];
@@ -22,22 +22,26 @@ export class InferenceResultComponent implements OnInit {
 
   constructor(private sanitizer: DomSanitizer) {}
 
-  ngOnInit(): void {
-    if (!this.data) return;
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['data']) {
+      this.hydrateFromData();
+    }
+  }
 
-    this.premises = this.data.premises ?? [];
-    this.conclusion = this.data.conclusion ?? '';
-    this.predictedLabel = String(this.data.predictedLabel ?? this.data.predicted ?? '');
-    this.goldLabel = String(this.data.goldLabel ?? this.data.gold ?? '');
+  private hydrateFromData(): void {
+    const d = this.data;
+    if (!d) return;
 
-    const raw = this.data.glyphs ?? [];
+    this.premises = d.premises ?? [];
+    this.conclusion = d.conclusion ?? '';
+    this.predictedLabel = String(d.predictedLabel ?? d.predicted ?? '');
+    this.goldLabel = String(d.goldLabel ?? d.gold ?? '');
+
+    const raw = d.glyphs ?? [];
     const glyphArr: string[] = Array.isArray(raw) ? raw : Object.values(raw);
 
     this.glyphs = glyphArr.filter((g): g is string => typeof g === 'string' && g.trim().length > 0);
-
-    // cache sanitized glyphs once
     this.safeGlyphs = this.glyphs.map(g => this.sanitizer.bypassSecurityTrustHtml(g));
-
     this.glyphGridSize = Math.max(1, Math.ceil(Math.sqrt(this.glyphs.length)));
   }
 
