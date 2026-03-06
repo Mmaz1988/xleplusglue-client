@@ -18,7 +18,7 @@ import {CommonModule} from "@angular/common";
 import { GswbGraphVisComponent } from './gswb-vis/gswb-graph-vis/gswb-graph-vis.component';
 import { DerivationContainerComponent } from './gswb-vis/derivation-container/derivation-container.component';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { DialogComponent } from './dialog/dialog.component';
+import { DialogComponent } from './utilities/dialog/dialog.component';
 import { SubGraphDialogComponent } from './sub-graph-dialog/sub-graph-dialog.component';
 import { SubGraphComponent } from './sub-graph/sub-graph.component';
 import { NavigationComponent } from './navigation/navigation.component';
@@ -53,6 +53,7 @@ import { SemVisComponent } from './sem-vis/sem-vis.component';
 import { PillComponent } from './utilities/pill/pill.component';
 import {OverlayModule} from "@angular/cdk/overlay";
 import { ScrollingModule } from '@angular/cdk/scrolling';
+import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.component';
 
 @NgModule({
   declarations: [
@@ -94,7 +95,8 @@ import { ScrollingModule } from '@angular/cdk/scrolling';
     InferenceResultComponent,
     FileLoaderComponent,
     SemVisComponent,
-    PillComponent
+    PillComponent,
+    SemvisDialogComponent
   ],
   imports: [
     BrowserModule,

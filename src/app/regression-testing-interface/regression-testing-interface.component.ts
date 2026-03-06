@@ -16,6 +16,7 @@ import { EditorComponent } from "../editor/editor.component";
 import { catchError, EMPTY, Observable } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
+import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -38,6 +39,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   @ViewChild('testfile') testfile: EditorComponent;
   @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
+
+  @ViewChild('semvisDialog') semvisDialog: SemvisDialogComponent;
 
   gswbMultipleRequest: GswbMultipleRequest;
 
@@ -75,6 +78,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
   // sentenceId -> selected solution IDs
   private selectedSolutionIdsBySentence = new Map<string, string[]>();
+  private selectedScopeIdsBySentence = new Map<string, string[]>();
+  private selectedMcIdsBySentence = new Map<string, string[]>();
+
 
   // stash state after GSWB so we can resume later
   private lastGswbMap: Map<string, GswbOutput> | null = null;
@@ -82,6 +88,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   private lastLogicType: 'fof' | 'tff' = 'fof';
 
   private sortedMCmap= {};
+
+  // Tune these numbers to match your row heights (in px)
+  itemSizeParse = 220;  // app-test-result row height estimate
+  itemSizeInfer = 180;  // app-inference-result row height estimate
+
+// Prefetch buffer (smoother scrolling)
+  minBufferPx = 600;
+  maxBufferPx = 1200;
 
   // Called from template on each <app-test-result ... (selectionChange)="onSelectionChange($event)">
   onSelectionChange(ev: { sentenceId: string; selectedSolutionIds: string[] }) {
@@ -709,11 +723,38 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   trackBySentenceId = (_: number, x: any) => x.sentence_id;
   trackByInferenceId = (_: number, x: any) => x.id;
 
-  // Tune these numbers to match your row heights (in px)
-  itemSizeParse = 220;  // app-test-result row height estimate
-  itemSizeInfer = 180;  // app-inference-result row height estimate
 
-// Prefetch buffer (smoother scrolling)
-  minBufferPx = 600;
-  maxBufferPx = 1200;
+
+
+  getSelectedSolutionIds(element: any): string[] {
+    const fromUser = this.selectedSolutionIdsBySentence.get(element.sentence_id);
+    if (fromUser) return fromUser;
+
+    const sols = element?.gswbSolutions ?? [];
+    return Array.isArray(sols) ? sols.map((s: any) => String(s.id)) : [];
+  }
+
+  onSemvisSelectionChange(ev: { sentenceId: string; items: { id: string }[]; selectedScopeIds: string[]; selectedMcIds: string[] }) {
+    const sid = ev.sentenceId;
+
+    // persist solution IDs
+    this.selectedSolutionIdsBySentence.set(sid, (ev.items ?? []).map(x => x.id));
+
+    // persist discriminant selection state
+    this.selectedScopeIdsBySentence.set(sid, [...(ev.selectedScopeIds ?? [])]);
+    this.selectedMcIdsBySentence.set(sid, [...(ev.selectedMcIds ?? [])]);
+  }
+
+  openSemVisDialog(payload: any): void {
+    const sid = payload.sentenceId;
+
+    this.semvisDialog.open({
+      ...payload,
+      selectedScopeIds: this.selectedScopeIdsBySentence.get(sid) ?? [],
+      selectedMcIds: this.selectedMcIdsBySentence.get(sid) ?? [],
+    });
+  }
+
+
+
 }

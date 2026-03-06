@@ -121,6 +121,7 @@
 
   <div class="errorhandling" #errorhandle></div>
 
+  <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
 <h3>
   Parsing report:
 </h3>
@@ -137,6 +138,8 @@
           <app-test-result
             [data]="element"
             [disambiguationActive]="enableDisambiguation && disambiguationMode"
+            [selectedSolutionIds]="getSelectedSolutionIds(element)"
+            (openSemVis)="openSemVisDialog($event)"
             (selectionChange)="onSelectionChange($event)">
           </app-test-result>
         </div>

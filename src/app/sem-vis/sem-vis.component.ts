@@ -252,4 +252,19 @@ export class SemVisComponent implements AfterViewInit {
   public replaceLollipop(s: string | null | undefined): string {
     return (s ?? '').replaceAll('⊸', '-o');
   }
+
+  public resetSelection(): void {
+    this.selectedScopeIds = [];
+    this.selectedMcIds = [];
+    this.index = 0;
+    // don't emit here; open() will set items/discriminants and trigger one emit
+  }
+
+
+  public setSelectedDiscriminants(scopeIds: string[], mcIds: string[]): void {
+    this.selectedScopeIds = [...scopeIds];
+    this.selectedMcIds = [...mcIds];
+    this.applyFiltersAndResetIndex(0);
+  }
+
 }

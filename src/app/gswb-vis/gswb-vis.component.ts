@@ -5,7 +5,7 @@ import { LogComponent } from './log/log.component';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
-import {DialogComponent} from "../dialog/dialog.component";
+import {DialogComponent} from "../utilities/dialog/dialog.component";
 import {GswbRequest,GswbPreferences} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";

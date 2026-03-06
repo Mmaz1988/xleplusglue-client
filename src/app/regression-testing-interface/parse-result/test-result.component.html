@@ -20,11 +20,12 @@
 
   Number of selected solutions:
   <span [ngClass]="{ 'zero-value': noOfSelectedSolutions === 0 }">
-    {{noOfSelectedSolutions}}
+    {{ selectedSolutionIds.length }} / {{ noOfSolutions }}
   </span>
 </p>
 
-<app-dialog
-  #solution
-  (semvisSelectionChange)="onSemvisSelectionChange($event)"
-></app-dialog>
+<button type="button" (click)="openSolutionsDialog(0)">
+  Open solutions
+</button>
+
+

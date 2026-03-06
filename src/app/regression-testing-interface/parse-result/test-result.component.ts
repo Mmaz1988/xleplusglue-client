@@ -1,5 +1,4 @@
 import { Component, Input, OnInit, ViewChild, AfterViewInit, Output, EventEmitter } from '@angular/core';
-import { DialogComponent } from "../../dialog/dialog.component";
 
 type GswbSolution = { id: string; solution: string };
 type GswbDiscriminant = any;
@@ -9,15 +8,23 @@ type GswbDiscriminant = any;
   templateUrl: './test-result.component.html',
   styleUrls: ['./test-result.component.css']
 })
-export class TestResultComponent implements OnInit, AfterViewInit {
+export class TestResultComponent implements OnInit {
 
   @Input() data: any;
-  @ViewChild('solution') dialog!: DialogComponent;
+  @Input() selectedSolutionIds: string[] = [];
 
   // NEW: emitter to parent
   @Output() selectionChange = new EventEmitter<{
     sentenceId: string;
     selectedSolutionIds: string[];
+  }>();
+
+  @Output() openSemVis = new EventEmitter<{
+    sentenceId: string;
+    items: any[];
+    discriminants?: any[];
+    startIndex?: number;
+    meaningConstructors?: any;
   }>();
 
   @Input() disambiguationActive = false;
@@ -67,44 +74,15 @@ export class TestResultComponent implements OnInit, AfterViewInit {
     this.emitSelection();
   }
 
-  ngAfterViewInit(): void {
-    setTimeout(() => {
-      if (!this.dialog) return;
 
-      this.dialog.setContent({
-        kind: 'semvis',
-        items: this.semvisItems,
-        discriminants: this.discriminants,
-        meaningConstructors: this.allMCs,
-        startIndex: 0
-      });
-    }, 0);
-  }
-
-  // Call this from your "Open" button in the test-result HTML
   openSolutionsDialog(startIndex = 0): void {
-    if (!this.dialog) return;
-
-    this.dialog.setContent({
-      kind: 'semvis',
+    this.openSemVis.emit({
+      sentenceId: this.sentence_id,
       items: this.semvisItems,
       discriminants: this.discriminants,
+      startIndex,
       meaningConstructors: this.allMCs,
-      startIndex
     });
-
-    this.dialog.showDialog();
-  }
-
-
-
-  // Hooked from test-result HTML via:
-  // <app-dialog #solution (semvisSelectionChange)="onSemvisSelectionChange($event)"></app-dialog>
-  onSemvisSelectionChange(ev: { items: GswbSolution[] }) {
-    const items = ev.items ?? [];
-    this.noOfSelectedSolutions = items.length;
-    this.selectedSolutions = items.map(s => s.id);
-    this.emitSelection();
   }
 
   private emitSelection(): void {
@@ -113,4 +91,10 @@ export class TestResultComponent implements OnInit, AfterViewInit {
       selectedSolutionIds: [...this.selectedSolutions],
     });
   }
+
+
+
+
+
+
 }

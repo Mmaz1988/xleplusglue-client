@@ -1,7 +1,7 @@
 import {Component, ViewChild, ElementRef, Output, EventEmitter} from '@angular/core';
-import { GswbGraphVisComponent } from "../gswb-vis/gswb-graph-vis/gswb-graph-vis.component";
-import { EditorComponent } from "../editor/editor.component";
-import { SemVisComponent } from "../sem-vis/sem-vis.component"; // <-- adjust path
+import { GswbGraphVisComponent } from "../../gswb-vis/gswb-graph-vis/gswb-graph-vis.component";
+import { EditorComponent } from "../../editor/editor.component";
+import { SemVisComponent } from "../../sem-vis/sem-vis.component"; // <-- adjust path
 
 type DialogContent =
   | string
