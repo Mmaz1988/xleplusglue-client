@@ -126,13 +126,22 @@
 </h3>
   <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
     <div>
-      <div class="result-container" *ngFor="let element of regressionTestResults; let i = index">
-        <app-test-result
-          [data]="element"
-          [disambiguationActive]="enableDisambiguation && disambiguationMode"
-          (selectionChange)="onSelectionChange($event)"
-        ></app-test-result>
-      </div>
+      <cdk-virtual-scroll-viewport
+        class="vs-viewport"
+        [itemSize]="itemSizeParse"
+        [minBufferPx]="minBufferPx"
+        [maxBufferPx]="maxBufferPx">
+
+        <div class="result-container"
+             *cdkVirtualFor="let element of regressionTestResults; trackBy: trackBySentenceId">
+          <app-test-result
+            [data]="element"
+            [disambiguationActive]="enableDisambiguation && disambiguationMode"
+            (selectionChange)="onSelectionChange($event)">
+          </app-test-result>
+        </div>
+
+      </cdk-virtual-scroll-viewport>
     </div>
   </app-toggle-display>
   <br>
@@ -142,11 +151,19 @@
   </h3>
   <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
     <div>
-      <div class="result-container" *ngFor="let element of inferenceResults; let i = index"
-           [class.highlight]="selectedIds.has(element.id)">
-        <app-inference-result [data]="element" >
-        </app-inference-result>
-      </div>
+      <cdk-virtual-scroll-viewport
+        class="vs-viewport"
+        [itemSize]="itemSizeInfer"
+        [minBufferPx]="minBufferPx"
+        [maxBufferPx]="maxBufferPx">
+
+        <div class="result-container"
+             *cdkVirtualFor="let element of inferenceResults; trackBy: trackByInferenceId"
+             [class.highlight]="selectedIds.has(element.id)">
+          <app-inference-result [data]="element"></app-inference-result>
+        </div>
+
+      </cdk-virtual-scroll-viewport>
     </div>
   </app-toggle-display>
   <br>

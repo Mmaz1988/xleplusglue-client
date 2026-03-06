@@ -104,3 +104,11 @@ div.errorhandling {
   border-radius: 6px;
   padding: 4px;
 }
+
+.vs-viewport {
+  height: 80vh;        /* pick what fits your layout */
+  width: 100%;
+  overflow: auto;
+  border: 1px solid #eee; /* optional */
+  border-radius: 8px;     /* optional */
+}

@@ -206,6 +206,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
           let successCount = 0;
           let successFullKeys: string[] = [];
 
+          let currentRegressionTestResults = [];
+
           for (let key of Object.keys(this.sentenceMap)) {
             const out = gswbMap.get(key);
             const sols = out?.solutions ?? [];
@@ -234,8 +236,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
               discriminants: out.discriminants
             };
 
-            this.regressionTestResults.push(regressionTestResult);
+            currentRegressionTestResults.push(regressionTestResult);
           }
+
+          this.regressionTestResults = currentRegressionTestResults;
 
           console.log("Successful keys: ", successFullKeys);
           const quickReport =
@@ -394,6 +398,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     let successful_neutral_predictions = 0;
     let successful_contradiction_predictions = 0;
 
+    let currentInferenceResults: any[] = [];
+
     for (let [key, value] of Object.entries(vampireResult.results) as [string, check[]][]) {
       let infoCount = value.filter(check => check.informative).length;
       let consistentCount = value.filter(check => check.consistent).length;
@@ -433,7 +439,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
       const conclusionString = conclusionSentences.join(' ');
 
-      this.inferenceResults.push({
+      currentInferenceResults.push({
         id: key,
         premises: premiseSentences,
         conclusion: conclusionString,
@@ -454,6 +460,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
         console.warn('Unknown label', { gold, pred });
       }
     }
+
+    this.inferenceResults = currentInferenceResults;
 
     this.updateConfusionMatrixView(cm, Object.keys(vampireResult.results).length);
 
@@ -697,4 +705,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   get runLocked(): boolean {
     return this.loading || (this.enableDisambiguation && this.disambiguationMode);
   }
+
+  trackBySentenceId = (_: number, x: any) => x.sentence_id;
+  trackByInferenceId = (_: number, x: any) => x.id;
+
+  // Tune these numbers to match your row heights (in px)
+  itemSizeParse = 220;  // app-test-result row height estimate
+  itemSizeInfer = 180;  // app-inference-result row height estimate
+
+// Prefetch buffer (smoother scrolling)
+  minBufferPx = 600;
+  maxBufferPx = 1200;
 }

@@ -52,6 +52,7 @@ import { FileLoaderComponent } from './utilities/file-loader/file-loader.compone
 import { SemVisComponent } from './sem-vis/sem-vis.component';
 import { PillComponent } from './utilities/pill/pill.component';
 import {OverlayModule} from "@angular/cdk/overlay";
+import { ScrollingModule } from '@angular/cdk/scrolling';
 
 @NgModule({
   declarations: [
@@ -107,7 +108,8 @@ import {OverlayModule} from "@angular/cdk/overlay";
     MatButtonModule,
     MatTabsModule,
     BrowserAnimationsModule,
-    OverlayModule],
+    OverlayModule,
+    ScrollingModule],
   providers: [],
   bootstrap: [AppComponent],
 })
