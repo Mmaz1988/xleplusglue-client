@@ -21,6 +21,13 @@
     <app-editor #sem [mode]="'glue'"></app-editor>
   </div>
 
+  <div class="highlight-toggle">
+    <label>
+      <input type="checkbox" [(ngModel)]="highlightCurrent">
+      Highlight discriminants that choose currently selected solution
+    </label>
+  </div>
+
   <!-- Discriminant selectors -->
   <div class="discriminants">
 
@@ -41,6 +48,7 @@
             class="chip"
             [class.selected]="isScopeSelected(d)"
             [class.inactive]="!wouldFurtherFilter(d)"
+            [class.current-hit]="highlightCurrent && isCurrentSolutionIn(d)"
             [disabled]="!isScopeSelected(d) && !wouldFurtherFilter(d)"
             (click)="toggleScope(d)"
             [title]="d.identifier">
@@ -80,6 +88,7 @@
           class="chip"
           [class.selected]="isMcSelected(d)"
           [class.inactive]="!wouldFurtherFilter(d)"
+          [class.current-hit]="highlightCurrent && isCurrentSolutionIn(d)"
           [disabled]="!isMcSelected(d) && !wouldFurtherFilter(d)"
           (click)="toggleMc(d)"
           [title]="d.identifier"

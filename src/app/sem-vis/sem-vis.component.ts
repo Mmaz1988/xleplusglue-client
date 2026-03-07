@@ -15,7 +15,7 @@ type DiscView = GswbDiscriminant & { _order: number; _bucket: DiscBucket };
 export class SemVisComponent implements AfterViewInit {
   @ViewChild('sem') sem!: EditorComponent;
 
-  @Input() meaningConstructors:string = '';
+  @Input() meaningConstructors: string = '';
 
   @Output() selectionChange = new EventEmitter<{
     items: GswbSolution[];
@@ -39,6 +39,9 @@ export class SemVisComponent implements AfterViewInit {
   private viewReady = false;
   private pendingValue: string | null = null;
 
+  // sem-vis.component.ts
+  highlightCurrent = true; // default on (set false if you want off by default)
+
   scope_view: DiscView[] = [];
   mc_view: DiscView[] = [];
 
@@ -54,7 +57,6 @@ export class SemVisComponent implements AfterViewInit {
   }
 
 
-
   public setItems(items: GswbSolution[], startIndex = 0): void {
     this.allItems = Array.isArray(items) ? items : [];
     this.applyFiltersAndResetIndex(startIndex);
@@ -63,7 +65,7 @@ export class SemVisComponent implements AfterViewInit {
   public setDiscriminants(items: GswbDiscriminant[]): void {
     this.scope_discriminants = items.filter(s => s.type === "scope");
     console.log("Scope discriminants", this.scope_discriminants);
-    this.mc_discriminants =items.filter(s => s.type === "MCs");
+    this.mc_discriminants = items.filter(s => s.type === "MCs");
     console.log("MC discriminants", this.mc_discriminants);
 
     this.applyFiltersAndResetIndex(0);
@@ -236,7 +238,7 @@ export class SemVisComponent implements AfterViewInit {
 
           const bucket: 0 | 1 | 2 = selected ? 0 : (active ? 1 : 2);
 
-          return { ...d, _order: i, _bucket: bucket };
+          return {...d, _order: i, _bucket: bucket};
         })
         .sort((a, b) => (a._bucket - b._bucket) || (a._order - b._order));
 
@@ -260,4 +262,11 @@ export class SemVisComponent implements AfterViewInit {
     this.applyFiltersAndResetIndex(0);
   }
 
+  isCurrentSolutionIn(d: GswbDiscriminant): boolean {
+    const cur = this.items?.[this.index];
+    if (!cur?.id) return false;
+
+    const assoc = d.associatedSolutions ?? [];
+    return Array.isArray(assoc) && assoc.includes(cur.id);
+  }
 }

@@ -75,3 +75,34 @@
   justify-self: end;     /* pin to the right edge */
   align-self: center;
 }
+
+
+/* Strong steady icy glow (no glitter/animation) */
+button.chip.current-hit{
+  border-color: #74e7ff;
+  border-width: 2px;
+
+  /* stronger glow */
+  box-shadow:
+    0 0 0 1px rgba(129, 226, 255, 0.55),
+    0 0 10px rgba(137, 229, 253, 0.75),
+    0 0 18px rgba(137, 231, 255, 0.55);
+
+  /* keep text stable */
+  color: #fff;
+}
+
+/* If selected, keep your dark outline but still glow */
+button.chip.selected.current-hit{
+  border-color: darkblue;
+}
+
+
+.highlight-toggle{
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+.highlight-toggle input{
+  margin-right: 6px;
+}
