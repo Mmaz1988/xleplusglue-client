@@ -26,7 +26,7 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
 
   @Output() dataEmitter = new EventEmitter<string>();
 
-  defaultRules: string = "./liger_resources/rules/be_axiom_rule.txt";
+  defaultRules: string = "./liger_resources/rules/basic_axiom_rules.txt";
   rulesDirectory: string = "./liger_resources/rules";
   currentStatusMessage: string = ""
   rulesFileTree: FileTree[] = [];  // Initialize as an empty array
