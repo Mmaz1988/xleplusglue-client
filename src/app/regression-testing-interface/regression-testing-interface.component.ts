@@ -602,7 +602,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
+
   parse_testfile(testfile: string) {
+    try {
+      this.parse_json_testfile(testfile);
+    } catch (err) {
+      this.parse_block_testfile(testfile);
+    }
+  }
+
+
+  parse_block_testfile(testfile: string) {
     this.regressionTestItems = [];
 
     let parseItems: any[] = [];
@@ -665,6 +675,70 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.sentenceMap = sentence_map;
     this.regressionTestItems.push(...parseItems);
   }
+
+  parse_json_testfile(testfile: string) {
+    this.regressionTestItems = [];
+
+    let parseItems: any[] = [];
+    let parsed = JSON.parse(testfile);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("JSON testfile must be a list.");
+    }
+
+    let sentence_map = {};
+    let sentence_id = 0;
+    let item_id = 0;
+
+    for (let i = 0; i < parsed.length; i++) {
+      const obj = parsed[i];
+
+      if (!obj.premises || !Array.isArray(obj.premises)) {
+        throw new Error("Each JSON item must have a premises array.");
+      }
+
+      let sentences: string[] = [];
+      let premise_ids = [];
+      let conclusion_ids = [];
+      let gold_label = obj.gold_label ?? null;
+
+      for (let j = 0; j < obj.premises.length; j++) {
+        const premise = String(obj.premises[j]).trim();
+        if (premise.length === 0) continue;
+
+        sentences.push(premise);
+        premise_ids.push("S" + sentence_id);
+        sentence_map["S" + sentence_id] = premise;
+        sentence_id++;
+      }
+
+      let conclusions = Array.isArray(obj.conclusion) ? obj.conclusion : [obj.conclusion];
+      for (let j = 0; j < conclusions.length; j++) {
+        const conclusion = String(conclusions[j]).trim();
+        if (conclusion.length === 0) continue;
+
+        sentences.push(conclusion);
+        conclusion_ids.push("S" + sentence_id);
+        sentence_map["S" + sentence_id] = conclusion;
+        sentence_id++;
+      }
+
+      let item = {
+        id: obj.id ?? "n" + item_id,
+        sentences,
+        premises: premise_ids,
+        conclusion: conclusion_ids,
+        gold_label
+      };
+      item_id++;
+      parseItems.push(item);
+    }
+
+    console.log("Sentence map:", sentence_map);
+    this.sentenceMap = sentence_map;
+    this.regressionTestItems.push(...parseItems);
+  }
+
 
   sortResultsByTrueCount(resultsObj: any): any {
     const sortedResults: any = { ...resultsObj };
