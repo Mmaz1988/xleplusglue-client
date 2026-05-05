@@ -120,13 +120,22 @@
   <div *ngIf="hasParsedExamples" class="vampire-rerun-panel">
     <button (click)="resendVampire()" [disabled]="!canResendVampire">
       Resend to Vampire
-    </button>
+    </button> <br>
     <span class="vampire-rerun-status">{{ vampireDiscriminantStatus }}</span>
   </div>
 
 
 
   <div class="errorhandling" #errorhandle></div>
+  <div *ngIf="hasTimingInfo" class="processing-timing">
+    <span class="processing-timing-summary">{{ processingTimingSummary }}</span>
+    <app-pill
+      badge="i"
+      variant="text"
+      [text]="processingTimingDetails"
+      minimizedColor="#1565c0">
+    </app-pill>
+  </div>
 
   <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
 <h3>

@@ -68,6 +68,89 @@ export interface GswbOutput {
   discriminants: GswbDiscriminant[];
 }
 
+export interface RegressionParseResult {
+  sentence_id: string;
+  sentence: string;
+  noOfAppliedRules: number;
+  noOfMCsets: number;
+  noOfSolutions: number;
+  ligerGraph: LigerWebGraph;
+  ligerMCsets: string;
+  allMCs: any;
+  gswbSolutions: GswbSolution[];
+  gswbDerivation: any;
+  result_type: 'parseResult';
+  discriminants?: GswbDiscriminant[];
+}
+
+export interface RegressionInferenceResult {
+  id: string;
+  premises: string[];
+  conclusion: string;
+  predictedLabel: string;
+  goldLabel: string;
+  premiseIds: string[];
+  conclusionIds: string[];
+  mismatch: boolean;
+  glyphs: string[];
+}
+
+export interface RegressionRunTiming {
+  startedAt: string | null;
+  parseMs: number | null;
+  vampireMs: number | null;
+  totalMs: number | null;
+}
+
+export interface RegressionTestingSession {
+  id: string;
+  createdAt: string;
+  sentenceMap: Record<string, string>;
+  regressionTestItems: any[];
+  regressionTestResults: RegressionParseResult[];
+  inferenceResults: RegressionInferenceResult[];
+  selectedSolutionIdsBySentence: Record<string, string[]>;
+  selectedScopeIdsBySentence: Record<string, string[]>;
+  selectedMcIdsBySentence: Record<string, string[]>;
+  lastGswbOutputs: Record<string, GswbOutput> | null;
+  lastAnnotations: Record<string, LigerRuleAnnotation> | null;
+  lastLogicType: 'fof' | 'tff';
+  lastVampireScopeIdsBySentence: Record<string, string[]>;
+  lastVampireMcIdsBySentence: Record<string, string[]>;
+  sortedMCmap: Record<string, any>;
+  hasRunVampire: boolean;
+  disambiguationMode: boolean;
+  timing: RegressionRunTiming;
+}
+
+export function createRegressionTestingSession(): RegressionTestingSession {
+  return {
+    id: `session-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    sentenceMap: {},
+    regressionTestItems: [],
+    regressionTestResults: [],
+    inferenceResults: [],
+    selectedSolutionIdsBySentence: {},
+    selectedScopeIdsBySentence: {},
+    selectedMcIdsBySentence: {},
+    lastGswbOutputs: null,
+    lastAnnotations: null,
+    lastLogicType: 'fof',
+    lastVampireScopeIdsBySentence: {},
+    lastVampireMcIdsBySentence: {},
+    sortedMCmap: {},
+    hasRunVampire: false,
+    disambiguationMode: false,
+    timing: {
+      startedAt: null,
+      parseMs: null,
+      vampireMs: null,
+      totalMs: null,
+    },
+  };
+}
+
 
 export interface GswbPreferences {
   prover: number;
@@ -185,4 +268,3 @@ export interface context {
    glyphGridSize?: number;
 
  }
-
