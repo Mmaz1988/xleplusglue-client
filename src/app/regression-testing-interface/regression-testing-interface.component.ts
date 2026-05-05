@@ -204,10 +204,48 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     return this.hasParsedExamples && !this.loading && !!this.session.lastGswbOutputs;
   }
 
+  get hasTimingInfo(): boolean {
+    return this.session.timing.parseMs !== null || this.session.timing.totalMs !== null;
+  }
+
+  get processingTimingSummary(): string {
+    const timing = this.session.timing;
+
+    if (timing.totalMs !== null) {
+      return `Overall ${this.formatDuration(timing.totalMs)}`;
+    }
+
+    if (timing.parseMs !== null) {
+      return `Parse ${this.formatDuration(timing.parseMs)} · Vampire pending`;
+    }
+
+    return '';
+  }
+
+  get processingTimingDetails(): string {
+    const timing = this.session.timing;
+    const lines: string[] = [];
+
+    if (timing.startedAt) lines.push(`Started: ${timing.startedAt}`);
+    if (timing.parseMs !== null) lines.push(`Parse phase: ${this.formatDuration(timing.parseMs, true)}`);
+    if (timing.vampireMs !== null) lines.push(`Vampire phase: ${this.formatDuration(timing.vampireMs, true)}`);
+    if (timing.totalMs !== null) lines.push(`Overall: ${this.formatDuration(timing.totalMs, true)}`);
+
+    return lines.join('\n');
+  }
+
   batchParse(sentences: string, rules: string) {
     if (this.runLocked) return;
     this.errorhandle.nativeElement.innerHTML = "";
     this.loading = true;
+    const runStartedAt = Date.now();
+
+    this.session.timing = {
+      startedAt: new Date(runStartedAt).toISOString(),
+      parseMs: null,
+      vampireMs: null,
+      totalMs: null,
+    };
 
     this.regressionTestResults = [];
     this.regressionTestItems = [];
@@ -318,6 +356,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
           this.regressionTestResults = currentRegressionTestResults;
 
+          this.session.timing.parseMs = Date.now() - runStartedAt;
+
           console.log("Successful keys: ", successFullKeys);
           const quickReport =
             "Parsed " + successCount + " of " + (Object.keys(this.sentenceMap).length) + " sentences! \n";
@@ -363,6 +403,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     const gswbOutputs = this.session.lastGswbOutputs;
     const annotations = this.session.lastAnnotations;
     const logicType = this.session.lastLogicType;
+    const vampireStartedAt = Date.now();
 
     this.session.lastVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.selectedScopeIdsBySentence);
     this.session.lastVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.selectedMcIdsBySentence);
@@ -438,7 +479,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.loading = true;
 
     this.batchVampire(vampireRequest).subscribe((vampireResult: vampireMultipleResponse) => {
-      this.handleVampireResult(vampireResult);
+      this.handleVampireResult(vampireResult, vampireStartedAt);
     });
   }
 
@@ -461,7 +502,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   }
 
   // ===== Vampire handling: kept from your code (moved into a method to avoid duplication) =====
-  private handleVampireResult(vampireResult: vampireMultipleResponse): void {
+  private handleVampireResult(vampireResult: vampireMultipleResponse, vampireStartedAt: number): void {
     console.log("Vampire results: ", vampireResult);
     this.displayMessage("Batch processing completed successfully.", "green");
 
@@ -558,7 +599,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
       (successful_entailment_predictions + successful_neutral_predictions + successful_contradiction_predictions) /
       Object.keys(vampireResult.results).length;
 
+    this.session.timing.vampireMs = Date.now() - vampireStartedAt;
+    if (this.session.timing.startedAt) {
+      this.session.timing.totalMs = Date.now() - new Date(this.session.timing.startedAt).getTime();
+    }
+
     this.loading = false;
+  }
+
+  private formatDuration(ms: number | null, precise = false): string {
+    if (ms === null || Number.isNaN(ms)) return 'n/a';
+
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    const seconds = ms / 1000;
+    return precise ? `${seconds.toFixed(2)}s` : `${seconds.toFixed(1)}s`;
   }
 
   // =========================

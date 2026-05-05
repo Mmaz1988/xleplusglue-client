@@ -46,6 +46,19 @@ div.errorhandling {
   padding-bottom: 10px;
 }
 
+.processing-timing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  color: #1565c0;
+  font-weight: 600;
+}
+
+.processing-timing-summary {
+  white-space: nowrap;
+}
+
 
 .cm-table {
   border-collapse: collapse;
