@@ -1,6 +1,6 @@
 <p [ngClass]="{
       'highlight-block': numberOfMCsets === 0 || noOfSolutions === 0,
-      'multi-selected': disambiguationActive && noOfSelectedSolutions > 1
+      'multi-selected': disambiguationActive && selectedSolutionIds.length > 1
     }">
   {{sentence_id}}: {{sentence}}<br>
   Number of applied rules:
@@ -19,7 +19,7 @@
   </span> <br>
 
   Number of selected solutions:
-  <span [ngClass]="{ 'zero-value': noOfSelectedSolutions === 0 }">
+  <span [ngClass]="{ 'zero-value': selectedSolutionIds.length === 0 }">
     {{ selectedSolutionIds.length }} / {{ noOfSolutions }}
   </span>
 </p>
@@ -27,5 +27,3 @@
 <button type="button" (click)="openSolutionsDialog(0)">
   Open solutions
 </button>
-
-

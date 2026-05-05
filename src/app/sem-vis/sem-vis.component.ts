@@ -59,7 +59,7 @@ export class SemVisComponent implements AfterViewInit {
 
   public setItems(items: GswbSolution[], startIndex = 0): void {
     this.allItems = Array.isArray(items) ? items : [];
-    this.applyFiltersAndResetIndex(startIndex);
+    this.applyFiltersAndResetIndex(startIndex, false);
   }
 
   public setDiscriminants(items: GswbDiscriminant[]): void {
@@ -68,7 +68,7 @@ export class SemVisComponent implements AfterViewInit {
     this.mc_discriminants = items.filter(s => s.type === "MCs");
     console.log("MC discriminants", this.mc_discriminants);
 
-    this.applyFiltersAndResetIndex(0);
+    this.applyFiltersAndResetIndex(0, true);
   }
 
   public next(): void {
@@ -107,7 +107,7 @@ export class SemVisComponent implements AfterViewInit {
       ? this.selectedScopeIds.filter(id => id !== d.id)
       : [...this.selectedScopeIds, d.id];
 
-    this.applyFiltersAndResetIndex(0);
+    this.applyFiltersAndResetIndex(0, true);
     console.log("Selected scope IDs:", this.selectedScopeIds);
     console.log("Currently allowed:", this.getCurrentAllowedIds())
   }
@@ -121,18 +121,26 @@ export class SemVisComponent implements AfterViewInit {
       ? this.selectedMcIds.filter(id => id !== d.id)
       : [...this.selectedMcIds, d.id];
 
-    this.applyFiltersAndResetIndex(0);
+    this.applyFiltersAndResetIndex(0, true);
     console.log("Selected MC IDs:", this.selectedMcIds);
   }
 
 
-  applyFiltersAndResetIndex(startIndex = 0): void {
+  applyFiltersAndResetIndex(startIndex = 0, preserveCurrent = true): void {
+    const currentId = preserveCurrent ? this.items[this.index]?.id ?? null : null;
     const filtered = this.filterItemsBySelectedDiscriminants(this.allItems);
 
     this.items = filtered;
-    this.index = this.items.length
-      ? Math.min(Math.max(startIndex, 0), this.items.length - 1)
-      : 0;
+    if (!this.items.length) {
+      this.index = 0;
+    } else if (currentId) {
+      const nextIndex = this.items.findIndex(item => item.id === currentId);
+      this.index = nextIndex >= 0
+        ? nextIndex
+        : Math.min(Math.max(startIndex, 0), this.items.length - 1);
+    } else {
+      this.index = Math.min(Math.max(startIndex, 0), this.items.length - 1);
+    }
 
     this.applyCurrent();
     this.rebuildDiscriminantViews();

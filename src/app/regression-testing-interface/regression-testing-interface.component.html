@@ -117,6 +117,13 @@
     Skip
   </button>
 
+  <div *ngIf="hasParsedExamples" class="vampire-rerun-panel">
+    <button (click)="resendVampire()" [disabled]="!canResendVampire">
+      Resend to Vampire
+    </button>
+    <span class="vampire-rerun-status">{{ vampireDiscriminantStatus }}</span>
+  </div>
+
 
 
   <div class="errorhandling" #errorhandle></div>

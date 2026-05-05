@@ -6,6 +6,10 @@ import {
   GswbMultipleRequest,
   GswbBatchOutput,
   GswbOutput,
+  RegressionInferenceResult,
+  RegressionParseResult,
+  RegressionTestingSession,
+  createRegressionTestingSession,
   nliItem,
   vampireMultipleRequest,
   vampireMultipleResponse,
@@ -27,6 +31,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
   constructor(private dataService: DataService) {}
 
+  session: RegressionTestingSession = createRegressionTestingSession();
+
   @ViewChild('arcy') cy1: GraphVisComponent;
   @ViewChild('ligerreport') ligerreport: ElementRef;
   @ViewChild('gswbreport') gswbreport: ElementRef;
@@ -44,12 +50,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
   gswbMultipleRequest: GswbMultipleRequest;
 
-  regressionTestResults: any[] = [];
-  inferenceResults: any[] = [];
   inferenceSummary = "";
-  regressionTestItems: any[] = [];
-
-  sentenceMap = {};
   loading: boolean = false;
 
   labels = ['1', '0', '-1'] as const;
@@ -74,20 +75,56 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   // NEW: disambiguation controls
   // =========================
   enableDisambiguation = false; // bind to checkbox in HTML
-  disambiguationMode = false;   // show "Continue" button when true
+  get disambiguationMode(): boolean {
+    return this.session.disambiguationMode;
+  }
+
+  set disambiguationMode(value: boolean) {
+    this.session.disambiguationMode = value;
+  }
+
+  get regressionTestResults(): RegressionParseResult[] {
+    return this.session.regressionTestResults;
+  }
+
+  set regressionTestResults(value: RegressionParseResult[]) {
+    this.session.regressionTestResults = value;
+  }
+
+  get inferenceResults(): RegressionInferenceResult[] {
+    return this.session.inferenceResults;
+  }
+
+  set inferenceResults(value: RegressionInferenceResult[]) {
+    this.session.inferenceResults = value;
+  }
+
+  get regressionTestItems(): any[] {
+    return this.session.regressionTestItems;
+  }
+
+  set regressionTestItems(value: any[]) {
+    this.session.regressionTestItems = value;
+  }
+
+  get sentenceMap(): Record<string, string> {
+    return this.session.sentenceMap;
+  }
+
+  set sentenceMap(value: Record<string, string>) {
+    this.session.sentenceMap = value;
+  }
+
+  get sortedMCmap(): Record<string, any> {
+    return this.session.sortedMCmap;
+  }
+
+  set sortedMCmap(value: Record<string, any>) {
+    this.session.sortedMCmap = value;
+  }
 
   // sentenceId -> selected solution IDs
-  private selectedSolutionIdsBySentence = new Map<string, string[]>();
-  private selectedScopeIdsBySentence = new Map<string, string[]>();
-  private selectedMcIdsBySentence = new Map<string, string[]>();
-
-
-  // stash state after GSWB so we can resume later
-  private lastGswbMap: Map<string, GswbOutput> | null = null;
-  private lastAnnotations: Record<string, LigerRuleAnnotation> | null = null;
-  private lastLogicType: 'fof' | 'tff' = 'fof';
-
-  private sortedMCmap= {};
+  // session stores parse, inference, and selection state as JSON-friendly data
 
   // Tune these numbers to match your row heights (in px)
   itemSizeParse = 220;  // app-test-result row height estimate
@@ -100,7 +137,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   // Called from template on each <app-test-result ... (selectionChange)="onSelectionChange($event)">
   onSelectionChange(ev: { sentenceId: string; selectedSolutionIds: string[] }) {
     if (!ev?.sentenceId) return;
-    this.selectedSolutionIdsBySentence.set(ev.sentenceId, ev.selectedSolutionIds ?? []);
+    this.session.selectedSolutionIdsBySentence[ev.sentenceId] = [...(ev.selectedSolutionIds ?? [])];
   }
 
   ngAfterViewInit() {
@@ -145,6 +182,28 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.runVampireFromCurrentState(/*useDisambiguated*/ false);
   }
 
+  resendVampire(): void {
+    if (!this.hasParsedExamples) return;
+    this.runVampireFromCurrentState(/*useDisambiguated*/ true);
+  }
+
+  get hasParsedExamples(): boolean {
+    return this.regressionTestResults.length > 0;
+  }
+
+  get vampireDiscriminantStatus(): string {
+    if (!this.hasParsedExamples) return '';
+    if (!this.session.hasRunVampire) return 'Vampire has not been run yet.';
+
+    return this.haveDiscriminantSelectionsChangedSinceLastVampire()
+      ? 'Discriminant selections have changed since the last Vampire call.'
+      : 'Discriminant selections are unchanged since the last Vampire call.';
+  }
+
+  get canResendVampire(): boolean {
+    return this.hasParsedExamples && !this.loading && !!this.session.lastGswbOutputs;
+  }
+
   batchParse(sentences: string, rules: string) {
     if (this.runLocked) return;
     this.errorhandle.nativeElement.innerHTML = "";
@@ -157,14 +216,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
 
     // reset disambiguation state per run
-    this.disambiguationMode = false;
-    this.selectedSolutionIdsBySentence.clear();
-    this.lastGswbMap = null;
-    this.lastAnnotations = null;
-    this.sortedMCmap = {};
-    this.selectedSolutionIdsBySentence = new Map<string, string[]>();
-    this.selectedScopeIdsBySentence = new Map<string, string[]>();
-    this.selectedMcIdsBySentence = new Map<string, string[]>();
+    this.session.disambiguationMode = false;
+    this.session.selectedSolutionIdsBySentence = {};
+    this.session.lastGswbOutputs = null;
+    this.session.lastAnnotations = null;
+    this.session.lastVampireScopeIdsBySentence = {};
+    this.session.lastVampireMcIdsBySentence = {};
+    this.session.hasRunVampire = false;
+    this.session.sortedMCmap = {};
+    this.session.selectedScopeIdsBySentence = {};
+    this.session.selectedMcIdsBySentence = {};
 
 
 
@@ -217,18 +278,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
           const outputs = result.outputs;
           console.log("GSWB outputs: ", outputs);
 
-          const gswbMap = new Map<string, GswbOutput>();
-          for (const key in outputs) {
-            gswbMap.set(key, outputs[key]);
-          }
+          const gswbOutputs: Record<string, GswbOutput> = { ...outputs };
 
           let successCount = 0;
           let successFullKeys: string[] = [];
 
-          let currentRegressionTestResults = [];
+          const currentRegressionTestResults: RegressionParseResult[] = [];
 
           for (let key of Object.keys(this.sentenceMap)) {
-            const out = gswbMap.get(key);
+            const out = gswbOutputs[key];
             const sols = out?.solutions ?? [];
 
             if (sols.length > 0) {
@@ -238,9 +296,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
             // Seed selection map to "ALL solution IDs" initially.
             // TestResult will later emit updates if user filters.
-            this.selectedSolutionIdsBySentence.set(key, sols.map(s => s.id));
+            this.session.selectedSolutionIdsBySentence[key] = sols.map(s => s.id);
 
-            const regressionTestResult = {
+            const regressionTestResult: RegressionParseResult = {
               sentence_id: key,
               sentence: this.sentenceMap[key],
               noOfAppliedRules: data.annotations[key].appliedRules.length,
@@ -268,13 +326,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
           this.displayMessage(quickReport + "Batch processing completed successfully.", "green");
 
           // Stash state for resuming after disambiguation
-          this.lastGswbMap = gswbMap;
-          this.lastAnnotations = data.annotations;
-          this.lastLogicType = logicType;
+          this.session.lastGswbOutputs = gswbOutputs;
+          this.session.lastAnnotations = data.annotations;
+          this.session.lastLogicType = logicType;
 
           // ========= PAUSE HERE if flag is set =========
           if (this.enableDisambiguation) {
-            this.disambiguationMode = true;
+            this.session.disambiguationMode = true;
             this.displayMessage(
               "Disambiguation enabled: open solutions dialogs, select discriminants, then click Continue.",
               "blue"
@@ -297,16 +355,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
   // Builds NLI items + runs Vampire.
   // If useDisambiguated=true, filters each sentence’s solutions by selectedSolutionIdsBySentence.
   private runVampireFromCurrentState(useDisambiguated: boolean): void {
-    if (!this.lastGswbMap || !this.lastAnnotations) {
+    if (!this.session.lastGswbOutputs || !this.session.lastAnnotations) {
       console.warn("No stored GSWB/LiGER state to proceed to Vampire.");
       return;
     }
 
-    const gswbMap = this.lastGswbMap;
-    const annotations = this.lastAnnotations;
-    const logicType = this.lastLogicType;
+    const gswbOutputs = this.session.lastGswbOutputs;
+    const annotations = this.session.lastAnnotations;
+    const logicType = this.session.lastLogicType;
 
-    this.disambiguationMode = false;
+    this.session.lastVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.selectedScopeIdsBySentence);
+    this.session.lastVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.selectedMcIdsBySentence);
+    this.session.hasRunVampire = true;
+
+    this.session.disambiguationMode = false;
 
     this.displayMessage("Sending NLI items to Vampire ...", "blue");
     console.log("Preparing call to Vampire ...");
@@ -319,8 +381,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
       const premise_strings: string[] = [];
       for (let premise of item.premises) {
-        if (gswbMap.has(premise) && gswbMap.get(premise).solutions.length > 0) {
-          const sols = this.getSolutionsText(premise, gswbMap, useDisambiguated);
+        if (gswbOutputs[premise] && gswbOutputs[premise].solutions.length > 0) {
+          const sols = this.getSolutionsText(premise, gswbOutputs, useDisambiguated);
           if (sols.length > 0) premise_strings.push(sols.join('\n'));
 
           const liger_data = annotations[premise];
@@ -340,8 +402,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
       const conclusion_strings: string[] = [];
       for (let conclusion of item.conclusion) {
-        if (gswbMap.has(conclusion) && gswbMap.get(conclusion).solutions.length > 0) {
-          const sols = this.getSolutionsText(conclusion, gswbMap, useDisambiguated);
+        if (gswbOutputs[conclusion] && gswbOutputs[conclusion].solutions.length > 0) {
+          const sols = this.getSolutionsText(conclusion, gswbOutputs, useDisambiguated);
           if (sols.length > 0) conclusion_strings.push(sols.join('\n'));
 
           const liger_data = annotations[conclusion];
@@ -382,14 +444,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
   private getSolutionsText(
     sentenceId: string,
-    gswbMap: Map<string, GswbOutput>,
+    gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean
   ): string[] {
-    const sols = gswbMap.get(sentenceId)?.solutions ?? [];
+    const sols = gswbOutputs[sentenceId]?.solutions ?? [];
 
     if (!useDisambiguated) return sols.map(x => x.solution);
 
-    const selectedIds = this.selectedSolutionIdsBySentence.get(sentenceId);
+    const selectedIds = this.session.selectedSolutionIdsBySentence[sentenceId];
 
     // If nothing selected, default to ALL (safe fallback)
     if (!selectedIds || selectedIds.length === 0) return sols.map(x => x.solution);
@@ -417,7 +479,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     let successful_neutral_predictions = 0;
     let successful_contradiction_predictions = 0;
 
-    let currentInferenceResults: any[] = [];
+    const currentInferenceResults: RegressionInferenceResult[] = [];
 
     for (let [key, value] of Object.entries(vampireResult.results) as [string, check[]][]) {
       let infoCount = value.filter(check => check.informative).length;
@@ -806,8 +868,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
 
   getSelectedSolutionIds(element: any): string[] {
-    const fromUser = this.selectedSolutionIdsBySentence.get(element.sentence_id);
-    if (fromUser) return fromUser;
+    const fromUser = this.session.selectedSolutionIdsBySentence[element.sentence_id];
+    if (fromUser !== undefined) return fromUser;
 
     const sols = element?.gswbSolutions ?? [];
     return Array.isArray(sols) ? sols.map((s: any) => String(s.id)) : [];
@@ -817,11 +879,48 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     const sid = ev.sentenceId;
 
     // persist solution IDs
-    this.selectedSolutionIdsBySentence.set(sid, (ev.items ?? []).map(x => x.id));
+    this.session.selectedSolutionIdsBySentence[sid] = (ev.items ?? []).map(x => x.id);
 
     // persist discriminant selection state
-    this.selectedScopeIdsBySentence.set(sid, [...(ev.selectedScopeIds ?? [])]);
-    this.selectedMcIdsBySentence.set(sid, [...(ev.selectedMcIds ?? [])]);
+    this.session.selectedScopeIdsBySentence[sid] = [...(ev.selectedScopeIds ?? [])];
+    this.session.selectedMcIdsBySentence[sid] = [...(ev.selectedMcIds ?? [])];
+  }
+
+  private cloneSelectionRecord(source: Record<string, string[]>): Record<string, string[]> {
+    const copy: Record<string, string[]> = {};
+    Object.entries(source).forEach(([sid, ids]) => { copy[sid] = [...ids]; });
+    return copy;
+  }
+
+  private haveDiscriminantSelectionsChangedSinceLastVampire(): boolean {
+    return this.selectionRecordsDiffer(this.session.selectedScopeIdsBySentence, this.session.lastVampireScopeIdsBySentence)
+      || this.selectionRecordsDiffer(this.session.selectedMcIdsBySentence, this.session.lastVampireMcIdsBySentence);
+  }
+
+  private selectionRecordsDiffer(current: Record<string, string[]>, previous: Record<string, string[]>): boolean {
+    const currentKeys = Object.keys(current);
+    const previousKeys = Object.keys(previous);
+    if (currentKeys.length !== previousKeys.length) return true;
+
+    for (const sentenceId of currentKeys) {
+      const prior = previous[sentenceId];
+      if (!prior) return true;
+
+      if (!this.sameSelectionIds(current[sentenceId], prior)) return true;
+    }
+
+    return false;
+  }
+
+  private sameSelectionIds(left: string[], right: string[]): boolean {
+    if (left.length !== right.length) return false;
+
+    const normalize = (ids: string[]) => [...new Set(ids.map(id => String(id)))].sort();
+    const a = normalize(left);
+    const b = normalize(right);
+
+    if (a.length !== b.length) return false;
+    return a.every((id, index) => id === b[index]);
   }
 
   openSemVisDialog(payload: any): void {
@@ -829,8 +928,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
     this.semvisDialog.open({
       ...payload,
-      selectedScopeIds: this.selectedScopeIdsBySentence.get(sid) ?? [],
-      selectedMcIds: this.selectedMcIdsBySentence.get(sid) ?? [],
+      selectedScopeIds: this.session.selectedScopeIdsBySentence[sid] ?? [],
+      selectedMcIds: this.session.selectedMcIdsBySentence[sid] ?? [],
     });
   }
 
