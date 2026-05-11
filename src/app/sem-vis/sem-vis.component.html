@@ -42,27 +42,31 @@
 
       <!-- Scope discriminants -->
       <div class="disc-list" *ngIf="scope_discriminants?.length; else noScope">
-        <div class="disc-item" *ngFor="let d of scope_view">
-          <button
-            type="button"
-            class="chip"
-            [class.selected]="isScopeSelected(d)"
-            [class.inactive]="!wouldFurtherFilter(d)"
-            [class.current-hit]="highlightCurrent && isCurrentSolutionIn(d)"
-            [disabled]="!isScopeSelected(d) && !wouldFurtherFilter(d)"
-            (click)="toggleScope(d)"
-            [title]="d.identifier">
-            {{ d.identifier }}
-          </button>
+        <ng-container *ngFor="let row of scope_rows">
+          <div class="disc-separator" *ngIf="row.kind === 'separator'" aria-hidden="true"></div>
 
-          <app-pill
-            *ngIf="d.instantiations?.length"
-            badge="i"
-            variant="editor"
-            [text]="d.instantiations.join('\n') + '\n\n' + meaningConstructors + '\n\n' + repeat('*',10) + '\n\n'"
-            [minimizedColor]="'#424242'">
-          </app-pill>
-        </div>
+          <div class="disc-item" *ngIf="row.kind === 'item'">
+            <button
+              type="button"
+              class="chip"
+              [class.selected]="isScopeSelected(row.disc)"
+              [class.inactive]="!wouldFurtherFilter(row.disc)"
+              [class.current-hit]="highlightCurrent && isCurrentSolutionIn(row.disc)"
+              [disabled]="!isScopeSelected(row.disc) && !wouldFurtherFilter(row.disc)"
+              (click)="toggleScope(row.disc)"
+              [title]="row.disc.identifier">
+              {{ row.disc.identifier }}
+            </button>
+
+            <app-pill
+              *ngIf="row.disc.instantiations?.length"
+              badge="i"
+              variant="editor"
+              [text]="row.disc.instantiations.join('\n') + '\n\n' + meaningConstructors + '\n\n' + repeat('*',10) + '\n\n'"
+              [minimizedColor]="'#424242'">
+            </app-pill>
+          </div>
+        </ng-container>
       </div>
 
       <ng-template #noScope>
@@ -82,34 +86,40 @@
 
       <!-- MC discriminants -->
       <div class="disc-list" *ngIf="mc_discriminants?.length; else noMc">
-        <div class="disc-item" *ngFor="let d of mc_view">
-        <button
-          type="button"
-          class="chip"
-          [class.selected]="isMcSelected(d)"
-          [class.inactive]="!wouldFurtherFilter(d)"
-          [class.current-hit]="highlightCurrent && isCurrentSolutionIn(d)"
-          [disabled]="!isMcSelected(d) && !wouldFurtherFilter(d)"
-          (click)="toggleMc(d)"
-          [title]="d.identifier"
-        >
-          {{ d.identifier }}
-        </button>
+        <ng-container *ngFor="let row of mc_rows">
+          <div class="disc-separator" *ngIf="row.kind === 'separator'" aria-hidden="true"></div>
 
-          <app-pill
-            *ngIf="d.identifier"
-            badge="i"
-            variant="editor"
-            [text]="replaceLollipop(d.identifier) + '\n\n' + meaningConstructors + '\n\n' + repeat('*',10) + '\n\n'"
-            [minimizedColor]="'#424242'">
-          </app-pill>
-        </div>
+          <div class="disc-item" *ngIf="row.kind === 'item'">
+            <button
+              type="button"
+              class="chip"
+              [class.selected]="isMcSelected(row.disc)"
+              [class.inactive]="!wouldFurtherFilter(row.disc)"
+              [class.current-hit]="highlightCurrent && isCurrentSolutionIn(row.disc)"
+              [disabled]="!isMcSelected(row.disc) && !wouldFurtherFilter(row.disc)"
+              (click)="toggleMc(row.disc)"
+              [title]="row.disc.identifier"
+            >
+              {{ row.disc.identifier }}
+            </button>
+
+            <app-pill
+              *ngIf="row.disc.identifier"
+              badge="i"
+              variant="editor"
+              [text]="replaceLollipop(row.disc.identifier) + '\n\n' + meaningConstructors + '\n\n' + repeat('*',10) + '\n\n'"
+              [minimizedColor]="'#424242'">
+            </app-pill>
+          </div>
+        </ng-container>
       </div>
 
       <ng-template #noMc>
         <div class="disc-empty">No MC discriminants.</div>
       </ng-template>
 
-  </div>
+    </div>
 
   </div>
+
+</div>

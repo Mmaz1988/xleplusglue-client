@@ -2,8 +2,9 @@ import {Component, ViewChild, AfterViewInit, Output,Input, EventEmitter} from '@
 import { EditorComponent } from '../editor/editor.component';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
 
-type DiscBucket = 0 | 1 | 2; // 0=selected, 1=active, 2=inactive
-type DiscView = GswbDiscriminant & { _order: number; _bucket: DiscBucket };
+type DiscStateBucket = 0 | 1 | 2; // 0=selected, 1=active, 2=inactive
+type DiscView = GswbDiscriminant & { _order: number; _stateBucket: DiscStateBucket };
+type DiscRow = { kind: 'item'; disc: DiscView } | { kind: 'separator'; key: string };
 
 @Component({
   selector: 'app-sem-vis',
@@ -42,8 +43,8 @@ export class SemVisComponent implements AfterViewInit {
   // sem-vis.component.ts
   highlightCurrent = true; // default on (set false if you want off by default)
 
-  scope_view: DiscView[] = [];
-  mc_view: DiscView[] = [];
+  scope_rows: DiscRow[] = [];
+  mc_rows: DiscRow[] = [];
 
   ngAfterViewInit(): void {
     this.viewReady = true;
@@ -235,23 +236,61 @@ export class SemVisComponent implements AfterViewInit {
   }
 
   private rebuildDiscriminantViews(): void {
-    const decorate = (arr: GswbDiscriminant[]): DiscView[] =>
-      arr
-        .map((d, i) => {
-          const selected =
-            this.selectedScopeIds.includes(d.id) || this.selectedMcIds.includes(d.id);
+    const decorate = (arr: GswbDiscriminant[]): DiscRow[] => {
+      const views: DiscView[] = arr.map((d, i) => {
+        const selected =
+          this.selectedScopeIds.includes(d.id) || this.selectedMcIds.includes(d.id);
 
-          // active = wouldFurtherFilter for unselected; selected stays in its own bucket
-          const active = selected ? true : this.wouldFurtherFilter(d);
+        // active = wouldFurtherFilter for unselected; selected stays in its own bucket
+        const active = selected ? true : this.wouldFurtherFilter(d);
 
-          const bucket: 0 | 1 | 2 = selected ? 0 : (active ? 1 : 2);
+        const stateBucket: DiscStateBucket = selected ? 0 : (active ? 1 : 2);
 
-          return {...d, _order: i, _bucket: bucket};
-        })
-        .sort((a, b) => (a._bucket - b._bucket) || (a._order - b._order));
+        return {...d, _order: i, _stateBucket: stateBucket};
+      });
 
-    this.scope_view = decorate(this.scope_discriminants);
-    this.mc_view = decorate(this.mc_discriminants);
+      const buckets: Array<{ items: DiscView[]; solutions: Set<string> }> = [];
+
+      for (const disc of views) {
+        const candidate = new Set(disc.associatedSolutions ?? []);
+        const bucketIndex = buckets.findIndex(bucket => !this.hasIntersection(bucket.solutions, candidate));
+
+        if (bucketIndex >= 0) {
+          buckets[bucketIndex].items.push(disc);
+          buckets[bucketIndex].solutions = this.unionSets(buckets[bucketIndex].solutions, candidate);
+        } else {
+          buckets.push({items: [disc], solutions: candidate});
+        }
+      }
+
+      const rows: DiscRow[] = [];
+      buckets.forEach((bucket, bucketIndex) => {
+        if (bucketIndex > 0) {
+          rows.push({kind: 'separator', key: `sep-${bucketIndex}`});
+        }
+        bucket.items.forEach(disc => rows.push({kind: 'item', disc}));
+      });
+
+      return rows;
+    };
+
+    this.scope_rows = decorate(this.scope_discriminants);
+    this.mc_rows = decorate(this.mc_discriminants);
+  }
+
+  private hasIntersection(a: Set<string>, b: Set<string>): boolean {
+    const small = a.size <= b.size ? a : b;
+    const large = a.size <= b.size ? b : a;
+    for (const x of small) {
+      if (large.has(x)) return true;
+    }
+    return false;
+  }
+
+  private unionSets(a: Set<string> | null, b: Set<string>): Set<string> {
+    const out = new Set<string>(a ?? []);
+    for (const x of b) out.add(x);
+    return out;
   }
 
   repeat(s: string, n: number): string {
