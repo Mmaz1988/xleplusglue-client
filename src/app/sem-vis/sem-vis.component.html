@@ -34,7 +34,7 @@
     <!-- Scope -->
     <div class="disc-block">
       <div class="disc-header">
-        <h4>Scope discriminants</h4>
+        <h4>Scope discriminants <br> ({{ activeDiscriminantCount(scope_discriminants) }}/{{ scope_discriminants.length }} active, {{ activeBucketCount(scope_rows) }}/{{ bucketCount(scope_rows) }} buckets)</h4>
         <button type="button" (click)="clearScope()" [disabled]="!selectedScopeIds.length">
           Clear
         </button>
@@ -76,9 +76,9 @@
     </div>
 
     <!-- MC -->
-    <div class="disc-block">
+      <div class="disc-block">
       <div class="disc-header">
-        <h4>MC discriminants</h4>
+        <h4>MC discriminants <br> ({{ activeDiscriminantCount(mc_discriminants) }}/{{ mc_discriminants.length }} active, {{ activeBucketCount(mc_rows) }}/{{ bucketCount(mc_rows) }} buckets)</h4>
         <button type="button" (click)="clearMc()" [disabled]="!selectedMcIds.length">
           Clear
         </button>

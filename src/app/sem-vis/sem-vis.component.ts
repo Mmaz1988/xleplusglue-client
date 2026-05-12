@@ -219,20 +219,20 @@ export class SemVisComponent implements AfterViewInit {
     return allowed ?? new Set<string>();
   }
 
+  private furtherReducesSolutions(d: GswbDiscriminant): boolean {
+    const currentAllowed = this.getCurrentAllowedIds();
+    const candidate = new Set(d.associatedSolutions ?? []);
+    const nextAllowed = this.intersect(currentAllowed, candidate);
+    return nextAllowed.size !== currentAllowed.size && nextAllowed.size > 0;
+  }
+
   wouldFurtherFilter(d: GswbDiscriminant): boolean {
     // If already selected, don't treat it as "inactive" (you probably want it clickable to deselect)
     const alreadySelected =
       this.selectedScopeIds.includes(d.id) || this.selectedMcIds.includes(d.id);
     if (alreadySelected) return true;
 
-    const currentAllowed = this.getCurrentAllowedIds();
-    const candidate = new Set(d.associatedSolutions ?? []);
-
-    // intersection(currentAllowed, candidate)
-    const nextAllowed = this.intersect(currentAllowed, candidate);
-
-    // "Would not further filter" <=> nextAllowed equals currentAllowed
-    return nextAllowed.size !== currentAllowed.size && nextAllowed.size > 0;
+    return this.furtherReducesSolutions(d);
   }
 
   private rebuildDiscriminantViews(): void {
@@ -291,6 +291,35 @@ export class SemVisComponent implements AfterViewInit {
     const out = new Set<string>(a ?? []);
     for (const x of b) out.add(x);
     return out;
+  }
+
+  bucketCount(rows: DiscRow[]): number {
+    if (!rows.length) return 0;
+    return 1 + rows.filter(row => row.kind === 'separator').length;
+  }
+
+  activeDiscriminantCount(discriminants: GswbDiscriminant[]): number {
+    return discriminants.filter(d => this.furtherReducesSolutions(d)).length;
+  }
+
+  activeBucketCount(rows: DiscRow[]): number {
+    let count = 0;
+    let hasActiveItem = false;
+
+    for (const row of rows) {
+      if (row.kind === 'separator') {
+        if (hasActiveItem) count++;
+        hasActiveItem = false;
+        continue;
+      }
+
+      if (this.furtherReducesSolutions(row.disc)) {
+        hasActiveItem = true;
+      }
+    }
+
+    if (rows.length && hasActiveItem) count++;
+    return count;
   }
 
   repeat(s: string, n: number): string {
