@@ -104,6 +104,7 @@ export interface RegressionRunTiming {
 
 export interface RegressionTestingSession {
   id: string;
+  redisSessionKey: string;
   createdAt: string;
   sentenceMap: Record<string, string>;
   regressionTestItems: any[];
@@ -126,6 +127,7 @@ export interface RegressionTestingSession {
 export function createRegressionTestingSession(): RegressionTestingSession {
   return {
     id: `session-${Date.now()}`,
+    redisSessionKey: 'last_session',
     createdAt: new Date().toISOString(),
     sentenceMap: {},
     regressionTestItems: [],
@@ -238,11 +240,17 @@ export interface vampireMultipleResponse {
   results: { [key: string]: check[] };
 }
 
+export interface VampireSessionSummary {
+  item_count: number;
+  proof_count: number;
+}
+
 export interface check {
   glyph: string;
   informative: boolean;
   consistent: boolean;
   relevant: boolean;
+  proof_files?: string[];
 }
 
 export interface context {

@@ -1,4 +1,4 @@
-import { Component, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { DataService } from "../data.service";
 import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
 import {
@@ -12,12 +12,12 @@ import {
   createRegressionTestingSession,
   nliItem,
   vampireMultipleRequest,
-  vampireMultipleResponse,
-  check
+  check,
+  VampireSessionSummary
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable } from "rxjs";
+import { catchError, EMPTY, Observable, forkJoin } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -27,7 +27,7 @@ import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.co
   templateUrl: './regression-testing-interface.component.html',
   styleUrls: ['./regression-testing-interface.component.css']
 })
-export class RegressionTestingInterfaceComponent implements AfterViewInit {
+export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDestroy {
 
   constructor(private dataService: DataService) {}
 
@@ -52,6 +52,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
   inferenceSummary = "";
   loading: boolean = false;
+  private vampireSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
+  private vampirePendingItemCount: number | null = null;
+  private activeVampireRunStartedAt: number | null = null;
 
   labels = ['1', '0', '-1'] as const;
   labelName = { '1': 'Entailment', '0': 'Neutral', '-1': 'Contradiction' } as const;
@@ -172,6 +175,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     }
   }
 
+  private get redisSessionKey(): string {
+    return this.session.redisSessionKey || 'last_session';
+  }
+
+  ngOnDestroy(): void {
+    this.stopVampireSummaryPolling();
+  }
+
   // Button handler (appears only when disambiguationMode is true)
   continueAfterDisambiguation(): void {
     this.runVampireFromCurrentState(/*useDisambiguated*/ true);
@@ -264,6 +275,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.session.sortedMCmap = {};
     this.session.selectedScopeIdsBySentence = {};
     this.session.selectedMcIdsBySentence = {};
+
+    this.dataService.resetLastSession(this.redisSessionKey).subscribe({
+      next: () => console.log(`Reset Redis session ${this.redisSessionKey}`),
+      error: error => console.warn("Unable to reset Redis session before parse.", error)
+    });
 
 
 
@@ -477,9 +493,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
     console.log("Vampire request: ", vampireRequest);
     this.loading = true;
+    this.vampirePendingItemCount = Object.keys(inference_items).length;
+    this.activeVampireRunStartedAt = vampireStartedAt;
+    this.startVampireSummaryPolling(vampireStartedAt);
+    this.loadAndRenderVampireState(false, vampireStartedAt);
 
-    this.batchVampire(vampireRequest).subscribe((vampireResult: vampireMultipleResponse) => {
-      this.handleVampireResult(vampireResult, vampireStartedAt);
+    this.batchVampire(vampireRequest).subscribe({
+      next: () => {
+        this.stopVampireSummaryPolling();
+        this.loadAndRenderVampireState(true, vampireStartedAt);
+      },
+      error: () => {
+        this.stopVampireSummaryPolling();
+        this.vampirePendingItemCount = null;
+        this.activeVampireRunStartedAt = null;
+        this.loading = false;
+      }
     });
   }
 
@@ -501,13 +530,70 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     return sols.filter(x => sel.has(x.id)).map(x => x.solution);
   }
 
-  // ===== Vampire handling: kept from your code (moved into a method to avoid duplication) =====
-  private handleVampireResult(vampireResult: vampireMultipleResponse, vampireStartedAt: number): void {
-    console.log("Vampire results: ", vampireResult);
-    this.displayMessage("Batch processing completed successfully.", "green");
+  private startVampireSummaryPolling(vampireStartedAt: number): void {
+    this.stopVampireSummaryPolling();
 
+    this.vampireSummaryPollTimer = setInterval(() => {
+      this.loadAndRenderVampireState(false, vampireStartedAt);
+    }, 15000);
+  }
+
+  private stopVampireSummaryPolling(): void {
+    if (this.vampireSummaryPollTimer !== null) {
+      clearInterval(this.vampireSummaryPollTimer);
+      this.vampireSummaryPollTimer = null;
+    }
+  }
+
+  private loadAndRenderVampireState(finalSnapshot: boolean, vampireStartedAt: number): void {
+    if (!this.loading && !finalSnapshot) return;
+    const runToken = this.activeVampireRunStartedAt;
+
+    forkJoin({
+      session: this.dataService.getLastSession(this.redisSessionKey),
+      summary: this.dataService.getLastSessionSummary(this.redisSessionKey)
+    }).subscribe({
+      next: ({ session, summary }) => {
+        if (runToken !== this.activeVampireRunStartedAt) return;
+
+        this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot);
+
+        const processedItems = summary?.item_count ?? 0;
+        const proofCount = summary?.proof_count ?? 0;
+        const totalItems = this.vampirePendingItemCount ?? this.regressionTestItems.length;
+        const message = `Vampire progress: ${processedItems} of ${totalItems} items processed, ${proofCount} proofs processed so far.`;
+
+        console.log(message);
+        this.displayMessage(message, finalSnapshot ? "green" : "blue");
+
+        if (finalSnapshot) {
+          this.session.timing.vampireMs = Date.now() - vampireStartedAt;
+          if (this.session.timing.startedAt) {
+            this.session.timing.totalMs = Date.now() - new Date(this.session.timing.startedAt).getTime();
+          }
+          this.loading = false;
+          this.vampirePendingItemCount = null;
+          this.activeVampireRunStartedAt = null;
+        }
+      },
+      error: error => {
+        if (runToken !== this.activeVampireRunStartedAt) return;
+
+        console.warn("Unable to load Vampire progress summary.", error);
+        if (finalSnapshot) {
+          this.loading = false;
+          this.vampirePendingItemCount = null;
+          this.activeVampireRunStartedAt = null;
+          this.displayMessage("Batch processing completed, but Redis state could not be reloaded.", "red");
+        }
+      }
+    });
+  }
+
+  private renderVampireResults(results: Record<string, check[]>, summary: VampireSessionSummary, finalSnapshot: boolean): void {
     const idx = { '1': 0, '0': 1, '-1': 2 };
     const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
+    this.cellIds = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => []));
 
     this.selectedIds.clear();
     this.selectedGoldIdx = this.selectedPredIdx = null;
@@ -522,21 +608,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
 
     const currentInferenceResults: RegressionInferenceResult[] = [];
 
-    for (let [key, value] of Object.entries(vampireResult.results) as [string, check[]][]) {
-      let infoCount = value.filter(check => check.informative).length;
-      let consistentCount = value.filter(check => check.consistent).length;
+    for (const testItem of this.regressionTestItems) {
+      const value = results?.[testItem.id];
+      if (!value || value.length === 0) continue;
 
-      let glyphs: string[] = value.map(check => check.glyph);
+      const infoCount = value.filter(check => check.informative).length;
+      const consistentCount = value.filter(check => check.consistent).length;
+      const glyphs: string[] = value.map(check => check.glyph);
 
-      let infoSuccess = infoCount > value.length / 2;
-      let consistentSuccess = consistentCount > value.length / 2;
+      const infoSuccess = infoCount > value.length / 2;
+      const consistentSuccess = consistentCount > value.length / 2;
 
       let entailment_label = '0';
       if (infoSuccess && consistentSuccess) entailment_label = '0';
       else if (!infoSuccess && consistentSuccess) entailment_label = '1';
       else if (!consistentSuccess) entailment_label = '-1';
-
-      const testItem = this.regressionTestItems.find(item => item.id === key);
 
       if (testItem.gold_label === entailment_label) {
         if (entailment_label === '1') successful_entailment_predictions++;
@@ -548,9 +634,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
       else if (testItem.gold_label === '0') all_neutral_predictions++;
       else if (testItem.gold_label === '-1') all_contradiction_predictions++;
 
-      const gold = testItem.gold_label;
-      const pred = entailment_label;
-
       const premiseSentences: string[] = (testItem?.premises ?? [])
         .map((sid: string) => this.sentenceMap[sid])
         .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
@@ -559,12 +642,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
         .map((sid: string) => this.sentenceMap[sid])
         .filter((s: any) => typeof s === 'string' && s.trim().length > 0);
 
-      const conclusionString = conclusionSentences.join(' ');
-
       currentInferenceResults.push({
-        id: key,
+        id: testItem.id,
         premises: premiseSentences,
-        conclusion: conclusionString,
+        conclusion: conclusionSentences.join(' '),
         predictedLabel: entailment_label,
         goldLabel: testItem?.gold_label ?? 'unknown',
         premiseIds: testItem?.premises ?? [],
@@ -573,38 +654,28 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
         glyphs: glyphs
       });
 
-      if (idx[gold] !== undefined && idx[pred] !== undefined) {
-        const gi = idx[gold];
-        const pj = idx[pred];
+      if (idx[testItem.gold_label] !== undefined && idx[entailment_label] !== undefined) {
+        const gi = idx[testItem.gold_label];
+        const pj = idx[entailment_label];
         cm[gi][pj] += 1;
-        this.cellIds[gi][pj].push(key);
-      } else {
-        console.warn('Unknown label', { gold, pred });
+        this.cellIds[gi][pj].push(testItem.id);
       }
     }
 
     this.inferenceResults = currentInferenceResults;
+    this.updateConfusionMatrixView(cm, Object.keys(results ?? {}).length);
 
-    this.updateConfusionMatrixView(cm, Object.keys(vampireResult.results).length);
+    const processedItems = summary?.item_count ?? Object.keys(results ?? {}).length;
+    const proofCount = summary?.proof_count ?? 0;
+    const totalItems = this.vampirePendingItemCount ?? this.regressionTestItems.length;
 
     this.inferenceSummary =
-      "Inference results summary:\n" +
-      "Successful entailment prediction ratio: " + successful_entailment_predictions / all_entailment_predictions +
-      " (" + successful_entailment_predictions + " of " + all_entailment_predictions + ")\n" +
-      "Successful neutral prediction ratio: " + successful_neutral_predictions / all_neutral_predictions +
-      " (" + successful_neutral_predictions + " of " + all_neutral_predictions + ")\n" +
-      "Successful contradiction prediction ratio: " + successful_contradiction_predictions / all_contradiction_predictions +
-      " (" + successful_contradiction_predictions + " of " + all_contradiction_predictions + ")\n" +
-      "Overall accuracy: " +
-      (successful_entailment_predictions + successful_neutral_predictions + successful_contradiction_predictions) /
-      Object.keys(vampireResult.results).length;
-
-    this.session.timing.vampireMs = Date.now() - vampireStartedAt;
-    if (this.session.timing.startedAt) {
-      this.session.timing.totalMs = Date.now() - new Date(this.session.timing.startedAt).getTime();
-    }
-
-    this.loading = false;
+      `${finalSnapshot ? 'Inference results summary' : 'Vampire progress'}:\n` +
+      `Processed items: ${processedItems} of ${totalItems}\n` +
+      `Processed proofs: ${proofCount}\n` +
+      `Entailment accuracy: ${all_entailment_predictions === 0 ? 'n/a' : successful_entailment_predictions / all_entailment_predictions}\n` +
+      `Neutral accuracy: ${all_neutral_predictions === 0 ? 'n/a' : successful_neutral_predictions / all_neutral_predictions}\n` +
+      `Contradiction accuracy: ${all_contradiction_predictions === 0 ? 'n/a' : successful_contradiction_predictions / all_contradiction_predictions}`;
   }
 
   private formatDuration(ms: number | null, precise = false): string {
@@ -679,7 +750,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit {
     this.axiomEdit.updateContent(ruleFile);
   }
 
-  batchVampire(vampireMultipleRequest: vampireMultipleRequest): Observable<vampireMultipleResponse> {
+  batchVampire(vampireMultipleRequest: vampireMultipleRequest): Observable<any> {
     return this.dataService.callBatchVampire(vampireMultipleRequest).pipe(
       tap(data => {
         console.log("Vampire data:", data);

@@ -14,13 +14,15 @@ import {
   vampireRequest,
   vampireResponse,
   GswbBatchOutput,
-  vampireMultipleRequest, vampireMultipleResponse
+  vampireMultipleRequest, vampireMultipleResponse,
+  VampireSessionSummary
 } from './models/models';
 
 @Injectable({
   providedIn: 'root'
 })
 export class DataService {
+  private readonly defaultRedisSessionKey = 'last_session';
   private vampirepage = 'http://localhost:8082'
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
@@ -83,7 +85,19 @@ callVampire(vampireRequest: vampireRequest){
 }
 
   callBatchVampire(vampireRequest: vampireMultipleRequest): Observable<any> {
-    return this.http.post<vampireMultipleResponse>(`${this.vampirepage}/vampire_multiple_request`,vampireRequest);
+    return this.http.post<{ status: string }>(`${this.vampirepage}/vampire_multiple_request`,vampireRequest);
+  }
+
+  getLastSession(sessionKey: string = this.defaultRedisSessionKey): Observable<vampireMultipleResponse> {
+    return this.http.get<vampireMultipleResponse>(`${this.vampirepage}/last_session/${sessionKey}`);
+  }
+
+  getLastSessionSummary(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireSessionSummary> {
+    return this.http.get<VampireSessionSummary>(`${this.vampirepage}/last_session/${sessionKey}/summary`);
+  }
+
+  resetLastSession(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
+    return this.http.delete(`${this.vampirepage}/last_session/${sessionKey}`);
   }
 
 
