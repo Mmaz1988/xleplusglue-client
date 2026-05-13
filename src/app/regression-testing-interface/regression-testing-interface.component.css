@@ -33,8 +33,7 @@ textarea{
 
 
 div.result-container {
-  width: 800px;
-  column-gap: 20px;
+  width: 100%;
   padding: 5px;
   border: 2px solid #00a9e0;
   align-items: flex-start;
@@ -57,6 +56,52 @@ div.errorhandling {
 
 .processing-timing-summary {
   white-space: nowrap;
+}
+
+.session-load-timing {
+  margin-top: 8px;
+}
+
+.session-load-timing.success {
+  color: #2e7d32;
+}
+
+.session-load-timing.error {
+  color: #c62828;
+}
+
+.session-load-timing.loading {
+  color: #1565c0;
+}
+
+.session-load-timing.idle {
+  color: #666;
+}
+
+.session-save-as-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.session-save-as-row input {
+  min-width: 220px;
+  padding: 6px 8px;
+}
+
+.results-grid {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.results-panel {
+  flex: 1 1 520px;
+  min-width: 0;
+  max-width: 820px;
 }
 
 
@@ -118,10 +163,15 @@ div.errorhandling {
   padding: 4px;
 }
 
-.vs-viewport {
-  height: 80vh;        /* pick what fits your layout */
+.results-list {
   width: 100%;
-  overflow: auto;
-  border: 1px solid #eee; /* optional */
-  border-radius: 8px;     /* optional */
+}
+
+@media (max-width: 1400px) {
+  .results-panel {
+    flex: 0 1 820px;
+    width: min(100%, 820px);
+    margin-left: auto;
+    margin-right: auto;
+  }
 }

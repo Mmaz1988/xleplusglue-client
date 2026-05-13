@@ -40,6 +40,18 @@ export class DataService {
     return this.http.post<GswbMultipleRequest>(`${this.gswbpage}/gswb_batch_proof`,gswbBatchRequest);
   }
 
+  getLastGswbSession(sessionKey: string = this.defaultRedisSessionKey): Observable<GswbBatchOutput> {
+    return this.http.get<GswbBatchOutput>(`${this.gswbpage}/gswb_batch_session/${sessionKey}`);
+  }
+
+  getLastGswbSessionSummary(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
+    return this.http.get<any>(`${this.gswbpage}/gswb_batch_session/${sessionKey}/summary`);
+  }
+
+  resetLastGswbSession(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
+    return this.http.delete(`${this.gswbpage}/gswb_batch_session/${sessionKey}`);
+  }
+
   //Liger models
 
   //Currently used for parse and rewrite

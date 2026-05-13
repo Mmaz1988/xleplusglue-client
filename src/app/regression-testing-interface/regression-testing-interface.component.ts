@@ -53,11 +53,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   inferenceSummary = "";
   loading: boolean = false;
+  sessionLoadState: 'idle' | 'loading' | 'success' | 'error' = 'idle';
+  sessionLoadMessage = '';
+  sessionLoadDetails = '';
+  private gswbSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
   private vampireSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private activeGswbRunStartedAt: number | null = null;
   private vampirePendingItemCount: number | null = null;
+  private vampireCurrentRunItemCount: number = 0;
   private activeVampireRunStartedAt: number | null = null;
+  private vampirePreserveExistingResults = false;
   private isHydratingSession = true;
+
+  saveAsSessionName = '';
 
   recentSessions: RegressionSessionSummary[] = [];
   selectedSessionKey = '';
@@ -290,6 +299,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       testsuiteFilename: snapshot.testsuiteFilename ?? '',
       rulesFilename: snapshot.rulesFilename ?? '',
       axiomsFilename: snapshot.axiomsFilename ?? '',
+      lastVampireResults: snapshot.lastVampireResults ?? null,
     };
 
     this.selectedSessionKey = this.redisSessionKey;
@@ -305,8 +315,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.regressionTestItems = this.session.regressionTestItems ?? [];
     this.regressionTestResults = this.session.regressionTestResults ?? [];
     this.inferenceResults = this.session.inferenceResults ?? [];
+    this.vampireCurrentRunItemCount = 0;
 
-    if (this.inferenceResults.length > 0) {
+    if (this.session.lastVampireResults && Object.keys(this.session.lastVampireResults).length > 0) {
+      this.vampirePreserveExistingResults = true;
+      this.vampireCurrentRunItemCount = Object.keys(this.session.lastVampireResults).length;
+      this.renderVampireResults(
+        this.session.lastVampireResults,
+        { item_count: Object.keys(this.session.lastVampireResults).length, proof_count: 0 },
+        true,
+        true
+      );
+    } else if (this.inferenceResults.length > 0) {
       this.renderSavedInferenceResults(this.inferenceResults);
     } else {
       this.inferenceSummary = '';
@@ -321,15 +341,64 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (this.loading) return;
     if (!sessionKey || sessionKey === this.redisSessionKey) return;
 
+    this.setSessionLoadStatus('loading', `Loading session ${sessionKey}...`, `Session key: ${sessionKey}`);
+    this.inferenceSummary = '';
+    this.clearStatusMessage();
+
     this.dataService.loadRegressionSession(sessionKey).subscribe({
-      next: snapshot => this.hydrateSession(snapshot),
-      error: error => console.warn("Unable to load regression session.", error)
+      next: snapshot => {
+        this.hydrateSession(snapshot);
+        const parseCount = snapshot?.regressionTestResults?.length ?? 0;
+        const inferenceCount = snapshot?.inferenceResults?.length ?? 0;
+        this.setSessionLoadStatus(
+          'success',
+          `Loaded ${sessionKey}`,
+          `Parses: ${parseCount}\nInference results: ${inferenceCount}`
+        );
+      },
+      error: error => {
+        console.warn("Unable to load regression session.", error);
+        this.setSessionLoadStatus('error', `Failed to load ${sessionKey}`, 'The saved session could not be retrieved.');
+      }
+    });
+  }
+
+  saveSessionAs(): void {
+    if (this.loading) return;
+
+    const sessionKey = this.saveAsSessionName.trim();
+    if (!sessionKey) {
+      this.displayMessage('Please enter a session name before saving.', 'red');
+      return;
+    }
+
+    const snapshot = this.buildSessionSnapshot();
+    snapshot.id = sessionKey;
+    snapshot.redisSessionKey = sessionKey;
+    snapshot.updatedAt = new Date().toISOString();
+    snapshot.createdAt = snapshot.createdAt || snapshot.updatedAt;
+
+    this.dataService.saveRegressionSession(sessionKey, snapshot).subscribe({
+      next: (response: any) => {
+        const savedSession = response?.session ?? snapshot;
+        this.saveAsSessionName = '';
+        this.hydrateSession(savedSession);
+        this.selectedSessionKey = savedSession.redisSessionKey || sessionKey;
+        this.loadRecentSessions();
+        this.setSessionLoadStatus('success', `Saved session as ${sessionKey}`, `Session key: ${sessionKey}`);
+      },
+      error: error => {
+        console.warn('Unable to save session as.', error);
+        this.setSessionLoadStatus('error', `Failed to save session as ${sessionKey}`, 'The session could not be stored.');
+      }
     });
   }
 
   createNewSession(): void {
     if (this.loading) return;
     this.isHydratingSession = true;
+    this.setSessionLoadStatus('idle', '', '');
+    this.clearStatusMessage();
     this.session = createRegressionTestingSession();
     this.selectedSessionKey = this.redisSessionKey;
     this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
@@ -379,7 +448,118 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       `Loaded from session: ${this.redisSessionKey}`;
   }
 
+  private startGswbSummaryPolling(runStartedAt: number): void {
+    this.stopGswbSummaryPolling();
+
+    this.gswbSummaryPollTimer = setInterval(() => {
+      this.loadAndRenderGswbState(false, runStartedAt);
+    }, 15000);
+  }
+
+  private stopGswbSummaryPolling(): void {
+    if (this.gswbSummaryPollTimer !== null) {
+      clearInterval(this.gswbSummaryPollTimer);
+      this.gswbSummaryPollTimer = null;
+    }
+  }
+
+  private loadAndRenderGswbState(finalSnapshot: boolean, runStartedAt: number, afterRender?: () => void): void {
+    if (!this.loading && !finalSnapshot) return;
+    const runToken = this.activeGswbRunStartedAt;
+
+    this.dataService.getLastGswbSession(this.redisSessionKey).subscribe({
+      next: snapshot => {
+        if (runToken !== this.activeGswbRunStartedAt) return;
+
+        const outputs = snapshot?.outputs ?? {};
+        this.renderGswbResults(outputs);
+
+        const parsedCount = Object.keys(outputs).length;
+        const totalCount = Object.keys(this.sentenceMap ?? {}).length;
+        const quickReport = `Parsed ${parsedCount} of ${totalCount} sentences!`;
+
+        console.log(quickReport);
+        this.displayMessage(quickReport, finalSnapshot ? "green" : "blue");
+
+        if (finalSnapshot) {
+          this.session.timing.parseMs = Date.now() - runStartedAt;
+          this.session.lastGswbOutputs = outputs;
+          this.loading = false;
+          this.activeGswbRunStartedAt = null;
+          this.session.lastLogicType = this.session.lastLogicType ?? 'fof';
+          this.saveSessionSnapshot();
+          if (afterRender) afterRender();
+        }
+      },
+      error: error => {
+        if (runToken !== this.activeGswbRunStartedAt) return;
+
+        console.warn("Unable to load GSWB progress summary.", error);
+        if (finalSnapshot) {
+          this.loading = false;
+          this.activeGswbRunStartedAt = null;
+          this.saveSessionSnapshot();
+          this.displayMessage("Batch processing completed, but Redis state could not be reloaded.", "red");
+          if (afterRender) afterRender();
+        }
+      }
+    });
+  }
+
+  private renderGswbResults(gswbOutputs: Record<string, GswbOutput>): void {
+    const annotations = this.session.lastAnnotations ?? {};
+
+    let successFullKeys: string[] = [];
+
+    const currentRegressionTestResults: RegressionParseResult[] = [];
+
+    for (let key of Object.keys(this.sentenceMap)) {
+      const out = gswbOutputs[key];
+      if (!out) continue;
+
+      const sols = out?.solutions ?? [];
+
+      if (sols.length > 0) {
+        successFullKeys.push(key);
+      }
+
+      if (!this.session.selectedSolutionIdsBySentence[key] || this.session.selectedSolutionIdsBySentence[key].length === 0) {
+        this.session.selectedSolutionIdsBySentence[key] = sols.map(s => s.id);
+      }
+
+      const regressionTestResult: RegressionParseResult = {
+        sentence_id: key,
+        sentence: this.sentenceMap[key],
+        noOfAppliedRules: annotations[key]?.appliedRules?.length ?? 0,
+        noOfMCsets: annotations[key]?.numberOfMCsets ?? 0,
+        noOfSolutions: sols.length,
+        ligerGraph: annotations[key]?.graph,
+        ligerMCsets: annotations[key]?.meaningConstructors,
+        allMCs: this.sortedMCmap[key],
+        gswbSolutions: sols,
+        gswbDerivation: out?.derivation,
+        result_type: 'parseResult',
+        discriminants: out?.discriminants
+      };
+
+      currentRegressionTestResults.push(regressionTestResult);
+    }
+
+    this.regressionTestResults = currentRegressionTestResults;
+    this.session.lastGswbOutputs = gswbOutputs;
+    this.session.regressionTestResults = currentRegressionTestResults;
+    if (!this.isHydratingSession) {
+      this.scheduleSessionSave();
+    }
+
+    console.log("Successful keys: ", successFullKeys);
+    this.inferenceSummary =
+      `Parsing summary:\n` +
+      `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`;
+  }
+
   ngOnDestroy(): void {
+    this.stopGswbSummaryPolling();
     this.stopVampireSummaryPolling();
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
@@ -421,6 +601,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   get hasTimingInfo(): boolean {
     return this.session.timing.parseMs !== null || this.session.timing.totalMs !== null;
+  }
+
+  get parseResultCount(): number {
+    return this.regressionTestResults.length;
+  }
+
+  get expectedParseCount(): number {
+    return Object.keys(this.sentenceMap ?? {}).length;
+  }
+
+  get inferenceResultCount(): number {
+    return this.inferenceResults.length;
+  }
+
+  get expectedInferenceCount(): number {
+    return this.regressionTestItems.length;
   }
 
   get processingTimingSummary(): string {
@@ -470,6 +666,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.regressionTestResults = [];
     this.regressionTestItems = [];
     this.inferenceResults = [];
+    this.vampirePreserveExistingResults = false;
     this.inferenceSummary = "";
     this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
 
@@ -478,12 +675,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.selectedSolutionIdsBySentence = {};
     this.session.lastGswbOutputs = null;
     this.session.lastAnnotations = null;
+    this.session.lastVampireResults = null;
     this.session.lastVampireScopeIdsBySentence = {};
     this.session.lastVampireMcIdsBySentence = {};
+    this.session.lastVampireSolutionIdsBySentence = {};
     this.session.hasRunVampire = false;
     this.session.sortedMCmap = {};
     this.session.selectedScopeIdsBySentence = {};
     this.session.selectedMcIdsBySentence = {};
+
+    this.dataService.resetLastGswbSession(this.redisSessionKey).subscribe({
+      next: () => console.log(`Reset GSWB session ${this.redisSessionKey}`),
+      error: error => console.warn("Unable to reset GSWB session before parse.", error)
+    });
 
     this.dataService.resetLastSession(this.redisSessionKey).subscribe({
       next: () => console.log(`Reset Redis session ${this.redisSessionKey}`),
@@ -526,8 +730,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
           this.gswbMultipleRequest = {
             premises: sortedMcMap,
-            gswbPreferences: this.gswbPreferences.gswbPreferences
+            gswbPreferences: this.gswbPreferences.gswbPreferences,
+            sessionKey: this.redisSessionKey
           };
+
+          this.session.lastGswbOutputs = null;
+          this.session.lastAnnotations = data.annotations;
+          this.session.lastLogicType = logicType;
+          this.saveSessionSnapshot();
         }
 
         if (data.hasOwnProperty("ruleApplicationGraph")) {
@@ -537,64 +747,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
         this.displayMessage("Sending parsing results to GSWB for deduction ...", "blue");
 
+        this.loading = true;
+        this.activeGswbRunStartedAt = runStartedAt;
+        this.startGswbSummaryPolling(runStartedAt);
+        this.loadAndRenderGswbState(false, runStartedAt);
+
         this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
-          const outputs = result.outputs;
-          console.log("GSWB outputs: ", outputs);
+          this.stopGswbSummaryPolling();
 
-          const gswbOutputs: Record<string, GswbOutput> = { ...outputs };
-
-          let successCount = 0;
-          let successFullKeys: string[] = [];
-
-          const currentRegressionTestResults: RegressionParseResult[] = [];
-
-          for (let key of Object.keys(this.sentenceMap)) {
-            const out = gswbOutputs[key];
-            const sols = out?.solutions ?? [];
-
-            if (sols.length > 0) {
-              successCount++;
-              successFullKeys.push(key);
-            }
-
-            // Seed selection map to "ALL solution IDs" initially.
-            // TestResult will later emit updates if user filters.
-            this.session.selectedSolutionIdsBySentence[key] = sols.map(s => s.id);
-
-            const regressionTestResult: RegressionParseResult = {
-              sentence_id: key,
-              sentence: this.sentenceMap[key],
-              noOfAppliedRules: data.annotations[key].appliedRules.length,
-              noOfMCsets: data.annotations[key].numberOfMCsets,
-              noOfSolutions: sols.length,
-              ligerGraph: data.annotations[key].graph,
-              ligerMCsets: data.annotations[key].meaningConstructors,
-              allMCs: this.sortedMCmap[key],
-              gswbSolutions: sols,
-              gswbDerivation: out.derivation,
-              result_type: 'parseResult',
-              discriminants: out.discriminants
-            };
-
-            currentRegressionTestResults.push(regressionTestResult);
-          }
-
-          this.regressionTestResults = currentRegressionTestResults;
-
+          const outputs = result.outputs ?? {};
+          this.session.lastGswbOutputs = outputs;
+          this.renderGswbResults(outputs);
           this.session.timing.parseMs = Date.now() - runStartedAt;
-
-          console.log("Successful keys: ", successFullKeys);
-          const quickReport =
-            "Parsed " + successCount + " of " + (Object.keys(this.sentenceMap).length) + " sentences! \n";
-
           this.loading = false;
-          this.displayMessage(quickReport + "Batch processing completed successfully.", "green");
-
-          // Stash state for resuming after disambiguation
-          this.session.lastGswbOutputs = gswbOutputs;
-          this.session.lastAnnotations = data.annotations;
-          this.session.lastLogicType = logicType;
+          this.activeGswbRunStartedAt = null;
           this.saveSessionSnapshot();
+          this.displayMessage("Batch processing completed successfully.", "green");
 
           // ========= PAUSE HERE if flag is set =========
           if (this.enableDisambiguation) {
@@ -611,9 +779,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         });
       },
       error => {
+        this.stopGswbSummaryPolling();
         console.error('An error occurred:', error);
+        this.saveSessionSnapshot();
         this.displayMessage("An error occurred during batch parsing.", "red");
         this.loading = false;
+        this.activeGswbRunStartedAt = null;
       }
     );
   }
@@ -630,20 +801,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const annotations = this.session.lastAnnotations;
     const logicType = this.session.lastLogicType;
     const vampireStartedAt = Date.now();
+    this.vampirePreserveExistingResults = Object.keys(this.session.lastVampireResults ?? {}).length > 0;
+    this.vampireCurrentRunItemCount = 0;
 
-    this.session.lastVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.selectedScopeIdsBySentence);
-    this.session.lastVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.selectedMcIdsBySentence);
-    this.session.hasRunVampire = true;
+    const previousVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireScopeIdsBySentence);
+    const previousVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireMcIdsBySentence);
+    const previousVampireSolutionIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireSolutionIdsBySentence ?? {});
 
     this.session.disambiguationMode = false;
-    this.saveSessionSnapshot();
 
     this.displayMessage("Sending NLI items to Vampire ...", "blue");
     console.log("Preparing call to Vampire ...");
 
     const inference_items: Record<string, nliItem> = {};
+    const processedInferenceIds = new Set((this.inferenceResults ?? []).map(result => result.id));
 
     for (let item of this.regressionTestItems) {
+      const isAlreadyProcessed = processedInferenceIds.has(item.id);
+      const selectionChanged = this.hasVampireSelectionChangedForItem(
+        item,
+        previousVampireScopeIdsBySentence,
+        previousVampireMcIdsBySentence,
+        previousVampireSolutionIdsBySentence
+      );
+
+      if (isAlreadyProcessed && !selectionChanged) continue;
+
       let axioms = this.axiomEdit.getContent();
       let axiomCounter = 0;
 
@@ -703,7 +886,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       session_key: this.redisSessionKey
     };
 
+    this.vampireCurrentRunItemCount = Object.keys(inference_items).length;
     console.log("Vampire request: ", vampireRequest);
+    if (Object.keys(inference_items).length === 0) {
+      this.displayMessage("No missing Vampire items to process.", "blue");
+      return;
+    }
+
+    this.session.lastVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.selectedScopeIdsBySentence);
+    this.session.lastVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.selectedMcIdsBySentence);
+    this.session.lastVampireSolutionIdsBySentence = this.cloneSelectionRecord(this.session.selectedSolutionIdsBySentence);
+    this.session.hasRunVampire = true;
+    this.saveSessionSnapshot();
+
     this.loading = true;
     this.vampirePendingItemCount = Object.keys(inference_items).length;
     this.activeVampireRunStartedAt = vampireStartedAt;
@@ -720,6 +915,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.vampirePendingItemCount = null;
         this.activeVampireRunStartedAt = null;
         this.loading = false;
+        this.saveSessionSnapshot();
       }
     });
   }
@@ -768,12 +964,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       next: ({ session, summary }) => {
         if (runToken !== this.activeVampireRunStartedAt) return;
 
-        this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot);
+        this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot, this.vampirePreserveExistingResults);
 
-        const processedItems = summary?.item_count ?? 0;
         const proofCount = summary?.proof_count ?? 0;
-        const totalItems = this.vampirePendingItemCount ?? this.regressionTestItems.length;
-        const message = `Vampire progress: ${processedItems} of ${totalItems} items processed, ${proofCount} proofs processed so far.`;
+        const runItems = this.vampireCurrentRunItemCount || this.vampirePendingItemCount || this.regressionTestItems.length;
+        const message = this.vampirePreserveExistingResults
+          ? `${finalSnapshot ? 'Vampire rerun summary' : 'Vampire rerun'}: ${runItems} item(s) refreshed, ${proofCount} proofs in session.`
+          : `${finalSnapshot ? 'Inference results summary' : 'Vampire progress'}:\nProcessed items: ${summary?.item_count ?? 0} of ${runItems}\nProcessed proofs: ${proofCount}`;
 
         console.log(message);
         this.displayMessage(message, finalSnapshot ? "green" : "blue");
@@ -800,13 +997,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.loading = false;
           this.vampirePendingItemCount = null;
           this.activeVampireRunStartedAt = null;
+          this.saveSessionSnapshot();
           this.displayMessage("Batch processing completed, but Redis state could not be reloaded.", "red");
         }
       }
     });
   }
 
-  private renderVampireResults(results: Record<string, check[]>, summary: VampireSessionSummary, finalSnapshot: boolean): void {
+  private renderVampireResults(results: Record<string, check[]>, summary: VampireSessionSummary, finalSnapshot: boolean, preserveExisting = false): void {
+    const mergedResults: Record<string, check[]> = preserveExisting && this.session.lastVampireResults
+      ? { ...this.session.lastVampireResults, ...results }
+      : { ...results };
+
     const idx = { '1': 0, '0': 1, '-1': 2 };
     const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
     const previousSelection = { goldIdx: this.selectedGoldIdx, predIdx: this.selectedPredIdx };
@@ -826,7 +1028,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const currentInferenceResults: RegressionInferenceResult[] = [];
 
     for (const testItem of this.regressionTestItems) {
-      const value = results?.[testItem.id];
+      const value = mergedResults?.[testItem.id];
       if (!value || value.length === 0) continue;
 
       const infoCount = value.filter(check => check.informative).length;
@@ -880,20 +1082,26 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
 
     this.inferenceResults = currentInferenceResults;
-    this.updateConfusionMatrixView(cm, Object.keys(results ?? {}).length);
+    this.session.lastVampireResults = mergedResults;
+    this.updateConfusionMatrixView(cm, Object.keys(mergedResults ?? {}).length);
     if (previousSelection.goldIdx !== null && previousSelection.predIdx !== null) {
       this.selectedGoldIdx = previousSelection.goldIdx;
       this.selectedPredIdx = previousSelection.predIdx;
       this.selectedIds = new Set(this.cellIds[previousSelection.goldIdx][previousSelection.predIdx] ?? []);
     }
 
-    const processedItems = summary?.item_count ?? Object.keys(results ?? {}).length;
+    const processedItems = this.vampirePreserveExistingResults
+      ? (this.vampireCurrentRunItemCount || Object.keys(mergedResults ?? {}).length)
+      : (summary?.item_count ?? Object.keys(mergedResults ?? {}).length);
     const proofCount = summary?.proof_count ?? 0;
-    const totalItems = this.vampirePendingItemCount ?? this.regressionTestItems.length;
+    const totalItems = this.vampirePreserveExistingResults
+      ? (this.vampireCurrentRunItemCount || this.vampirePendingItemCount || this.regressionTestItems.length)
+      : (this.vampirePendingItemCount ?? this.regressionTestItems.length);
 
     this.inferenceSummary =
-      `${finalSnapshot ? 'Inference results summary' : 'Vampire progress'}:\n` +
-      `Processed items: ${processedItems} of ${totalItems}\n` +
+      `${this.vampirePreserveExistingResults ? 'Vampire rerun summary' : (finalSnapshot ? 'Inference results summary' : 'Vampire progress')}:\n` +
+      `${this.vampirePreserveExistingResults ? 'Re-run items' : 'Processed items'}: ${processedItems} of ${totalItems}\n` +
+      `${this.vampirePreserveExistingResults ? 'Total session items' : 'Session items'}: ${Object.keys(mergedResults ?? {}).length}\n` +
       `Processed proofs: ${proofCount}\n` +
       `Entailment accuracy: ${all_entailment_predictions === 0 ? 'n/a' : successful_entailment_predictions / all_entailment_predictions}\n` +
       `Neutral accuracy: ${all_neutral_predictions === 0 ? 'n/a' : successful_neutral_predictions / all_neutral_predictions}\n` +
@@ -955,6 +1163,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       },
       error => {
         console.error('An error occurred:', error);
+        this.saveSessionSnapshot();
         this.loading = false;
       }
     );
@@ -1018,6 +1227,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         console.error("An error occurred:", err);
         this.displayMessage("An error occurred during GSWB deduction.", "red");
         this.loading = false;
+        this.saveSessionSnapshot();
         return EMPTY;
       })
     );
@@ -1026,6 +1236,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   displayMessage(message: string, color: string) {
     this.errorhandle.nativeElement.style.color = color;
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
+  }
+
+  private setSessionLoadStatus(state: 'idle' | 'loading' | 'success' | 'error', message: string, details: string): void {
+    this.sessionLoadState = state;
+    this.sessionLoadMessage = message;
+    this.sessionLoadDetails = details;
+  }
+
+  clearStatusMessage(): void {
+    if (this.errorhandle?.nativeElement) {
+      this.errorhandle.nativeElement.innerHTML = "";
+    }
   }
 
 
@@ -1259,7 +1481,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private haveDiscriminantSelectionsChangedSinceLastVampire(): boolean {
     return this.selectionRecordsDiffer(this.session.selectedScopeIdsBySentence, this.session.lastVampireScopeIdsBySentence)
-      || this.selectionRecordsDiffer(this.session.selectedMcIdsBySentence, this.session.lastVampireMcIdsBySentence);
+      || this.selectionRecordsDiffer(this.session.selectedMcIdsBySentence, this.session.lastVampireMcIdsBySentence)
+      || this.selectionRecordsDiffer(this.session.selectedSolutionIdsBySentence, this.session.lastVampireSolutionIdsBySentence ?? {});
+  }
+
+  private hasVampireSelectionChangedForItem(
+    item: any,
+    previousScopeIds: Record<string, string[]>,
+    previousMcIds: Record<string, string[]>,
+    previousSolutionIds: Record<string, string[]>
+  ): boolean {
+    const sentenceIds = [...(item?.premises ?? []), ...(item?.conclusion ?? [])];
+
+    return sentenceIds.some((sentenceId: string) => {
+      return this.sameSelectionIds(
+        this.session.selectedScopeIdsBySentence[sentenceId] ?? [],
+        previousScopeIds[sentenceId] ?? []
+      ) === false
+        || this.sameSelectionIds(
+          this.session.selectedMcIdsBySentence[sentenceId] ?? [],
+          previousMcIds[sentenceId] ?? []
+        ) === false
+        || this.sameSelectionIds(
+          this.session.selectedSolutionIdsBySentence[sentenceId] ?? [],
+          previousSolutionIds[sentenceId] ?? []
+        ) === false;
+    });
   }
 
   private selectionRecordsDiffer(current: Record<string, string[]>, previous: Record<string, string[]>): boolean {

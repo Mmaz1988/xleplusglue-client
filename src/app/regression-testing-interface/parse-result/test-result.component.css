@@ -19,7 +19,7 @@ textarea {
 }
 
 .multi-selected {
-  background-color: rgba(250, 217, 0, 0.25); /* light red tint */
+  background-color: rgba(250, 217, 0, 0.25); /* light yellow tint */
   border-radius: 4px;
   padding: 6px;
 }

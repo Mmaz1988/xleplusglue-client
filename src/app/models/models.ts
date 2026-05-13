@@ -41,11 +41,13 @@ report: string;
 export interface GswbRequest {
   premises: string;
   gswbPreferences: GswbPreferences;
+  sessionKey?: string;
 }
 
 export interface GswbMultipleRequest {
   premises: { [key: string]: string };
   gswbPreferences: GswbPreferences;
+  sessionKey?: string;
 }
 
 export interface GswbDiscriminant {
@@ -135,9 +137,11 @@ export interface RegressionTestingSession {
   selectedMcIdsBySentence: Record<string, string[]>;
   lastGswbOutputs: Record<string, GswbOutput> | null;
   lastAnnotations: Record<string, LigerRuleAnnotation> | null;
+  lastVampireResults: Record<string, check[]> | null;
   lastLogicType: 'fof' | 'tff';
   lastVampireScopeIdsBySentence: Record<string, string[]>;
   lastVampireMcIdsBySentence: Record<string, string[]>;
+  lastVampireSolutionIdsBySentence: Record<string, string[]>;
   sortedMCmap: Record<string, any>;
   hasRunVampire: boolean;
   disambiguationMode: boolean;
@@ -186,9 +190,11 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     selectedMcIdsBySentence: {},
     lastGswbOutputs: null,
     lastAnnotations: null,
+    lastVampireResults: null,
     lastLogicType: 'fof',
     lastVampireScopeIdsBySentence: {},
     lastVampireMcIdsBySentence: {},
+    lastVampireSolutionIdsBySentence: {},
     sortedMCmap: {},
     hasRunVampire: false,
     disambiguationMode: false,

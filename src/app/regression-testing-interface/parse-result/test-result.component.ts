@@ -74,11 +74,9 @@ export class TestResultComponent  {
     this.semvisItems = (this._data.gswbSolutions ?? []) as GswbSolution[];
     this.discriminants = Array.isArray(this._data.discriminants) ? this._data.discriminants : [];
 
-    // If you still want defaults:
-    this.selectedSolutions = this.semvisItems.map(s => s.id);
+    const selectedIds = Array.isArray(this.selectedSolutionIds) ? this.selectedSolutionIds : [];
+    this.selectedSolutions = selectedIds.length > 0 ? [...selectedIds] : this.semvisItems.map(s => s.id);
     this.noOfSelectedSolutions = this.selectedSolutions.length;
-
-    this.emitSelection(); // only if you really want this on every recycle; otherwise guard it
   }
 
 

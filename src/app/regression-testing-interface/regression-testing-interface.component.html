@@ -45,8 +45,25 @@
         </option>
       </ng-container>
     </select>
-    <button (click)="loadSessionFromRecent(selectedSessionKey)">Load session</button>
+    <button (click)="loadSessionFromRecent(selectedSessionKey)" [disabled]="sessionLoadState === 'loading'">
+      <span *ngIf="sessionLoadState !== 'loading'">Load session</span>
+      <span *ngIf="sessionLoadState === 'loading'">Loading...</span>
+    </button>
     <button (click)="createNewSession()">New session</button>
+  </div>
+  <div *ngIf="sessionLoadMessage" class="processing-timing session-load-timing" [ngClass]="sessionLoadState">
+    <span class="processing-timing-summary">{{ sessionLoadMessage }}</span>
+    <app-pill
+      badge="i"
+      variant="text"
+      [text]="sessionLoadDetails"
+      [minimizedColor]="sessionLoadState === 'success' ? '#2e7d32' : sessionLoadState === 'error' ? '#c62828' : '#1565c0'">
+    </app-pill>
+  </div>
+  <div class="session-save-as-row">
+    <label for="saveAsSessionName">Save session as:</label>
+    <input id="saveAsSessionName" type="text" [(ngModel)]="saveAsSessionName" placeholder="Session name" />
+    <button (click)="saveSessionAs()">Save as</button>
   </div>
   <br>
 
@@ -153,53 +170,42 @@
   </div>
 
   <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
-<h3>
-  Parsing report:
-</h3>
-  <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
-    <div>
-      <cdk-virtual-scroll-viewport
-        class="vs-viewport"
-        [itemSize]="itemSizeParse"
-        [minBufferPx]="minBufferPx"
-        [maxBufferPx]="maxBufferPx">
-
-        <div class="result-container"
-             *cdkVirtualFor="let element of regressionTestResults; trackBy: trackBySentenceId">
-          <app-test-result
-            [data]="element"
-            [disambiguationActive]="enableDisambiguation && disambiguationMode"
-            [selectedSolutionIds]="getSelectedSolutionIds(element)"
-            (openSemVis)="openSemVisDialog($event)"
-            (selectionChange)="onSelectionChange($event)">
-          </app-test-result>
+  <div class="results-grid">
+    <div class="results-panel">
+      <h3>Parsing report ({{ parseResultCount }} of {{ expectedParseCount }}):</h3>
+      <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
+        <div>
+          <div class="results-list">
+            <div class="result-container"
+                 *ngFor="let element of regressionTestResults; trackBy: trackBySentenceId">
+              <app-test-result
+                [data]="element"
+                [disambiguationActive]="enableDisambiguation && disambiguationMode"
+                [selectedSolutionIds]="getSelectedSolutionIds(element)"
+                (openSemVis)="openSemVisDialog($event)"
+                (selectionChange)="onSelectionChange($event)">
+              </app-test-result>
+            </div>
+          </div>
         </div>
-
-      </cdk-virtual-scroll-viewport>
+      </app-toggle-display>
     </div>
-  </app-toggle-display>
-  <br>
-  <br>
-  <h3>
-    Inference report:
-  </h3>
-  <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
-    <div>
-      <cdk-virtual-scroll-viewport
-        class="vs-viewport"
-        [itemSize]="itemSizeInfer"
-        [minBufferPx]="minBufferPx"
-        [maxBufferPx]="maxBufferPx">
 
-        <div class="result-container"
-             *cdkVirtualFor="let element of inferenceResults; trackBy: trackByInferenceId"
-             [class.highlight]="selectedIds.has(element.id)">
-          <app-inference-result [data]="element"></app-inference-result>
+    <div class="results-panel">
+      <h3>Inference report ({{ inferenceResultCount }} of {{ expectedInferenceCount }}):</h3>
+      <app-toggle-display type="liger" showText="Show inference results" hideText="Hide inference results">
+        <div>
+          <div class="results-list">
+            <div class="result-container"
+                 *ngFor="let element of inferenceResults; trackBy: trackByInferenceId"
+                 [class.highlight]="selectedIds.has(element.id)">
+              <app-inference-result [data]="element"></app-inference-result>
+            </div>
+          </div>
         </div>
-
-      </cdk-virtual-scroll-viewport>
+      </app-toggle-display>
     </div>
-  </app-toggle-display>
+  </div>
   <br>
   <br>
 <pre>
