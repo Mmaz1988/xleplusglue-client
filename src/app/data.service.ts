@@ -15,7 +15,9 @@ import {
   vampireResponse,
   GswbBatchOutput,
   vampireMultipleRequest, vampireMultipleResponse,
-  VampireSessionSummary
+  VampireSessionSummary,
+  RegressionSessionSummary,
+  RegressionTestingSession
 } from './models/models';
 
 @Injectable({
@@ -98,6 +100,22 @@ callVampire(vampireRequest: vampireRequest){
 
   resetLastSession(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
     return this.http.delete(`${this.vampirepage}/last_session/${sessionKey}`);
+  }
+
+  listRegressionSessions(): Observable<RegressionSessionSummary[]> {
+    return this.http.get<RegressionSessionSummary[]>(`${this.vampirepage}/regression_sessions`);
+  }
+
+  loadRegressionSession(sessionKey: string): Observable<RegressionTestingSession> {
+    return this.http.get<RegressionTestingSession>(`${this.vampirepage}/regression_session/${sessionKey}`);
+  }
+
+  saveRegressionSession(sessionKey: string, payload: RegressionTestingSession): Observable<any> {
+    return this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload);
+  }
+
+  deleteRegressionSession(sessionKey: string): Observable<any> {
+    return this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`);
   }
 
 

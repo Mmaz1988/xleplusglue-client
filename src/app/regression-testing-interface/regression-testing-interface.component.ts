@@ -8,6 +8,7 @@ import {
   GswbOutput,
   RegressionInferenceResult,
   RegressionParseResult,
+  RegressionSessionSummary,
   RegressionTestingSession,
   createRegressionTestingSession,
   nliItem,
@@ -53,8 +54,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   inferenceSummary = "";
   loading: boolean = false;
   private vampireSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private vampirePendingItemCount: number | null = null;
   private activeVampireRunStartedAt: number | null = null;
+  private isHydratingSession = true;
+
+  recentSessions: RegressionSessionSummary[] = [];
+  selectedSessionKey = '';
 
   labels = ['1', '0', '-1'] as const;
   labelName = { '1': 'Entailment', '0': 'Neutral', '-1': 'Contradiction' } as const;
@@ -141,6 +147,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   onSelectionChange(ev: { sentenceId: string; selectedSolutionIds: string[] }) {
     if (!ev?.sentenceId) return;
     this.session.selectedSolutionIdsBySentence[ev.sentenceId] = [...(ev.selectedSolutionIds ?? [])];
+    this.scheduleSessionSave();
   }
 
   ngAfterViewInit() {
@@ -173,14 +180,211 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     } else {
       console.error("ERROR: `vampirePreferences` ViewChild not initialized!");
     }
+
+    this.session = createRegressionTestingSession();
+    this.selectedSessionKey = this.session.redisSessionKey;
+    this.session.gswbPreferences = { ...this.gswbPreferences.gswbPreferences };
+    this.session.vampirePreferences = { ...this.vampirePreferences.vampirePreferences };
+    this.session.testsuiteText = this.testfile.getContent();
+    this.session.rulesText = this.ligerRules.getContent();
+    this.session.axiomsText = this.axiomEdit.getContent();
+    this.isHydratingSession = false;
+
+    this.gswbPreferences.gswbPreferencesForm.valueChanges.subscribe(() => {
+      this.syncSessionStateFromUi();
+      this.scheduleSessionSave();
+    });
+
+    this.vampirePreferences.vampirePreferencesForm.valueChanges.subscribe(() => {
+      this.syncSessionStateFromUi();
+      this.scheduleSessionSave();
+    });
+
+    this.loadRecentSessions();
+    this.scheduleSessionSave(true);
   }
 
-  private get redisSessionKey(): string {
+  get redisSessionKey(): string {
     return this.session.redisSessionKey || 'last_session';
+  }
+
+  private syncSessionStateFromUi(): void {
+    if (this.isHydratingSession) return;
+
+    this.session.updatedAt = new Date().toISOString();
+    this.session.gswbPreferences = { ...this.gswbPreferences.gswbPreferences };
+    this.session.vampirePreferences = { ...this.vampirePreferences.vampirePreferences };
+    this.session.testsuiteText = this.testfile.getContent();
+    this.session.rulesText = this.ligerRules.getContent();
+    this.session.axiomsText = this.axiomEdit.getContent();
+  }
+
+  private scheduleSessionSave(immediate = false): void {
+    if (this.isHydratingSession) return;
+
+    if (this.sessionSaveTimer !== null) {
+      clearTimeout(this.sessionSaveTimer);
+      this.sessionSaveTimer = null;
+    }
+
+    const save = () => this.saveSessionSnapshot();
+    if (immediate) {
+      save();
+      return;
+    }
+
+    this.sessionSaveTimer = setTimeout(save, 300);
+  }
+
+  private loadRecentSessions(): void {
+    this.dataService.listRegressionSessions().subscribe({
+      next: sessions => {
+        this.recentSessions = sessions ?? [];
+      },
+      error: error => console.warn("Unable to load recent sessions.", error)
+    });
+  }
+
+  private saveSessionSnapshot(): void {
+    if (this.isHydratingSession) return;
+
+    this.syncSessionStateFromUi();
+    const snapshot = this.buildSessionSnapshot();
+
+    this.dataService.saveRegressionSession(this.redisSessionKey, snapshot).subscribe({
+      next: (response: any) => {
+        if (response?.recent_sessions) {
+          this.recentSessions = response.recent_sessions;
+        } else {
+          this.loadRecentSessions();
+        }
+      },
+      error: error => console.warn("Unable to save regression session.", error)
+    });
+  }
+
+  private buildSessionSnapshot(): RegressionTestingSession {
+    return {
+      ...this.session,
+      updatedAt: new Date().toISOString(),
+      gswbPreferences: { ...this.gswbPreferences.gswbPreferences },
+      vampirePreferences: { ...this.vampirePreferences.vampirePreferences },
+      testsuiteText: this.testfile.getContent(),
+      rulesText: this.ligerRules.getContent(),
+      axiomsText: this.axiomEdit.getContent(),
+    };
+  }
+
+  private hydrateSession(snapshot: RegressionTestingSession): void {
+    this.isHydratingSession = true;
+
+    this.session = {
+      ...createRegressionTestingSession(),
+      ...snapshot,
+      redisSessionKey: snapshot.redisSessionKey || snapshot.id,
+      gswbPreferences: snapshot.gswbPreferences ?? this.gswbPreferences.gswbPreferences,
+      vampirePreferences: snapshot.vampirePreferences ?? this.vampirePreferences.vampirePreferences,
+      testsuiteText: snapshot.testsuiteText ?? '',
+      rulesText: snapshot.rulesText ?? '',
+      axiomsText: snapshot.axiomsText ?? '',
+      testsuiteFilename: snapshot.testsuiteFilename ?? '',
+      rulesFilename: snapshot.rulesFilename ?? '',
+      axiomsFilename: snapshot.axiomsFilename ?? '',
+    };
+
+    this.selectedSessionKey = this.redisSessionKey;
+    this.gswbPreferences.gswbPreferences = { ...this.session.gswbPreferences };
+    this.gswbPreferences.updateFormFromPreferences(this.session.gswbPreferences);
+    this.vampirePreferences.vampirePreferences = { ...this.session.vampirePreferences };
+    this.vampirePreferences.updateFormFromPreferences(this.session.vampirePreferences);
+
+    this.testfile.updateContent(this.session.testsuiteText || '');
+    this.ligerRules.updateContent(this.session.rulesText || '');
+    this.axiomEdit.updateContent(this.session.axiomsText || '');
+
+    this.regressionTestItems = this.session.regressionTestItems ?? [];
+    this.regressionTestResults = this.session.regressionTestResults ?? [];
+    this.inferenceResults = this.session.inferenceResults ?? [];
+
+    if (this.inferenceResults.length > 0) {
+      this.renderSavedInferenceResults(this.inferenceResults);
+    } else {
+      this.inferenceSummary = '';
+      this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
+    }
+
+    this.isHydratingSession = false;
+    this.scheduleSessionSave(true);
+  }
+
+  loadSessionFromRecent(sessionKey: string): void {
+    if (this.loading) return;
+    if (!sessionKey || sessionKey === this.redisSessionKey) return;
+
+    this.dataService.loadRegressionSession(sessionKey).subscribe({
+      next: snapshot => this.hydrateSession(snapshot),
+      error: error => console.warn("Unable to load regression session.", error)
+    });
+  }
+
+  createNewSession(): void {
+    if (this.loading) return;
+    this.isHydratingSession = true;
+    this.session = createRegressionTestingSession();
+    this.selectedSessionKey = this.redisSessionKey;
+    this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
+    this.regressionTestResults = [];
+    this.inferenceResults = [];
+    this.regressionTestItems = [];
+    this.sentenceMap = {};
+    this.cellIds = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => []));
+    this.selectedIds.clear();
+    this.selectedGoldIdx = this.selectedPredIdx = null;
+    this.inferenceSummary = '';
+    this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
+    this.testfile.updateContent('');
+    this.ligerRules.updateContent('');
+    this.axiomEdit.updateContent('');
+    this.isHydratingSession = false;
+    this.scheduleSessionSave(true);
+  }
+
+  private renderSavedInferenceResults(results: RegressionInferenceResult[]): void {
+    const idx = { '1': 0, '0': 1, '-1': 2 };
+    const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
+    const previousSelection = { goldIdx: this.selectedGoldIdx, predIdx: this.selectedPredIdx };
+
+    this.cellIds = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => []));
+    this.selectedIds.clear();
+    this.selectedGoldIdx = this.selectedPredIdx = null;
+
+    for (const result of results) {
+      const gold = result.goldLabel;
+      const pred = result.predictedLabel;
+      if (idx[gold] !== undefined && idx[pred] !== undefined) {
+        cm[idx[gold]][idx[pred]] += 1;
+        this.cellIds[idx[gold]][idx[pred]].push(result.id);
+      }
+    }
+
+    this.updateConfusionMatrixView(cm, results.length);
+    if (previousSelection.goldIdx !== null && previousSelection.predIdx !== null) {
+      this.selectedGoldIdx = previousSelection.goldIdx;
+      this.selectedPredIdx = previousSelection.predIdx;
+      this.selectedIds = new Set(this.cellIds[previousSelection.goldIdx][previousSelection.predIdx] ?? []);
+    }
+    this.inferenceSummary =
+      `Inference results summary:\n` +
+      `Processed items: ${results.length} of ${this.regressionTestItems.length}\n` +
+      `Loaded from session: ${this.redisSessionKey}`;
   }
 
   ngOnDestroy(): void {
     this.stopVampireSummaryPolling();
+    if (this.sessionSaveTimer !== null) {
+      clearTimeout(this.sessionSaveTimer);
+      this.sessionSaveTimer = null;
+    }
   }
 
   // Button handler (appears only when disambiguationMode is true)
@@ -250,6 +454,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.errorhandle.nativeElement.innerHTML = "";
     this.loading = true;
     const runStartedAt = Date.now();
+
+    this.session.testsuiteText = sentences;
+    this.session.rulesText = rules;
+    this.session.axiomsText = this.axiomEdit.getContent();
+    this.syncSessionStateFromUi();
 
     this.session.timing = {
       startedAt: new Date(runStartedAt).toISOString(),
@@ -385,6 +594,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.session.lastGswbOutputs = gswbOutputs;
           this.session.lastAnnotations = data.annotations;
           this.session.lastLogicType = logicType;
+          this.saveSessionSnapshot();
 
           // ========= PAUSE HERE if flag is set =========
           if (this.enableDisambiguation) {
@@ -426,6 +636,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.hasRunVampire = true;
 
     this.session.disambiguationMode = false;
+    this.saveSessionSnapshot();
 
     this.displayMessage("Sending NLI items to Vampire ...", "blue");
     console.log("Preparing call to Vampire ...");
@@ -488,7 +699,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const vampireRequest: vampireMultipleRequest = {
       nli_items: inference_items,
       vampire_preferences: this.vampirePreferences.vampirePreferences,
-      pruning: pruning
+      pruning: pruning,
+      session_key: this.redisSessionKey
     };
 
     console.log("Vampire request: ", vampireRequest);
@@ -565,6 +777,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
         console.log(message);
         this.displayMessage(message, finalSnapshot ? "green" : "blue");
+        if (!this.isHydratingSession) {
+          this.scheduleSessionSave();
+        }
 
         if (finalSnapshot) {
           this.session.timing.vampireMs = Date.now() - vampireStartedAt;
@@ -574,6 +789,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.loading = false;
           this.vampirePendingItemCount = null;
           this.activeVampireRunStartedAt = null;
+          this.saveSessionSnapshot();
         }
       },
       error: error => {
@@ -593,6 +809,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private renderVampireResults(results: Record<string, check[]>, summary: VampireSessionSummary, finalSnapshot: boolean): void {
     const idx = { '1': 0, '0': 1, '-1': 2 };
     const cm = Array.from({ length: 3 }, () => Array(3).fill(0));
+    const previousSelection = { goldIdx: this.selectedGoldIdx, predIdx: this.selectedPredIdx };
     this.cellIds = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => []));
 
     this.selectedIds.clear();
@@ -664,6 +881,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.inferenceResults = currentInferenceResults;
     this.updateConfusionMatrixView(cm, Object.keys(results ?? {}).length);
+    if (previousSelection.goldIdx !== null && previousSelection.predIdx !== null) {
+      this.selectedGoldIdx = previousSelection.goldIdx;
+      this.selectedPredIdx = previousSelection.predIdx;
+      this.selectedIds = new Set(this.cellIds[previousSelection.goldIdx][previousSelection.predIdx] ?? []);
+    }
 
     const processedItems = summary?.item_count ?? Object.keys(results ?? {}).length;
     const proofCount = summary?.proof_count ?? 0;
@@ -739,15 +961,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   updateRules(ruleFile: string) {
+    this.session.rulesText = ruleFile;
     this.ligerRules.updateContent(ruleFile);
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
   }
 
   updateTestsuite(ruleFile: string) {
+    this.session.testsuiteText = ruleFile;
     this.testfile.updateContent(ruleFile);
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
   }
 
   updateAxioms(ruleFile: string) {
+    this.session.axiomsText = ruleFile;
     this.axiomEdit.updateContent(ruleFile);
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
+  }
+
+  onEditorContentChange(field: 'testsuiteText' | 'rulesText' | 'axiomsText', value: string): void {
+    if (this.isHydratingSession) return;
+
+    this.session[field] = value;
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
   }
 
   batchVampire(vampireMultipleRequest: vampireMultipleRequest): Observable<any> {
@@ -1009,6 +1248,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // persist discriminant selection state
     this.session.selectedScopeIdsBySentence[sid] = [...(ev.selectedScopeIds ?? [])];
     this.session.selectedMcIdsBySentence[sid] = [...(ev.selectedMcIds ?? [])];
+    this.scheduleSessionSave();
   }
 
   private cloneSelectionRecord(source: Record<string, string[]>): Record<string, string[]> {

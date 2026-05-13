@@ -90,7 +90,7 @@ export class GswbSettingsComponent {
       explain: prefs.explainFail,
       debugging: prefs.debugging,
       ndstyle: prefs.naturalDeductionStyle
-    });
+    }, { emitEvent: false });
 
     if (prefs.outputstyle === 4) {
       this.showResolveDrs = true;

@@ -102,10 +102,30 @@ export interface RegressionRunTiming {
   totalMs: number | null;
 }
 
+export interface RegressionSessionSummary {
+  sessionKey: string;
+  displayLabel: string;
+  createdAt: string;
+  updatedAt: string;
+  parseCount: number;
+  inferenceCount: number;
+  hasParseResults: boolean;
+  hasInferenceResults: boolean;
+}
+
 export interface RegressionTestingSession {
   id: string;
   redisSessionKey: string;
   createdAt: string;
+  updatedAt: string;
+  testsuiteText: string;
+  rulesText: string;
+  axiomsText: string;
+  testsuiteFilename: string;
+  rulesFilename: string;
+  axiomsFilename: string;
+  gswbPreferences: GswbPreferences;
+  vampirePreferences: VampirePreferences;
   sentenceMap: Record<string, string>;
   regressionTestItems: any[];
   regressionTestResults: RegressionParseResult[];
@@ -125,10 +145,38 @@ export interface RegressionTestingSession {
 }
 
 export function createRegressionTestingSession(): RegressionTestingSession {
+  const createdAt = new Date().toISOString();
+  const sessionId = `session-${createdAt.replace(/[:.]/g, '-').replace('T', '_')}`;
+
   return {
-    id: `session-${Date.now()}`,
-    redisSessionKey: 'last_session',
-    createdAt: new Date().toISOString(),
+    id: sessionId,
+    redisSessionKey: sessionId,
+    createdAt,
+    updatedAt: createdAt,
+    testsuiteText: '',
+    rulesText: '',
+    axiomsText: '',
+    testsuiteFilename: '',
+    rulesFilename: '',
+    axiomsFilename: '',
+    gswbPreferences: {
+      prover: 1,
+      debugging: false,
+      outputstyle: 4,
+      parseSem: false,
+      betaReduce: true,
+      resolveDrs: true,
+      glueOnly: false,
+      meaningOnly: false,
+      explainFail: false,
+      naturalDeductionStyle: 0,
+    },
+    vampirePreferences: {
+      logic_type: 0,
+      model_building: true,
+      max_duration: 10,
+      layered: false,
+    },
     sentenceMap: {},
     regressionTestItems: [],
     regressionTestResults: [],
@@ -218,6 +266,7 @@ export interface vampireMultipleRequest {
   nli_items: { [key: string]: nliItem };
   pruning: boolean;
   vampire_preferences?: VampirePreferences;
+  session_key?: string;
 }
 
 /*class VampireNLI(BaseModel):

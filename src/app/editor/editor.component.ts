@@ -1,4 +1,4 @@
-import { Component, ViewChild, ElementRef, AfterViewInit, Input, ViewEncapsulation } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewInit, Input, ViewEncapsulation, Output, EventEmitter } from '@angular/core';
 import * as CodeMirror from 'codemirror';
 import 'codemirror/addon/edit/matchbrackets.js';
 
@@ -186,6 +186,7 @@ export class EditorComponent implements AfterViewInit {
 
   @Input() id: string;
   @Input() mode: string;
+  @Output() contentChange = new EventEmitter<string>();
 
   defaultWidth = '800px';
   defaultHeight = '300px';
@@ -204,6 +205,10 @@ export class EditorComponent implements AfterViewInit {
       lineNumbers: true,
       matchBrackets: true,  // Enables bracket matching
       autoCloseBrackets: true  // Auto-closes brackets
+    });
+
+    this.codeMirror.on('change', () => {
+      this.contentChange.emit(this.codeMirror.getValue());
     });
 
     if (this.mode === "liger") {
@@ -254,4 +259,3 @@ export class EditorComponent implements AfterViewInit {
     return this.codeMirror;
   }
   }
-

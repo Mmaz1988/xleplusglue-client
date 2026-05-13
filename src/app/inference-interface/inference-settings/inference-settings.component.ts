@@ -53,7 +53,7 @@ export class InferenceSettingsComponent {
       model_building: prefs.model_building,
       max_duration: prefs.max_duration,
       layered: prefs.layered
-    });
+    }, { emitEvent: false });
   }
 
 }

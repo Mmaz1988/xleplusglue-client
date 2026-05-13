@@ -31,7 +31,22 @@
 </h3>
 
   <div class="editor-restr">
-<app-editor #testfile [mode]="'text'"> </app-editor>
+<app-editor #testfile [mode]="'text'" (contentChange)="onEditorContentChange('testsuiteText', $event)"> </app-editor>
+  </div>
+  <br>
+
+  <div class="session-controls">
+    <label for="sessionSelect">Session:</label>
+    <select id="sessionSelect" [(ngModel)]="selectedSessionKey">
+      <option [value]="redisSessionKey">Current: {{ session.id }}</option>
+      <ng-container *ngFor="let session of recentSessions">
+        <option *ngIf="session.sessionKey !== redisSessionKey" [value]="session.sessionKey">
+          {{ session.displayLabel }} | parses: {{ session.parseCount }} | inference: {{ session.inferenceCount }}
+        </option>
+      </ng-container>
+    </select>
+    <button (click)="loadSessionFromRecent(selectedSessionKey)">Load session</button>
+    <button (click)="createNewSession()">New session</button>
   </div>
   <br>
 
@@ -54,7 +69,7 @@
     <div class="gradient-container">
     <div class="editor-restr">
 
-  <app-editor #ligerRules [mode]="'liger'"> </app-editor>
+  <app-editor #ligerRules [mode]="'liger'" (contentChange)="onEditorContentChange('rulesText', $event)"> </app-editor>
 </div>
       <div class="bar-container">
         <div class="gradient-bar"></div>
@@ -69,7 +84,7 @@
   <app-toggle-display type="liger" showText="Show default axioms" hideText="Hide default axioms">
     Axioms:
     <div class="editor-restr">
-      <app-editor #axiomEdit [mode]="'vampire'">
+      <app-editor #axiomEdit [mode]="'vampire'" (contentChange)="onEditorContentChange('axiomsText', $event)">
       </app-editor>
     </div>
 
