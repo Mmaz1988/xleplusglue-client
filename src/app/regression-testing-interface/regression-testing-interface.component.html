@@ -25,6 +25,7 @@
     <div class="session-save-as-row testsuite-mode-row">
       <label for="saveAsSessionName">Save session as:</label>
       <input id="saveAsSessionName" type="text" [(ngModel)]="saveAsSessionName" placeholder="Session name" />
+      <button (click)="saveCurrentSession()">Save current session</button>
       <button (click)="saveSessionAs()">Save as</button>
     </div>
 
@@ -44,7 +45,6 @@
                          [loadedContent]="session.testsuiteLoadedText"
                          (stateChange)="onTestsuiteStateChange($event)"
                          (fileLoaded)="updateTestsuite($event)"
-                         (dataEmitter)="updateTestsuiteText($event)"
                          defaultFilePath="./testsuites/inference/inference-basic.lfg" filesDirectory="./testsuites/"> </app-file-loader>
       </div>
         <div>
@@ -53,8 +53,7 @@
                            [loadedPath]="session.rulesFilename"
                            [loadedContent]="session.rulesLoadedText"
                            (stateChange)="onRulesStateChange($event)"
-                           (ruleLoaded)="updateRules($event)"
-                           (dataEmitter)="updateRulesText($event)"></app-rule-loader>
+                           (ruleLoaded)="updateRules($event)"></app-rule-loader>
         </div>
         <div>
         <h2>Default axioms selection:</h2>
@@ -63,7 +62,6 @@
                          [loadedContent]="session.axiomsLoadedText"
                          (stateChange)="onAxiomsStateChange($event)"
                          (fileLoaded)="updateAxioms($event)"
-                         (dataEmitter)="updateAxiomsText($event)"
                          filesDirectory="./axioms/"></app-file-loader>
       </div>
       </div>

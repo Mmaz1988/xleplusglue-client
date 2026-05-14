@@ -44,7 +44,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   constructor(private dataService: DataService, private route: ActivatedRoute) {}
 
-  session: RegressionTestingSession = createRegressionTestingSession();
+  session: RegressionTestingSession = this.createInitialSession();
 
   @ViewChild('arcy') cy1: GraphVisComponent;
   @ViewChild('ligerreport') ligerreport: ElementRef;
@@ -107,10 +107,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     Array.from({ length: 3 }, () => [])
   );
 
-  // =========================
-  // NEW: disambiguation controls
-  // =========================
-  enableDisambiguation = false; // bind to checkbox in HTML
+  // UI toggle for the disambiguation flow.
+  enableDisambiguation = false;
   get disambiguationMode(): boolean {
     return this.session.disambiguationMode;
   }
@@ -159,14 +157,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.sortedMCmap = value;
   }
 
-  // sentenceId -> selected solution IDs
-  // session stores parse, inference, and selection state as JSON-friendly data
+  // Per-sentence solution selections are persisted with the session.
 
-  // Tune these numbers to match your row heights (in px)
+  // Virtual scroll row-height estimates.
   itemSizeParse = 220;  // app-test-result row height estimate
   itemSizeInfer = 180;  // app-inference-result row height estimate
 
-// Prefetch buffer (smoother scrolling)
+  // Prefetch buffer for smoother scrolling.
   minBufferPx = 600;
   maxBufferPx = 1200;
 
@@ -226,6 +223,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.scheduleSessionSave();
     });
 
+    // Load the session list before restoring any specific session.
     this.loadRecentSessions();
 
     const querySessionKey = this.route.snapshot.queryParamMap.get('session') ?? '';
@@ -239,16 +237,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.loadSessionFromRecent(persistedSessionKey);
     }
 
-    this.isBootstrapping = false;
+    // Release bootstrap protection after the initial render tick completes.
+    setTimeout(() => {
+      this.isBootstrapping = false;
+    }, 0);
   }
 
   get redisSessionKey(): string {
     return this.session.redisSessionKey || 'last_session';
   }
 
+  private createInitialSession(): RegressionTestingSession {
+    const session = createRegressionTestingSession();
+    const persistedSessionKey = this.getPersistedActiveSessionKey();
+
+    if (persistedSessionKey) {
+      session.id = persistedSessionKey;
+      session.redisSessionKey = persistedSessionKey;
+    }
+
+    return session;
+  }
+
   private syncSessionStateFromUi(): void {
     if (this.isHydratingSession) return;
 
+    // Copy the current editor/settings state into the persisted session object.
     this.session.updatedAt = new Date().toISOString();
     this.session.gswbPreferences = { ...this.gswbPreferences.gswbPreferences };
     this.session.vampirePreferences = { ...this.vampirePreferences.vampirePreferences };
@@ -266,6 +280,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   getTrackedFileDisplay(kind: 'testsuite' | 'rules' | 'axioms'): string {
+    // Loader components keep these fields aligned with what was loaded.
     const metadata = {
       testsuite: {
         filename: this.session.testsuiteFilename,
@@ -417,6 +432,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
+  saveCurrentSession(): void {
+    if (this.loading) return;
+
+    if (!this.sessionPersistenceEnabled) {
+      this.displayMessage('No active session is available to save yet.', 'blue');
+      return;
+    }
+
+    this.saveSessionSnapshot();
+  }
+
   private buildSessionSnapshot(): RegressionTestingSession {
     return {
       ...this.session,
@@ -432,6 +458,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private hydrateSession(snapshot: RegressionTestingSession): void {
     this.isHydratingSession = true;
 
+    // Restore saved session state into the live view model and editors.
     this.session = {
       ...createRegressionTestingSession(),
       ...snapshot,
@@ -566,6 +593,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   createNewSession(): void {
     if (this.loading) return;
     this.isHydratingSession = true;
+    // New session creation is an explicit user action, so persistence becomes valid here.
     this.setSessionLoadStatus('idle', '', '');
     this.clearStatusMessage();
     this.session = createRegressionTestingSession();
@@ -651,7 +679,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         const totalCount = Object.keys(this.sentenceMap ?? {}).length;
         const quickReport = `Parsed ${parsedCount} of ${totalCount} sentences!`;
 
-        console.log(quickReport);
         this.displayMessage(quickReport, finalSnapshot ? "green" : "blue");
 
         if (finalSnapshot) {
@@ -728,7 +755,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.scheduleSessionSave();
     }
 
-    console.log("Successful keys: ", successFullKeys);
     this.inferenceSummary =
       `Parsing summary:\n` +
       `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`;
@@ -1386,10 +1412,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return precise ? `${seconds.toFixed(2)}s` : `${seconds.toFixed(1)}s`;
   }
 
-  // =========================
-  // KEEP YOUR EXISTING FUNCTIONS BELOW (unchanged)
-  // =========================
-
   batchMultistage(sentences: String) {
     if (this.runLocked) return;
     this.gswbPreferences.onSubmit();
@@ -1408,10 +1430,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.dataService.ligerBatchMultistage(ligerMultipleRequest).subscribe(
       data => {
-        console.log(data);
         if (data.hasOwnProperty("annotations")) {
-          console.log(data.annotations);
-
           let mcMap = {};
           for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
             mcMap[key] = value.meaningConstructors;
@@ -1422,7 +1441,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             gswbPreferences: this.gswbPreferences.gswbPreferences
           };
 
-          console.log("Specified request: ", this.gswbMultipleRequest);
         }
 
         if (data.hasOwnProperty("report")) {
@@ -1440,19 +1458,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   updateGrammar(grammarPath: string) {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    // Grammar selection is part of the session metadata.
     this.session.grammarPath = grammarPath;
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();
   }
 
   onTestsuiteStateChange(state: { path: string; loadedContent: string }): void {
+    // Keep the loaded file snapshot in sync for modified-state checks.
     this.session.testsuiteFilename = state?.path ?? '';
     this.session.testsuiteLoadedText = state?.loadedContent ?? '';
   }
 
   updateRules(file: { path: string; content: string }) {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    // Loading a rules file replaces the editor content and snapshot metadata.
     this.session.rulesFilename = file?.path ?? '';
     this.session.rulesLoadedText = file?.content ?? '';
     this.session.rulesText = file?.content ?? '';
@@ -1462,12 +1481,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   onRulesStateChange(state: { path: string; loadedContent: string }): void {
+    // Persist the exact loaded rules file content for later comparisons.
     this.session.rulesFilename = state?.path ?? '';
     this.session.rulesLoadedText = state?.loadedContent ?? '';
   }
 
   updateRulesText(ruleFile: string) {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session.rulesText = ruleFile;
     this.ligerRules.updateContent(ruleFile);
     this.syncSessionStateFromUi();
@@ -1475,12 +1494,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   onAxiomsStateChange(state: { path: string; loadedContent: string }): void {
+    // Persist the exact loaded axioms file content for later comparisons.
     this.session.axiomsFilename = state?.path ?? '';
     this.session.axiomsLoadedText = state?.loadedContent ?? '';
   }
 
   updateTestsuite(file: { path: string; content: string }) {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    // Loading a testsuite file replaces the editor content and snapshot metadata.
     this.session.testsuiteFilename = file?.path ?? '';
     this.session.testsuiteLoadedText = file?.content ?? '';
     this.session.testsuiteText = file?.content ?? '';
@@ -1490,7 +1510,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   updateTestsuiteText(ruleFile: string) {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session.testsuiteText = ruleFile;
     this.testfile.updateContent(ruleFile);
     this.syncSessionStateFromUi();
@@ -1498,7 +1517,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   updateAxioms(file: { path: string; content: string }) {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    // Loading axioms follows the same persisted state pattern as rules/testsuites.
     this.session.axiomsFilename = file?.path ?? '';
     this.session.axiomsLoadedText = file?.content ?? '';
     this.session.axiomsText = file?.content ?? '';
@@ -1508,7 +1527,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   updateAxiomsText(ruleFile: string) {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session.axiomsText = ruleFile;
     this.axiomEdit.updateContent(ruleFile);
     this.syncSessionStateFromUi();
@@ -1516,7 +1534,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   setTestsuiteUpdateMode(mode: 'write' | 'append'): void {
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.testsuiteUpdateMode = mode;
     this.session.testsuiteUpdateMode = mode;
     this.scheduleSessionSave();
@@ -1542,7 +1559,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   onEditorContentChange(field: 'testsuiteText' | 'rulesText' | 'axiomsText', value: string): void {
     if (this.isHydratingSession) return;
 
-    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session[field] = value;
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();
@@ -1551,7 +1567,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   batchVampire(vampireMultipleRequest: vampireMultipleRequest): Observable<any> {
     return this.dataService.callBatchVampire(vampireMultipleRequest).pipe(
       tap(data => {
-        console.log("Vampire data:", data);
       }),
       catchError(err => {
         console.error("An error occurred:", err);
@@ -1565,12 +1580,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   batchDeduce(gswbMultipleRequest: GswbMultipleRequest): Observable<GswbBatchOutput> {
     return this.dataService.gswbBatchDeduce(gswbMultipleRequest).pipe(
       tap(data => {
-        console.log("Full data:", data);
         if (data.hasOwnProperty("outputs")) {
-          console.log("Outputs map:");
-          for (const key in data.outputs) {
-            console.log(key, data.outputs[key]);
-          }
         }
       }),
       catchError(err => {
@@ -1669,7 +1679,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }
     }
 
-    console.log("Sentence map:", sentence_map);
     this.sentenceMap = sentence_map;
     this.regressionTestItems.push(...parseItems);
   }
@@ -1732,7 +1741,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       parseItems.push(item);
     }
 
-    console.log("Sentence map:", sentence_map);
     this.sentenceMap = sentence_map;
     this.regressionTestItems.push(...parseItems);
   }
