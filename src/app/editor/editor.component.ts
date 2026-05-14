@@ -1,6 +1,46 @@
-import { Component, ViewChild, ElementRef, AfterViewInit, Input, ViewEncapsulation, Output, EventEmitter } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewInit, Input, ViewEncapsulation, Output, EventEmitter, OnChanges, SimpleChanges } from '@angular/core';
 import * as CodeMirror from 'codemirror';
 import 'codemirror/addon/edit/matchbrackets.js';
+import 'codemirror/mode/javascript/javascript';
+
+CodeMirror.defineMode('nli', function() {
+  return {
+    token: function(stream) {
+      if (stream.sol()) {
+        if (stream.match(/\s*\{/)) {
+          stream.skipToEnd();
+          return 'nli-brace';
+        }
+
+        if (stream.match(/\s*\}/)) {
+          stream.skipToEnd();
+          return 'nli-brace';
+        }
+
+        if (stream.match(/\s*====\s*/)) {
+          stream.skipToEnd();
+          return 'nli-separator';
+        }
+
+        if (stream.match(/\s*>>>\s*/)) {
+          stream.skipToEnd();
+          return 'nli-label';
+        }
+
+        if (stream.match(/\s*#/)) {
+          stream.skipToEnd();
+          return 'comment';
+        }
+
+        stream.skipToEnd();
+        return 'nli-sentence';
+      }
+
+      stream.next();
+      return null;
+    }
+  };
+});
 
 CodeMirror.defineMode("liger", function() {
   return {
@@ -181,7 +221,7 @@ const VAMPIRE_DEFAULT_AXIOMS = ""
     ],
   encapsulation: ViewEncapsulation.None
 })
-export class EditorComponent implements AfterViewInit {
+export class EditorComponent implements AfterViewInit, OnChanges {
   @ViewChild('host') host: ElementRef;
 
   @Input() id: string;
@@ -197,10 +237,8 @@ export class EditorComponent implements AfterViewInit {
 
 
   ngAfterViewInit() {
-    console.log("mode is " + this.mode);
-
     this.codeMirror = CodeMirror.fromTextArea(this.host.nativeElement, {
-      mode: this.mode,
+      mode: this.resolveMode(this.mode),
       viewportMargin: Infinity,
       lineNumbers: true,
       matchBrackets: true,  // Enables bracket matching
@@ -220,6 +258,12 @@ export class EditorComponent implements AfterViewInit {
     }
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['mode'] && this.codeMirror) {
+      this.codeMirror.setOption('mode', this.resolveMode(this.mode));
+    }
+  }
+
 
   updateContent(value: string): void {
     if (this.codeMirror) {
@@ -233,6 +277,18 @@ export class EditorComponent implements AfterViewInit {
 
   public getContent(): string {
     return this.codeMirror.getValue();
+  }
+
+  private resolveMode(mode: string): string | { name: string; json: boolean } {
+    if (mode === 'json') {
+      return { name: 'javascript', json: true };
+    }
+
+    if (mode === 'nli') {
+      return 'nli';
+    }
+
+    return mode || 'text';
   }
 
   resizeToDefault(): void {

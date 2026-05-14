@@ -67,12 +67,24 @@
       </div>
     </app-toggle-display>
   </div>
-<h3>
+  <h3>
   Testsuite:
-</h3>
+  </h3>
+
+  <div class="session-save-as-row testsuite-mode-row">
+    <span>Testsuite format:</span>
+    <label>
+      <input type="radio" name="testsuiteEditorMode" [checked]="testsuiteEditorMode === 'nli'" (change)="setTestsuiteEditorMode('nli')" />
+      NLI
+    </label>
+    <label>
+      <input type="radio" name="testsuiteEditorMode" [checked]="testsuiteEditorMode === 'json'" (change)="setTestsuiteEditorMode('json')" />
+      JSON
+    </label>
+  </div>
 
   <div class="editor-restr">
-<app-editor #testfile [mode]="'text'" (contentChange)="onEditorContentChange('testsuiteText', $event)"> </app-editor>
+<app-editor #testfile [mode]="testsuiteEditorMode" (contentChange)="onEditorContentChange('testsuiteText', $event)"> </app-editor>
   </div>
   <br>
 

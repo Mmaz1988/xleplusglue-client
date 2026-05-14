@@ -85,6 +85,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   saveAsSessionName = '';
   testsuiteUpdateMode: 'write' | 'append' = 'write';
+  testsuiteEditorMode: 'nli' | 'json' = 'nli';
 
   recentSessions: RegressionSessionSummary[] = [];
   selectedSessionKey = '';
@@ -443,6 +444,39 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.saveSessionSnapshot();
   }
 
+  setTestsuiteEditorMode(mode: 'nli' | 'json'): void {
+    if (this.testsuiteEditorMode === mode) return;
+
+    const previousMode = this.testsuiteEditorMode;
+    this.testsuiteEditorMode = mode;
+
+    const currentText = this.testfile?.getContent?.() ?? this.session.testsuiteText ?? '';
+    if (!currentText.trim()) {
+      return;
+    }
+
+    try {
+      if (previousMode === 'json') {
+        this.parse_json_testfile(currentText);
+      } else {
+        this.parse_block_testfile(currentText);
+      }
+
+      const converted = mode === 'json'
+        ? JSON.stringify(this.buildProcessedTestsuiteItems(), null, 2)
+        : this.serializeProcessedTestsuiteAsBlocks();
+
+      this.session.testsuiteText = converted;
+      this.testfile.updateContent(converted);
+      this.syncSessionStateFromUi();
+      this.scheduleSessionSave();
+    } catch (error) {
+      this.testsuiteEditorMode = previousMode;
+      console.warn('Unable to convert testsuite format.', error);
+      this.displayMessage('Unable to convert the testsuite format.', 'red');
+    }
+  }
+
   private buildSessionSnapshot(): RegressionTestingSession {
     return {
       ...this.session,
@@ -489,6 +523,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.ligerRules.updateContent(this.session.rulesText || '');
     this.axiomEdit.updateContent(this.session.axiomsText || '');
     this.testsuiteUpdateMode = this.session.testsuiteUpdateMode ?? 'write';
+    this.testsuiteEditorMode = this.inferTestsuiteEditorMode(this.session.testsuiteText || '');
 
     this.regressionTestItems = this.session.regressionTestItems ?? [];
     this.regressionTestResults = this.session.regressionTestResults ?? [];
@@ -600,6 +635,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.selectedSessionKey = this.redisSessionKey;
     this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
     this.testsuiteUpdateMode = this.session.testsuiteUpdateMode;
+    this.testsuiteEditorMode = 'nli';
     this.regressionTestResults = [];
     this.inferenceResults = [];
     this.regressionTestItems = [];
@@ -1540,7 +1576,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   updateTestsuiteFromProcessedItems(): void {
-    const updated = JSON.stringify(this.buildProcessedTestsuiteItems(), null, 2);
+    const updated = this.testsuiteEditorMode === 'json'
+      ? JSON.stringify(this.buildProcessedTestsuiteItems(), null, 2)
+      : this.serializeProcessedTestsuiteAsBlocks();
     this.session.testsuiteText = updated;
     this.testfile.updateContent(updated);
     this.syncSessionStateFromUi();
@@ -1554,6 +1592,37 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       conclusion: (item?.conclusion ?? []).map((sid: string) => this.sentenceMap[sid]).filter((s: any) => typeof s === 'string' && s.trim().length > 0),
       gold_label: item?.gold_label ?? null,
     }));
+  }
+
+  private inferTestsuiteEditorMode(value: string): 'nli' | 'json' {
+    const trimmed = (value ?? '').trim();
+    if (!trimmed) return 'nli';
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? 'json' : 'nli';
+    } catch {
+      return 'nli';
+    }
+  }
+
+  private serializeProcessedTestsuiteAsBlocks(): string {
+    return this.buildProcessedTestsuiteItems()
+      .map(item => {
+        const premises = item.premises.join('\n');
+        const conclusion = item.conclusion.join('\n');
+        const labelLine = item.gold_label !== null && item.gold_label !== undefined ? `>>> ${item.gold_label}` : '';
+
+        return [
+          '{',
+          premises,
+          '====',
+          conclusion,
+          labelLine,
+          '}'
+        ].filter(line => String(line).length > 0).join('\n');
+      })
+      .join('\n\n');
   }
 
   onEditorContentChange(field: 'testsuiteText' | 'rulesText' | 'axiomsText', value: string): void {

@@ -21,6 +21,25 @@
   font-weight: bold;
 }
 
+.cm-nli-brace {
+  color: #0b57d0;
+  font-weight: bold;
+}
+
+.cm-nli-separator {
+  color: #7b1fa2;
+  font-weight: bold;
+}
+
+.cm-nli-label {
+  color: #c62828;
+  font-weight: bold;
+}
+
+.cm-nli-sentence {
+  color: #1b5e20;
+}
+
 .cm-liger_node_var
 {
   color: #00c4ff;
