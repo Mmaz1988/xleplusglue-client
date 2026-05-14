@@ -63,7 +63,11 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['currentContent'] && !changes['currentContent'].firstChange) {
+    if (
+      (changes['currentContent'] && !changes['currentContent'].firstChange) ||
+      (changes['loadedPath'] && !changes['loadedPath'].firstChange) ||
+      (changes['loadedContent'] && !changes['loadedContent'].firstChange)
+    ) {
       this.refreshStatusMessage();
     }
   }

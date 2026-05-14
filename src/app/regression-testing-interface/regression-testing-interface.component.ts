@@ -229,13 +229,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     const querySessionKey = this.route.snapshot.queryParamMap.get('session') ?? '';
     if (querySessionKey) {
-      this.loadSessionFromRecent(querySessionKey);
+      this.loadSessionFromRecent(querySessionKey, true);
       return;
     }
 
     const persistedSessionKey = this.getPersistedActiveSessionKey();
     if (persistedSessionKey) {
-      this.loadSessionFromRecent(persistedSessionKey);
+      this.loadSessionFromRecent(persistedSessionKey, true);
     }
 
     // Release bootstrap protection after the initial render tick completes.
@@ -414,7 +414,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  private saveSessionSnapshot(): void {
+  private saveSessionSnapshot(onSuccess?: () => void, successMessage?: string): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
 
     this.syncSessionStateFromUi();
@@ -427,6 +427,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.recentSessions = response.recent_sessions;
         } else {
           this.loadRecentSessions();
+        }
+
+        if (successMessage) {
+          this.setSessionLoadStatus('success', successMessage, `Session key: ${this.redisSessionKey}`);
+        }
+
+        if (onSuccess) {
+          onSuccess();
         }
       },
       error: error => console.warn("Unable to save regression session.", error)
@@ -441,7 +449,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
-    this.saveSessionSnapshot();
+    this.saveSessionSnapshot(undefined, `Saved current session ${this.redisSessionKey}`);
   }
 
   setTestsuiteEditorMode(mode: 'nli' | 'json'): void {
@@ -553,9 +561,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.sessionPersistenceEnabled = true;
   }
 
-  loadSessionFromRecent(sessionKey: string): void {
+  loadSessionFromRecent(sessionKey: string, force = false): void {
     if (this.loading) return;
-    if (!sessionKey || sessionKey === this.redisSessionKey) return;
+    if (!sessionKey || (!force && sessionKey === this.redisSessionKey)) return;
 
     this.setSessionLoadStatus('loading', `Loading session ${sessionKey}...`, `Session key: ${sessionKey}`);
     this.inferenceSummary = '';
@@ -604,9 +612,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     snapshot.redisSessionKey = sessionKey;
     snapshot.updatedAt = new Date().toISOString();
     snapshot.createdAt = snapshot.updatedAt;
-    snapshot.testsuiteLoadedText = snapshot.testsuiteText;
-    snapshot.rulesLoadedText = snapshot.rulesText;
-    snapshot.axiomsLoadedText = snapshot.axiomsText;
 
     this.dataService.saveRegressionSession(sessionKey, snapshot).subscribe({
       next: (response: any) => {

@@ -45,7 +45,10 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['loadedPath'] && !changes['loadedPath'].firstChange) {
+    if (
+      (changes['loadedPath'] && !changes['loadedPath'].firstChange) ||
+      (changes['selectedPath'] && !changes['selectedPath'].firstChange)
+    ) {
       this.refreshStatusMessage();
     }
   }
