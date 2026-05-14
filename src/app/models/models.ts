@@ -120,6 +120,7 @@ export interface RegressionTestingSession {
   redisSessionKey: string;
   createdAt: string;
   updatedAt: string;
+  testsuiteUpdateMode: 'write' | 'append';
   testsuiteText: string;
   rulesText: string;
   axiomsText: string;
@@ -157,6 +158,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     redisSessionKey: sessionId,
     createdAt,
     updatedAt: createdAt,
+    testsuiteUpdateMode: 'write',
     testsuiteText: '',
     rulesText: '',
     axiomsText: '',

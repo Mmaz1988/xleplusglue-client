@@ -43,6 +43,8 @@ div.result-container {
 div.errorhandling {
   color: red;
   padding-bottom: 10px;
+  white-space: pre-line;
+  font-weight: normal;
 }
 
 .processing-timing {
@@ -51,11 +53,12 @@ div.errorhandling {
   gap: 10px;
   padding-bottom: 10px;
   color: #1565c0;
-  font-weight: 600;
+  font-weight: normal;
+  white-space: pre-line;
 }
 
 .processing-timing-summary {
-  white-space: nowrap;
+  white-space: pre-line;
 }
 
 .session-load-timing {
@@ -81,14 +84,30 @@ div.errorhandling {
 .session-save-as-row {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.session-save-as-row input {
+.testsuite-mode-row {
+  justify-content: flex-start;
+}
+
+.session-save-as-row input:not([type="radio"]) {
   min-width: 220px;
   padding: 6px 8px;
+}
+
+.session-save-as-row input[type="radio"] {
+  min-width: auto;
+  padding: 0;
+}
+
+.session-save-as-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .results-grid {

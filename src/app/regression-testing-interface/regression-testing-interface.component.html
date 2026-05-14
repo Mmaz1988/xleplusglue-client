@@ -1,6 +1,33 @@
 <div class="frame">
 
   <div class="container">
+
+    <div class="session-controls">
+      <h1> Session controls</h1>
+      <label for="sessionSelect">Session:</label>
+      <select id="sessionSelect" [(ngModel)]="selectedSessionKey">
+        <option [value]="redisSessionKey">Current: {{ session.id }}</option>
+        <ng-container *ngFor="let session of recentSessions">
+          <option *ngIf="session.sessionKey !== redisSessionKey" [value]="session.sessionKey">
+            {{ session.displayLabel }} | parses: {{ session.parseCount }} | inference: {{ session.inferenceCount }}
+          </option>
+        </ng-container>
+      </select>
+      <button (click)="loadSessionFromRecent(selectedSessionKey)" [disabled]="sessionLoadState === 'loading'">
+        <span *ngIf="sessionLoadState !== 'loading'">Load session</span>
+        <span *ngIf="sessionLoadState === 'loading'">Loading...</span>
+      </button>
+      <button (click)="createNewSession()">New session</button>
+    </div>
+    <div *ngIf="sessionLoadMessage" class="processing-timing session-load-timing" [ngClass]="sessionLoadState">
+      <div class="processing-timing-summary">{{ sessionLoadMessage }}</div>
+    </div>
+    <div class="session-save-as-row testsuite-mode-row">
+      <label for="saveAsSessionName">Save session as:</label>
+      <input id="saveAsSessionName" type="text" [(ngModel)]="saveAsSessionName" placeholder="Session name" />
+      <button (click)="saveSessionAs()">Save as</button>
+    </div>
+
     <h1>Files</h1>
     <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show file selection"
                         hideText="Hide file selection">
@@ -35,35 +62,19 @@
   </div>
   <br>
 
-  <div class="session-controls">
-    <label for="sessionSelect">Session:</label>
-    <select id="sessionSelect" [(ngModel)]="selectedSessionKey">
-      <option [value]="redisSessionKey">Current: {{ session.id }}</option>
-      <ng-container *ngFor="let session of recentSessions">
-        <option *ngIf="session.sessionKey !== redisSessionKey" [value]="session.sessionKey">
-          {{ session.displayLabel }} | parses: {{ session.parseCount }} | inference: {{ session.inferenceCount }}
-        </option>
-      </ng-container>
-    </select>
-    <button (click)="loadSessionFromRecent(selectedSessionKey)" [disabled]="sessionLoadState === 'loading'">
-      <span *ngIf="sessionLoadState !== 'loading'">Load session</span>
-      <span *ngIf="sessionLoadState === 'loading'">Loading...</span>
-    </button>
-    <button (click)="createNewSession()">New session</button>
-  </div>
-  <div *ngIf="sessionLoadMessage" class="processing-timing session-load-timing" [ngClass]="sessionLoadState">
-    <span class="processing-timing-summary">{{ sessionLoadMessage }}</span>
-    <app-pill
-      badge="i"
-      variant="text"
-      [text]="sessionLoadDetails"
-      [minimizedColor]="sessionLoadState === 'success' ? '#2e7d32' : sessionLoadState === 'error' ? '#c62828' : '#1565c0'">
-    </app-pill>
-  </div>
   <div class="session-save-as-row">
-    <label for="saveAsSessionName">Save session as:</label>
-    <input id="saveAsSessionName" type="text" [(ngModel)]="saveAsSessionName" placeholder="Session name" />
-    <button (click)="saveSessionAs()">Save as</button>
+    <span>Testsuite mode:</span>
+    <label>
+      <input type="radio" name="testsuiteUpdateMode" [checked]="testsuiteUpdateMode === 'write'" (change)="setTestsuiteUpdateMode('write')" />
+      Write
+    </label>
+    <label>
+      <input type="radio" name="testsuiteUpdateMode" [checked]="testsuiteUpdateMode === 'append'" (change)="setTestsuiteUpdateMode('append')" />
+      Append
+    </label>
+    <button (click)="updateTestsuiteFromProcessedItems()" [disabled]="regressionTestItems.length === 0">
+      Update testsuite JSON
+    </button>
   </div>
   <br>
 
@@ -160,7 +171,7 @@
 
   <div class="errorhandling" #errorhandle></div>
   <div *ngIf="hasTimingInfo" class="processing-timing">
-    <span class="processing-timing-summary">{{ processingTimingSummary }}</span>
+    <div class="processing-timing-summary">{{ processingTimingSummary }}</div>
     <app-pill
       badge="i"
       variant="text"

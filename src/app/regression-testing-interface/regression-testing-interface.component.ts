@@ -23,6 +23,15 @@ import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
 
+type ParsedRegressionRunSnapshot = {
+  regressionTestItems: any[];
+  regressionTestResults: RegressionParseResult[];
+  inferenceResults: RegressionInferenceResult[];
+  sentenceMap: Record<string, string>;
+  annotations: Record<string, LigerRuleAnnotation> | null;
+  gswbOutputs: Record<string, GswbOutput> | null;
+};
+
 @Component({
   selector: 'app-regression-testing-interface',
   templateUrl: './regression-testing-interface.component.html',
@@ -64,9 +73,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private vampireCurrentRunItemCount: number = 0;
   private activeVampireRunStartedAt: number | null = null;
   private vampirePreserveExistingResults = false;
+  private currentVampireRunKind: 'initial' | 'append' | 'rerun' = 'initial';
   private isHydratingSession = true;
+  private writeSnapshot: ParsedRegressionRunSnapshot | null = null;
+  private appendSnapshot: ParsedRegressionRunSnapshot | null = null;
 
   saveAsSessionName = '';
+  testsuiteUpdateMode: 'write' | 'append' = 'write';
 
   recentSessions: RegressionSessionSummary[] = [];
   selectedSessionKey = '';
@@ -228,6 +241,39 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.axiomsText = this.axiomEdit.getContent();
   }
 
+  private cloneParsedRegressionSnapshot(snapshot: ParsedRegressionRunSnapshot | null): ParsedRegressionRunSnapshot | null {
+    if (!snapshot) return null;
+
+    return {
+      regressionTestItems: snapshot.regressionTestItems.map(item => ({ ...item })),
+      regressionTestResults: snapshot.regressionTestResults.map(result => ({ ...result })),
+      inferenceResults: snapshot.inferenceResults.map(result => ({ ...result })),
+      sentenceMap: { ...snapshot.sentenceMap },
+      annotations: snapshot.annotations ? { ...snapshot.annotations } : null,
+      gswbOutputs: snapshot.gswbOutputs ? { ...snapshot.gswbOutputs } : null,
+    };
+  }
+
+  private captureParsedRegressionSnapshot(): ParsedRegressionRunSnapshot {
+    return {
+      regressionTestItems: (this.regressionTestItems ?? []).map(item => ({ ...item })),
+      regressionTestResults: (this.regressionTestResults ?? []).map(result => ({ ...result })),
+      inferenceResults: (this.inferenceResults ?? []).map(result => ({ ...result })),
+      sentenceMap: { ...(this.sentenceMap ?? {}) },
+      annotations: this.session.lastAnnotations ? { ...this.session.lastAnnotations } : null,
+      gswbOutputs: this.session.lastGswbOutputs ? { ...this.session.lastGswbOutputs } : null,
+    };
+  }
+
+  private commitParsedRegressionSnapshot(): void {
+    this.writeSnapshot = this.captureParsedRegressionSnapshot();
+    this.appendSnapshot = null;
+  }
+
+  private logBackendPayload(stage: string, mode: 'write' | 'append', payload: unknown): void {
+    console.info(`[regression parse-all][${mode}] ${stage}`, payload);
+  }
+
   private scheduleSessionSave(immediate = false): void {
     if (this.isHydratingSession) return;
 
@@ -299,6 +345,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       testsuiteFilename: snapshot.testsuiteFilename ?? '',
       rulesFilename: snapshot.rulesFilename ?? '',
       axiomsFilename: snapshot.axiomsFilename ?? '',
+      testsuiteUpdateMode: snapshot.testsuiteUpdateMode ?? 'write',
       lastVampireResults: snapshot.lastVampireResults ?? null,
     };
 
@@ -311,6 +358,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.testfile.updateContent(this.session.testsuiteText || '');
     this.ligerRules.updateContent(this.session.rulesText || '');
     this.axiomEdit.updateContent(this.session.axiomsText || '');
+    this.testsuiteUpdateMode = this.session.testsuiteUpdateMode ?? 'write';
 
     this.regressionTestItems = this.session.regressionTestItems ?? [];
     this.regressionTestResults = this.session.regressionTestResults ?? [];
@@ -332,6 +380,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.inferenceSummary = '';
       this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     }
+
+    this.writeSnapshot = this.captureParsedRegressionSnapshot();
+    this.appendSnapshot = null;
 
     this.isHydratingSession = false;
     this.scheduleSessionSave(true);
@@ -402,6 +453,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session = createRegressionTestingSession();
     this.selectedSessionKey = this.redisSessionKey;
     this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
+    this.testsuiteUpdateMode = this.session.testsuiteUpdateMode;
     this.regressionTestResults = [];
     this.inferenceResults = [];
     this.regressionTestItems = [];
@@ -414,6 +466,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.testfile.updateContent('');
     this.ligerRules.updateContent('');
     this.axiomEdit.updateContent('');
+    this.writeSnapshot = this.captureParsedRegressionSnapshot();
+    this.appendSnapshot = null;
     this.isHydratingSession = false;
     this.scheduleSessionSave(true);
   }
@@ -507,6 +561,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   private renderGswbResults(gswbOutputs: Record<string, GswbOutput>): void {
+    const outputs = this.appendSnapshot
+      ? { ...(this.appendSnapshot.gswbOutputs ?? {}), ...gswbOutputs }
+      : gswbOutputs;
     const annotations = this.session.lastAnnotations ?? {};
 
     let successFullKeys: string[] = [];
@@ -514,7 +571,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const currentRegressionTestResults: RegressionParseResult[] = [];
 
     for (let key of Object.keys(this.sentenceMap)) {
-      const out = gswbOutputs[key];
+      const out = outputs[key];
       if (!out) continue;
 
       const sols = out?.solutions ?? [];
@@ -546,7 +603,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
 
     this.regressionTestResults = currentRegressionTestResults;
-    this.session.lastGswbOutputs = gswbOutputs;
+    this.session.lastGswbOutputs = outputs;
     this.session.regressionTestResults = currentRegressionTestResults;
     if (!this.isHydratingSession) {
       this.scheduleSessionSave();
@@ -647,9 +704,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   batchParse(sentences: string, rules: string) {
     if (this.runLocked) return;
-    this.errorhandle.nativeElement.innerHTML = "";
+    this.errorhandle.nativeElement.textContent = "";
     this.loading = true;
     const runStartedAt = Date.now();
+    const baseSnapshot = this.captureParsedRegressionSnapshot();
+
+    this.writeSnapshot = baseSnapshot;
+    this.appendSnapshot = this.testsuiteUpdateMode === 'append'
+      ? this.cloneParsedRegressionSnapshot(this.writeSnapshot)
+      : null;
+    this.currentVampireRunKind = 'initial';
+
+    const baseSentenceKeys = new Set(Object.keys(baseSnapshot.sentenceMap ?? {}));
+    const baseItemCount = baseSnapshot.regressionTestItems.length;
 
     this.session.testsuiteText = sentences;
     this.session.rulesText = rules;
@@ -663,36 +730,40 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       totalMs: null,
     };
 
-    this.regressionTestResults = [];
-    this.regressionTestItems = [];
-    this.inferenceResults = [];
-    this.vampirePreserveExistingResults = false;
-    this.inferenceSummary = "";
-    this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
+    if (this.testsuiteUpdateMode === 'write') {
+      this.regressionTestResults = [];
+      this.regressionTestItems = [];
+      this.inferenceResults = [];
+      this.vampirePreserveExistingResults = false;
+      this.inferenceSummary = "";
+      this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
+    }
 
     // reset disambiguation state per run
     this.session.disambiguationMode = false;
-    this.session.selectedSolutionIdsBySentence = {};
-    this.session.lastGswbOutputs = null;
-    this.session.lastAnnotations = null;
-    this.session.lastVampireResults = null;
-    this.session.lastVampireScopeIdsBySentence = {};
-    this.session.lastVampireMcIdsBySentence = {};
-    this.session.lastVampireSolutionIdsBySentence = {};
-    this.session.hasRunVampire = false;
-    this.session.sortedMCmap = {};
-    this.session.selectedScopeIdsBySentence = {};
-    this.session.selectedMcIdsBySentence = {};
+    if (this.testsuiteUpdateMode === 'write') {
+      this.session.selectedSolutionIdsBySentence = {};
+      this.session.lastGswbOutputs = null;
+      this.session.lastAnnotations = null;
+      this.session.lastVampireResults = null;
+      this.session.lastVampireScopeIdsBySentence = {};
+      this.session.lastVampireMcIdsBySentence = {};
+      this.session.lastVampireSolutionIdsBySentence = {};
+      this.session.hasRunVampire = false;
+      this.session.sortedMCmap = {};
+      this.session.selectedScopeIdsBySentence = {};
+      this.session.selectedMcIdsBySentence = {};
 
-    this.dataService.resetLastGswbSession(this.redisSessionKey).subscribe({
-      next: () => console.log(`Reset GSWB session ${this.redisSessionKey}`),
-      error: error => console.warn("Unable to reset GSWB session before parse.", error)
-    });
+      this.dataService.resetLastGswbSession(this.redisSessionKey).subscribe({
+        next: () => console.log(`Reset GSWB session ${this.redisSessionKey}`),
+        error: error => console.warn("Unable to reset GSWB session before parse.", error)
+      });
 
-    this.dataService.resetLastSession(this.redisSessionKey).subscribe({
-      next: () => console.log(`Reset Redis session ${this.redisSessionKey}`),
-      error: error => console.warn("Unable to reset Redis session before parse.", error)
-    });
+      this.dataService.resetLastSession(this.redisSessionKey).subscribe({
+        next: () => console.log(`Reset Redis session ${this.redisSessionKey}`),
+        error: error => console.warn("Unable to reset Redis session before parse.", error)
+      });
+    }
 
 
 
@@ -705,7 +776,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.displayMessage("Sending testsuite to LiGER for parsing ...", "blue");
 
-    const ligerMultipleRequest = { sentences: this.sentenceMap, ruleString: rules, logicType: logicType };
+    const appendSentences = Object.fromEntries(
+      Object.entries(this.sentenceMap ?? {}).filter(([key]) => !baseSentenceKeys.has(key))
+    );
+    const ligerMultipleRequest = {
+      sentences: this.testsuiteUpdateMode === 'append' ? appendSentences : this.sentenceMap,
+      ruleString: rules,
+      logicType: logicType
+    };
+    this.logBackendPayload('LiGER batch annotate request', this.testsuiteUpdateMode, ligerMultipleRequest);
 
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
@@ -733,6 +812,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             gswbPreferences: this.gswbPreferences.gswbPreferences,
             sessionKey: this.redisSessionKey
           };
+          this.logBackendPayload('GSWB batch deduce request', this.testsuiteUpdateMode, this.gswbMultipleRequest);
 
           this.session.lastGswbOutputs = null;
           this.session.lastAnnotations = data.annotations;
@@ -756,13 +836,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.stopGswbSummaryPolling();
 
           const outputs = result.outputs ?? {};
-          this.session.lastGswbOutputs = outputs;
+          this.applyAppendSnapshotToParsedState(outputs);
           this.renderGswbResults(outputs);
+          this.commitParsedRegressionSnapshot();
           this.session.timing.parseMs = Date.now() - runStartedAt;
           this.loading = false;
           this.activeGswbRunStartedAt = null;
           this.saveSessionSnapshot();
-          this.displayMessage("Batch processing completed successfully.", "green");
+          this.displayMessage(
+            this.testsuiteUpdateMode === 'append'
+              ? "Append parsing completed successfully."
+              : "Batch processing completed successfully.",
+            "green"
+          );
 
           // ========= PAUSE HERE if flag is set =========
           if (this.enableDisambiguation) {
@@ -775,7 +861,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           }
 
           // Otherwise proceed immediately with ALL solutions
-          this.runVampireFromCurrentState(false);
+          this.runVampireFromCurrentState(false, baseItemCount);
         });
       },
       error => {
@@ -789,9 +875,46 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     );
   }
 
+  private applyAppendSnapshotToParsedState(currentOutputs: Record<string, GswbOutput>): void {
+    if (!this.appendSnapshot) {
+      this.session.lastGswbOutputs = currentOutputs;
+      return;
+    }
+
+    const baseSnapshot = this.writeSnapshot ?? this.appendSnapshot;
+    this.sentenceMap = { ...(baseSnapshot?.sentenceMap ?? {}), ...this.sentenceMap };
+    this.regressionTestItems = this.mergeItemsById(baseSnapshot?.regressionTestItems ?? [], this.regressionTestItems);
+    this.regressionTestResults = this.mergeParseResultsBySentenceId(baseSnapshot?.regressionTestResults ?? [], this.regressionTestResults);
+    this.session.lastAnnotations = { ...(baseSnapshot?.annotations ?? {}), ...(this.session.lastAnnotations ?? {}) };
+    this.session.lastGswbOutputs = { ...(baseSnapshot?.gswbOutputs ?? {}), ...currentOutputs };
+    this.session.selectedSolutionIdsBySentence = { ...(this.session.selectedSolutionIdsBySentence ?? {}) };
+    this.session.selectedScopeIdsBySentence = { ...(this.session.selectedScopeIdsBySentence ?? {}) };
+    this.session.selectedMcIdsBySentence = { ...(this.session.selectedMcIdsBySentence ?? {}) };
+  }
+
+  private mergeItemsById(existingItems: any[], newItems: any[]): any[] {
+    const byId = new Map<string, any>();
+    (existingItems ?? []).forEach(item => {
+      const id = String(item?.id ?? '');
+      if (id) byId.set(id, item);
+    });
+    (newItems ?? []).forEach(item => {
+      const id = String(item?.id ?? '');
+      if (id) byId.set(id, item);
+    });
+    return Array.from(byId.values());
+  }
+
+  private mergeParseResultsBySentenceId(existingResults: RegressionParseResult[], newResults: RegressionParseResult[]): RegressionParseResult[] {
+    const byId = new Map<string, RegressionParseResult>();
+    (existingResults ?? []).forEach(result => byId.set(result.sentence_id, result));
+    (newResults ?? []).forEach(result => byId.set(result.sentence_id, result));
+    return Array.from(byId.values());
+  }
+
   // Builds NLI items + runs Vampire.
   // If useDisambiguated=true, filters each sentence’s solutions by selectedSolutionIdsBySentence.
-  private runVampireFromCurrentState(useDisambiguated: boolean): void {
+  private runVampireFromCurrentState(useDisambiguated: boolean, baselineItemCount = 0): void {
     if (!this.session.lastGswbOutputs || !this.session.lastAnnotations) {
       console.warn("No stored GSWB/LiGER state to proceed to Vampire.");
       return;
@@ -803,6 +926,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const vampireStartedAt = Date.now();
     this.vampirePreserveExistingResults = Object.keys(this.session.lastVampireResults ?? {}).length > 0;
     this.vampireCurrentRunItemCount = 0;
+    this.currentVampireRunKind = this.testsuiteUpdateMode === 'append'
+      ? 'append'
+      : (this.vampirePreserveExistingResults ? 'rerun' : 'initial');
+    const appendMode = this.testsuiteUpdateMode === 'append' && !!this.appendSnapshot;
+    const priorItemIds = new Set((this.appendSnapshot?.regressionTestItems ?? []).map(item => String(item?.id ?? '')));
+    const priorInferenceIds = new Set((this.appendSnapshot?.inferenceResults ?? this.inferenceResults ?? []).map(result => String(result?.id ?? '')));
 
     const previousVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireScopeIdsBySentence);
     const previousVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireMcIdsBySentence);
@@ -814,10 +943,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     console.log("Preparing call to Vampire ...");
 
     const inference_items: Record<string, nliItem> = {};
-    const processedInferenceIds = new Set((this.inferenceResults ?? []).map(result => result.id));
 
-    for (let item of this.regressionTestItems) {
-      const isAlreadyProcessed = processedInferenceIds.has(item.id);
+    const itemsToConsider = appendMode
+      ? this.regressionTestItems.slice(baselineItemCount)
+      : this.regressionTestItems;
+
+    for (let item of itemsToConsider) {
+      const itemId = String(item?.id ?? '');
+      const isNewlyAppended = appendMode && itemId !== '' && !priorItemIds.has(itemId);
+      const isAlreadyProcessed = priorInferenceIds.has(itemId);
       const selectionChanged = this.hasVampireSelectionChangedForItem(
         item,
         previousVampireScopeIdsBySentence,
@@ -825,7 +959,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         previousVampireSolutionIdsBySentence
       );
 
-      if (isAlreadyProcessed && !selectionChanged) continue;
+      if (!isNewlyAppended && isAlreadyProcessed && !selectionChanged) continue;
+      if (appendMode && !isNewlyAppended && !selectionChanged) continue;
 
       let axioms = this.axiomEdit.getContent();
       let axiomCounter = 0;
@@ -885,6 +1020,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       pruning: pruning,
       session_key: this.redisSessionKey
     };
+
+    this.logBackendPayload('Vampire batch request', this.testsuiteUpdateMode, vampireRequest);
 
     this.vampireCurrentRunItemCount = Object.keys(inference_items).length;
     console.log("Vampire request: ", vampireRequest);
@@ -968,9 +1105,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
         const proofCount = summary?.proof_count ?? 0;
         const runItems = this.vampireCurrentRunItemCount || this.vampirePendingItemCount || this.regressionTestItems.length;
-        const message = this.vampirePreserveExistingResults
-          ? `${finalSnapshot ? 'Vampire rerun summary' : 'Vampire rerun'}: ${runItems} item(s) refreshed, ${proofCount} proofs in session.`
-          : `${finalSnapshot ? 'Inference results summary' : 'Vampire progress'}:\nProcessed items: ${summary?.item_count ?? 0} of ${runItems}\nProcessed proofs: ${proofCount}`;
+        const message = this.currentVampireRunKind === 'append'
+          ? `${finalSnapshot ? 'Append inference summary' : 'Append inference progress'}: ${runItems} item(s) refreshed, ${proofCount} proofs in session.`
+          : this.vampirePreserveExistingResults
+            ? `${finalSnapshot ? 'Vampire rerun summary' : 'Vampire rerun'}: ${runItems} item(s) refreshed, ${proofCount} proofs in session.`
+            : `${finalSnapshot ? 'Inference results summary' : 'Vampire progress'}:\nProcessed items: ${summary?.item_count ?? 0} of ${runItems}\nProcessed proofs: ${proofCount}`;
 
         console.log(message);
         this.displayMessage(message, finalSnapshot ? "green" : "blue");
@@ -1099,13 +1238,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       : (this.vampirePendingItemCount ?? this.regressionTestItems.length);
 
     this.inferenceSummary =
-      `${this.vampirePreserveExistingResults ? 'Vampire rerun summary' : (finalSnapshot ? 'Inference results summary' : 'Vampire progress')}:\n` +
-      `${this.vampirePreserveExistingResults ? 'Re-run items' : 'Processed items'}: ${processedItems} of ${totalItems}\n` +
-      `${this.vampirePreserveExistingResults ? 'Total session items' : 'Session items'}: ${Object.keys(mergedResults ?? {}).length}\n` +
+      `${this.currentVampireRunKind === 'append' ? (finalSnapshot ? 'Append inference summary' : 'Append inference progress') : (this.vampirePreserveExistingResults ? 'Vampire rerun summary' : (finalSnapshot ? 'Inference results summary' : 'Vampire progress'))}:\n` +
+      `${this.currentVampireRunKind === 'append' ? 'Appended items' : (this.vampirePreserveExistingResults ? 'Re-run items' : 'Processed items')}: ${processedItems} of ${totalItems}\n` +
+      `${this.currentVampireRunKind === 'append' ? 'Total session items' : (this.vampirePreserveExistingResults ? 'Total session items' : 'Session items')}: ${Object.keys(mergedResults ?? {}).length}\n` +
       `Processed proofs: ${proofCount}\n` +
       `Entailment accuracy: ${all_entailment_predictions === 0 ? 'n/a' : successful_entailment_predictions / all_entailment_predictions}\n` +
       `Neutral accuracy: ${all_neutral_predictions === 0 ? 'n/a' : successful_neutral_predictions / all_neutral_predictions}\n` +
       `Contradiction accuracy: ${all_contradiction_predictions === 0 ? 'n/a' : successful_contradiction_predictions / all_contradiction_predictions}`;
+
+    if (finalSnapshot) {
+      this.commitParsedRegressionSnapshot();
+    }
   }
 
   private formatDuration(ms: number | null, precise = false): string {
@@ -1190,6 +1333,29 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.scheduleSessionSave();
   }
 
+  setTestsuiteUpdateMode(mode: 'write' | 'append'): void {
+    this.testsuiteUpdateMode = mode;
+    this.session.testsuiteUpdateMode = mode;
+    this.scheduleSessionSave();
+  }
+
+  updateTestsuiteFromProcessedItems(): void {
+    const updated = JSON.stringify(this.buildProcessedTestsuiteItems(), null, 2);
+    this.session.testsuiteText = updated;
+    this.testfile.updateContent(updated);
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave(true);
+  }
+
+  private buildProcessedTestsuiteItems(): Array<{ id: string; premises: string[]; conclusion: string[]; gold_label: string | null }> {
+    return (this.regressionTestItems ?? []).map((item: any, index: number) => ({
+      id: String(item?.id ?? `n${index}`),
+      premises: (item?.premises ?? []).map((sid: string) => this.sentenceMap[sid]).filter((s: any) => typeof s === 'string' && s.trim().length > 0),
+      conclusion: (item?.conclusion ?? []).map((sid: string) => this.sentenceMap[sid]).filter((s: any) => typeof s === 'string' && s.trim().length > 0),
+      gold_label: item?.gold_label ?? null,
+    }));
+  }
+
   onEditorContentChange(field: 'testsuiteText' | 'rulesText' | 'axiomsText', value: string): void {
     if (this.isHydratingSession) return;
 
@@ -1235,18 +1401,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   displayMessage(message: string, color: string) {
     this.errorhandle.nativeElement.style.color = color;
-    this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
+    this.errorhandle.nativeElement.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
   private setSessionLoadStatus(state: 'idle' | 'loading' | 'success' | 'error', message: string, details: string): void {
     this.sessionLoadState = state;
-    this.sessionLoadMessage = message;
+    this.sessionLoadMessage = message ? `[${new Date().toLocaleTimeString()}] ${message}` : '';
     this.sessionLoadDetails = details;
   }
 
   clearStatusMessage(): void {
     if (this.errorhandle?.nativeElement) {
-      this.errorhandle.nativeElement.innerHTML = "";
+      this.errorhandle.nativeElement.textContent = "";
     }
   }
 
@@ -1261,14 +1427,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
 
   parse_block_testfile(testfile: string) {
-    this.regressionTestItems = [];
-
     let parseItems: any[] = [];
     let lines = testfile.split('\n');
 
-    let sentence_map = {};
-    let sentence_id = 0;
-    let item_id = 0;
+    const appendMode = this.testsuiteUpdateMode === 'append';
+    if (!appendMode) this.regressionTestItems = [];
+    const sentence_map: Record<string, string> = appendMode ? { ...(this.sentenceMap ?? {}) } : {};
+    let sentence_id = appendMode ? this.getNextSentenceId(sentence_map) : 0;
+    let item_id = appendMode ? this.getNextItemId(this.regressionTestItems ?? []) : 0;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -1325,8 +1491,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   parse_json_testfile(testfile: string) {
-    this.regressionTestItems = [];
-
     let parseItems: any[] = [];
     let parsed = JSON.parse(testfile);
 
@@ -1334,9 +1498,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       throw new Error("JSON testfile must be a list.");
     }
 
-    let sentence_map = {};
-    let sentence_id = 0;
-    let item_id = 0;
+    const appendMode = this.testsuiteUpdateMode === 'append';
+    if (!appendMode) this.regressionTestItems = [];
+    const sentence_map: Record<string, string> = appendMode ? { ...(this.sentenceMap ?? {}) } : {};
+    let sentence_id = appendMode ? this.getNextSentenceId(sentence_map) : 0;
+    let item_id = appendMode ? this.getNextItemId(this.regressionTestItems ?? []) : 0;
 
     for (let i = 0; i < parsed.length; i++) {
       const obj = parsed[i];
@@ -1372,7 +1538,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }
 
       let item = {
-        id: obj.id ?? "n" + item_id,
+        id: "n" + item_id,
         sentences,
         premises: premise_ids,
         conclusion: conclusion_ids,
@@ -1385,6 +1551,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     console.log("Sentence map:", sentence_map);
     this.sentenceMap = sentence_map;
     this.regressionTestItems.push(...parseItems);
+  }
+
+  private getNextSentenceId(sentenceMap: Record<string, string>): number {
+    return Object.keys(sentenceMap ?? {}).reduce((max, key) => {
+      const match = /^S(\d+)$/.exec(key);
+      return match ? Math.max(max, Number(match[1]) + 1) : max;
+    }, 0);
+  }
+
+  private getNextItemId(items: any[]): number {
+    return (items ?? []).reduce((max, item) => {
+      const match = /^n(\d+)$/.exec(String(item?.id ?? ''));
+      return match ? Math.max(max, Number(match[1]) + 1) : max;
+    }, 0);
   }
 
 
