@@ -1,21 +1,24 @@
-import { Component, ElementRef, ViewChild, OnInit, AfterViewInit, ChangeDetectorRef } from '@angular/core';
+import { Component, ElementRef, ViewChild, OnInit, AfterViewInit, ChangeDetectorRef, OnChanges, SimpleChanges, Input } from '@angular/core';
 import { DataService } from "../../data.service";
 import { FileTree } from "../../models/models";
 import { tap } from 'rxjs/operators';
 import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component";  // Import tap operator
+import { EventEmitter, Output } from '@angular/core';
 
 @Component({
   selector: 'app-grammar-loader',
   templateUrl: './grammar-loader.component.html',
   styleUrls: ['./grammar-loader.component.css']
 })
-export class GrammarLoaderComponent implements OnInit,AfterViewInit {
+export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
   @ViewChild('grammarListSelector') grammarListSelector: ElementRef;
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
   @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
   grammarList: string[] = [];
+  @Output() grammarLoaded = new EventEmitter<string>();
+  @Input() loadedPath = '';
   defaultGrammar: string = "./grammars/demo/fracas_inference_grammar/main_fracas_grammar.lfg.glue";
   grammarsDirectory: string = "./grammars";
   currentStatusMessage: string = ""
@@ -38,6 +41,12 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit {
       this.toggleDisplayComponent.isHidden = true;
     } else {
       console.error("toggleDisplayComponent is still undefined in ngAfterViewInit.");
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['loadedPath'] && !changes['loadedPath'].firstChange) {
+      this.refreshStatusMessage();
     }
   }
 
@@ -67,6 +76,9 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit {
           this.currentStatusMessage = "Currently loaded grammar: " + this.selectedPath;
           this.cd.detectChanges();
           this.toggleDisplayComponent.isHidden = true;
+          this.loadedPath = this.selectedPath;
+          this.grammarLoaded.emit(this.selectedPath);
+          this.refreshStatusMessage();
         } else {
           this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
         }
@@ -76,6 +88,15 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit {
         this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
       }
     );
+  }
+
+  private refreshStatusMessage(): void {
+    if (!this.loadedPath) {
+      return;
+    }
+
+    const modified = this.selectedPath !== this.loadedPath;
+    this.currentStatusMessage = `Currently loaded grammar: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
   }
 
   getGrammars(directory: string) {

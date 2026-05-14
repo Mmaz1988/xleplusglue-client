@@ -1,6 +1,7 @@
 import { Component, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { DataService } from "../data.service";
 import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
+import { ActivatedRoute } from '@angular/router';
 import {
   LigerRuleAnnotation,
   GswbMultipleRequest,
@@ -41,7 +42,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private readonly activeSessionStorageKey = 'regression-testing-active-session-key';
 
-  constructor(private dataService: DataService) {}
+  constructor(private dataService: DataService, private route: ActivatedRoute) {}
 
   session: RegressionTestingSession = createRegressionTestingSession();
 
@@ -70,6 +71,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private gswbSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
   private vampireSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private sessionPersistenceEnabled = false;
+  private isBootstrapping = true;
   private activeGswbRunStartedAt: number | null = null;
   private vampirePendingItemCount: number | null = null;
   private vampireCurrentRunItemCount: number = 0;
@@ -225,10 +228,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.loadRecentSessions();
 
+    const querySessionKey = this.route.snapshot.queryParamMap.get('session') ?? '';
+    if (querySessionKey) {
+      this.loadSessionFromRecent(querySessionKey);
+      return;
+    }
+
     const persistedSessionKey = this.getPersistedActiveSessionKey();
     if (persistedSessionKey) {
       this.loadSessionFromRecent(persistedSessionKey);
     }
+
+    this.isBootstrapping = false;
   }
 
   get redisSessionKey(): string {
@@ -244,6 +255,42 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.testsuiteText = this.testfile.getContent();
     this.session.rulesText = this.ligerRules.getContent();
     this.session.axiomsText = this.axiomEdit.getContent();
+  }
+
+  private isModified(currentText: string, loadedText: string): boolean {
+    return (currentText ?? '') !== (loadedText ?? '');
+  }
+
+  getGrammarDisplay(): string {
+    return this.session.grammarPath || 'Not loaded';
+  }
+
+  getTrackedFileDisplay(kind: 'testsuite' | 'rules' | 'axioms'): string {
+    const metadata = {
+      testsuite: {
+        filename: this.session.testsuiteFilename,
+        current: this.session.testsuiteText,
+        loaded: this.session.testsuiteLoadedText,
+      },
+      rules: {
+        filename: this.session.rulesFilename,
+        current: this.session.rulesText,
+        loaded: this.session.rulesLoadedText,
+      },
+      axioms: {
+        filename: this.session.axiomsFilename,
+        current: this.session.axiomsText,
+        loaded: this.session.axiomsLoadedText,
+      },
+    }[kind];
+
+    const name = metadata.filename || 'Not loaded';
+    return this.isModified(metadata.current, metadata.loaded) ? `${name} (modified)` : name;
+  }
+
+  private getFileStateLabel(filename: string, loadedText: string, currentText: string): string {
+    const name = filename || 'Not loaded';
+    return this.isModified(currentText, loadedText) ? `${name} (modified)` : name;
   }
 
   private cloneParsedRegressionSnapshot(snapshot: ParsedRegressionRunSnapshot | null): ParsedRegressionRunSnapshot | null {
@@ -326,7 +373,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   private scheduleSessionSave(immediate = false): void {
-    if (this.isHydratingSession) return;
+    if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
 
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
@@ -352,7 +399,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   private saveSessionSnapshot(): void {
-    if (this.isHydratingSession) return;
+    if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
 
     this.syncSessionStateFromUi();
     const snapshot = this.buildSessionSnapshot();
@@ -394,9 +441,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       testsuiteText: snapshot.testsuiteText ?? '',
       rulesText: snapshot.rulesText ?? '',
       axiomsText: snapshot.axiomsText ?? '',
+      grammarPath: snapshot.grammarPath ?? '',
       testsuiteFilename: snapshot.testsuiteFilename ?? '',
       rulesFilename: snapshot.rulesFilename ?? '',
       axiomsFilename: snapshot.axiomsFilename ?? '',
+      testsuiteLoadedText: snapshot.testsuiteLoadedText ?? snapshot.testsuiteText ?? '',
+      rulesLoadedText: snapshot.rulesLoadedText ?? snapshot.rulesText ?? '',
+      axiomsLoadedText: snapshot.axiomsLoadedText ?? snapshot.axiomsText ?? '',
       testsuiteUpdateMode: snapshot.testsuiteUpdateMode ?? 'write',
       lastVampireResults: snapshot.lastVampireResults ?? null,
     };
@@ -437,7 +488,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.appendSnapshot = null;
 
     this.isHydratingSession = false;
-    this.scheduleSessionSave(true);
+    this.sessionPersistenceEnabled = true;
   }
 
   loadSessionFromRecent(sessionKey: string): void {
@@ -457,7 +508,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.setSessionLoadStatus(
           'success',
           `Loaded ${sessionKey}`,
-          `Parses: ${parseCount}\nInference results: ${inferenceCount}`
+          [
+            `Parses: ${parseCount}`,
+            `Inference results: ${inferenceCount}`,
+            `Grammar: ${snapshot?.grammarPath || 'Not loaded'}`,
+            `Testsuite: ${this.getFileStateLabel(snapshot?.testsuiteFilename ?? '', snapshot?.testsuiteLoadedText ?? snapshot?.testsuiteText ?? '', snapshot?.testsuiteText ?? '')}`,
+            `Rules: ${this.getFileStateLabel(snapshot?.rulesFilename ?? '', snapshot?.rulesLoadedText ?? snapshot?.rulesText ?? '', snapshot?.rulesText ?? '')}`,
+            `Axioms: ${this.getFileStateLabel(snapshot?.axiomsFilename ?? '', snapshot?.axiomsLoadedText ?? snapshot?.axiomsText ?? '', snapshot?.axiomsText ?? '')}`,
+          ].join('\n')
         );
       },
       error: error => {
@@ -483,7 +541,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     snapshot.id = sessionKey;
     snapshot.redisSessionKey = sessionKey;
     snapshot.updatedAt = new Date().toISOString();
-    snapshot.createdAt = snapshot.createdAt || snapshot.updatedAt;
+    snapshot.createdAt = snapshot.updatedAt;
+    snapshot.testsuiteLoadedText = snapshot.testsuiteText;
+    snapshot.rulesLoadedText = snapshot.rulesText;
+    snapshot.axiomsLoadedText = snapshot.axiomsText;
 
     this.dataService.saveRegressionSession(sessionKey, snapshot).subscribe({
       next: (response: any) => {
@@ -526,8 +587,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
     this.setPersistedActiveSessionKey(this.session.redisSessionKey);
+    this.sessionPersistenceEnabled = true;
     this.isHydratingSession = false;
-    this.scheduleSessionSave(true);
   }
 
   private renderSavedInferenceResults(results: RegressionInferenceResult[]): void {
@@ -1378,21 +1439,76 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     );
   }
 
-  updateRules(ruleFile: string) {
+  updateGrammar(grammarPath: string) {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    this.session.grammarPath = grammarPath;
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
+  }
+
+  onTestsuiteStateChange(state: { path: string; loadedContent: string }): void {
+    this.session.testsuiteFilename = state?.path ?? '';
+    this.session.testsuiteLoadedText = state?.loadedContent ?? '';
+  }
+
+  updateRules(file: { path: string; content: string }) {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    this.session.rulesFilename = file?.path ?? '';
+    this.session.rulesLoadedText = file?.content ?? '';
+    this.session.rulesText = file?.content ?? '';
+    this.ligerRules.updateContent(file?.content ?? '');
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
+  }
+
+  onRulesStateChange(state: { path: string; loadedContent: string }): void {
+    this.session.rulesFilename = state?.path ?? '';
+    this.session.rulesLoadedText = state?.loadedContent ?? '';
+  }
+
+  updateRulesText(ruleFile: string) {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session.rulesText = ruleFile;
     this.ligerRules.updateContent(ruleFile);
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();
   }
 
-  updateTestsuite(ruleFile: string) {
+  onAxiomsStateChange(state: { path: string; loadedContent: string }): void {
+    this.session.axiomsFilename = state?.path ?? '';
+    this.session.axiomsLoadedText = state?.loadedContent ?? '';
+  }
+
+  updateTestsuite(file: { path: string; content: string }) {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    this.session.testsuiteFilename = file?.path ?? '';
+    this.session.testsuiteLoadedText = file?.content ?? '';
+    this.session.testsuiteText = file?.content ?? '';
+    this.testfile.updateContent(file?.content ?? '');
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
+  }
+
+  updateTestsuiteText(ruleFile: string) {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session.testsuiteText = ruleFile;
     this.testfile.updateContent(ruleFile);
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();
   }
 
-  updateAxioms(ruleFile: string) {
+  updateAxioms(file: { path: string; content: string }) {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
+    this.session.axiomsFilename = file?.path ?? '';
+    this.session.axiomsLoadedText = file?.content ?? '';
+    this.session.axiomsText = file?.content ?? '';
+    this.axiomEdit.updateContent(file?.content ?? '');
+    this.syncSessionStateFromUi();
+    this.scheduleSessionSave();
+  }
+
+  updateAxiomsText(ruleFile: string) {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session.axiomsText = ruleFile;
     this.axiomEdit.updateContent(ruleFile);
     this.syncSessionStateFromUi();
@@ -1400,6 +1516,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   setTestsuiteUpdateMode(mode: 'write' | 'append'): void {
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.testsuiteUpdateMode = mode;
     this.session.testsuiteUpdateMode = mode;
     this.scheduleSessionSave();
@@ -1425,6 +1542,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   onEditorContentChange(field: 'testsuiteText' | 'rulesText' | 'axiomsText', value: string): void {
     if (this.isHydratingSession) return;
 
+    if (!this.isBootstrapping) this.sessionPersistenceEnabled = true;
     this.session[field] = value;
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();

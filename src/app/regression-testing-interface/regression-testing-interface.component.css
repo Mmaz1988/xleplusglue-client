@@ -110,6 +110,19 @@ div.errorhandling {
   gap: 4px;
 }
 
+.file-state-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid #d8eaf5;
+  border-radius: 10px;
+  background: #fbfdff;
+  color: #4f4f4f;
+  font-size: 0.92rem;
+}
+
 .results-grid {
   display: flex;
   gap: 16px;

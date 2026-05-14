@@ -11,11 +11,13 @@ import {InferenceInterfaceComponent} from "./inference-interface/inference-inter
 import {GswbVisComponent} from "./gswb-vis/gswb-vis.component";
 import {GswbVisContainerComponent} from "./center-container/gswb-vis-container/gswb-vis-container.component";
 import {LigerVisContainerComponent} from "./center-container/liger-vis-container/liger-vis-container.component";
+import {RegressionDashboardComponent} from "./regression-dashboard/regression-dashboard.component";
 
 
 const routes: Routes = [
   { path: '', redirectTo: 'home', pathMatch: 'full' },
   { path: 'demo', component: GlueInterfaceComponent },
+  { path: 'regression-dashboard', component: RegressionDashboardComponent },
   { path: 'regression', component: RegressionTestingInterfaceComponent },
   {path: 'inference', component: InferenceInterfaceComponent },
   {path: 'chat', component: ChatInterfaceComponent },

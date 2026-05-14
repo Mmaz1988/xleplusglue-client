@@ -113,6 +113,9 @@ export interface RegressionSessionSummary {
   inferenceCount: number;
   hasParseResults: boolean;
   hasInferenceResults: boolean;
+  sentenceCount?: number;
+  failedParseCount?: number;
+  mismatchCount?: number;
 }
 
 export interface RegressionTestingSession {
@@ -120,6 +123,7 @@ export interface RegressionTestingSession {
   redisSessionKey: string;
   createdAt: string;
   updatedAt: string;
+  grammarPath: string;
   testsuiteUpdateMode: 'write' | 'append';
   testsuiteText: string;
   rulesText: string;
@@ -127,6 +131,9 @@ export interface RegressionTestingSession {
   testsuiteFilename: string;
   rulesFilename: string;
   axiomsFilename: string;
+  testsuiteLoadedText: string;
+  rulesLoadedText: string;
+  axiomsLoadedText: string;
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
   sentenceMap: Record<string, string>;
@@ -158,6 +165,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     redisSessionKey: sessionId,
     createdAt,
     updatedAt: createdAt,
+    grammarPath: '',
     testsuiteUpdateMode: 'write',
     testsuiteText: '',
     rulesText: '',
@@ -165,6 +173,9 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     testsuiteFilename: '',
     rulesFilename: '',
     axiomsFilename: '',
+    testsuiteLoadedText: '',
+    rulesLoadedText: '',
+    axiomsLoadedText: '',
     gswbPreferences: {
       prover: 1,
       debugging: false,

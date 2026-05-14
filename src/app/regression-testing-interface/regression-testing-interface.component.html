@@ -34,20 +34,36 @@
       <div class="grammar-loader-container">
         <div>
           <h2>Grammar selection:</h2>
-          <app-grammar-loader></app-grammar-loader>
+          <app-grammar-loader [loadedPath]="session.grammarPath"
+                              (grammarLoaded)="updateGrammar($event)"></app-grammar-loader>
         </div>
         <div>
         <h2>Test suite selection:</h2>
-        <app-file-loader (dataEmitter)="updateTestsuite($event)"
+        <app-file-loader displayName="testsuite" [currentContent]="session.testsuiteText"
+                         [loadedPath]="session.testsuiteFilename"
+                         [loadedContent]="session.testsuiteLoadedText"
+                         (stateChange)="onTestsuiteStateChange($event)"
+                         (fileLoaded)="updateTestsuite($event)"
+                         (dataEmitter)="updateTestsuiteText($event)"
                          defaultFilePath="./testsuites/inference/inference-basic.lfg" filesDirectory="./testsuites/"> </app-file-loader>
       </div>
         <div>
           <h2>Rule file selection:</h2>
-          <app-rule-loader (dataEmitter)="updateRules($event)"></app-rule-loader>
+          <app-rule-loader displayName="rules" [currentContent]="session.rulesText"
+                           [loadedPath]="session.rulesFilename"
+                           [loadedContent]="session.rulesLoadedText"
+                           (stateChange)="onRulesStateChange($event)"
+                           (ruleLoaded)="updateRules($event)"
+                           (dataEmitter)="updateRulesText($event)"></app-rule-loader>
         </div>
         <div>
         <h2>Default axioms selection:</h2>
-        <app-file-loader (dataEmitter)="updateAxioms($event)"
+        <app-file-loader displayName="axioms" [currentContent]="session.axiomsText"
+                         [loadedPath]="session.axiomsFilename"
+                         [loadedContent]="session.axiomsLoadedText"
+                         (stateChange)="onAxiomsStateChange($event)"
+                         (fileLoaded)="updateAxioms($event)"
+                         (dataEmitter)="updateAxiomsText($event)"
                          filesDirectory="./axioms/"></app-file-loader>
       </div>
       </div>

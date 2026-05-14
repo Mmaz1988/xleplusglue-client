@@ -1,4 +1,4 @@
-import {ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from '@angular/core';
+import {ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild} from '@angular/core';
 import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component";
 import {FileTree} from "../../models/models";
 import {DataService} from "../../data.service";
@@ -11,7 +11,7 @@ import {DataService} from "../../data.service";
   styleUrls: ['./file-loader.component.css']
 })
 
-export class FileLoaderComponent {
+export class FileLoaderComponent implements OnChanges {
 
   @ViewChild('grammarListSelector') grammarListSelector: ElementRef;
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
@@ -21,8 +21,14 @@ export class FileLoaderComponent {
   //@Input() mode: LoaderMode = 'grammar';
   @Input() defaultFilePath!: string;
   @Input() filesDirectory!: string;
+  @Input() displayName = 'file';
+  @Input() currentContent = '';
+  @Input() loadedPath = '';
+  @Input() loadedContent = '';
 
   @Output() dataEmitter = new EventEmitter<string>();
+  @Output() fileLoaded = new EventEmitter<{ path: string; content: string }>();
+  @Output() stateChange = new EventEmitter<{ path: string; loadedContent: string }>();
 
   // state
   noFileSelected = true;
@@ -46,6 +52,12 @@ export class FileLoaderComponent {
       this.updateFile();
     } else {
       this.setNoFileSelected();
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['currentContent'] && !changes['currentContent'].firstChange) {
+      this.refreshStatusMessage();
     }
   }
 
@@ -86,11 +98,15 @@ export class FileLoaderComponent {
           console.log("Successfully loaded file: " + this.selectedPath);
 
           this.noFileSelected = false;
-          this.currentStatusMessage = "Currently loaded file: " + this.selectedPath;
+          this.loadedPath = this.selectedPath;
+          this.loadedContent = data.grammar;
           this.toggleDisplayComponent.isHidden = true;
 
           this.fileContent = data.grammar;
           this.sendFiles();
+          this.fileLoaded.emit({ path: this.selectedPath, content: this.fileContent });
+          this.stateChange.emit({ path: this.loadedPath, loadedContent: this.loadedContent });
+          this.refreshStatusMessage();
           this.cd.detectChanges();
         } else {
           // response didn't contain expected payload => reset
@@ -139,15 +155,28 @@ export class FileLoaderComponent {
   private setNoFileSelected(message = 'No file selected.'): void {
     this.noFileSelected = true;
     this.selectedPath = '';
+    this.loadedPath = '';
+    this.loadedContent = '';
     this.fileContent = '';
     this.currentStatusMessage = message;
     this.sendFiles();            // emit empty content so parent can react
+    this.fileLoaded.emit({ path: '', content: '' });
+    this.stateChange.emit({ path: '', loadedContent: '' });
     this.cd.detectChanges();
   }
 
   private setFileSelected(path: string): void {
     this.noFileSelected = false;
     this.selectedPath = path;
+  }
+
+  private refreshStatusMessage(): void {
+    if (this.noFileSelected || !this.loadedPath) {
+      return;
+    }
+
+    const modified = (this.currentContent ?? '') !== (this.loadedContent ?? this.fileContent ?? '');
+    this.currentStatusMessage = `Currently loaded ${this.displayName}: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
   }
 
 }

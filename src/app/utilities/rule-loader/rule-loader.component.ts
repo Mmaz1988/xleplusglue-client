@@ -5,8 +5,11 @@ import {
   OnInit,
   AfterViewInit,
   ChangeDetectorRef,
+  OnChanges,
+  Input,
   Output,
-  EventEmitter
+  EventEmitter,
+  SimpleChanges
 } from '@angular/core';
 import { DataService } from "../../data.service";
 import { FileTree } from "../../models/models";
@@ -18,13 +21,19 @@ import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component
   templateUrl: './rule-loader.component.html',
   styleUrls: ['./rule-loader.component.css']
 })
-export class RuleLoaderComponent implements OnInit,AfterViewInit {
+export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
   @ViewChild('ruleListSelector') ruleListSelector: ElementRef;
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
   @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
   @Output() dataEmitter = new EventEmitter<string>();
+  @Output() ruleLoaded = new EventEmitter<{ path: string; content: string }>();
+  @Output() stateChange = new EventEmitter<{ path: string; loadedContent: string }>();
+  @Input() currentContent = '';
+  @Input() displayName = 'rules';
+  @Input() loadedPath = '';
+  @Input() loadedContent = '';
 
   defaultRules: string = "./liger_resources/rules/basic_axiom_rules.txt";
   rulesDirectory: string = "./liger_resources/rules";
@@ -53,6 +62,12 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
     }
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['currentContent'] && !changes['currentContent'].firstChange) {
+      this.refreshStatusMessage();
+    }
+  }
+
   // Method to handle the file/folder selection from the file tree
   onFileSelected(path: string) {
     console.log("Selected path from file tree:", path);
@@ -76,11 +91,15 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
         if (data.hasOwnProperty("grammar")) {
           console.log("Successfully loaded rules: " + this.selectedPath);
           // this.grammarListSelector.nativeElement.value = this.selectedPath;
-          this.currentStatusMessage = "Currently loaded rules: " + this.selectedPath;
+          this.loadedPath = this.selectedPath;
+          this.loadedContent = data.grammar;
           this.cd.detectChanges();
           this.toggleDisplayComponent.isHidden = true;
           this.rules = data.grammar;
           this.sendRules()
+          this.ruleLoaded.emit({ path: this.selectedPath, content: this.rules });
+          this.stateChange.emit({ path: this.loadedPath, loadedContent: this.loadedContent });
+          this.refreshStatusMessage();
         } else {
           this.currentStatusMessage = "Failed to load rules: " + this.selectedPath;
         }
@@ -122,5 +141,13 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit {
     this.dataEmitter.emit(this.rules);
   }
 
-}
+  private refreshStatusMessage(): void {
+    if (!this.loadedPath) {
+      return;
+    }
 
+    const modified = (this.currentContent ?? '') !== (this.loadedContent ?? this.rules ?? '');
+    this.currentStatusMessage = `Currently loaded ${this.displayName}: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
+  }
+
+}
