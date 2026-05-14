@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { of } from 'rxjs';
 
 import { RegressionTestingInterfaceComponent } from './regression-testing-interface.component';
@@ -23,6 +24,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.deleteRegressionSession.and.returnValue(of({} as any));
 
     TestBed.configureTestingModule({
+      imports: [FormsModule],
       declarations: [RegressionTestingInterfaceComponent],
       providers: [
         { provide: DataService, useValue: dataServiceSpy },
@@ -47,10 +49,62 @@ describe('RegressionTestingInterfaceComponent', () => {
     } as any;
     component['errorhandle'] = { nativeElement: { textContent: '', style: {} } } as any;
     component['semvisDialog'] = { open: () => {} } as any;
-    fixture.detectChanges();
   });
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('filters Vampire solutions to the disambiguated selection', () => {
+    component.session.selectedSolutionIdsBySentence = { S1: ['sol-2'] };
+
+    const result = (component as any).getSolutionsText(
+      'S1',
+      {
+        S1: {
+          solutions: [
+            { id: 'sol-1', solution: 'first' },
+            { id: 'sol-2', solution: 'second' },
+          ],
+          log: '',
+          derivation: null,
+          discriminants: [],
+        }
+      },
+      true
+    );
+
+    expect(result).toEqual(['second']);
+  });
+
+  it('does not fall back to all solutions in disambiguated mode when no selection exists', () => {
+    component.session.selectedSolutionIdsBySentence = {};
+
+    const result = (component as any).getSolutionsText(
+      'S1',
+      {
+        S1: {
+          solutions: [
+            { id: 'sol-1', solution: 'first' },
+            { id: 'sol-2', solution: 'second' },
+          ],
+          log: '',
+          derivation: null,
+          discriminants: [],
+        }
+      },
+      true
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it('detects append items that touch updated sentences', () => {
+    const result = (component as any).itemTouchesUpdatedSentences(
+      { premises: ['S1'], conclusion: ['S2'] },
+      new Set(['S2'])
+    );
+
+    expect(result).toBeTrue();
   });
 });

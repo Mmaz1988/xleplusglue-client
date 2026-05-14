@@ -82,6 +82,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private isHydratingSession = true;
   private writeSnapshot: ParsedRegressionRunSnapshot | null = null;
   private appendSnapshot: ParsedRegressionRunSnapshot | null = null;
+  private appendUpdatedSentenceIds: Set<string> | null = null;
 
   saveAsSessionName = '';
   testsuiteUpdateMode: 'write' | 'append' = 'write';
@@ -910,8 +911,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.currentVampireRunKind = 'initial';
 
     const baseSentenceKeys = new Set(Object.keys(baseSnapshot.sentenceMap ?? {}));
-    const baseItemCount = baseSnapshot.regressionTestItems.length;
-
     this.session.testsuiteText = sentences;
     this.session.rulesText = rules;
     this.session.axiomsText = this.axiomEdit.getContent();
@@ -1054,8 +1053,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             return;
           }
 
-          // Otherwise proceed immediately with ALL solutions
-          this.runVampireFromCurrentState(false, baseItemCount);
+          // Otherwise proceed immediately using the selected solutions.
+          this.runVampireFromCurrentState(true);
         });
       },
       error => {
@@ -1072,6 +1071,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private applyAppendSnapshotToParsedState(currentOutputs: Record<string, GswbOutput>): void {
     if (!this.appendSnapshot) {
       this.session.lastGswbOutputs = currentOutputs;
+      this.appendUpdatedSentenceIds = new Set(Object.keys(currentOutputs ?? {}));
       return;
     }
 
@@ -1084,6 +1084,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.selectedSolutionIdsBySentence = { ...(this.session.selectedSolutionIdsBySentence ?? {}) };
     this.session.selectedScopeIdsBySentence = { ...(this.session.selectedScopeIdsBySentence ?? {}) };
     this.session.selectedMcIdsBySentence = { ...(this.session.selectedMcIdsBySentence ?? {}) };
+    this.appendUpdatedSentenceIds = new Set(Object.keys(currentOutputs ?? {}));
   }
 
   private mergeItemsById(existingItems: any[], newItems: any[]): any[] {
@@ -1108,7 +1109,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   // Builds NLI items + runs Vampire.
   // If useDisambiguated=true, filters each sentence’s solutions by selectedSolutionIdsBySentence.
-  private runVampireFromCurrentState(useDisambiguated: boolean, baselineItemCount = 0): void {
+  private runVampireFromCurrentState(useDisambiguated: boolean): void {
     if (!this.session.lastGswbOutputs || !this.session.lastAnnotations) {
       console.warn("No stored GSWB/LiGER state to proceed to Vampire.");
       return;
@@ -1126,6 +1127,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const appendMode = this.testsuiteUpdateMode === 'append' && !!this.appendSnapshot;
     const priorItemIds = new Set((this.appendSnapshot?.regressionTestItems ?? []).map(item => String(item?.id ?? '')));
     const priorInferenceIds = new Set((this.appendSnapshot?.inferenceResults ?? this.inferenceResults ?? []).map(result => String(result?.id ?? '')));
+    const updatedSentenceIds = this.appendUpdatedSentenceIds ?? new Set<string>();
 
     const previousVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireScopeIdsBySentence);
     const previousVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireMcIdsBySentence);
@@ -1138,9 +1140,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     const inference_items: Record<string, nliItem> = {};
 
-    const itemsToConsider = appendMode
-      ? this.regressionTestItems.slice(baselineItemCount)
-      : this.regressionTestItems;
+    const itemsToConsider = this.regressionTestItems;
 
     for (let item of itemsToConsider) {
       const itemId = String(item?.id ?? '');
@@ -1152,9 +1152,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         previousVampireMcIdsBySentence,
         previousVampireSolutionIdsBySentence
       );
+      const parseChanged = appendMode && this.itemTouchesUpdatedSentences(item, updatedSentenceIds);
 
-      if (!isNewlyAppended && isAlreadyProcessed && !selectionChanged) continue;
-      if (appendMode && !isNewlyAppended && !selectionChanged) continue;
+      if (!isNewlyAppended && isAlreadyProcessed && !selectionChanged && !parseChanged) continue;
+      if (appendMode && !isNewlyAppended && !selectionChanged && !parseChanged) continue;
 
       let axioms = this.axiomEdit.getContent();
       let axiomCounter = 0;
@@ -1251,6 +1252,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
+  private itemTouchesUpdatedSentences(item: any, updatedSentenceIds: Set<string>): boolean {
+    if (!updatedSentenceIds.size) return false;
+
+    const sentenceIds = [...(item?.premises ?? []), ...(item?.conclusion ?? [])].map((sid: any) => String(sid ?? ''));
+    return sentenceIds.some(sentenceId => updatedSentenceIds.has(sentenceId));
+  }
+
   private getSolutionsText(
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,
@@ -1262,8 +1270,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     const selectedIds = this.session.selectedSolutionIdsBySentence[sentenceId];
 
-    // If nothing selected, default to ALL (safe fallback)
-    if (!selectedIds || selectedIds.length === 0) return sols.map(x => x.solution);
+    // In disambiguated mode, only the chosen solutions should be sent onward.
+    if (!selectedIds || selectedIds.length === 0) return [];
 
     const sel = new Set(selectedIds);
     return sols.filter(x => sel.has(x.id)).map(x => x.solution);
