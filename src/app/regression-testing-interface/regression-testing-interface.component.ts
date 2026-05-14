@@ -39,6 +39,8 @@ type ParsedRegressionRunSnapshot = {
 })
 export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDestroy {
 
+  private readonly activeSessionStorageKey = 'regression-testing-active-session-key';
+
   constructor(private dataService: DataService) {}
 
   session: RegressionTestingSession = createRegressionTestingSession();
@@ -203,8 +205,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       console.error("ERROR: `vampirePreferences` ViewChild not initialized!");
     }
 
-    this.session = createRegressionTestingSession();
-    this.selectedSessionKey = this.session.redisSessionKey;
+    this.selectedSessionKey = this.getPersistedActiveSessionKey() || this.session.redisSessionKey;
     this.session.gswbPreferences = { ...this.gswbPreferences.gswbPreferences };
     this.session.vampirePreferences = { ...this.vampirePreferences.vampirePreferences };
     this.session.testsuiteText = this.testfile.getContent();
@@ -223,7 +224,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
 
     this.loadRecentSessions();
-    this.scheduleSessionSave(true);
+
+    const persistedSessionKey = this.getPersistedActiveSessionKey();
+    if (persistedSessionKey) {
+      this.loadSessionFromRecent(persistedSessionKey);
+    }
   }
 
   get redisSessionKey(): string {
@@ -274,6 +279,52 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     console.info(`[regression parse-all][${mode}] ${stage}`, payload);
   }
 
+  private getPersistedActiveSessionKey(): string {
+    try {
+      return localStorage.getItem(this.activeSessionStorageKey) ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  private hasExistingRegressionSessionData(): boolean {
+    return Boolean(
+      (this.regressionTestItems?.length ?? 0) > 0 ||
+      (this.regressionTestResults?.length ?? 0) > 0 ||
+      (this.inferenceResults?.length ?? 0) > 0 ||
+      Object.keys(this.sentenceMap ?? {}).length > 0 ||
+      (this.session.lastGswbOutputs && Object.keys(this.session.lastGswbOutputs).length > 0) ||
+      (this.session.lastAnnotations && Object.keys(this.session.lastAnnotations).length > 0) ||
+      (this.session.lastVampireResults && Object.keys(this.session.lastVampireResults).length > 0) ||
+      (this.session.testsuiteText ?? '').trim().length > 0 ||
+      (this.session.rulesText ?? '').trim().length > 0 ||
+      (this.session.axiomsText ?? '').trim().length > 0
+    );
+  }
+
+  private confirmWriteModeOverwrite(): boolean {
+    const message = [
+      'Write mode will overwrite the current regression session results.',
+      'Existing parse and inference data will be replaced.',
+      '',
+      'Continue?'
+    ].join('\n');
+
+    return typeof window === 'undefined' ? true : window.confirm(message);
+  }
+
+  private setPersistedActiveSessionKey(sessionKey: string): void {
+    try {
+      if (sessionKey) {
+        localStorage.setItem(this.activeSessionStorageKey, sessionKey);
+      } else {
+        localStorage.removeItem(this.activeSessionStorageKey);
+      }
+    } catch {
+      // Ignore storage failures; session persistence still works server-side.
+    }
+  }
+
   private scheduleSessionSave(immediate = false): void {
     if (this.isHydratingSession) return;
 
@@ -308,6 +359,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.dataService.saveRegressionSession(this.redisSessionKey, snapshot).subscribe({
       next: (response: any) => {
+        this.setPersistedActiveSessionKey(this.redisSessionKey);
         if (response?.recent_sessions) {
           this.recentSessions = response.recent_sessions;
         } else {
@@ -399,6 +451,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.dataService.loadRegressionSession(sessionKey).subscribe({
       next: snapshot => {
         this.hydrateSession(snapshot);
+        this.setPersistedActiveSessionKey(sessionKey);
         const parseCount = snapshot?.regressionTestResults?.length ?? 0;
         const inferenceCount = snapshot?.inferenceResults?.length ?? 0;
         this.setSessionLoadStatus(
@@ -409,6 +462,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       },
       error: error => {
         console.warn("Unable to load regression session.", error);
+        if (this.getPersistedActiveSessionKey() === sessionKey) {
+          this.setPersistedActiveSessionKey('');
+        }
         this.setSessionLoadStatus('error', `Failed to load ${sessionKey}`, 'The saved session could not be retrieved.');
       }
     });
@@ -435,6 +491,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.saveAsSessionName = '';
         this.hydrateSession(savedSession);
         this.selectedSessionKey = savedSession.redisSessionKey || sessionKey;
+        this.setPersistedActiveSessionKey(this.selectedSessionKey);
         this.loadRecentSessions();
         this.setSessionLoadStatus('success', `Saved session as ${sessionKey}`, `Session key: ${sessionKey}`);
       },
@@ -468,6 +525,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.axiomEdit.updateContent('');
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
+    this.setPersistedActiveSessionKey(this.session.redisSessionKey);
     this.isHydratingSession = false;
     this.scheduleSessionSave(true);
   }
@@ -704,6 +762,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   batchParse(sentences: string, rules: string) {
     if (this.runLocked) return;
+    if (this.testsuiteUpdateMode === 'write' && this.hasExistingRegressionSessionData()) {
+      const confirmed = this.confirmWriteModeOverwrite();
+      if (!confirmed) {
+        this.displayMessage('Parse all cancelled.', 'blue');
+        return;
+      }
+    }
+
     this.errorhandle.nativeElement.textContent = "";
     this.loading = true;
     const runStartedAt = Date.now();
