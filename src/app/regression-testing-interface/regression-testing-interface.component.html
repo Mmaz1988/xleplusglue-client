@@ -196,6 +196,23 @@
 
 
   <div class="errorhandling" #errorhandle></div>
+  <div *ngIf="isVampireProgressVisible" class="vampire-progress-panel" [class.loading]="isVampireProgressAnimating">
+    <div class="vampire-progress-header">
+      <span>{{ vampireProgressLabel }}</span>
+      <span class="vampire-progress-percent">{{ vampireProgressPercent }}%</span>
+    </div>
+    <div class="vampire-progress-track" role="progressbar"
+         aria-label="Vampire backend progress"
+         [attr.aria-valuenow]="vampireProgressPercent"
+         aria-valuemin="0"
+         aria-valuemax="100">
+      <div class="vampire-progress-fill" [style.width.%]="vampireProgressPercent"></div>
+    </div>
+    <div class="vampire-progress-meta">
+      <span>Items: {{ vampireProgressItemCount ?? 0 }} / {{ vampireProgressTotalCount ?? 0 }}</span>
+      <span>Proofs: {{ vampireProgressProofCount ?? 0 }}</span>
+    </div>
+  </div>
   <div *ngIf="hasTimingInfo" class="processing-timing">
     <div class="processing-timing-summary">{{ processingTimingSummary }}</div>
     <app-pill
@@ -213,10 +230,11 @@
       <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
         <div>
           <div class="results-list">
-            <div class="result-container"
-                 *ngFor="let element of regressionTestResults; trackBy: trackBySentenceId">
+             <div class="result-container"
+                 *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId">
               <app-test-result
                 [data]="element"
+                [displayIndex]="i + 1"
                 [disambiguationActive]="enableDisambiguation && disambiguationMode"
                 [selectedSolutionIds]="getSelectedSolutionIds(element)"
                 (openSemVis)="openSemVisDialog($event)"
@@ -234,9 +252,9 @@
         <div>
           <div class="results-list">
             <div class="result-container"
-                 *ngFor="let element of inferenceResults; trackBy: trackByInferenceId"
+                 *ngFor="let element of inferenceResults; let i = index; trackBy: trackByInferenceId"
                  [class.highlight]="selectedIds.has(element.id)">
-              <app-inference-result [data]="element"></app-inference-result>
+              <app-inference-result [data]="element" [displayIndex]="i + 1"></app-inference-result>
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 
 import { RegressionTestingInterfaceComponent } from './regression-testing-interface.component';
 import { DataService } from '../data.service';
@@ -16,7 +16,9 @@ describe('RegressionTestingInterfaceComponent', () => {
       'listRegressionSessions',
       'loadRegressionSession',
       'saveRegressionSession',
-      'deleteRegressionSession'
+      'deleteRegressionSession',
+      'getLastSession',
+      'getLastSessionSummary'
     ]);
     dataServiceSpy.listRegressionSessions.and.returnValue(of([]));
     dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
@@ -106,5 +108,72 @@ describe('RegressionTestingInterfaceComponent', () => {
     );
 
     expect(result).toBeTrue();
+  });
+
+  it('skips vampire progress requests while one is already in flight', () => {
+    const sessionSubject = new Subject<any>();
+    const summarySubject = new Subject<any>();
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.getLastSession.and.returnValue(sessionSubject.asObservable());
+    dataServiceSpy.getLastSessionSummary.and.returnValue(summarySubject.asObservable());
+
+    component.loading = true;
+    component['regressionTestItems'] = [];
+    component['sentenceMap'] = {};
+    component['activeVampireRunStartedAt'] = 123;
+
+    (component as any).loadAndRenderVampireState(false, 123);
+    (component as any).loadAndRenderVampireState(false, 123);
+
+    expect(dataServiceSpy.getLastSession).toHaveBeenCalledTimes(1);
+    expect(dataServiceSpy.getLastSessionSummary).toHaveBeenCalledTimes(1);
+
+    sessionSubject.next({ results: {} });
+    sessionSubject.complete();
+    summarySubject.next({ item_count: 0, proof_count: 0 });
+    summarySubject.complete();
+
+    expect(dataServiceSpy.getLastSession).toHaveBeenCalledTimes(1);
+    expect(dataServiceSpy.getLastSessionSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues the final vampire refresh until the in-flight request finishes', () => {
+    const firstSessionSubject = new Subject<any>();
+    const firstSummarySubject = new Subject<any>();
+    const secondSessionSubject = new Subject<any>();
+    const secondSummarySubject = new Subject<any>();
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.getLastSession.and.returnValues(
+      firstSessionSubject.asObservable(),
+      secondSessionSubject.asObservable()
+    );
+    dataServiceSpy.getLastSessionSummary.and.returnValues(
+      firstSummarySubject.asObservable(),
+      secondSummarySubject.asObservable()
+    );
+
+    component.loading = true;
+    component['regressionTestItems'] = [];
+    component['sentenceMap'] = {};
+    component['activeVampireRunStartedAt'] = 123;
+
+    (component as any).loadAndRenderVampireState(false, 123);
+    (component as any).loadAndRenderVampireState(true, 123);
+
+    expect(dataServiceSpy.getLastSession).toHaveBeenCalledTimes(1);
+    expect(dataServiceSpy.getLastSessionSummary).toHaveBeenCalledTimes(1);
+
+    firstSessionSubject.next({ results: {} });
+    firstSessionSubject.complete();
+    firstSummarySubject.next({ item_count: 0, proof_count: 0 });
+    firstSummarySubject.complete();
+
+    expect(dataServiceSpy.getLastSession).toHaveBeenCalledTimes(2);
+    expect(dataServiceSpy.getLastSessionSummary).toHaveBeenCalledTimes(2);
+
+    secondSessionSubject.next({ results: {} });
+    secondSessionSubject.complete();
+    secondSummarySubject.next({ item_count: 0, proof_count: 0 });
+    secondSummarySubject.complete();
   });
 });

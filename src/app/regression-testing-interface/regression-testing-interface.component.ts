@@ -19,7 +19,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, forkJoin } from "rxjs";
+import { catchError, EMPTY, Observable, forkJoin, finalize, timeout } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -77,6 +77,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private vampirePendingItemCount: number | null = null;
   private vampireCurrentRunItemCount: number = 0;
   private activeVampireRunStartedAt: number | null = null;
+  private vampireSummaryRequestInFlight = false;
+  private pendingVampireFinalSnapshot: number | null = null;
+  private readonly vampireSummaryRequestTimeoutMs = 30000;
+  vampireProgressItemCount: number | null = null;
+  vampireProgressProofCount: number | null = null;
+  vampireProgressTotalCount: number | null = null;
+  private vampireProgressInProgress = false;
   private vampirePreserveExistingResults = false;
   private currentVampireRunKind: 'initial' | 'append' | 'rerun' = 'initial';
   private isHydratingSession = true;
@@ -843,6 +850,28 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return this.hasParsedExamples && !this.loading && !!this.session.lastGswbOutputs;
   }
 
+  get isVampireProgressVisible(): boolean {
+    return this.activeVampireRunStartedAt !== null || this.vampireProgressTotalCount !== null;
+  }
+
+  get isVampireProgressAnimating(): boolean {
+    return this.isVampireProgressVisible && this.vampireProgressInProgress;
+  }
+
+  get vampireProgressPercent(): number {
+    const total = this.vampireProgressTotalCount ?? 0;
+    if (total <= 0) return 0;
+    const count = Math.min(this.vampireProgressItemCount ?? 0, total);
+    return Math.max(0, Math.min(100, Math.round((count / total) * 100)));
+  }
+
+  get vampireProgressLabel(): string {
+    const current = this.vampireProgressItemCount ?? 0;
+    const total = this.vampireProgressTotalCount ?? this.vampirePendingItemCount ?? this.vampireCurrentRunItemCount;
+    const proofs = this.vampireProgressProofCount ?? 0;
+    return `Vampire backend working: ${current} of ${total} items processed · ${proofs} proofs in session`;
+  }
+
   get hasTimingInfo(): boolean {
     return this.session.timing.parseMs !== null || this.session.timing.totalMs !== null;
   }
@@ -1234,6 +1263,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.loading = true;
     this.vampirePendingItemCount = Object.keys(inference_items).length;
     this.activeVampireRunStartedAt = vampireStartedAt;
+    this.startVampireProgressIndicator(this.regressionTestItems.length || this.vampirePendingItemCount || 0);
     this.startVampireSummaryPolling(vampireStartedAt);
     this.loadAndRenderVampireState(false, vampireStartedAt);
 
@@ -1247,6 +1277,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.vampirePendingItemCount = null;
         this.activeVampireRunStartedAt = null;
         this.loading = false;
+        this.clearVampireProgressIndicator();
         this.saveSessionSnapshot();
       }
     });
@@ -1292,17 +1323,63 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
+  private startVampireProgressIndicator(totalCount: number): void {
+    this.vampireProgressTotalCount = totalCount;
+    this.vampireProgressItemCount = 0;
+    this.vampireProgressProofCount = 0;
+    this.vampireProgressInProgress = true;
+  }
+
+  private updateVampireProgressIndicator(summary: VampireSessionSummary): void {
+    this.vampireProgressItemCount = summary?.item_count ?? 0;
+    this.vampireProgressProofCount = summary?.proof_count ?? 0;
+    this.vampireProgressTotalCount = this.regressionTestItems.length || this.vampireProgressTotalCount;
+  }
+
+  private clearVampireProgressIndicator(): void {
+    this.vampireProgressItemCount = null;
+    this.vampireProgressProofCount = null;
+    this.vampireProgressTotalCount = null;
+    this.vampireProgressInProgress = false;
+  }
+
+  private clearPendingVampireFinalSnapshot(): void {
+    this.pendingVampireFinalSnapshot = null;
+  }
+
+  private releaseVampireSummaryRequestLock(): void {
+    this.vampireSummaryRequestInFlight = false;
+
+    if (this.pendingVampireFinalSnapshot !== null) {
+      const pendingStartedAt = this.pendingVampireFinalSnapshot;
+      this.clearPendingVampireFinalSnapshot();
+      this.loadAndRenderVampireState(true, pendingStartedAt);
+    }
+  }
+
   private loadAndRenderVampireState(finalSnapshot: boolean, vampireStartedAt: number): void {
     if (!this.loading && !finalSnapshot) return;
+    if (this.vampireSummaryRequestInFlight) {
+      if (finalSnapshot) {
+        this.pendingVampireFinalSnapshot = vampireStartedAt;
+      }
+      return;
+    }
+
+    this.vampireSummaryRequestInFlight = true;
     const runToken = this.activeVampireRunStartedAt;
 
     forkJoin({
       session: this.dataService.getLastSession(this.redisSessionKey),
       summary: this.dataService.getLastSessionSummary(this.redisSessionKey)
-    }).subscribe({
+    }).pipe(
+      timeout(this.vampireSummaryRequestTimeoutMs),
+      finalize(() => this.releaseVampireSummaryRequestLock())
+    ).subscribe({
       next: ({ session, summary }) => {
         if (runToken !== this.activeVampireRunStartedAt) return;
 
+        this.updateVampireProgressIndicator(summary);
         this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot, this.vampirePreserveExistingResults);
 
         const proofCount = summary?.proof_count ?? 0;
@@ -1327,6 +1404,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.loading = false;
           this.vampirePendingItemCount = null;
           this.activeVampireRunStartedAt = null;
+          this.stopVampireSummaryPolling();
+          this.clearVampireProgressIndicator();
           this.saveSessionSnapshot();
         }
       },
@@ -1338,6 +1417,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.loading = false;
           this.vampirePendingItemCount = null;
           this.activeVampireRunStartedAt = null;
+          this.stopVampireSummaryPolling();
+          this.clearVampireProgressIndicator();
           this.saveSessionSnapshot();
           this.displayMessage("Batch processing completed, but Redis state could not be reloaded.", "red");
         }
@@ -1438,15 +1519,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const totalItems = this.vampirePreserveExistingResults
       ? (this.vampireCurrentRunItemCount || this.vampirePendingItemCount || this.regressionTestItems.length)
       : (this.vampirePendingItemCount ?? this.regressionTestItems.length);
+    const totalGoldItems = all_entailment_predictions + all_neutral_predictions + all_contradiction_predictions;
+    const totalCorrectItems = successful_entailment_predictions + successful_neutral_predictions + successful_contradiction_predictions;
+    const overallAccuracy = totalGoldItems === 0 ? 'n/a' : (totalCorrectItems / totalGoldItems).toFixed(3);
 
     this.inferenceSummary =
       `${this.currentVampireRunKind === 'append' ? (finalSnapshot ? 'Append inference summary' : 'Append inference progress') : (this.vampirePreserveExistingResults ? 'Vampire rerun summary' : (finalSnapshot ? 'Inference results summary' : 'Vampire progress'))}:\n` +
       `${this.currentVampireRunKind === 'append' ? 'Appended items' : (this.vampirePreserveExistingResults ? 'Re-run items' : 'Processed items')}: ${processedItems} of ${totalItems}\n` +
       `${this.currentVampireRunKind === 'append' ? 'Total session items' : (this.vampirePreserveExistingResults ? 'Total session items' : 'Session items')}: ${Object.keys(mergedResults ?? {}).length}\n` +
       `Processed proofs: ${proofCount}\n` +
-      `Entailment accuracy: ${all_entailment_predictions === 0 ? 'n/a' : successful_entailment_predictions / all_entailment_predictions}\n` +
-      `Neutral accuracy: ${all_neutral_predictions === 0 ? 'n/a' : successful_neutral_predictions / all_neutral_predictions}\n` +
-      `Contradiction accuracy: ${all_contradiction_predictions === 0 ? 'n/a' : successful_contradiction_predictions / all_contradiction_predictions}`;
+      `Overall accuracy: ${overallAccuracy}`;
 
     if (finalSnapshot) {
       this.commitParsedRegressionSnapshot();
