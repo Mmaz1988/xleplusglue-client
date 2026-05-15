@@ -1,3 +1,27 @@
+.test-result-block {
+  position: relative;
+}
+
+.sentence-line {
+  padding-right: 28px;
+}
+
+.index-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(21, 101, 192, 0.12);
+  color: #1565c0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
 div.rule {
   width: 100%
 }

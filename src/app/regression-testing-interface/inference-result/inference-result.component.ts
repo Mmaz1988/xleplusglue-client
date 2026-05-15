@@ -10,6 +10,7 @@ type Label = '1' | '0' | '-1';
 })
 export class InferenceResultComponent implements OnChanges {
   @Input() data: any;
+  @Input() displayIndex: number | null = null;
 
   premises: string[] = [];
   conclusion = '';

@@ -1,29 +1,39 @@
-<p [ngClass]="{
+<div class="test-result-block" [ngClass]="{
       'highlight-block': noOfSolutions === 0,
       'multi-selected': selectedSolutionIds.length > 1
     }">
-  {{sentence_id}}: {{sentence}}<br>
-  Number of applied rules:
-  <span [ngClass]="{ 'zero-value': numberOfAppliedRules === 0 }">
-    {{numberOfAppliedRules}}
-  </span> <br>
+  <span *ngIf="displayIndex !== null" class="index-badge">{{ displayIndex }}</span>
 
-  Number of meaning constructor sets:
-  <span [ngClass]="{ 'zero-value': numberOfMCsets === 0 }">
-    {{numberOfMCsets}}
-  </span> <br>
+  <div class="sentence-line">{{sentence_id}}: {{sentence}}</div>
+  <div>
+    Number of applied rules:
+    <span [ngClass]="{ 'zero-value': numberOfAppliedRules === 0 }">
+      {{numberOfAppliedRules}}
+    </span>
+  </div>
 
-  Number of solutions:
-  <span [ngClass]="{ 'zero-value': noOfSolutions === 0 }">
-    {{noOfSolutions}}
-  </span> <br>
+  <div>
+    Number of meaning constructor sets:
+    <span [ngClass]="{ 'zero-value': numberOfMCsets === 0 }">
+      {{numberOfMCsets}}
+    </span>
+  </div>
 
-  Number of selected solutions:
-  <span [ngClass]="{ 'zero-value': selectedSolutionIds.length === 0 }">
-    {{ selectedSolutionIds.length }} / {{ noOfSolutions }}
-  </span>
-</p>
+  <div>
+    Number of solutions:
+    <span [ngClass]="{ 'zero-value': noOfSolutions === 0 }">
+      {{noOfSolutions}}
+    </span>
+  </div>
 
-<button type="button" (click)="openSolutionsDialog(0)">
-  Open solutions
-</button>
+  <div>
+    Number of selected solutions:
+    <span [ngClass]="{ 'zero-value': selectedSolutionIds.length === 0 }">
+      {{ selectedSolutionIds.length }} / {{ noOfSolutions }}
+    </span>
+  </div>
+
+  <button type="button" (click)="openSolutionsDialog(0)">
+    Open solutions
+  </button>
+</div>

@@ -1,4 +1,5 @@
 <div class="inf-block" [ngClass]="{ 'highlight-block': mismatch }">
+  <span *ngIf="displayIndex !== null" class="index-badge">{{ displayIndex }}</span>
   <div class="row">
     <span class="title">Premises:</span>
   </div>

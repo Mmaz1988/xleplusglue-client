@@ -12,6 +12,7 @@ type GswbDiscriminant = any;
 })
 export class TestResultComponent  {
 
+  @Input() displayIndex: number | null = null;
   @Input() selectedSolutionIds: string[] = [];
 
   // NEW: emitter to parent
