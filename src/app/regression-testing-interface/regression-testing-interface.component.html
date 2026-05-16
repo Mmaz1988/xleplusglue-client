@@ -34,6 +34,7 @@
         <span *ngIf="!isSaveAsInProgress">Save as</span>
         <span *ngIf="isSaveAsInProgress">Saving...</span>
       </button>
+      <app-pill *ngIf="isAutosavingInProgress" badge="i" variant="text" [text]="'Autosaving session changes...'" minimizedColor="#1565c0"></app-pill>
     </div>
 
     <h1>Files</h1>

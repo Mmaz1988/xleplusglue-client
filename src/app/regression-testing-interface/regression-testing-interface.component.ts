@@ -445,11 +445,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     onSuccess?: () => void,
     successMessage?: string,
     onComplete?: () => void,
-    action: 'autosave' | 'current' | 'as' = 'autosave'
+    action: 'autosave' | 'current' | 'as' = 'autosave',
+    lockAlreadyHeld = false
   ): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
 
-    if (this.saveOperationInProgress) {
+    if (this.saveOperationInProgress && !lockAlreadyHeld) {
       this.pendingAutosave = true;
       return;
     }
@@ -518,12 +519,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
+    this.saveOperationInProgress = true;
+    this.activeSaveAction = 'current';
     this.displayMessage(`Saving current session ${this.redisSessionKey}...`, 'blue');
     this.saveSessionSnapshot(
       undefined,
       `Saved current session ${this.redisSessionKey}`,
-      undefined,
-      'current'
+      () => {
+        this.saveOperationInProgress = false;
+        this.activeSaveAction = null;
+      },
+      'current',
+      true
     );
   }
 
@@ -2103,6 +2110,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   get isSaveAsInProgress(): boolean {
     return this.saveOperationInProgress && this.activeSaveAction === 'as';
+  }
+
+  get isAutosavingInProgress(): boolean {
+    return this.saveOperationInProgress && this.activeSaveAction === null;
   }
 
   trackBySentenceId = (_: number, x: any) => x?.sentence_id ?? _;
