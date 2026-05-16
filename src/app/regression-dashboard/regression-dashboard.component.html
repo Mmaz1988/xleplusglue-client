@@ -1,0 +1,84 @@
+<div class="dashboard-shell">
+  <div class="dashboard-header">
+    <div>
+      <h1>Inference banks</h1>
+      <p>Browse saved inference banks, open one in the testing interface, or select several for deletion.</p>
+    </div>
+
+    <div class="dashboard-actions">
+      <button type="button" (click)="refreshSessions()" [disabled]="loading">Refresh sessions</button>
+      <button type="button" (click)="triggerImportClick(importInput)" [disabled]="importing">Import JSON</button>
+      <button type="button" (click)="toggleSelectionMode()">
+        {{ selectionMode ? 'Exit selection mode' : 'Select banks for delete' }}
+      </button>
+      <button type="button" (click)="deleteSelectedSessions()" [disabled]="!selectionMode || selectedSessionKeys.size === 0">
+        Delete selected banks
+      </button>
+    </div>
+  </div>
+
+  <input #importInput type="file" accept="application/json,.json" class="hidden-file-input" (change)="onImportSessionFile($event)" />
+
+  <div *ngIf="selectionMode" class="selection-hint">
+    Selection mode is on. Click cards to select them, then use the delete button. Double-click still opens a bank when you are not selecting.
+  </div>
+
+  <div class="status-line" [class.loading]="loading">
+    {{ statusMessage }}
+  </div>
+
+  <div *ngIf="sessions.length > 0; else emptyState" class="session-grid">
+    <article
+      class="session-card"
+      *ngFor="let session of sessions; trackBy: trackBySessionKey"
+      [class.selected]="isSelected(session.sessionKey)"
+      [class.selection-mode]="selectionMode"
+      (click)="toggleSessionSelection(session.sessionKey)"
+      (dblclick)="openSession(session)"
+      title="Double click to open this bank">
+      <div class="card-top">
+        <div>
+          <div class="card-name">{{ session.displayLabel }}</div>
+          <div class="card-key">{{ session.sessionKey }}</div>
+        </div>
+
+        <label class="select-toggle" *ngIf="selectionMode" (click)="$event.stopPropagation()">
+          <input
+            type="checkbox"
+            [checked]="isSelected(session.sessionKey)"
+            (change)="toggleSessionSelection(session.sessionKey, $any($event.target).checked)" />
+          Select
+        </label>
+      </div>
+
+      <div class="card-metrics">
+        <div><span>Sentences</span><strong>{{ session.sentenceCount }}</strong></div>
+        <div><span>Inferences</span><strong>{{ session.inferenceCount }}</strong></div>
+        <div><span>Failed parses</span><strong>{{ session.failedParseCount }}</strong></div>
+        <div><span>Mismatches</span><strong>{{ session.mismatchCount }}</strong></div>
+      </div>
+
+      <div class="card-files">
+        <div [title]="session.grammarPath || 'Not loaded'">Grammar: {{ shortenText(session.grammarPath) }}</div>
+        <div [title]="getFileLabel(session.testsuiteFilename, session.testsuiteLoadedText, session.testsuiteText)">Testsuite: {{ shortenText(getFileLabel(session.testsuiteFilename, session.testsuiteLoadedText, session.testsuiteText)) }}</div>
+        <div [title]="getFileLabel(session.rulesFilename, session.rulesLoadedText, session.rulesText)">Rules: {{ shortenText(getFileLabel(session.rulesFilename, session.rulesLoadedText, session.rulesText)) }}</div>
+        <div [title]="getFileLabel(session.axiomsFilename, session.axiomsLoadedText, session.axiomsText)">Axioms: {{ shortenText(getFileLabel(session.axiomsFilename, session.axiomsLoadedText, session.axiomsText)) }}</div>
+      </div>
+
+      <div class="card-meta">
+        <span>Created {{ session.createdAt | date:'short' }}</span>
+        <span>Updated {{ session.updatedAt | date:'short' }}</span>
+      </div>
+
+      <div class="card-actions">
+        <button type="button" [disabled]="exportingSessionKey === session.sessionKey" (click)="$event.stopPropagation(); downloadSessionAsJson(session.sessionKey)">Download JSON</button>
+      </div>
+    </article>
+  </div>
+
+  <ng-template #emptyState>
+    <div class="empty-state">
+      No inference banks are stored yet.
+    </div>
+  </ng-template>
+</div>
