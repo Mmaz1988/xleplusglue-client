@@ -64,6 +64,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   gswbMultipleRequest: GswbMultipleRequest;
 
   inferenceSummary = "";
+  parsingSummary = "";
   loading: boolean = false;
   sessionLoadState: 'idle' | 'loading' | 'success' | 'error' = 'idle';
   sessionLoadMessage = '';
@@ -559,6 +560,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.renderSavedInferenceResults(this.inferenceResults);
     } else {
       this.inferenceSummary = '';
+      this.parsingSummary = '';
       this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     }
 
@@ -575,6 +577,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.setSessionLoadStatus('loading', `Loading session ${sessionKey}...`, `Session key: ${sessionKey}`);
     this.inferenceSummary = '';
+    this.parsingSummary = '';
     this.clearStatusMessage();
 
     this.dataService.loadRegressionSession(sessionKey).subscribe({
@@ -657,6 +660,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.selectedIds.clear();
     this.selectedGoldIdx = this.selectedPredIdx = null;
     this.inferenceSummary = '';
+    this.parsingSummary = '';
     this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     this.testfile.updateContent('');
     this.ligerRules.updateContent('');
@@ -804,7 +808,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.scheduleSessionSave();
     }
 
-    this.inferenceSummary =
+    this.parsingSummary =
       `Parsing summary:\n` +
       `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`;
   }
@@ -958,6 +962,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.inferenceResults = [];
       this.vampirePreserveExistingResults = false;
       this.inferenceSummary = "";
+      this.parsingSummary = "";
       this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     }
 
@@ -1426,7 +1431,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  private renderVampireResults(results: Record<string, check[]>, summary: VampireSessionSummary, finalSnapshot: boolean, preserveExisting = false): void {
+  private renderVampireResults(results: Record<string, check[]>, _summary: VampireSessionSummary, finalSnapshot: boolean, preserveExisting = false): void {
     const mergedResults: Record<string, check[]> = preserveExisting && this.session.lastVampireResults
       ? { ...this.session.lastVampireResults, ...results }
       : { ...results };
@@ -1512,23 +1517,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.selectedIds = new Set(this.cellIds[previousSelection.goldIdx][previousSelection.predIdx] ?? []);
     }
 
-    const processedItems = this.vampirePreserveExistingResults
-      ? (this.vampireCurrentRunItemCount || Object.keys(mergedResults ?? {}).length)
-      : (summary?.item_count ?? Object.keys(mergedResults ?? {}).length);
-    const proofCount = summary?.proof_count ?? 0;
-    const totalItems = this.vampirePreserveExistingResults
-      ? (this.vampireCurrentRunItemCount || this.vampirePendingItemCount || this.regressionTestItems.length)
-      : (this.vampirePendingItemCount ?? this.regressionTestItems.length);
-    const totalGoldItems = all_entailment_predictions + all_neutral_predictions + all_contradiction_predictions;
     const totalCorrectItems = successful_entailment_predictions + successful_neutral_predictions + successful_contradiction_predictions;
-    const overallAccuracy = totalGoldItems === 0 ? 'n/a' : (totalCorrectItems / totalGoldItems).toFixed(3);
+    const totalSessionItems = Object.keys(mergedResults ?? {}).length;
+    const formatRatio = (successful: number, total: number) => total === 0 ? 'n/a' : String(successful / total);
 
     this.inferenceSummary =
-      `${this.currentVampireRunKind === 'append' ? (finalSnapshot ? 'Append inference summary' : 'Append inference progress') : (this.vampirePreserveExistingResults ? 'Vampire rerun summary' : (finalSnapshot ? 'Inference results summary' : 'Vampire progress'))}:\n` +
-      `${this.currentVampireRunKind === 'append' ? 'Appended items' : (this.vampirePreserveExistingResults ? 'Re-run items' : 'Processed items')}: ${processedItems} of ${totalItems}\n` +
-      `${this.currentVampireRunKind === 'append' ? 'Total session items' : (this.vampirePreserveExistingResults ? 'Total session items' : 'Session items')}: ${Object.keys(mergedResults ?? {}).length}\n` +
-      `Processed proofs: ${proofCount}\n` +
-      `Overall accuracy: ${overallAccuracy}`;
+      `Inference results summary:\n` +
+      `Successful entailment prediction ratio: ${formatRatio(successful_entailment_predictions, all_entailment_predictions)} ` +
+      `(${successful_entailment_predictions} of ${all_entailment_predictions})\n` +
+      `Successful neutral prediction ratio: ${formatRatio(successful_neutral_predictions, all_neutral_predictions)} ` +
+      `(${successful_neutral_predictions} of ${all_neutral_predictions})\n` +
+      `Successful contradiction prediction ratio: ${formatRatio(successful_contradiction_predictions, all_contradiction_predictions)} ` +
+      `(${successful_contradiction_predictions} of ${all_contradiction_predictions})\n` +
+      `Overall accuracy: ${totalSessionItems === 0 ? 'n/a' : String(totalCorrectItems / totalSessionItems)}`;
 
     if (finalSnapshot) {
       this.commitParsedRegressionSnapshot();
