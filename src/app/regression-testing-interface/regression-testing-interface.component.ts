@@ -459,7 +459,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const snapshot = this.buildSessionSnapshot();
     const fingerprint = this.buildSessionFingerprint(snapshot);
     if (fingerprint === this.lastSavedSessionFingerprint) {
-      if (successMessage) {
+      if (action === 'current') {
+        this.setSessionLoadStatus('success', 'Nothing to save.', 'Current session is already up to date.');
+      } else if (successMessage) {
         this.displayMessage('No changes to save.', 'blue');
       }
       if (onSuccess) {
