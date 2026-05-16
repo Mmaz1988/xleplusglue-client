@@ -78,6 +78,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private isBootstrapping = true;
   private lastSavedSessionFingerprint = '';
   private saveOperationInProgress = false;
+  private pendingAutosave = false;
   private activeSaveAction: 'current' | 'as' | null = null;
   private activeGswbRunStartedAt: number | null = null;
   private vampirePendingItemCount: number | null = null;
@@ -403,14 +404,26 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   private scheduleSessionSave(immediate = false): void {
-    if (this.isHydratingSession || !this.sessionPersistenceEnabled || this.saveOperationInProgress) return;
+    if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
+
+    if (this.saveOperationInProgress) {
+      this.pendingAutosave = true;
+      if (this.sessionSaveTimer !== null) {
+        clearTimeout(this.sessionSaveTimer);
+        this.sessionSaveTimer = null;
+      }
+      return;
+    }
 
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
       this.sessionSaveTimer = null;
     }
 
-    const save = () => this.saveSessionSnapshot();
+    const save = () => {
+      this.sessionSaveTimer = null;
+      this.saveSessionSnapshot(undefined, undefined, undefined, 'autosave');
+    };
     if (immediate) {
       save();
       return;
@@ -428,8 +441,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  private saveSessionSnapshot(onSuccess?: () => void, successMessage?: string, onComplete?: () => void): void {
+  private saveSessionSnapshot(
+    onSuccess?: () => void,
+    successMessage?: string,
+    onComplete?: () => void,
+    action: 'autosave' | 'current' | 'as' = 'autosave'
+  ): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
+
+    if (this.saveOperationInProgress) {
+      this.pendingAutosave = true;
+      return;
+    }
 
     this.syncSessionStateFromUi();
     const snapshot = this.buildSessionSnapshot();
@@ -447,14 +470,26 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
+    this.saveOperationInProgress = true;
+    this.activeSaveAction = action === 'autosave' ? null : action;
+    let saveSucceeded = false;
+
     this.dataService.saveRegressionSession(this.redisSessionKey, snapshot).pipe(
       finalize(() => {
+        this.saveOperationInProgress = false;
+        this.activeSaveAction = null;
+        const shouldRetry = saveSucceeded && this.pendingAutosave;
+        this.pendingAutosave = false;
         if (onComplete) {
           onComplete();
+        }
+        if (shouldRetry) {
+          this.scheduleSessionSave(true);
         }
       })
     ).subscribe({
       next: (response: any) => {
+        saveSucceeded = true;
         this.lastSavedSessionFingerprint = fingerprint;
         this.setPersistedActiveSessionKey(this.redisSessionKey);
         if (response?.recent_sessions) {
@@ -483,16 +518,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
-    this.saveOperationInProgress = true;
-    this.activeSaveAction = 'current';
     this.displayMessage(`Saving current session ${this.redisSessionKey}...`, 'blue');
     this.saveSessionSnapshot(
       undefined,
       `Saved current session ${this.redisSessionKey}`,
-      () => {
-        this.saveOperationInProgress = false;
-        this.activeSaveAction = null;
-      }
+      undefined,
+      'current'
     );
   }
 
@@ -561,6 +592,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.setSessionLoadStatus('idle', '', '');
     this.resetRuntimeStatus();
     this.saveOperationInProgress = false;
+    this.pendingAutosave = false;
     this.activeSaveAction = null;
 
     this.session = createRegressionTestingSession();
@@ -592,6 +624,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private hydrateSession(snapshot: RegressionTestingSession): void {
     this.isHydratingSession = true;
     this.resetRuntimeStatus();
+    this.pendingAutosave = false;
 
     // Restore saved session state into the live view model and editors.
     this.session = {
@@ -712,15 +745,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.saveOperationInProgress = true;
     this.activeSaveAction = 'as';
+    let saveSucceeded = false;
     this.displayMessage(`Saving session as ${sessionKey}...`, 'blue');
 
     this.dataService.saveRegressionSession(sessionKey, snapshot).pipe(
       finalize(() => {
         this.saveOperationInProgress = false;
         this.activeSaveAction = null;
+        const shouldRetry = saveSucceeded && this.pendingAutosave;
+        this.pendingAutosave = false;
+        if (shouldRetry) {
+          this.scheduleSessionSave(true);
+        }
       })
     ).subscribe({
       next: (response: any) => {
+        saveSucceeded = true;
         const savedSession = response?.session ?? snapshot;
         this.saveAsSessionName = '';
         this.hydrateSession(savedSession);
