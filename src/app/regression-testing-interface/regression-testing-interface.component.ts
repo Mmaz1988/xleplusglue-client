@@ -42,7 +42,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private readonly activeSessionStorageKey = 'regression-testing-active-session-key';
 
-  constructor(private dataService: DataService, private route: ActivatedRoute) {}
+  constructor(private dataService: DataService, private route: ActivatedRoute) {
+    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.session);
+  }
 
   session: RegressionTestingSession = this.createInitialSession();
 
@@ -74,6 +76,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionPersistenceEnabled = false;
   private isBootstrapping = true;
+  private lastSavedSessionFingerprint = '';
   private activeGswbRunStartedAt: number | null = null;
   private vampirePendingItemCount: number | null = null;
   private vampireCurrentRunItemCount: number = 0;
@@ -428,9 +431,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.syncSessionStateFromUi();
     const snapshot = this.buildSessionSnapshot();
+    const fingerprint = this.buildSessionFingerprint(snapshot);
+    if (fingerprint === this.lastSavedSessionFingerprint) {
+      if (successMessage) {
+        this.displayMessage('No changes to save.', 'blue');
+      }
+      if (onSuccess) {
+        onSuccess();
+      }
+      return;
+    }
 
     this.dataService.saveRegressionSession(this.redisSessionKey, snapshot).subscribe({
       next: (response: any) => {
+        this.lastSavedSessionFingerprint = fingerprint;
         this.setPersistedActiveSessionKey(this.redisSessionKey);
         if (response?.recent_sessions) {
           this.recentSessions = response.recent_sessions;
@@ -506,6 +520,42 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     };
   }
 
+  private buildSessionFingerprint(snapshot: RegressionTestingSession): string {
+    const { updatedAt, ...rest } = snapshot;
+    return JSON.stringify(rest);
+  }
+
+  private initializeBlankSession(): void {
+    this.isHydratingSession = true;
+    this.setSessionLoadStatus('idle', '', '');
+    this.clearStatusMessage();
+
+    this.session = createRegressionTestingSession();
+    this.selectedSessionKey = this.redisSessionKey;
+    this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
+    this.testsuiteUpdateMode = this.session.testsuiteUpdateMode;
+    this.testsuiteEditorMode = 'nli';
+    this.regressionTestResults = [];
+    this.inferenceResults = [];
+    this.regressionTestItems = [];
+    this.sentenceMap = {};
+    this.cellIds = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => []));
+    this.selectedIds.clear();
+    this.selectedGoldIdx = this.selectedPredIdx = null;
+    this.inferenceSummary = '';
+    this.parsingSummary = '';
+    this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
+    this.testfile.updateContent('');
+    this.ligerRules.updateContent('');
+    this.axiomEdit.updateContent('');
+    this.writeSnapshot = this.captureParsedRegressionSnapshot();
+    this.appendSnapshot = null;
+    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.buildSessionSnapshot());
+    this.sessionPersistenceEnabled = true;
+    this.isHydratingSession = false;
+    this.setPersistedActiveSessionKey('');
+  }
+
   private hydrateSession(snapshot: RegressionTestingSession): void {
     this.isHydratingSession = true;
 
@@ -566,6 +616,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
+    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.buildSessionSnapshot());
 
     this.isHydratingSession = false;
     this.sessionPersistenceEnabled = true;
@@ -604,7 +655,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (this.getPersistedActiveSessionKey() === sessionKey) {
           this.setPersistedActiveSessionKey('');
         }
-        this.setSessionLoadStatus('error', `Failed to load ${sessionKey}`, 'The saved session could not be retrieved.');
+        this.initializeBlankSession();
+        this.displayMessage('Previous session could not be restored. Started a new session.', 'blue');
       }
     });
   }
@@ -643,33 +695,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   createNewSession(): void {
     if (this.loading) return;
-    this.isHydratingSession = true;
-    // New session creation is an explicit user action, so persistence becomes valid here.
-    this.setSessionLoadStatus('idle', '', '');
-    this.clearStatusMessage();
-    this.session = createRegressionTestingSession();
-    this.selectedSessionKey = this.redisSessionKey;
-    this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
-    this.testsuiteUpdateMode = this.session.testsuiteUpdateMode;
-    this.testsuiteEditorMode = 'nli';
-    this.regressionTestResults = [];
-    this.inferenceResults = [];
-    this.regressionTestItems = [];
-    this.sentenceMap = {};
-    this.cellIds = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => []));
-    this.selectedIds.clear();
-    this.selectedGoldIdx = this.selectedPredIdx = null;
-    this.inferenceSummary = '';
-    this.parsingSummary = '';
-    this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
-    this.testfile.updateContent('');
-    this.ligerRules.updateContent('');
-    this.axiomEdit.updateContent('');
-    this.writeSnapshot = this.captureParsedRegressionSnapshot();
-    this.appendSnapshot = null;
-    this.setPersistedActiveSessionKey(this.session.redisSessionKey);
-    this.sessionPersistenceEnabled = true;
-    this.isHydratingSession = false;
+    this.initializeBlankSession();
   }
 
   private renderSavedInferenceResults(results: RegressionInferenceResult[]): void {
