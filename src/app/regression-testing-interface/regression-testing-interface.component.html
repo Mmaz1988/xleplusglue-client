@@ -5,7 +5,7 @@
     <div class="session-controls">
       <h1> Session controls</h1>
       <label for="sessionSelect">Session:</label>
-      <select id="sessionSelect" [(ngModel)]="selectedSessionKey">
+      <select id="sessionSelect" [(ngModel)]="selectedSessionKey" [disabled]="isSessionActionLocked">
         <option [value]="redisSessionKey">Current: {{ session.id }}</option>
         <ng-container *ngFor="let session of recentSessions">
           <option *ngIf="session.sessionKey !== redisSessionKey" [value]="session.sessionKey">
@@ -13,20 +13,27 @@
           </option>
         </ng-container>
       </select>
-      <button (click)="loadSessionFromRecent(selectedSessionKey)" [disabled]="sessionLoadState === 'loading'">
-        <span *ngIf="sessionLoadState !== 'loading'">Load session</span>
+      <button (click)="loadSessionFromRecent(selectedSessionKey)" [disabled]="isSessionActionLocked">
+        <span *ngIf="sessionLoadState !== 'loading' && !isSaveCurrentInProgress && !isSaveAsInProgress">Load session</span>
         <span *ngIf="sessionLoadState === 'loading'">Loading...</span>
+        <span *ngIf="isSaveCurrentInProgress || isSaveAsInProgress">Saving...</span>
       </button>
-      <button (click)="createNewSession()">New session</button>
+      <button (click)="createNewSession()" [disabled]="isSessionActionLocked">New session</button>
     </div>
     <div *ngIf="sessionLoadMessage" class="processing-timing session-load-timing" [ngClass]="sessionLoadState">
       <div class="processing-timing-summary">{{ sessionLoadMessage }}</div>
     </div>
     <div class="session-save-as-row testsuite-mode-row">
       <label for="saveAsSessionName">Save session as:</label>
-      <input id="saveAsSessionName" type="text" [(ngModel)]="saveAsSessionName" placeholder="Session name" />
-      <button (click)="saveCurrentSession()">Save current session</button>
-      <button (click)="saveSessionAs()">Save as</button>
+      <input id="saveAsSessionName" type="text" [(ngModel)]="saveAsSessionName" placeholder="Session name" [disabled]="isSessionActionLocked" />
+      <button (click)="saveCurrentSession()" [disabled]="isSessionActionLocked">
+        <span *ngIf="!isSaveCurrentInProgress">Save current session</span>
+        <span *ngIf="isSaveCurrentInProgress">Saving...</span>
+      </button>
+      <button (click)="saveSessionAs()" [disabled]="isSessionActionLocked">
+        <span *ngIf="!isSaveAsInProgress">Save as</span>
+        <span *ngIf="isSaveAsInProgress">Saving...</span>
+      </button>
     </div>
 
     <h1>Files</h1>
@@ -179,10 +186,10 @@
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
     <span *ngIf="loading">Loading...</span>
   </button>
-  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()">
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()" [disabled]="runLocked">
   Continue
 </button>
-  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()">
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()" [disabled]="runLocked">
     Skip
   </button>
 
@@ -195,32 +202,34 @@
 
 
 
-  <div class="errorhandling" #errorhandle></div>
-  <div *ngIf="isVampireProgressVisible" class="vampire-progress-panel" [class.loading]="isVampireProgressAnimating">
-    <div class="vampire-progress-header">
-      <span>{{ vampireProgressLabel }}</span>
-      <span class="vampire-progress-percent">{{ vampireProgressPercent }}%</span>
+  <div class="runtime-status-panel">
+    <div class="errorhandling" #errorhandle></div>
+    <div *ngIf="isVampireProgressVisible" class="vampire-progress-panel" [class.loading]="isVampireProgressAnimating">
+      <div class="vampire-progress-header">
+        <span>{{ vampireProgressLabel }}</span>
+        <span class="vampire-progress-percent">{{ vampireProgressPercent }}%</span>
+      </div>
+      <div class="vampire-progress-track" role="progressbar"
+           aria-label="Vampire backend progress"
+           [attr.aria-valuenow]="vampireProgressPercent"
+           aria-valuemin="0"
+           aria-valuemax="100">
+        <div class="vampire-progress-fill" [style.width.%]="vampireProgressPercent"></div>
+      </div>
+      <div class="vampire-progress-meta">
+        <span>Items: {{ vampireProgressItemCount ?? 0 }} / {{ vampireProgressTotalCount ?? 0 }}</span>
+        <span>Proofs: {{ vampireProgressProofCount ?? 0 }}</span>
+      </div>
     </div>
-    <div class="vampire-progress-track" role="progressbar"
-         aria-label="Vampire backend progress"
-         [attr.aria-valuenow]="vampireProgressPercent"
-         aria-valuemin="0"
-         aria-valuemax="100">
-      <div class="vampire-progress-fill" [style.width.%]="vampireProgressPercent"></div>
+    <div *ngIf="hasTimingInfo" class="processing-timing">
+      <div class="processing-timing-summary">{{ processingTimingSummary }}</div>
+      <app-pill
+        badge="i"
+        variant="text"
+        [text]="processingTimingDetails"
+        minimizedColor="#1565c0">
+      </app-pill>
     </div>
-    <div class="vampire-progress-meta">
-      <span>Items: {{ vampireProgressItemCount ?? 0 }} / {{ vampireProgressTotalCount ?? 0 }}</span>
-      <span>Proofs: {{ vampireProgressProofCount ?? 0 }}</span>
-    </div>
-  </div>
-  <div *ngIf="hasTimingInfo" class="processing-timing">
-    <div class="processing-timing-summary">{{ processingTimingSummary }}</div>
-    <app-pill
-      badge="i"
-      variant="text"
-      [text]="processingTimingDetails"
-      minimizedColor="#1565c0">
-    </app-pill>
   </div>
 
   <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>

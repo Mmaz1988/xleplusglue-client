@@ -77,6 +77,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private sessionPersistenceEnabled = false;
   private isBootstrapping = true;
   private lastSavedSessionFingerprint = '';
+  private saveOperationInProgress = false;
+  private activeSaveAction: 'current' | 'as' | null = null;
   private activeGswbRunStartedAt: number | null = null;
   private vampirePendingItemCount: number | null = null;
   private vampireCurrentRunItemCount: number = 0;
@@ -401,7 +403,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   private scheduleSessionSave(immediate = false): void {
-    if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
+    if (this.isHydratingSession || !this.sessionPersistenceEnabled || this.saveOperationInProgress) return;
 
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
@@ -426,7 +428,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  private saveSessionSnapshot(onSuccess?: () => void, successMessage?: string): void {
+  private saveSessionSnapshot(onSuccess?: () => void, successMessage?: string, onComplete?: () => void): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
 
     this.syncSessionStateFromUi();
@@ -439,10 +441,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       if (onSuccess) {
         onSuccess();
       }
+      if (onComplete) {
+        onComplete();
+      }
       return;
     }
 
-    this.dataService.saveRegressionSession(this.redisSessionKey, snapshot).subscribe({
+    this.dataService.saveRegressionSession(this.redisSessionKey, snapshot).pipe(
+      finalize(() => {
+        if (onComplete) {
+          onComplete();
+        }
+      })
+    ).subscribe({
       next: (response: any) => {
         this.lastSavedSessionFingerprint = fingerprint;
         this.setPersistedActiveSessionKey(this.redisSessionKey);
@@ -465,14 +476,24 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   saveCurrentSession(): void {
-    if (this.loading) return;
+    if (this.isSessionActionLocked) return;
 
     if (!this.sessionPersistenceEnabled) {
       this.displayMessage('No active session is available to save yet.', 'blue');
       return;
     }
 
-    this.saveSessionSnapshot(undefined, `Saved current session ${this.redisSessionKey}`);
+    this.saveOperationInProgress = true;
+    this.activeSaveAction = 'current';
+    this.displayMessage(`Saving current session ${this.redisSessionKey}...`, 'blue');
+    this.saveSessionSnapshot(
+      undefined,
+      `Saved current session ${this.redisSessionKey}`,
+      () => {
+        this.saveOperationInProgress = false;
+        this.activeSaveAction = null;
+      }
+    );
   }
 
   setTestsuiteEditorMode(mode: 'nli' | 'json'): void {
@@ -525,10 +546,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return JSON.stringify(rest);
   }
 
+  private resetRuntimeStatus(): void {
+    this.clearStatusMessage();
+    this.clearVampireProgressIndicator();
+    this.pendingVampireFinalSnapshot = null;
+    this.vampireSummaryRequestInFlight = false;
+    this.vampirePendingItemCount = null;
+    this.activeVampireRunStartedAt = null;
+    this.vampireCurrentRunItemCount = 0;
+  }
+
   private initializeBlankSession(): void {
     this.isHydratingSession = true;
     this.setSessionLoadStatus('idle', '', '');
-    this.clearStatusMessage();
+    this.resetRuntimeStatus();
+    this.saveOperationInProgress = false;
+    this.activeSaveAction = null;
 
     this.session = createRegressionTestingSession();
     this.selectedSessionKey = this.redisSessionKey;
@@ -558,6 +591,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private hydrateSession(snapshot: RegressionTestingSession): void {
     this.isHydratingSession = true;
+    this.resetRuntimeStatus();
 
     // Restore saved session state into the live view model and editors.
     this.session = {
@@ -623,7 +657,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   loadSessionFromRecent(sessionKey: string, force = false): void {
-    if (this.loading) return;
+    if (this.isSessionActionLocked) return;
     if (!sessionKey || (!force && sessionKey === this.redisSessionKey)) return;
 
     this.setSessionLoadStatus('loading', `Loading session ${sessionKey}...`, `Session key: ${sessionKey}`);
@@ -662,7 +696,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   saveSessionAs(): void {
-    if (this.loading) return;
+    if (this.isSessionActionLocked) return;
 
     const sessionKey = this.saveAsSessionName.trim();
     if (!sessionKey) {
@@ -676,7 +710,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     snapshot.updatedAt = new Date().toISOString();
     snapshot.createdAt = snapshot.updatedAt;
 
-    this.dataService.saveRegressionSession(sessionKey, snapshot).subscribe({
+    this.saveOperationInProgress = true;
+    this.activeSaveAction = 'as';
+    this.displayMessage(`Saving session as ${sessionKey}...`, 'blue');
+
+    this.dataService.saveRegressionSession(sessionKey, snapshot).pipe(
+      finalize(() => {
+        this.saveOperationInProgress = false;
+        this.activeSaveAction = null;
+      })
+    ).subscribe({
       next: (response: any) => {
         const savedSession = response?.session ?? snapshot;
         this.saveAsSessionName = '';
@@ -694,7 +737,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   createNewSession(): void {
-    if (this.loading) return;
+    if (this.isSessionActionLocked) return;
     this.initializeBlankSession();
   }
 
@@ -877,7 +920,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get canResendVampire(): boolean {
-    return this.hasParsedExamples && !this.loading && !!this.session.lastGswbOutputs;
+    return this.hasParsedExamples && !this.isSessionActionLocked && !!this.session.lastGswbOutputs;
   }
 
   get isVampireProgressVisible(): boolean {
@@ -2007,7 +2050,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get runLocked(): boolean {
-    return this.loading || (this.enableDisambiguation && this.disambiguationMode);
+    return this.loading || this.saveOperationInProgress || (this.enableDisambiguation && this.disambiguationMode);
+  }
+
+  get isSessionActionLocked(): boolean {
+    return this.loading || this.sessionLoadState === 'loading' || this.saveOperationInProgress;
+  }
+
+  get isSaveCurrentInProgress(): boolean {
+    return this.saveOperationInProgress && this.activeSaveAction === 'current';
+  }
+
+  get isSaveAsInProgress(): boolean {
+    return this.saveOperationInProgress && this.activeSaveAction === 'as';
   }
 
   trackBySentenceId = (_: number, x: any) => x?.sentence_id ?? _;
