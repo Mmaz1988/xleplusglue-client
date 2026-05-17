@@ -28,7 +28,41 @@ textarea{
 }
 
 .frame {
+  position: relative;
   padding-left: 10px;
+}
+
+.autosave-indicator {
+  position: sticky;
+  top: 12px;
+  float: right;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(21, 101, 192, 0.22);
+  background: rgba(227, 242, 253, 0.96);
+  color: #1565c0;
+  font-weight: 600;
+  box-shadow: 0 6px 18px rgba(21, 101, 192, 0.12);
+}
+
+.autosave-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(21, 101, 192, 0.22);
+  border-top-color: #1565c0;
+  animation: autosaveSpin 0.8s linear infinite;
+}
+
+@keyframes autosaveSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 

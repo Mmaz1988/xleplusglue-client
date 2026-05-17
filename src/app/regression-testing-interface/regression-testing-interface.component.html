@@ -1,4 +1,8 @@
 <div class="frame">
+  <div *ngIf="isAutosavingInProgress" class="autosave-indicator" aria-live="polite" aria-label="Autosaving session changes">
+    <span class="autosave-spinner" aria-hidden="true"></span>
+    <span>Autosaving</span>
+  </div>
 
   <div class="container">
 
@@ -34,7 +38,6 @@
         <span *ngIf="!isSaveAsInProgress">Save as</span>
         <span *ngIf="isSaveAsInProgress">Saving...</span>
       </button>
-      <app-pill *ngIf="isAutosavingInProgress" badge="i" variant="text" [text]="'Autosaving session changes...'" minimizedColor="#1565c0"></app-pill>
     </div>
 
     <h1>Files</h1>
