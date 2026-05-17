@@ -190,6 +190,9 @@
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
     <span *ngIf="loading">Loading...</span>
   </button>
+  <button *ngIf="loading || isVampireProgressVisible" (click)="abortCurrentRun()" [disabled]="!canAbortRun">
+    Abort and save
+  </button>
   <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()" [disabled]="runLocked">
   Continue
 </button>

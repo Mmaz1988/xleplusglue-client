@@ -81,11 +81,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private pendingAutosave = false;
   private activeSaveAction: 'current' | 'as' | null = null;
   private activeGswbRunStartedAt: number | null = null;
+    private gswbRunToken = 0;
   private vampirePendingItemCount: number | null = null;
   private vampireCurrentRunItemCount: number = 0;
   private activeVampireRunStartedAt: number | null = null;
+  private vampireRunToken = 0;
   private vampireSummaryRequestInFlight = false;
-  private pendingVampireFinalSnapshot: number | null = null;
+  private pendingVampireFinalSnapshot: { startedAt: number; runToken: number } | null = null;
   private readonly vampireSummaryRequestTimeoutMs = 30000;
   vampireProgressItemCount: number | null = null;
   vampireProgressProofCount: number | null = null;
@@ -820,11 +822,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       `Loaded from session: ${this.redisSessionKey}`;
   }
 
-  private startGswbSummaryPolling(runStartedAt: number): void {
+  private startGswbSummaryPolling(runStartedAt: number, runToken: number): void {
     this.stopGswbSummaryPolling();
 
     this.gswbSummaryPollTimer = setInterval(() => {
-      this.loadAndRenderGswbState(false, runStartedAt);
+      this.loadAndRenderGswbState(false, runStartedAt, runToken);
     }, 15000);
   }
 
@@ -835,13 +837,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
-  private loadAndRenderGswbState(finalSnapshot: boolean, runStartedAt: number, afterRender?: () => void): void {
+  private loadAndRenderGswbState(finalSnapshot: boolean, runStartedAt: number, runToken: number, afterRender?: () => void): void {
+    if (runToken !== this.gswbRunToken) return;
     if (!this.loading && !finalSnapshot) return;
-    const runToken = this.activeGswbRunStartedAt;
 
     this.dataService.getLastGswbSession(this.redisSessionKey).subscribe({
       next: snapshot => {
-        if (runToken !== this.activeGswbRunStartedAt) return;
+        if (runToken !== this.gswbRunToken) return;
 
         const outputs = snapshot?.outputs ?? {};
         this.renderGswbResults(outputs);
@@ -863,7 +865,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }
       },
       error: error => {
-        if (runToken !== this.activeGswbRunStartedAt) return;
+        if (runToken !== this.gswbRunToken) return;
 
         console.warn("Unable to load GSWB progress summary.", error);
         if (finalSnapshot) {
@@ -955,6 +957,36 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.runVampireFromCurrentState(/*useDisambiguated*/ true);
   }
 
+  abortCurrentRun(): void {
+    if (!this.loading || this.saveOperationInProgress) return;
+
+    this.displayMessage('Aborting current run and saving the session...', 'blue');
+    this.dataService.requestVampireCancel(this.redisSessionKey).subscribe({
+      error: error => console.warn('Unable to request Vampire cancel.', error)
+    });
+    this.gswbRunToken++;
+    this.vampireRunToken++;
+    this.stopGswbSummaryPolling();
+    this.stopVampireSummaryPolling();
+    this.pendingVampireFinalSnapshot = null;
+    this.vampireSummaryRequestInFlight = false;
+    this.pendingAutosave = false;
+    this.activeGswbRunStartedAt = null;
+    this.activeVampireRunStartedAt = null;
+    this.vampirePendingItemCount = null;
+    this.vampireCurrentRunItemCount = 0;
+    this.loading = false;
+    this.clearVampireProgressIndicator();
+    this.session.disambiguationMode = false;
+
+    this.saveSessionSnapshot(
+      () => this.displayMessage('Run aborted and session saved.', 'green'),
+      undefined,
+      undefined,
+      'autosave'
+    );
+  }
+
   get hasParsedExamples(): boolean {
     return this.regressionTestResults.length > 0;
   }
@@ -970,6 +1002,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   get canResendVampire(): boolean {
     return this.hasParsedExamples && !this.isSessionActionLocked && !!this.session.lastGswbOutputs;
+  }
+
+  get canAbortRun(): boolean {
+    return (this.loading || this.activeGswbRunStartedAt !== null || this.activeVampireRunStartedAt !== null) && !this.saveOperationInProgress;
   }
 
   get isVampireProgressVisible(): boolean {
@@ -1074,6 +1110,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       totalMs: null,
     };
 
+    const gswbRunToken = ++this.gswbRunToken;
+
     if (this.testsuiteUpdateMode === 'write') {
       this.regressionTestResults = [];
       this.regressionTestItems = [];
@@ -1133,6 +1171,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
+        if (gswbRunToken !== this.gswbRunToken) return;
+
         if (data.hasOwnProperty("annotations")) {
           console.log("Annotations:", data.annotations);
 
@@ -1174,10 +1214,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
         this.loading = true;
         this.activeGswbRunStartedAt = runStartedAt;
-        this.startGswbSummaryPolling(runStartedAt);
-        this.loadAndRenderGswbState(false, runStartedAt);
+        this.startGswbSummaryPolling(runStartedAt, gswbRunToken);
+        this.loadAndRenderGswbState(false, runStartedAt, gswbRunToken);
 
         this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
+          if (gswbRunToken !== this.gswbRunToken) return;
+
           this.stopGswbSummaryPolling();
 
           const outputs = result.outputs ?? {};
@@ -1271,6 +1313,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const annotations = this.session.lastAnnotations;
     const logicType = this.session.lastLogicType;
     const vampireStartedAt = Date.now();
+    const vampireRunToken = ++this.vampireRunToken;
     this.vampirePreserveExistingResults = Object.keys(this.session.lastVampireResults ?? {}).length > 0;
     this.vampireCurrentRunItemCount = 0;
     this.currentVampireRunKind = this.testsuiteUpdateMode === 'append'
@@ -1387,13 +1430,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampirePendingItemCount = Object.keys(inference_items).length;
     this.activeVampireRunStartedAt = vampireStartedAt;
     this.startVampireProgressIndicator(this.regressionTestItems.length || this.vampirePendingItemCount || 0);
-    this.startVampireSummaryPolling(vampireStartedAt);
-    this.loadAndRenderVampireState(false, vampireStartedAt);
+    this.startVampireSummaryPolling(vampireStartedAt, vampireRunToken);
+    this.loadAndRenderVampireState(false, vampireStartedAt, vampireRunToken);
 
     this.batchVampire(vampireRequest).subscribe({
       next: () => {
         this.stopVampireSummaryPolling();
-        this.loadAndRenderVampireState(true, vampireStartedAt);
+        this.loadAndRenderVampireState(true, vampireStartedAt, vampireRunToken);
       },
       error: () => {
         this.stopVampireSummaryPolling();
@@ -1431,11 +1474,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return sols.filter(x => sel.has(x.id)).map(x => x.solution);
   }
 
-  private startVampireSummaryPolling(vampireStartedAt: number): void {
+  private startVampireSummaryPolling(vampireStartedAt: number, runToken: number): void {
     this.stopVampireSummaryPolling();
 
     this.vampireSummaryPollTimer = setInterval(() => {
-      this.loadAndRenderVampireState(false, vampireStartedAt);
+      this.loadAndRenderVampireState(false, vampireStartedAt, runToken);
     }, 15000);
   }
 
@@ -1476,21 +1519,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (this.pendingVampireFinalSnapshot !== null) {
       const pendingStartedAt = this.pendingVampireFinalSnapshot;
       this.clearPendingVampireFinalSnapshot();
-      this.loadAndRenderVampireState(true, pendingStartedAt);
+      this.loadAndRenderVampireState(true, pendingStartedAt.startedAt, pendingStartedAt.runToken);
     }
   }
 
-  private loadAndRenderVampireState(finalSnapshot: boolean, vampireStartedAt: number): void {
+  private loadAndRenderVampireState(finalSnapshot: boolean, vampireStartedAt: number, runToken: number): void {
+    if (runToken !== this.vampireRunToken) return;
     if (!this.loading && !finalSnapshot) return;
     if (this.vampireSummaryRequestInFlight) {
       if (finalSnapshot) {
-        this.pendingVampireFinalSnapshot = vampireStartedAt;
+        this.pendingVampireFinalSnapshot = { startedAt: vampireStartedAt, runToken };
       }
       return;
     }
 
     this.vampireSummaryRequestInFlight = true;
-    const runToken = this.activeVampireRunStartedAt;
 
     forkJoin({
       session: this.dataService.getLastSession(this.redisSessionKey),
@@ -1500,7 +1543,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       finalize(() => this.releaseVampireSummaryRequestLock())
     ).subscribe({
       next: ({ session, summary }) => {
-        if (runToken !== this.activeVampireRunStartedAt) return;
+        if (runToken !== this.vampireRunToken) return;
 
         this.updateVampireProgressIndicator(summary);
         this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot, this.vampirePreserveExistingResults);
@@ -1533,7 +1576,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }
       },
       error: error => {
-        if (runToken !== this.activeVampireRunStartedAt) return;
+        if (runToken !== this.vampireRunToken) return;
 
         console.warn("Unable to load Vampire progress summary.", error);
         if (finalSnapshot) {
