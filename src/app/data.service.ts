@@ -114,6 +114,10 @@ callVampire(vampireRequest: vampireRequest){
     return this.http.delete(`${this.vampirepage}/last_session/${sessionKey}`);
   }
 
+  requestVampireCancel(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
+    return this.http.post(`${this.vampirepage}/vampire_progress/${sessionKey}/cancel`, {});
+  }
+
   listRegressionSessions(): Observable<RegressionSessionSummary[]> {
     return this.http.get<RegressionSessionSummary[]>(`${this.vampirepage}/regression_sessions`);
   }
