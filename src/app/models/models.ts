@@ -313,6 +313,21 @@ export interface VampireSessionSummary {
   proof_count: number;
 }
 
+export interface VampireProgressSummary {
+  sessionKey: string;
+  runId: string | null;
+  state: 'idle' | 'running' | 'done' | 'error';
+  activeItemId: string | null;
+  completedItemIds: string[];
+  changedItemIds: string[];
+  itemResults: Record<string, check[]>;
+  itemCount: number;
+  proofCount: number;
+  totalItemCount: number;
+  updatedAt: string;
+  error?: string;
+}
+
 export interface check {
   glyph: string;
   informative: boolean;
