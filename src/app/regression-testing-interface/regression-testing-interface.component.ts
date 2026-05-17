@@ -1087,6 +1087,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
 
     this.errorhandle.nativeElement.textContent = "";
+    this.sessionPersistenceEnabled = true;
     this.loading = true;
     const runStartedAt = Date.now();
     const baseSnapshot = this.captureParsedRegressionSnapshot();
