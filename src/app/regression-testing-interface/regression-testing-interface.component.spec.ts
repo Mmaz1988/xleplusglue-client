@@ -145,7 +145,20 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.processingTimingSummary).toContain('Vampire call incomplete');
   });
 
-  it('includes parse, vampire, and discriminant counts in the timing details', () => {
+  it('counts disambiguated sentences when selected solutions differ from all solutions', () => {
+    component.session.lastGswbOutputs = {
+      S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
+      S2: { solutions: [{ id: 'c', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+    } as any;
+    component.session.selectedSolutionIdsBySentence = {
+      S1: ['a'],
+      S2: ['c'],
+    };
+
+    expect(component.disambiguatedSentenceCount).toBe(1);
+  });
+
+  it('includes parse, vampire, and disambiguated counts in the timing details', () => {
     component.session.timing.startedAt = '2026-05-18T21:00:00.000Z';
     component.session.timing.parseMs = 1234;
     component.session.timing.vampireMs = 2345;
@@ -153,14 +166,20 @@ describe('RegressionTestingInterfaceComponent', () => {
     component.sentenceMap = { S1: 'One', S2: 'Two' };
     component.regressionTestResults = [{ sentence_id: 'S1' } as any, { sentence_id: 'S2' } as any];
     component.regressionTestItems = [{ id: 'I1' } as any, { id: 'I2' } as any];
-    component.session.selectedScopeIdsBySentence = { S1: ['a'] };
-    component.session.lastVampireScopeIdsBySentence = { S1: ['b'] };
+    component.session.lastGswbOutputs = {
+      S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
+      S2: { solutions: [{ id: 'c', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+    } as any;
+    component.session.selectedSolutionIdsBySentence = {
+      S1: ['a'],
+      S2: ['c'],
+    };
 
     const details = component.processingTimingDetails;
 
     expect(details).toContain('Parse phase: 1.23s · 2/2 parses');
     expect(details).toContain('Vampire phase: 2.35s · 0/2 items');
-    expect(details).toContain('Discriminant updates: 1 sentences');
+    expect(details).toContain('Disambiguated sentences: 1 total');
     expect(details).toContain('Overall: 3.58s');
   });
 

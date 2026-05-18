@@ -1136,37 +1136,31 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     } else if (this.session.hasRunVampire) {
       lines.push(`Vampire phase: incomplete · ${this.inferenceResultCount}/${this.expectedInferenceCount} items`);
     }
-    const changedDiscriminantSentences = this.changedDiscriminantSentenceCount;
-    if (changedDiscriminantSentences > 0) {
-      lines.push(`Discriminant updates: ${changedDiscriminantSentences} sentences`);
+    if (this.session.lastGswbOutputs !== null) {
+      lines.push(`Disambiguated sentences: ${this.disambiguatedSentenceCount} total`);
     }
     if (timing.totalMs !== null) lines.push(`Overall: ${this.formatDuration(timing.totalMs, true)}`);
 
     return lines.join('\n');
   }
 
-  get changedDiscriminantSentenceCount(): number {
-    const sentenceIds = new Set<string>([
-      ...Object.keys(this.session.selectedScopeIdsBySentence ?? {}),
-      ...Object.keys(this.session.selectedMcIdsBySentence ?? {}),
-      ...Object.keys(this.session.selectedSolutionIdsBySentence ?? {}),
-      ...Object.keys(this.session.lastVampireScopeIdsBySentence ?? {}),
-      ...Object.keys(this.session.lastVampireMcIdsBySentence ?? {}),
-      ...Object.keys(this.session.lastVampireSolutionIdsBySentence ?? {}),
-    ]);
+  get disambiguatedSentenceCount(): number {
+    const outputs = this.session.lastGswbOutputs ?? {};
+    let count = 0;
 
-    let changed = 0;
-    for (const sentenceId of sentenceIds) {
-      const scopeChanged = !this.sameSelectionIds(this.session.selectedScopeIdsBySentence[sentenceId] ?? [], this.session.lastVampireScopeIdsBySentence[sentenceId] ?? []);
-      const mcChanged = !this.sameSelectionIds(this.session.selectedMcIdsBySentence[sentenceId] ?? [], this.session.lastVampireMcIdsBySentence[sentenceId] ?? []);
-      const solutionChanged = !this.sameSelectionIds(this.session.selectedSolutionIdsBySentence[sentenceId] ?? [], this.session.lastVampireSolutionIdsBySentence?.[sentenceId] ?? []);
+    for (const [sentenceId, output] of Object.entries(outputs)) {
+      const sols = output?.solutions ?? [];
+      if (sols.length === 0) continue;
 
-      if (scopeChanged || mcChanged || solutionChanged) {
-        changed++;
+      const selectedIds = this.getSelectedSolutionIds({ sentence_id: sentenceId, gswbSolutions: sols });
+      const allIds = sols.map(solution => String(solution.id));
+
+      if (!this.sameSelectionIds(selectedIds, allIds)) {
+        count++;
       }
     }
 
-    return changed;
+    return count;
   }
 
   batchParse(sentences: string, rules: string) {
