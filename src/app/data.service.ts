@@ -17,7 +17,7 @@ import {
   vampireMultipleRequest, vampireMultipleResponse,
   VampireSessionSummary,
   RegressionSessionSummary,
-  RegressionTestingSession
+  RegressionSessionDocument
 } from './models/models';
 
 @Injectable({
@@ -122,11 +122,11 @@ callVampire(vampireRequest: vampireRequest){
     return this.http.get<RegressionSessionSummary[]>(`${this.vampirepage}/regression_sessions`);
   }
 
-  loadRegressionSession(sessionKey: string): Observable<RegressionTestingSession> {
-    return this.http.get<RegressionTestingSession>(`${this.vampirepage}/regression_session/${sessionKey}`);
+  loadRegressionSession(sessionKey: string): Observable<RegressionSessionDocument> {
+    return this.http.get<RegressionSessionDocument>(`${this.vampirepage}/regression_session/${sessionKey}`);
   }
 
-  saveRegressionSession(sessionKey: string, payload: RegressionTestingSession): Observable<any> {
+  saveRegressionSession(sessionKey: string, payload: RegressionSessionDocument): Observable<any> {
     return this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload);
   }
 

@@ -12,6 +12,9 @@ import {
   RegressionSessionSummary,
   RegressionTestingSession,
   createRegressionTestingSession,
+  regressionDocumentToSession,
+  regressionSessionToDocument,
+  RegressionSessionDocument,
   nliItem,
   vampireMultipleRequest,
   check,
@@ -43,7 +46,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private readonly activeSessionStorageKey = 'regression-testing-active-session-key';
 
   constructor(private dataService: DataService, private route: ActivatedRoute) {
-    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.session);
+    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(regressionSessionToDocument(this.session));
   }
 
   session: RegressionTestingSession = this.createInitialSession();
@@ -571,8 +574,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
-  private buildSessionSnapshot(): RegressionTestingSession {
-    return {
+  private buildSessionSnapshot(): RegressionSessionDocument {
+    return regressionSessionToDocument({
       ...this.session,
       updatedAt: new Date().toISOString(),
       gswbPreferences: { ...this.gswbPreferences.gswbPreferences },
@@ -580,12 +583,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       testsuiteText: this.testfile.getContent(),
       rulesText: this.ligerRules.getContent(),
       axiomsText: this.axiomEdit.getContent(),
-    };
+    });
   }
 
-  private buildSessionFingerprint(snapshot: RegressionTestingSession): string {
-    const { updatedAt, ...rest } = snapshot;
-    return JSON.stringify(rest);
+  private buildSessionFingerprint(snapshot: RegressionSessionDocument): string {
+    const { metadata, ...rest } = snapshot;
+    const { updatedAt, ...metadataRest } = metadata;
+    return JSON.stringify({ ...rest, metadata: metadataRest });
   }
 
   private resetRuntimeStatus(): void {
@@ -632,30 +636,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.setPersistedActiveSessionKey('');
   }
 
-  private hydrateSession(snapshot: RegressionTestingSession): void {
+  private hydrateSession(snapshot: RegressionTestingSession | RegressionSessionDocument): void {
     this.isHydratingSession = true;
     this.resetRuntimeStatus();
     this.pendingAutosave = false;
 
+    const runtimeSnapshot = 'analysis' in snapshot ? regressionDocumentToSession(snapshot) : snapshot;
+
     // Restore saved session state into the live view model and editors.
     this.session = {
       ...createRegressionTestingSession(),
-      ...snapshot,
-      redisSessionKey: snapshot.redisSessionKey || snapshot.id,
-      gswbPreferences: snapshot.gswbPreferences ?? this.gswbPreferences.gswbPreferences,
-      vampirePreferences: snapshot.vampirePreferences ?? this.vampirePreferences.vampirePreferences,
-      testsuiteText: snapshot.testsuiteText ?? '',
-      rulesText: snapshot.rulesText ?? '',
-      axiomsText: snapshot.axiomsText ?? '',
-      grammarPath: snapshot.grammarPath ?? '',
-      testsuiteFilename: snapshot.testsuiteFilename ?? '',
-      rulesFilename: snapshot.rulesFilename ?? '',
-      axiomsFilename: snapshot.axiomsFilename ?? '',
-      testsuiteLoadedText: snapshot.testsuiteLoadedText ?? snapshot.testsuiteText ?? '',
-      rulesLoadedText: snapshot.rulesLoadedText ?? snapshot.rulesText ?? '',
-      axiomsLoadedText: snapshot.axiomsLoadedText ?? snapshot.axiomsText ?? '',
-      testsuiteUpdateMode: snapshot.testsuiteUpdateMode ?? 'write',
-      lastVampireResults: snapshot.lastVampireResults ?? null,
+      ...runtimeSnapshot,
+      redisSessionKey: runtimeSnapshot.redisSessionKey || runtimeSnapshot.id,
+      gswbPreferences: runtimeSnapshot.gswbPreferences ?? this.gswbPreferences.gswbPreferences,
+      vampirePreferences: runtimeSnapshot.vampirePreferences ?? this.vampirePreferences.vampirePreferences,
+      testsuiteText: runtimeSnapshot.testsuiteText ?? '',
+      rulesText: runtimeSnapshot.rulesText ?? '',
+      axiomsText: runtimeSnapshot.axiomsText ?? '',
+      grammarPath: runtimeSnapshot.grammarPath ?? '',
+      testsuiteFilename: runtimeSnapshot.testsuiteFilename ?? '',
+      rulesFilename: runtimeSnapshot.rulesFilename ?? '',
+      axiomsFilename: runtimeSnapshot.axiomsFilename ?? '',
+      testsuiteLoadedText: runtimeSnapshot.testsuiteLoadedText ?? runtimeSnapshot.testsuiteText ?? '',
+      rulesLoadedText: runtimeSnapshot.rulesLoadedText ?? runtimeSnapshot.rulesText ?? '',
+      axiomsLoadedText: runtimeSnapshot.axiomsLoadedText ?? runtimeSnapshot.axiomsText ?? '',
+      testsuiteUpdateMode: runtimeSnapshot.testsuiteUpdateMode ?? 'write',
+      lastVampireResults: runtimeSnapshot.lastVampireResults ?? null,
     };
 
     this.selectedSessionKey = this.redisSessionKey;
@@ -711,20 +717,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.dataService.loadRegressionSession(sessionKey).subscribe({
       next: snapshot => {
-        this.hydrateSession(snapshot);
+        const runtimeSnapshot = regressionDocumentToSession(snapshot);
+        this.hydrateSession(runtimeSnapshot);
         this.setPersistedActiveSessionKey(sessionKey);
-        const parseCount = snapshot?.regressionTestResults?.length ?? 0;
-        const inferenceCount = snapshot?.inferenceResults?.length ?? 0;
+        const parseCount = runtimeSnapshot?.regressionTestResults?.length ?? 0;
+        const inferenceCount = runtimeSnapshot?.inferenceResults?.length ?? 0;
         this.setSessionLoadStatus(
           'success',
           `Loaded ${sessionKey}`,
           [
             `Parses: ${parseCount}`,
             `Inference results: ${inferenceCount}`,
-            `Grammar: ${snapshot?.grammarPath || 'Not loaded'}`,
-            `Testsuite: ${this.getFileStateLabel(snapshot?.testsuiteFilename ?? '', snapshot?.testsuiteLoadedText ?? snapshot?.testsuiteText ?? '', snapshot?.testsuiteText ?? '')}`,
-            `Rules: ${this.getFileStateLabel(snapshot?.rulesFilename ?? '', snapshot?.rulesLoadedText ?? snapshot?.rulesText ?? '', snapshot?.rulesText ?? '')}`,
-            `Axioms: ${this.getFileStateLabel(snapshot?.axiomsFilename ?? '', snapshot?.axiomsLoadedText ?? snapshot?.axiomsText ?? '', snapshot?.axiomsText ?? '')}`,
+            `Grammar: ${runtimeSnapshot?.grammarPath || 'Not loaded'}`,
+            `Testsuite: ${this.getFileStateLabel(runtimeSnapshot?.testsuiteFilename ?? '', runtimeSnapshot?.testsuiteLoadedText ?? runtimeSnapshot?.testsuiteText ?? '', runtimeSnapshot?.testsuiteText ?? '')}`,
+            `Rules: ${this.getFileStateLabel(runtimeSnapshot?.rulesFilename ?? '', runtimeSnapshot?.rulesLoadedText ?? runtimeSnapshot?.rulesText ?? '', runtimeSnapshot?.rulesText ?? '')}`,
+            `Axioms: ${this.getFileStateLabel(runtimeSnapshot?.axiomsFilename ?? '', runtimeSnapshot?.axiomsLoadedText ?? runtimeSnapshot?.axiomsText ?? '', runtimeSnapshot?.axiomsText ?? '')}`,
           ].join('\n')
         );
       },
@@ -749,10 +756,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
 
     const snapshot = this.buildSessionSnapshot();
-    snapshot.id = sessionKey;
-    snapshot.redisSessionKey = sessionKey;
-    snapshot.updatedAt = new Date().toISOString();
-    snapshot.createdAt = snapshot.updatedAt;
+    snapshot.metadata.id = sessionKey;
+    snapshot.metadata.redisSessionKey = sessionKey;
+    snapshot.metadata.updatedAt = new Date().toISOString();
+    snapshot.metadata.createdAt = snapshot.metadata.updatedAt;
 
     this.saveOperationInProgress = true;
     this.activeSaveAction = 'as';
@@ -775,7 +782,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         const savedSession = response?.session ?? snapshot;
         this.saveAsSessionName = '';
         this.hydrateSession(savedSession);
-        this.selectedSessionKey = savedSession.redisSessionKey || sessionKey;
+        this.selectedSessionKey = this.redisSessionKey;
         this.setPersistedActiveSessionKey(this.selectedSessionKey);
         this.loadRecentSessions();
         this.setSessionLoadStatus('success', `Saved session as ${sessionKey}`, `Session key: ${sessionKey}`);

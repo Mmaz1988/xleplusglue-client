@@ -3,7 +3,14 @@ import { Router } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { DataService } from '../data.service';
-import { createRegressionTestingSession, RegressionSessionSummary, RegressionTestingSession } from '../models/models';
+import {
+  createRegressionTestingSession,
+  RegressionSessionSummary,
+  RegressionTestingSession,
+  RegressionSessionDocument,
+  regressionDocumentToSession,
+  regressionSessionToDocument,
+} from '../models/models';
 import { RegressionDashboardCacheService, RegressionDashboardSessionCard } from './regression-dashboard-cache.service';
 
 @Component({
@@ -63,7 +70,7 @@ export class RegressionDashboardComponent implements OnInit {
             }
 
             return this.dataService.loadRegressionSession(summary.sessionKey).pipe(
-              map(session => this.enrichSummary(summary, session)),
+              map(session => this.enrichSummary(summary, regressionDocumentToSession(session))),
               catchError(() => of(this.enrichSummary(summary)))
             );
           })
@@ -184,12 +191,12 @@ export class RegressionDashboardComponent implements OnInit {
     this.exportingSessionKey = sessionKey;
     this.dataService.loadRegressionSession(sessionKey).subscribe({
       next: session => {
-        const payload = this.buildExportPayload(session);
+        const payload = this.buildExportPayload(regressionDocumentToSession(session));
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${payload.redisSessionKey || payload.id || sessionKey}.json`;
+        link.download = `${payload.metadata.redisSessionKey || payload.metadata.id || sessionKey}.json`;
         link.click();
         setTimeout(() => window.URL.revokeObjectURL(url), 10000);
         this.exportingSessionKey = null;
@@ -224,7 +231,7 @@ export class RegressionDashboardComponent implements OnInit {
         const imported = this.normalizeImportedSession(parsed, file.name);
         const sessionKey = imported.redisSessionKey || imported.id;
 
-        this.dataService.saveRegressionSession(sessionKey, imported).subscribe({
+        this.dataService.saveRegressionSession(sessionKey, regressionSessionToDocument(imported)).subscribe({
           next: () => {
             const card = this.cardFromSession(imported);
             this.upsertSessionCard(card);
@@ -316,60 +323,27 @@ export class RegressionDashboardComponent implements OnInit {
     this.sessions = this.sessions.filter(session => !sessionKeys.includes(session.sessionKey));
   }
 
-  private buildExportPayload(session: RegressionTestingSession): RegressionTestingSession {
+  private buildExportPayload(session: RegressionTestingSession): RegressionSessionDocument {
     const exportedId = String(session?.id ?? session?.redisSessionKey ?? `exported-${Date.now()}`);
 
-    return {
+    return regressionSessionToDocument({
       ...createRegressionTestingSession(),
       ...session,
       id: exportedId,
       redisSessionKey: exportedId,
-    };
+    });
   }
 
   private normalizeImportedSession(raw: any, fileName: string): RegressionTestingSession {
     const fallbackKey = fileName.replace(/\.json$/i, '') || `imported-${Date.now()}`;
     const base = createRegressionTestingSession();
-    const session = {
-      ...base,
-      ...raw,
-    } as RegressionTestingSession;
+    const session = regressionDocumentToSession(raw);
 
-    session.id = String(raw?.id ?? raw?.redisSessionKey ?? fallbackKey);
+    session.id = String(session.id ?? raw?.metadata?.id ?? raw?.id ?? raw?.redisSessionKey ?? fallbackKey);
     session.redisSessionKey = session.id;
-    session.createdAt = String(raw?.createdAt ?? base.createdAt);
+    session.createdAt = String(raw?.metadata?.createdAt ?? raw?.createdAt ?? base.createdAt);
     session.updatedAt = new Date().toISOString();
-    session.grammarPath = String(raw?.grammarPath ?? '');
-    session.testsuiteText = String(raw?.testsuiteText ?? '');
-    session.rulesText = String(raw?.rulesText ?? '');
-    session.axiomsText = String(raw?.axiomsText ?? '');
-    session.testsuiteFilename = String(raw?.testsuiteFilename ?? '');
-    session.rulesFilename = String(raw?.rulesFilename ?? '');
-    session.axiomsFilename = String(raw?.axiomsFilename ?? '');
-    session.testsuiteLoadedText = String(raw?.testsuiteLoadedText ?? session.testsuiteText);
-    session.rulesLoadedText = String(raw?.rulesLoadedText ?? session.rulesText);
-    session.axiomsLoadedText = String(raw?.axiomsLoadedText ?? session.axiomsText);
-    session.testsuiteUpdateMode = raw?.testsuiteUpdateMode === 'append' ? 'append' : 'write';
-    session.gswbPreferences = raw?.gswbPreferences ?? base.gswbPreferences;
-    session.vampirePreferences = raw?.vampirePreferences ?? base.vampirePreferences;
-    session.sentenceMap = raw?.sentenceMap ?? {};
-    session.regressionTestItems = Array.isArray(raw?.regressionTestItems) ? raw.regressionTestItems : [];
-    session.regressionTestResults = Array.isArray(raw?.regressionTestResults) ? raw.regressionTestResults : [];
-    session.inferenceResults = Array.isArray(raw?.inferenceResults) ? raw.inferenceResults : [];
-    session.selectedSolutionIdsBySentence = raw?.selectedSolutionIdsBySentence ?? {};
-    session.selectedScopeIdsBySentence = raw?.selectedScopeIdsBySentence ?? {};
-    session.selectedMcIdsBySentence = raw?.selectedMcIdsBySentence ?? {};
-    session.lastGswbOutputs = raw?.lastGswbOutputs ?? null;
-    session.lastAnnotations = raw?.lastAnnotations ?? null;
-    session.lastVampireResults = raw?.lastVampireResults ?? null;
-    session.lastLogicType = raw?.lastLogicType === 'tff' ? 'tff' : 'fof';
-    session.lastVampireScopeIdsBySentence = raw?.lastVampireScopeIdsBySentence ?? {};
-    session.lastVampireMcIdsBySentence = raw?.lastVampireMcIdsBySentence ?? {};
-    session.lastVampireSolutionIdsBySentence = raw?.lastVampireSolutionIdsBySentence ?? {};
-    session.sortedMCmap = raw?.sortedMCmap ?? {};
-    session.hasRunVampire = Boolean(raw?.hasRunVampire);
-    session.disambiguationMode = Boolean(raw?.disambiguationMode);
-    session.timing = raw?.timing ?? base.timing;
+    session.testsuiteUpdateMode = raw?.metadata?.testsuiteUpdateMode === 'append' ? 'append' : (raw?.testsuiteUpdateMode === 'append' ? 'append' : 'write');
 
     return session;
   }
