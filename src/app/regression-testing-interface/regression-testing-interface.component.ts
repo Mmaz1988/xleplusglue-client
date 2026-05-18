@@ -88,6 +88,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     private gswbRunToken = 0;
   private vampirePendingItemCount: number | null = null;
   private vampireCurrentRunItemCount: number = 0;
+  private vampireReprocessingItemCount: number = 0;
+  private vampireNewItemCount: number = 0;
   private activeVampireRunStartedAt: number | null = null;
   private vampireRunToken = 0;
   private vampireSummaryRequestInFlight = false;
@@ -612,6 +614,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampirePendingItemCount = null;
     this.activeVampireRunStartedAt = null;
     this.vampireCurrentRunItemCount = 0;
+    this.vampireReprocessingItemCount = 0;
+    this.vampireNewItemCount = 0;
   }
 
   private initializeBlankSession(): void {
@@ -1048,10 +1052,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get vampireProgressLabel(): string {
-    const current = this.vampireProgressItemCount ?? 0;
-    const total = this.vampireProgressTotalCount ?? this.vampirePendingItemCount ?? this.vampireCurrentRunItemCount;
-    const proofs = this.vampireProgressProofCount ?? 0;
-    return `Vampire backend working: ${current} of ${total} items processed · ${proofs} proofs in session`;
+    const progress = this.buildVampireProgressDescription();
+    return progress ? `${progress}...` : 'Processing Vampire items...';
+  }
+
+  private buildVampireProgressDescription(): string {
+    const reprocessingCount = this.vampireReprocessingItemCount ?? 0;
+    const newItemCount = this.vampireNewItemCount ?? 0;
+
+    if (reprocessingCount > 0 && newItemCount > 0) {
+      return `Re-processing ${reprocessingCount} items and processing ${newItemCount} new items`;
+    }
+
+    if (reprocessingCount > 0) {
+      return `Re-processing ${reprocessingCount} items`;
+    }
+
+    if (newItemCount > 0) {
+      return `Processing ${newItemCount} new items`;
+    }
+
+    return 'Processing Vampire items';
+  }
+
+  private buildVampireCompletionDescription(summary: VampireSessionSummary | null | undefined): string {
+    const processedCount = summary?.item_count ?? 0;
+    return `Processed ${processedCount} items`;
   }
 
   get hasTimingInfo(): boolean {
@@ -1341,6 +1367,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const vampireRunToken = ++this.vampireRunToken;
     this.vampirePreserveExistingResults = Object.keys(this.session.lastVampireResults ?? {}).length > 0;
     this.vampireCurrentRunItemCount = 0;
+    this.vampireReprocessingItemCount = 0;
+    this.vampireNewItemCount = 0;
     this.currentVampireRunKind = this.testsuiteUpdateMode === 'append'
       ? 'append'
       : (this.vampirePreserveExistingResults ? 'rerun' : 'initial');
@@ -1352,6 +1380,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const previousVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireScopeIdsBySentence);
     const previousVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireMcIdsBySentence);
     const previousVampireSolutionIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireSolutionIdsBySentence ?? {});
+    const previousVampireResults = this.session.lastVampireResults ?? {};
 
     this.session.disambiguationMode = false;
 
@@ -1424,6 +1453,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
       if (premise_strings.length > 0 && conclusion_strings.length > 0) {
         inference_items[item.id] = { premises: premise_strings, hypothesis: conclusion_strings, axioms: axioms };
+        if (previousVampireResults[item.id] && previousVampireResults[item.id].length > 0) {
+          this.vampireReprocessingItemCount++;
+        } else {
+          this.vampireNewItemCount++;
+        }
       }
     }
 
@@ -1573,13 +1607,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.updateVampireProgressIndicator(summary);
         this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot, this.vampirePreserveExistingResults);
 
-        const proofCount = summary?.proof_count ?? 0;
-        const runItems = this.vampireCurrentRunItemCount || this.vampirePendingItemCount || this.regressionTestItems.length;
+        const progressDescription = finalSnapshot
+          ? this.buildVampireCompletionDescription(summary)
+          : this.buildVampireProgressDescription();
         const message = this.currentVampireRunKind === 'append'
-          ? `${finalSnapshot ? 'Append inference summary' : 'Append inference progress'}: ${runItems} item(s) refreshed, ${proofCount} proofs in session.`
+          ? `${finalSnapshot ? 'Append inference summary' : 'Append inference progress'}: ${progressDescription}.`
           : this.vampirePreserveExistingResults
-            ? `${finalSnapshot ? 'Vampire rerun summary' : 'Vampire rerun'}: ${runItems} item(s) refreshed, ${proofCount} proofs in session.`
-            : `${finalSnapshot ? 'Inference results summary' : 'Vampire progress'}:\nProcessed items: ${summary?.item_count ?? 0} of ${runItems}\nProcessed proofs: ${proofCount}`;
+            ? `${finalSnapshot ? 'Vampire rerun summary' : 'Vampire rerun'}: ${progressDescription}.`
+            : `${finalSnapshot ? 'Inference results summary' : 'Vampire progress'}: ${progressDescription}.`;
 
         console.log(message);
         this.displayMessage(message, finalSnapshot ? "green" : "blue");

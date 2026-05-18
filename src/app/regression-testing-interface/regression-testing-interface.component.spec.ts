@@ -113,6 +113,29 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(result).toBeTrue();
   });
 
+  it('describes mixed vampire reruns with progressive wording', () => {
+    component['vampireReprocessingItemCount'] = 8;
+    component['vampireNewItemCount'] = 8;
+
+    expect(component.vampireProgressLabel).toBe('Re-processing 8 items and processing 8 new items...');
+  });
+
+  it('shows absolute progress against the full bank size', () => {
+    component['vampireProgressItemCount'] = 8;
+    component['vampireProgressTotalCount'] = 16;
+
+    expect(component.vampireProgressPercent).toBe(50);
+  });
+
+  it('describes the completion message using the processed count', () => {
+    component['vampireReprocessingItemCount'] = 8;
+    component['vampireNewItemCount'] = 5;
+
+    const message = (component as any).buildVampireCompletionDescription({ item_count: 13 });
+
+    expect(message).toBe('Processed 13 items');
+  });
+
   it('blocks autosave while an abort is in flight', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
 
