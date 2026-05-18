@@ -191,7 +191,8 @@
     <span *ngIf="loading">Loading...</span>
   </button>
   <button *ngIf="loading || isVampireProgressVisible" (click)="abortCurrentRun()" [disabled]="!canAbortRun">
-    Abort and save
+    <span *ngIf="!isAbortInProgress">Abort and save</span>
+    <span *ngIf="isAbortInProgress">Aborting...</span>
   </button>
   <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()" [disabled]="runLocked">
   Continue

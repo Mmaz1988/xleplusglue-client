@@ -17,6 +17,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       'loadRegressionSession',
       'saveRegressionSession',
       'deleteRegressionSession',
+      'requestVampireCancel',
       'getLastSession',
       'getLastSessionSummary'
     ]);
@@ -175,5 +176,53 @@ describe('RegressionTestingInterfaceComponent', () => {
     secondSessionSubject.complete();
     secondSummarySubject.next({ item_count: 0, proof_count: 0 });
     secondSummarySubject.complete();
+  });
+
+  it('blocks autosave while an abort is in flight', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+
+    component['sessionPersistenceEnabled'] = true;
+    component['isHydratingSession'] = false;
+    component['abortRequestInFlight'] = true;
+
+    (component as any).scheduleSessionSave(true);
+
+    expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+    expect(component['pendingAutosave']).toBeFalse();
+  });
+
+  it('allows abort while an autosave is in progress but not during manual saves', () => {
+    component.loading = true;
+    component['saveOperationInProgress'] = true;
+    component['activeSaveAction'] = null;
+
+    expect(component.canAbortRun).toBeTrue();
+
+    component['activeSaveAction'] = 'current';
+
+    expect(component.canAbortRun).toBeFalse();
+  });
+
+  it('waits for the backend cancel response before clearing the abort state', () => {
+    const cancelSubject = new Subject<any>();
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.requestVampireCancel.and.returnValue(cancelSubject.asObservable());
+
+    component.loading = true;
+    component['saveOperationInProgress'] = true;
+    component['activeSaveAction'] = null;
+
+    component.abortCurrentRun();
+
+    expect(dataServiceSpy.requestVampireCancel).toHaveBeenCalledTimes(1);
+    expect(component.loading).toBeTrue();
+    expect(component['abortRequestInFlight']).toBeTrue();
+    expect(component.canAbortRun).toBeFalse();
+
+    cancelSubject.next({});
+    cancelSubject.complete();
+
+    expect(component['abortRequestInFlight']).toBeFalse();
+    expect(component.loading).toBeFalse();
   });
 });

@@ -82,6 +82,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private lastSavedSessionFingerprint = '';
   private saveOperationInProgress = false;
   private pendingAutosave = false;
+  private abortRequestInFlight = false;
   private activeSaveAction: 'current' | 'as' | null = null;
   private activeGswbRunStartedAt: number | null = null;
     private gswbRunToken = 0;
@@ -411,6 +412,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private scheduleSessionSave(immediate = false): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
 
+    if (this.abortRequestInFlight) {
+      if (this.sessionSaveTimer !== null) {
+        clearTimeout(this.sessionSaveTimer);
+        this.sessionSaveTimer = null;
+      }
+      this.pendingAutosave = false;
+      return;
+    }
+
     if (this.saveOperationInProgress) {
       this.pendingAutosave = true;
       if (this.sessionSaveTimer !== null) {
@@ -455,6 +465,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   ): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
 
+    if (this.abortRequestInFlight && action === 'autosave') return;
+
     if (this.saveOperationInProgress && !lockAlreadyHeld) {
       this.pendingAutosave = true;
       return;
@@ -486,7 +498,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       finalize(() => {
         this.saveOperationInProgress = false;
         this.activeSaveAction = null;
-        const shouldRetry = saveSucceeded && this.pendingAutosave;
+        const shouldRetry = saveSucceeded && this.pendingAutosave && !this.abortRequestInFlight;
         this.pendingAutosave = false;
         if (onComplete) {
           onComplete();
@@ -965,33 +977,52 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   abortCurrentRun(): void {
-    if (!this.loading || this.saveOperationInProgress) return;
+    if (!this.loading || (this.saveOperationInProgress && this.activeSaveAction !== null) || this.abortRequestInFlight) return;
 
-    this.displayMessage('Aborting current run and saving the session...', 'blue');
-    this.dataService.requestVampireCancel(this.redisSessionKey).subscribe({
-      error: error => console.warn('Unable to request Vampire cancel.', error)
-    });
-    this.gswbRunToken++;
-    this.vampireRunToken++;
-    this.stopGswbSummaryPolling();
-    this.stopVampireSummaryPolling();
-    this.pendingVampireFinalSnapshot = null;
-    this.vampireSummaryRequestInFlight = false;
+    this.abortRequestInFlight = true;
+    if (this.sessionSaveTimer !== null) {
+      clearTimeout(this.sessionSaveTimer);
+      this.sessionSaveTimer = null;
+    }
     this.pendingAutosave = false;
-    this.activeGswbRunStartedAt = null;
-    this.activeVampireRunStartedAt = null;
-    this.vampirePendingItemCount = null;
-    this.vampireCurrentRunItemCount = 0;
-    this.loading = false;
-    this.clearVampireProgressIndicator();
-    this.session.disambiguationMode = false;
+    this.displayMessage('Requesting run abort...', 'blue');
+    this.dataService.requestVampireCancel(this.redisSessionKey).subscribe({
+      next: () => {
+        this.gswbRunToken++;
+        this.vampireRunToken++;
+        this.stopGswbSummaryPolling();
+        this.stopVampireSummaryPolling();
+        this.pendingVampireFinalSnapshot = null;
+        this.vampireSummaryRequestInFlight = false;
+        this.pendingAutosave = false;
+        this.activeGswbRunStartedAt = null;
+        this.activeVampireRunStartedAt = null;
+        this.vampirePendingItemCount = null;
+        this.vampireCurrentRunItemCount = 0;
+        this.loading = false;
+        this.clearVampireProgressIndicator();
+        this.session.disambiguationMode = false;
 
-    this.saveSessionSnapshot(
-      () => this.displayMessage('Run aborted and session saved.', 'green'),
-      undefined,
-      undefined,
-      'autosave'
-    );
+        if (this.saveOperationInProgress) {
+          this.displayMessage('Run aborted.', 'green');
+          this.abortRequestInFlight = false;
+          return;
+        }
+
+        this.saveSessionSnapshot(
+          () => this.displayMessage('Run aborted and session saved.', 'green'),
+          undefined,
+          undefined,
+          'current'
+        );
+        this.abortRequestInFlight = false;
+      },
+      error: error => {
+        console.warn('Unable to request Vampire cancel.', error);
+        this.displayMessage('Unable to abort current run.', 'red');
+        this.abortRequestInFlight = false;
+      }
+    });
   }
 
   get hasParsedExamples(): boolean {
@@ -1012,7 +1043,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get canAbortRun(): boolean {
-    return (this.loading || this.activeGswbRunStartedAt !== null || this.activeVampireRunStartedAt !== null) && !this.saveOperationInProgress;
+    return (this.loading || this.activeGswbRunStartedAt !== null || this.activeVampireRunStartedAt !== null) && !(this.saveOperationInProgress && this.activeSaveAction !== null) && !this.abortRequestInFlight;
+  }
+
+  get isAbortInProgress(): boolean {
+    return this.abortRequestInFlight;
   }
 
   get isVampireProgressVisible(): boolean {
