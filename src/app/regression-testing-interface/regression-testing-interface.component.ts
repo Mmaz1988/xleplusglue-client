@@ -995,27 +995,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.pendingVampireFinalSnapshot = null;
         this.vampireSummaryRequestInFlight = false;
         this.pendingAutosave = false;
-        this.activeGswbRunStartedAt = null;
-        this.activeVampireRunStartedAt = null;
-        this.vampirePendingItemCount = null;
-        this.vampireCurrentRunItemCount = 0;
-        this.loading = false;
-        this.clearVampireProgressIndicator();
         this.session.disambiguationMode = false;
 
-        if (this.saveOperationInProgress) {
-          this.displayMessage('Run aborted.', 'green');
-          this.abortRequestInFlight = false;
-          return;
-        }
-
-        this.saveSessionSnapshot(
-          () => this.displayMessage('Run aborted and session saved.', 'green'),
-          undefined,
-          undefined,
-          'current'
-        );
-        this.abortRequestInFlight = false;
+        this.loadAndRenderVampireState(true, this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
       },
       error: error => {
         console.warn('Unable to request Vampire cancel.', error);
@@ -1612,10 +1594,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           }
           this.loading = false;
           this.vampirePendingItemCount = null;
+          this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
           this.stopVampireSummaryPolling();
           this.clearVampireProgressIndicator();
-          this.saveSessionSnapshot();
+          this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
+          this.abortRequestInFlight = false;
         }
       },
       error: error => {
@@ -1625,10 +1609,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (finalSnapshot) {
           this.loading = false;
           this.vampirePendingItemCount = null;
+          this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
           this.stopVampireSummaryPolling();
           this.clearVampireProgressIndicator();
-          this.saveSessionSnapshot();
+          this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
+          this.abortRequestInFlight = false;
           this.displayMessage("Batch processing completed, but Redis state could not be reloaded.", "red");
         }
       }
@@ -2189,7 +2175,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get isSessionActionLocked(): boolean {
-    return this.loading || this.sessionLoadState === 'loading' || this.saveOperationInProgress;
+    return this.loading || this.sessionLoadState === 'loading' || this.saveOperationInProgress || this.abortRequestInFlight;
   }
 
   get isSaveCurrentInProgress(): boolean {
