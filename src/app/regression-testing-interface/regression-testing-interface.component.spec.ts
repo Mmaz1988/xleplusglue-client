@@ -19,7 +19,9 @@ describe('RegressionTestingInterfaceComponent', () => {
       'deleteRegressionSession',
       'requestVampireCancel',
       'getLastSession',
-      'getLastSessionSummary'
+      'getLastSessionSummary',
+      'getLastGswbSession',
+      'getLastGswbSessionSummary'
     ]);
     dataServiceSpy.listRegressionSessions.and.returnValue(of([]));
     dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
@@ -27,6 +29,8 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.deleteRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));
     dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
+    dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
+    dataServiceSpy.getLastGswbSessionSummary.and.returnValue(of({} as any));
 
     TestBed.configureTestingModule({
       imports: [FormsModule],
@@ -125,6 +129,84 @@ describe('RegressionTestingInterfaceComponent', () => {
     component['vampireProgressTotalCount'] = 16;
 
     expect(component.vampireProgressPercent).toBe(50);
+  });
+
+  it('shows vampire pending only while a vampire run is active', () => {
+    component.session.timing.parseMs = 1200;
+    component['activeVampireRunStartedAt'] = 123;
+
+    expect(component.processingTimingSummary).toContain('Vampire pending');
+
+    component['activeVampireRunStartedAt'] = null;
+    component.session.hasRunVampire = true;
+    component.inferenceResults = [{ id: 'I1' } as any];
+    component.regressionTestItems = [{ id: 'I1' } as any, { id: 'I2' } as any];
+
+    expect(component.processingTimingSummary).toContain('Vampire call incomplete');
+  });
+
+  it('includes parse, vampire, and discriminant counts in the timing details', () => {
+    component.session.timing.startedAt = '2026-05-18T21:00:00.000Z';
+    component.session.timing.parseMs = 1234;
+    component.session.timing.vampireMs = 2345;
+    component.session.timing.totalMs = 3579;
+    component.sentenceMap = { S1: 'One', S2: 'Two' };
+    component.regressionTestResults = [{ sentence_id: 'S1' } as any, { sentence_id: 'S2' } as any];
+    component.regressionTestItems = [{ id: 'I1' } as any, { id: 'I2' } as any];
+    component.session.selectedScopeIdsBySentence = { S1: ['a'] };
+    component.session.lastVampireScopeIdsBySentence = { S1: ['b'] };
+
+    const details = component.processingTimingDetails;
+
+    expect(details).toContain('Parse phase: 1.23s · 2/2 parses');
+    expect(details).toContain('Vampire phase: 2.35s · 0/2 items');
+    expect(details).toContain('Discriminant updates: 1 sentences');
+    expect(details).toContain('Overall: 3.58s');
+  });
+
+  it('stays silent for autosave no-ops', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    const displaySpy = spyOn(component, 'displayMessage');
+
+    component['sessionPersistenceEnabled'] = true;
+    component['isHydratingSession'] = false;
+    component['lastSavedSessionFingerprint'] = (component as any).buildSessionFingerprint((component as any).buildSessionSnapshot());
+
+    (component as any).scheduleSessionSave(true);
+
+    expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+    expect(displaySpy).not.toHaveBeenCalled();
+  });
+
+  it('reports all parsed sentences on final GSWB refresh', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    spyOn(component, 'displayMessage');
+    dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
+
+    component.loading = true;
+    component['sentenceMap'] = { S1: 'One', S2: 'Two' };
+    component['gswbRunToken'] = 1;
+    component['activeGswbRunStartedAt'] = 123;
+
+    (component as any).loadAndRenderGswbState(true, 123, 1);
+
+    expect(component.displayMessage).toHaveBeenCalledWith('Parsed 2 of 2 sentences!', 'green');
+  });
+
+  it('does not show a fake parse count before GSWB finishes', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    const displaySpy = spyOn(component, 'displayMessage');
+    dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
+
+    component.loading = true;
+    component['isHydratingSession'] = true;
+    component['sentenceMap'] = { S1: 'One', S2: 'Two' };
+    component['gswbRunToken'] = 1;
+    component['activeGswbRunStartedAt'] = 123;
+
+    (component as any).loadAndRenderGswbState(false, 123, 1);
+
+    expect(displaySpy).not.toHaveBeenCalled();
   });
 
   it('describes the completion message using the processed count', () => {

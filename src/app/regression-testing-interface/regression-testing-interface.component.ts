@@ -478,9 +478,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const snapshot = this.buildSessionSnapshot();
     const fingerprint = this.buildSessionFingerprint(snapshot);
     if (fingerprint === this.lastSavedSessionFingerprint) {
-      if (action === 'current') {
+      if (action === 'current' && !this.abortRequestInFlight) {
         this.setSessionLoadStatus('success', 'Nothing to save.', 'Current session is already up to date.');
-      } else if (successMessage) {
+      } else if (action !== 'autosave' && !this.abortRequestInFlight && successMessage) {
         this.displayMessage('No changes to save.', 'blue');
       }
       if (onSuccess) {
@@ -871,11 +871,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         const outputs = snapshot?.outputs ?? {};
         this.renderGswbResults(outputs);
 
-        const parsedCount = Object.keys(outputs).length;
         const totalCount = Object.keys(this.sentenceMap ?? {}).length;
-        const quickReport = `Parsed ${parsedCount} of ${totalCount} sentences!`;
-
-        this.displayMessage(quickReport, finalSnapshot ? "green" : "blue");
+        if (finalSnapshot) {
+          this.displayMessage(`Parsed ${totalCount} of ${totalCount} sentences!`, "green");
+        } else if (Object.keys(outputs).length > 0) {
+          this.displayMessage(`Parsing in progress...`, "blue");
+        }
 
         if (finalSnapshot) {
           this.session.timing.parseMs = Date.now() - runStartedAt;
@@ -1108,7 +1109,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
 
     if (timing.parseMs !== null) {
-      return `Parse ${this.formatDuration(timing.parseMs)} · Vampire pending`;
+      if (this.activeVampireRunStartedAt !== null) {
+        return `Parse ${this.formatDuration(timing.parseMs)} · Vampire pending`;
+      }
+
+      if (this.session.hasRunVampire && this.inferenceResultCount < this.expectedInferenceCount) {
+        return `Parse ${this.formatDuration(timing.parseMs)} · Vampire call incomplete`;
+      }
+
+      return `Parse ${this.formatDuration(timing.parseMs)}`;
     }
 
     return '';
@@ -1119,11 +1128,45 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const lines: string[] = [];
 
     if (timing.startedAt) lines.push(`Started: ${timing.startedAt}`);
-    if (timing.parseMs !== null) lines.push(`Parse phase: ${this.formatDuration(timing.parseMs, true)}`);
-    if (timing.vampireMs !== null) lines.push(`Vampire phase: ${this.formatDuration(timing.vampireMs, true)}`);
+    if (timing.parseMs !== null) {
+      lines.push(`Parse phase: ${this.formatDuration(timing.parseMs, true)} · ${this.parseResultCount}/${this.expectedParseCount} parses`);
+    }
+    if (timing.vampireMs !== null) {
+      lines.push(`Vampire phase: ${this.formatDuration(timing.vampireMs, true)} · ${this.inferenceResultCount}/${this.expectedInferenceCount} items`);
+    } else if (this.session.hasRunVampire) {
+      lines.push(`Vampire phase: incomplete · ${this.inferenceResultCount}/${this.expectedInferenceCount} items`);
+    }
+    const changedDiscriminantSentences = this.changedDiscriminantSentenceCount;
+    if (changedDiscriminantSentences > 0) {
+      lines.push(`Discriminant updates: ${changedDiscriminantSentences} sentences`);
+    }
     if (timing.totalMs !== null) lines.push(`Overall: ${this.formatDuration(timing.totalMs, true)}`);
 
     return lines.join('\n');
+  }
+
+  get changedDiscriminantSentenceCount(): number {
+    const sentenceIds = new Set<string>([
+      ...Object.keys(this.session.selectedScopeIdsBySentence ?? {}),
+      ...Object.keys(this.session.selectedMcIdsBySentence ?? {}),
+      ...Object.keys(this.session.selectedSolutionIdsBySentence ?? {}),
+      ...Object.keys(this.session.lastVampireScopeIdsBySentence ?? {}),
+      ...Object.keys(this.session.lastVampireMcIdsBySentence ?? {}),
+      ...Object.keys(this.session.lastVampireSolutionIdsBySentence ?? {}),
+    ]);
+
+    let changed = 0;
+    for (const sentenceId of sentenceIds) {
+      const scopeChanged = !this.sameSelectionIds(this.session.selectedScopeIdsBySentence[sentenceId] ?? [], this.session.lastVampireScopeIdsBySentence[sentenceId] ?? []);
+      const mcChanged = !this.sameSelectionIds(this.session.selectedMcIdsBySentence[sentenceId] ?? [], this.session.lastVampireMcIdsBySentence[sentenceId] ?? []);
+      const solutionChanged = !this.sameSelectionIds(this.session.selectedSolutionIdsBySentence[sentenceId] ?? [], this.session.lastVampireSolutionIdsBySentence?.[sentenceId] ?? []);
+
+      if (scopeChanged || mcChanged || solutionChanged) {
+        changed++;
+      }
+    }
+
+    return changed;
   }
 
   batchParse(sentences: string, rules: string) {
