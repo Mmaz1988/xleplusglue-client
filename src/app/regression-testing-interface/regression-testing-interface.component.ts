@@ -18,11 +18,12 @@ import {
   nliItem,
   vampireMultipleRequest,
   check,
-  VampireSessionSummary
+  VampireSessionSummary,
+  VampireProgressSummary
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, forkJoin, finalize, timeout } from "rxjs";
+import { catchError, EMPTY, Observable, finalize, timeout } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -992,16 +993,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.displayMessage('Requesting run abort...', 'blue');
     this.dataService.requestVampireCancel(this.redisSessionKey).subscribe({
       next: () => {
-        this.gswbRunToken++;
-        this.vampireRunToken++;
-        this.stopGswbSummaryPolling();
-        this.stopVampireSummaryPolling();
-        this.pendingVampireFinalSnapshot = null;
-        this.vampireSummaryRequestInFlight = false;
-        this.pendingAutosave = false;
         this.session.disambiguationMode = false;
-
-        this.loadAndRenderVampireState(true, this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
+        this.displayMessage('Abort requested. Waiting for Vampire to stop...', 'blue');
+        this.loadAndRenderVampireState(false, this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
       },
       error: error => {
         console.warn('Unable to request Vampire cancel.', error);
@@ -1075,8 +1069,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return 'Processing Vampire items';
   }
 
-  private buildVampireCompletionDescription(summary: VampireSessionSummary | null | undefined): string {
-    const processedCount = summary?.item_count ?? 0;
+  private buildVampireCompletionDescription(summary: VampireSessionSummary | VampireProgressSummary | null | undefined): string {
+    const processedCount = summary
+      ? ('item_count' in summary ? summary.item_count : summary.itemCount)
+      : 0;
     return `Processed ${processedCount} items`;
   }
 
@@ -1611,9 +1607,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampireProgressInProgress = true;
   }
 
-  private updateVampireProgressIndicator(summary: VampireSessionSummary): void {
-    this.vampireProgressItemCount = summary?.item_count ?? 0;
-    this.vampireProgressProofCount = summary?.proof_count ?? 0;
+  private updateVampireProgressIndicator(summary: VampireSessionSummary | VampireProgressSummary): void {
+    this.vampireProgressItemCount = 'item_count' in summary ? (summary?.item_count ?? 0) : (summary?.itemCount ?? 0);
+    this.vampireProgressProofCount = 'proof_count' in summary ? (summary?.proof_count ?? 0) : (summary?.proofCount ?? 0);
     this.vampireProgressTotalCount = this.regressionTestItems.length || this.vampireProgressTotalCount;
   }
 
@@ -1650,21 +1646,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.vampireSummaryRequestInFlight = true;
 
-    forkJoin({
-      session: this.dataService.getLastSession(this.redisSessionKey),
-      summary: this.dataService.getLastSessionSummary(this.redisSessionKey)
-    }).pipe(
+    this.dataService.getVampireProgress(this.redisSessionKey).pipe(
       timeout(this.vampireSummaryRequestTimeoutMs),
       finalize(() => this.releaseVampireSummaryRequestLock())
     ).subscribe({
-      next: ({ session, summary }) => {
+      next: (progress: VampireProgressSummary) => {
         if (runToken !== this.vampireRunToken) return;
 
-        this.updateVampireProgressIndicator(summary);
-        this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot, this.vampirePreserveExistingResults);
+        this.updateVampireProgressIndicator(progress);
+        this.renderVampireResults(progress?.itemResults ?? {}, progress, finalSnapshot, this.vampirePreserveExistingResults);
 
         const progressDescription = finalSnapshot
-          ? this.buildVampireCompletionDescription(summary)
+          ? this.buildVampireCompletionDescription(progress)
           : this.buildVampireProgressDescription();
         const message = this.currentVampireRunKind === 'append'
           ? `${finalSnapshot ? 'Append inference summary' : 'Append inference progress'}: ${progressDescription}.`
@@ -1678,7 +1671,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.scheduleSessionSave();
         }
 
-        if (finalSnapshot) {
+        const shouldFinalize = finalSnapshot
+          || (!this.abortRequestInFlight && progress.state !== 'running')
+          || (this.abortRequestInFlight && progress.state !== 'running' && progress.state !== 'cancel_requested');
+
+        if (shouldFinalize) {
           this.session.timing.vampireMs = Date.now() - vampireStartedAt;
           if (this.session.timing.startedAt) {
             this.session.timing.totalMs = Date.now() - new Date(this.session.timing.startedAt).getTime();
@@ -1691,6 +1688,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
+          this.pendingVampireFinalSnapshot = null;
         }
       },
       error: error => {
@@ -1706,13 +1704,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
+          this.pendingVampireFinalSnapshot = null;
           this.displayMessage("Batch processing completed, but Redis state could not be reloaded.", "red");
         }
       }
     });
   }
 
-  private renderVampireResults(results: Record<string, check[]>, _summary: VampireSessionSummary, finalSnapshot: boolean, preserveExisting = false): void {
+  private renderVampireResults(results: Record<string, check[]>, _summary: VampireSessionSummary | VampireProgressSummary, finalSnapshot: boolean, preserveExisting = false): void {
     const mergedResults: Record<string, check[]> = preserveExisting && this.session.lastVampireResults
       ? { ...this.session.lastVampireResults, ...results }
       : { ...results };

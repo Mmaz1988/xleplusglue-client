@@ -18,6 +18,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       'saveRegressionSession',
       'deleteRegressionSession',
       'requestVampireCancel',
+      'getVampireProgress',
       'getLastSession',
       'getLastSessionSummary',
       'getLastGswbSession',
@@ -27,6 +28,20 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.saveRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.deleteRegressionSession.and.returnValue(of({} as any));
+    dataServiceSpy.getVampireProgress.and.returnValue(of({
+      sessionKey: 'last_session',
+      runId: null,
+      state: 'idle',
+      cancelRequested: false,
+      activeItemId: null,
+      completedItemIds: [],
+      changedItemIds: [],
+      itemResults: {},
+      itemCount: 0,
+      proofCount: 0,
+      totalItemCount: 0,
+      updatedAt: new Date().toISOString(),
+    }));
     dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));
     dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
     dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
@@ -290,12 +305,10 @@ describe('RegressionTestingInterfaceComponent', () => {
 
   it('keeps resend locked and saves the reloaded vampire state after abort finalization', () => {
     const cancelSubject = new Subject<any>();
-    const sessionSubject = new Subject<any>();
-    const summarySubject = new Subject<any>();
+    const progressSubject = new Subject<any>();
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     dataServiceSpy.requestVampireCancel.and.returnValue(cancelSubject.asObservable());
-    dataServiceSpy.getLastSession.and.returnValue(sessionSubject.asObservable());
-    dataServiceSpy.getLastSessionSummary.and.returnValue(summarySubject.asObservable());
+    dataServiceSpy.getVampireProgress.and.returnValue(progressSubject.asObservable());
 
     component.loading = true;
     component['activeVampireRunStartedAt'] = 123;
@@ -320,14 +333,40 @@ describe('RegressionTestingInterfaceComponent', () => {
     cancelSubject.next({});
     cancelSubject.complete();
 
+    progressSubject.next({
+      sessionKey: 'last_session',
+      runId: null,
+      state: 'cancel_requested',
+      cancelRequested: true,
+      activeItemId: null,
+      completedItemIds: [],
+      changedItemIds: [],
+      itemResults: {},
+      itemCount: 0,
+      proofCount: 0,
+      totalItemCount: 1,
+      updatedAt: new Date().toISOString(),
+    });
+
     expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
     expect(component['abortRequestInFlight']).toBeTrue();
     expect(component.canResendVampire).toBeFalse();
 
-    sessionSubject.next({ results: { 'item-1': [{ glyph: 'new', informative: true, consistent: true, relevant: true, proof_files: ['p1'] }] } });
-    summarySubject.next({ item_count: 1, proof_count: 1 });
-    sessionSubject.complete();
-    summarySubject.complete();
+    progressSubject.next({
+      sessionKey: 'last_session',
+      runId: null,
+      state: 'cancelled',
+      cancelRequested: false,
+      activeItemId: null,
+      completedItemIds: ['item-1'],
+      changedItemIds: [],
+      itemResults: { 'item-1': [{ glyph: 'new', informative: true, consistent: true, relevant: true, proof_files: ['p1'] }] },
+      itemCount: 1,
+      proofCount: 1,
+      totalItemCount: 1,
+      updatedAt: new Date().toISOString(),
+    });
+    progressSubject.complete();
 
     expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
     const [, snapshot] = dataServiceSpy.saveRegressionSession.calls.mostRecent().args;
