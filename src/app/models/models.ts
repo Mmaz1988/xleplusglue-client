@@ -118,21 +118,6 @@ export interface RegressionSessionSummary {
   mismatchCount?: number;
 }
 
-export interface VampireProgressSummary {
-  sessionKey: string;
-  runId: string | null;
-  state: 'idle' | 'running' | 'cancel_requested' | 'cancelled';
-  cancelRequested: boolean;
-  activeItemId: string | null;
-  completedItemIds: string[];
-  changedItemIds: string[];
-  itemResults: Record<string, check[]>;
-  itemCount: number;
-  proofCount: number;
-  totalItemCount: number;
-  updatedAt: string;
-}
-
 export interface RegressionSessionFilePart {
   filename: string;
   text: string;

@@ -16,7 +16,6 @@ import {
   GswbBatchOutput,
   vampireMultipleRequest, vampireMultipleResponse,
   VampireSessionSummary,
-  VampireProgressSummary,
   RegressionSessionSummary,
   RegressionSessionDocument
 } from './models/models';
@@ -29,7 +28,6 @@ export class DataService {
   private vampirepage = 'http://localhost:8082'
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
-  private redispage = 'http://localhost:8083';
   constructor(private http: HttpClient) { }
 
   //gswb models
@@ -110,10 +108,6 @@ callVampire(vampireRequest: vampireRequest){
 
   getLastSessionSummary(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireSessionSummary> {
     return this.http.get<VampireSessionSummary>(`${this.vampirepage}/last_session/${sessionKey}/summary`);
-  }
-
-  getVampireProgress(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireProgressSummary> {
-    return this.http.get<VampireProgressSummary>(`${this.redispage}/vampire_progress/${sessionKey}`);
   }
 
   resetLastSession(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {

@@ -18,8 +18,7 @@ import {
   nliItem,
   vampireMultipleRequest,
   check,
-  VampireSessionSummary,
-  VampireProgressSummary
+  VampireSessionSummary
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
@@ -77,7 +76,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   sessionLoadDetails = '';
   private gswbSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
   private vampireSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
-  private vampireAbortPollTimer: ReturnType<typeof setInterval> | null = null;
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionPersistenceEnabled = false;
   private isBootstrapping = true;
@@ -480,9 +478,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const snapshot = this.buildSessionSnapshot();
     const fingerprint = this.buildSessionFingerprint(snapshot);
     if (fingerprint === this.lastSavedSessionFingerprint) {
-      if (action === 'current' && !this.abortRequestInFlight) {
+      if (action === 'current') {
         this.setSessionLoadStatus('success', 'Nothing to save.', 'Current session is already up to date.');
-      } else if (action !== 'autosave' && !this.abortRequestInFlight && successMessage) {
+      } else if (successMessage) {
         this.displayMessage('No changes to save.', 'blue');
       }
       if (onSuccess) {
@@ -961,7 +959,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   ngOnDestroy(): void {
     this.stopGswbSummaryPolling();
     this.stopVampireSummaryPolling();
-    this.stopVampireAbortPolling();
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
       this.sessionSaveTimer = null;
@@ -995,9 +992,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.displayMessage('Requesting run abort...', 'blue');
     this.dataService.requestVampireCancel(this.redisSessionKey).subscribe({
       next: () => {
+        this.gswbRunToken++;
+        this.vampireRunToken++;
+        this.stopGswbSummaryPolling();
+        this.stopVampireSummaryPolling();
+        this.pendingVampireFinalSnapshot = null;
+        this.vampireSummaryRequestInFlight = false;
+        this.pendingAutosave = false;
         this.session.disambiguationMode = false;
-        this.displayMessage('Abort requested. Waiting for Vampire to stop...', 'blue');
-        this.startVampireAbortPolling(this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
+
+        this.loadAndRenderVampireState(true, this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
       },
       error: error => {
         console.warn('Unable to request Vampire cancel.', error);
@@ -1624,45 +1628,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.pendingVampireFinalSnapshot = null;
   }
 
-  private stopVampireAbortPolling(): void {
-    if (this.vampireAbortPollTimer !== null) {
-      clearInterval(this.vampireAbortPollTimer);
-      this.vampireAbortPollTimer = null;
-    }
-  }
-
-  private startVampireAbortPolling(vampireStartedAt: number, runToken: number): void {
-    this.stopVampireAbortPolling();
-
-    this.checkVampireAbortProgress(vampireStartedAt, runToken);
-
-    this.vampireAbortPollTimer = setInterval(() => {
-      this.checkVampireAbortProgress(vampireStartedAt, runToken);
-    }, 1000);
-  }
-
-  private checkVampireAbortProgress(vampireStartedAt: number, runToken: number): void {
-    if (runToken !== this.vampireRunToken || !this.abortRequestInFlight) {
-      this.stopVampireAbortPolling();
-      return;
-    }
-
-    this.dataService.getVampireProgress(this.redisSessionKey).subscribe({
-      next: progress => {
-        if (runToken !== this.vampireRunToken) {
-          this.stopVampireAbortPolling();
-          return;
-        }
-
-        if (progress?.state !== 'running' && progress?.state !== 'cancel_requested') {
-          this.stopVampireAbortPolling();
-          this.loadAndRenderVampireState(true, vampireStartedAt, runToken);
-        }
-      },
-      error: error => console.warn('Unable to read Vampire cancel progress.', error)
-    });
-  }
-
   private releaseVampireSummaryRequestLock(): void {
     this.vampireSummaryRequestInFlight = false;
 
@@ -1726,7 +1691,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
-          this.pendingVampireFinalSnapshot = null;
         }
       },
       error: error => {
@@ -1742,7 +1706,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
-          this.pendingVampireFinalSnapshot = null;
           this.displayMessage("Batch processing completed, but Redis state could not be reloaded.", "red");
         }
       }
