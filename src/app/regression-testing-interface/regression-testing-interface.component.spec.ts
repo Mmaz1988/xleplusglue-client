@@ -306,9 +306,13 @@ describe('RegressionTestingInterfaceComponent', () => {
   it('keeps resend locked and saves the reloaded vampire state after abort finalization', () => {
     const cancelSubject = new Subject<any>();
     const progressSubject = new Subject<any>();
+    const sessionSubject = new Subject<any>();
+    const summarySubject = new Subject<any>();
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     dataServiceSpy.requestVampireCancel.and.returnValue(cancelSubject.asObservable());
     dataServiceSpy.getVampireProgress.and.returnValue(progressSubject.asObservable());
+    dataServiceSpy.getLastSession.and.returnValue(sessionSubject.asObservable());
+    dataServiceSpy.getLastSessionSummary.and.returnValue(summarySubject.asObservable());
 
     component.loading = true;
     component['activeVampireRunStartedAt'] = 123;
@@ -366,6 +370,10 @@ describe('RegressionTestingInterfaceComponent', () => {
       totalItemCount: 1,
       updatedAt: new Date().toISOString(),
     });
+    sessionSubject.next({ results: { 'item-1': [{ glyph: 'new', informative: true, consistent: true, relevant: true, proof_files: ['p1'] }] } });
+    summarySubject.next({ item_count: 1, proof_count: 1 });
+    sessionSubject.complete();
+    summarySubject.complete();
     progressSubject.complete();
 
     expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);

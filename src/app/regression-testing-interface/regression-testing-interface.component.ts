@@ -23,7 +23,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, finalize, timeout } from "rxjs";
+import { catchError, EMPTY, Observable, forkJoin, finalize, timeout } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -77,6 +77,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   sessionLoadDetails = '';
   private gswbSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
   private vampireSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
+  private vampireAbortPollTimer: ReturnType<typeof setInterval> | null = null;
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionPersistenceEnabled = false;
   private isBootstrapping = true;
@@ -960,6 +961,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   ngOnDestroy(): void {
     this.stopGswbSummaryPolling();
     this.stopVampireSummaryPolling();
+    this.stopVampireAbortPolling();
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
       this.sessionSaveTimer = null;
@@ -995,7 +997,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       next: () => {
         this.session.disambiguationMode = false;
         this.displayMessage('Abort requested. Waiting for Vampire to stop...', 'blue');
-        this.loadAndRenderVampireState(false, this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
+        this.startVampireAbortPolling(this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
       },
       error: error => {
         console.warn('Unable to request Vampire cancel.', error);
@@ -1069,10 +1071,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return 'Processing Vampire items';
   }
 
-  private buildVampireCompletionDescription(summary: VampireSessionSummary | VampireProgressSummary | null | undefined): string {
-    const processedCount = summary
-      ? ('item_count' in summary ? summary.item_count : summary.itemCount)
-      : 0;
+  private buildVampireCompletionDescription(summary: VampireSessionSummary | null | undefined): string {
+    const processedCount = summary?.item_count ?? 0;
     return `Processed ${processedCount} items`;
   }
 
@@ -1607,9 +1607,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampireProgressInProgress = true;
   }
 
-  private updateVampireProgressIndicator(summary: VampireSessionSummary | VampireProgressSummary): void {
-    this.vampireProgressItemCount = 'item_count' in summary ? (summary?.item_count ?? 0) : (summary?.itemCount ?? 0);
-    this.vampireProgressProofCount = 'proof_count' in summary ? (summary?.proof_count ?? 0) : (summary?.proofCount ?? 0);
+  private updateVampireProgressIndicator(summary: VampireSessionSummary): void {
+    this.vampireProgressItemCount = summary?.item_count ?? 0;
+    this.vampireProgressProofCount = summary?.proof_count ?? 0;
     this.vampireProgressTotalCount = this.regressionTestItems.length || this.vampireProgressTotalCount;
   }
 
@@ -1622,6 +1622,45 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private clearPendingVampireFinalSnapshot(): void {
     this.pendingVampireFinalSnapshot = null;
+  }
+
+  private stopVampireAbortPolling(): void {
+    if (this.vampireAbortPollTimer !== null) {
+      clearInterval(this.vampireAbortPollTimer);
+      this.vampireAbortPollTimer = null;
+    }
+  }
+
+  private startVampireAbortPolling(vampireStartedAt: number, runToken: number): void {
+    this.stopVampireAbortPolling();
+
+    this.checkVampireAbortProgress(vampireStartedAt, runToken);
+
+    this.vampireAbortPollTimer = setInterval(() => {
+      this.checkVampireAbortProgress(vampireStartedAt, runToken);
+    }, 1000);
+  }
+
+  private checkVampireAbortProgress(vampireStartedAt: number, runToken: number): void {
+    if (runToken !== this.vampireRunToken || !this.abortRequestInFlight) {
+      this.stopVampireAbortPolling();
+      return;
+    }
+
+    this.dataService.getVampireProgress(this.redisSessionKey).subscribe({
+      next: progress => {
+        if (runToken !== this.vampireRunToken) {
+          this.stopVampireAbortPolling();
+          return;
+        }
+
+        if (progress?.state !== 'running' && progress?.state !== 'cancel_requested') {
+          this.stopVampireAbortPolling();
+          this.loadAndRenderVampireState(true, vampireStartedAt, runToken);
+        }
+      },
+      error: error => console.warn('Unable to read Vampire cancel progress.', error)
+    });
   }
 
   private releaseVampireSummaryRequestLock(): void {
@@ -1646,18 +1685,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.vampireSummaryRequestInFlight = true;
 
-    this.dataService.getVampireProgress(this.redisSessionKey).pipe(
+    forkJoin({
+      session: this.dataService.getLastSession(this.redisSessionKey),
+      summary: this.dataService.getLastSessionSummary(this.redisSessionKey)
+    }).pipe(
       timeout(this.vampireSummaryRequestTimeoutMs),
       finalize(() => this.releaseVampireSummaryRequestLock())
     ).subscribe({
-      next: (progress: VampireProgressSummary) => {
+      next: ({ session, summary }) => {
         if (runToken !== this.vampireRunToken) return;
 
-        this.updateVampireProgressIndicator(progress);
-        this.renderVampireResults(progress?.itemResults ?? {}, progress, finalSnapshot, this.vampirePreserveExistingResults);
+        this.updateVampireProgressIndicator(summary);
+        this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot, this.vampirePreserveExistingResults);
 
         const progressDescription = finalSnapshot
-          ? this.buildVampireCompletionDescription(progress)
+          ? this.buildVampireCompletionDescription(summary)
           : this.buildVampireProgressDescription();
         const message = this.currentVampireRunKind === 'append'
           ? `${finalSnapshot ? 'Append inference summary' : 'Append inference progress'}: ${progressDescription}.`
@@ -1671,11 +1713,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.scheduleSessionSave();
         }
 
-        const shouldFinalize = finalSnapshot
-          || (!this.abortRequestInFlight && progress.state !== 'running')
-          || (this.abortRequestInFlight && progress.state !== 'running' && progress.state !== 'cancel_requested');
-
-        if (shouldFinalize) {
+        if (finalSnapshot) {
           this.session.timing.vampireMs = Date.now() - vampireStartedAt;
           if (this.session.timing.startedAt) {
             this.session.timing.totalMs = Date.now() - new Date(this.session.timing.startedAt).getTime();
@@ -1711,7 +1749,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  private renderVampireResults(results: Record<string, check[]>, _summary: VampireSessionSummary | VampireProgressSummary, finalSnapshot: boolean, preserveExisting = false): void {
+  private renderVampireResults(results: Record<string, check[]>, _summary: VampireSessionSummary, finalSnapshot: boolean, preserveExisting = false): void {
     const mergedResults: Record<string, check[]> = preserveExisting && this.session.lastVampireResults
       ? { ...this.session.lastVampireResults, ...results }
       : { ...results };
