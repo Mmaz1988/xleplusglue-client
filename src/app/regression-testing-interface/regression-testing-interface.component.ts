@@ -542,7 +542,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.saveOperationInProgress = true;
     this.activeSaveAction = 'current';
-    this.displayMessage(`Saving current session ${this.redisSessionKey}...`, 'blue');
     this.saveSessionSnapshot(
       undefined,
       `Saved current session ${this.redisSessionKey}`,
@@ -1139,6 +1138,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (this.session.lastGswbOutputs !== null) {
       lines.push(`Disambiguated sentences: ${this.disambiguatedSentenceCount} total`);
     }
+    if (this.session.hasRunVampire || this.session.lastVampireResults !== null || this.vampireProgressProofCount !== null) {
+      lines.push(`Proofs: ${this.vampireProofCount} total`);
+    }
     if (timing.totalMs !== null) lines.push(`Overall: ${this.formatDuration(timing.totalMs, true)}`);
 
     return lines.join('\n');
@@ -1157,6 +1159,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
       if (!this.sameSelectionIds(selectedIds, allIds)) {
         count++;
+      }
+    }
+
+    return count;
+  }
+
+  get vampireProofCount(): number {
+    if (this.vampireProgressProofCount !== null) {
+      return this.vampireProgressProofCount;
+    }
+
+    const results = this.session.lastVampireResults ?? {};
+    let count = 0;
+
+    for (const checks of Object.values(results)) {
+      for (const check of checks ?? []) {
+        count += (check?.proof_files ?? []).length;
       }
     }
 

@@ -158,6 +158,15 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.disambiguatedSentenceCount).toBe(1);
   });
 
+  it('counts vampire proofs from the saved result set', () => {
+    component.session.lastVampireResults = {
+      I1: [{ proof_files: ['p1', 'p2'] } as any],
+      I2: [{ proof_files: [] } as any, { proof_files: ['p3'] } as any],
+    } as any;
+
+    expect(component.vampireProofCount).toBe(3);
+  });
+
   it('includes parse, vampire, and disambiguated counts in the timing details', () => {
     component.session.timing.startedAt = '2026-05-18T21:00:00.000Z';
     component.session.timing.parseMs = 1234;
@@ -166,6 +175,10 @@ describe('RegressionTestingInterfaceComponent', () => {
     component.sentenceMap = { S1: 'One', S2: 'Two' };
     component.regressionTestResults = [{ sentence_id: 'S1' } as any, { sentence_id: 'S2' } as any];
     component.regressionTestItems = [{ id: 'I1' } as any, { id: 'I2' } as any];
+    component.session.lastVampireResults = {
+      I1: [{ proof_files: ['p1'] } as any],
+      I2: [{ proof_files: ['p2', 'p3'] } as any],
+    } as any;
     component.session.lastGswbOutputs = {
       S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
       S2: { solutions: [{ id: 'c', solution: 'c' }], log: '', derivation: null, discriminants: [] },
@@ -180,7 +193,20 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(details).toContain('Parse phase: 1.23s · 2/2 parses');
     expect(details).toContain('Vampire phase: 2.35s · 0/2 items');
     expect(details).toContain('Disambiguated sentences: 1 total');
+    expect(details).toContain('Proofs: 3 total');
     expect(details).toContain('Overall: 3.58s');
+  });
+
+  it('does not show a saving message for current session no-ops', () => {
+    const displaySpy = spyOn(component, 'displayMessage');
+
+    component['sessionPersistenceEnabled'] = true;
+    component['isHydratingSession'] = false;
+    component['lastSavedSessionFingerprint'] = (component as any).buildSessionFingerprint((component as any).buildSessionSnapshot());
+
+    component.saveCurrentSession();
+
+    expect(displaySpy).not.toHaveBeenCalledWith(jasmine.stringMatching(/^Saving current session/), jasmine.any(String));
   });
 
   it('stays silent for autosave no-ops', () => {
