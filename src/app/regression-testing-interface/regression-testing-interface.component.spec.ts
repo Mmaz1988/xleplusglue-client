@@ -6,6 +6,7 @@ import { Subject, of } from 'rxjs';
 
 import { RegressionTestingInterfaceComponent } from './regression-testing-interface.component';
 import { DataService } from '../data.service';
+import { createRegressionTestingSession } from '../models/models';
 
 describe('RegressionTestingInterfaceComponent', () => {
   let component: RegressionTestingInterfaceComponent;
@@ -254,13 +255,38 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(displaySpy).not.toHaveBeenCalled();
   });
 
-  it('describes the completion message using the processed count', () => {
-    component['vampireReprocessingItemCount'] = 8;
-    component['vampireNewItemCount'] = 5;
+  it('shows timing info for hydrated sessions with cached Vampire state', () => {
+    const snapshot = createRegressionTestingSession();
+    snapshot.lastGswbOutputs = {
+      S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
+    } as any;
+    snapshot.selectedSolutionIdsBySentence = { S1: ['a'] };
+    snapshot.lastVampireResults = {
+      I1: [{ proof_files: ['p1'] } as any],
+    } as any;
 
-    const message = (component as any).buildVampireCompletionDescription({ item_count: 13 });
+    (component as any).hydrateSession(snapshot);
 
-    expect(message).toBe('Processed 13 items');
+    expect(component.hasTimingInfo).toBeTrue();
+    expect(component['vampirePreserveExistingResults']).toBeTrue();
+    expect(component.processingTimingDetails).toContain('Disambiguated sentences: 1 total');
+    expect(component.processingTimingDetails).toContain('Proofs: 1 total');
+  });
+
+  it('tracks rerun progress against the current unprocessed batch', () => {
+    (component as any).startVampireProgressIndicator(5);
+    expect(component.vampireProgressItemCount).toBe(0);
+
+    (component as any).updateVampireProgressIndicator({ item_count: 2, proof_count: 2 });
+
+    expect(component.vampireProgressItemCount).toBe(2);
+    expect(component.vampireProgressPercent).toBe(40);
+  });
+
+  it('describes the completion message using the absolute processed count', () => {
+    const message = (component as any).buildVampireCompletionDescription({ item_count: 5 });
+
+    expect(message).toBe('Processed 5 items');
   });
 
   it('blocks autosave while an abort is in flight', () => {

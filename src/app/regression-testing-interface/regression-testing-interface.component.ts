@@ -1081,7 +1081,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get hasTimingInfo(): boolean {
-    return this.session.timing.parseMs !== null || this.session.timing.totalMs !== null;
+    return this.session.timing.parseMs !== null ||
+      this.session.timing.totalMs !== null ||
+      this.activeVampireRunStartedAt !== null ||
+      this.session.lastVampireResults !== null;
   }
 
   get parseResultCount(): number {
@@ -1544,7 +1547,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.loading = true;
     this.vampirePendingItemCount = Object.keys(inference_items).length;
     this.activeVampireRunStartedAt = vampireStartedAt;
-    this.startVampireProgressIndicator(this.regressionTestItems.length || this.vampirePendingItemCount || 0);
+    this.startVampireProgressIndicator(this.regressionTestItems.length || 0);
     this.startVampireSummaryPolling(vampireStartedAt, vampireRunToken);
     this.loadAndRenderVampireState(false, vampireStartedAt, vampireRunToken);
 
@@ -1614,7 +1617,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private updateVampireProgressIndicator(summary: VampireSessionSummary): void {
     this.vampireProgressItemCount = summary?.item_count ?? 0;
     this.vampireProgressProofCount = summary?.proof_count ?? 0;
-    this.vampireProgressTotalCount = this.regressionTestItems.length || this.vampireProgressTotalCount;
   }
 
   private clearVampireProgressIndicator(): void {
