@@ -41,10 +41,10 @@ export class GswbSettingsComponent {
     });
 
 
-    //Makes the resolveDrs option visible only when outputstyle is 4 (DRT)
+    //Makes the resolveDrs option visible only when outputstyle is 4 (Prolog DRT)
     this.gswbPreferencesForm.get('outputstyle')?.valueChanges.subscribe(value => {
       console.log('outputstyle changed to:', value);
-      if (value === '4') {
+      if (Number(value) === 4) {
         this.showResolveDrs = true;
       } else {
         this.showResolveDrs = false;
@@ -64,7 +64,7 @@ export class GswbSettingsComponent {
 
     const gswbPreferences: GswbPreferences = {
       prover: this.gswbPreferencesForm.value.prover,
-      outputstyle: this.gswbPreferencesForm.value.outputstyle,
+      outputstyle: Number(this.gswbPreferencesForm.value.outputstyle),
       parseSem: this.gswbPreferencesForm.value.parseSem,
       betaReduce: this.gswbPreferencesForm.value.betaReduce,
       resolveDrs: this.gswbPreferencesForm.value.resolveDrs,

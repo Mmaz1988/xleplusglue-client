@@ -27,6 +27,7 @@ export class SemvisDialogComponent {
     meaningConstructors?: any;
     selectedScopeIds?: string[];
     selectedMcIds?: string[];
+    svgSolutions?: boolean;
   }): void {
     this.activeSentenceId = payload.sentenceId;
     this.dialog.nativeElement.show();
@@ -43,14 +44,16 @@ export class SemvisDialogComponent {
 
     const scopeIds = payload.selectedScopeIds ?? [];
     const mcIds = payload.selectedMcIds ?? [];
+    const svgSolutions = Boolean(payload.svgSolutions);
 
     setTimeout(() => {
       if (!this.semVis) return;
 
       // set discriminants + items first so filtering has a universe
-      if (discriminants.length) this.semVis.setDiscriminants(discriminants);
-      this.semVis.meaningConstructors = meaningConstructors;
-      this.semVis.setItems(items, startIndex);
+        if (discriminants.length) this.semVis.setDiscriminants(discriminants);
+        this.semVis.meaningConstructors = meaningConstructors;
+        this.semVis.svgSolutions = svgSolutions;
+        this.semVis.setItems(items, startIndex);
 
       // restore selection and re-filter
       this.semVis.setSelectedDiscriminants(scopeIds, mcIds);

@@ -6,7 +6,7 @@ import { SemVisComponent } from "../../sem-vis/sem-vis.component"; // <-- adjust
 type DialogContent =
   | string
   | { kind: 'graph', graph: any }
-  | { kind: 'semvis', items: any[], discriminants?: any[], startIndex?: number, meaningConstructors?: string };
+  | { kind: 'semvis', items: any[], discriminants?: any[], startIndex?: number, meaningConstructors?: string, svgSolutions?: boolean };
 
 @Component({
   selector: 'app-dialog',
@@ -68,6 +68,7 @@ export class DialogComponent {
       const discriminants = Array.isArray(content.discriminants) ? content.discriminants : [];
       const startIndex = Number.isFinite(content.startIndex) ? content.startIndex : 0;
       const meaningConstructors = typeof content.meaningConstructors === 'string' ? content.meaningConstructors : '';
+      const svgSolutions = Boolean(content.svgSolutions);
 
       setTimeout(() => {
         if (!this.semVis) {
@@ -76,6 +77,7 @@ export class DialogComponent {
         }
         // Order doesn’t matter much, but discriminants first can help if you rely on initial filtering
         if (discriminants.length) this.semVis.setDiscriminants(discriminants);
+        this.semVis.svgSolutions = svgSolutions;
         this.semVis.setItems(items, startIndex);
         this.semVis.meaningConstructors = meaningConstructors;
       }, 0);

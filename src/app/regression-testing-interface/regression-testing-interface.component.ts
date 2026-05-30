@@ -2376,6 +2376,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.semvisDialog.open({
       ...payload,
+      svgSolutions: this.session.gswbPreferences.outputstyle === 5,
       selectedScopeIds: this.session.selectedScopeIdsBySentence[sid] ?? [],
       selectedMcIds: this.session.selectedMcIdsBySentence[sid] ?? [],
     });

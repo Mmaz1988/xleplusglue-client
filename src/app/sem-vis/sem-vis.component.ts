@@ -1,4 +1,5 @@
-import {Component, ViewChild, AfterViewInit, Output,Input, EventEmitter} from '@angular/core';
+import {Component, ViewChild, AfterViewInit, Output, Input, EventEmitter} from '@angular/core';
+import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import { EditorComponent } from '../editor/editor.component';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
 
@@ -17,6 +18,7 @@ export class SemVisComponent implements AfterViewInit {
   @ViewChild('sem') sem!: EditorComponent;
 
   @Input() meaningConstructors: string = '';
+  @Input() svgSolutions = false;
 
   @Output() selectionChange = new EventEmitter<{
     items: GswbSolution[];
@@ -25,6 +27,7 @@ export class SemVisComponent implements AfterViewInit {
   }>();
 
   items: GswbSolution[] = [];
+  currentSvg: SafeHtml | null = null;
 
   scope_discriminants: GswbDiscriminant[] = [];
   mc_discriminants: GswbDiscriminant[] = [];
@@ -45,6 +48,8 @@ export class SemVisComponent implements AfterViewInit {
 
   scope_rows: DiscRow[] = [];
   mc_rows: DiscRow[] = [];
+
+  constructor(private sanitizer: DomSanitizer) {}
 
   ngAfterViewInit(): void {
     this.viewReady = true;
@@ -85,10 +90,17 @@ export class SemVisComponent implements AfterViewInit {
   }
 
   private applyCurrent(): void {
-    if (!this.items.length) return;
+    if (!this.items.length) {
+      this.currentSvg = null;
+      return;
+    }
 
     const value = this.items[this.index].solution ?? '';
 
+    if (this.svgSolutions) {
+      this.currentSvg = this.sanitizer.bypassSecurityTrustHtml(value);
+      return;
+    }
 
     if (this.viewReady && this.sem) {
       this.sem.updateContent(value);

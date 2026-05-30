@@ -21,7 +21,11 @@
   <app-editor #sem1 [mode]="'glue'">  </app-editor>
   </div>
   -->
-<app-sem-vis #semvis [meaningConstructors]='meaningConstructors'></app-sem-vis>
+<app-sem-vis
+  #semvis
+  [meaningConstructors]='meaningConstructors'
+  [svgSolutions]="gswbPreferences?.gswbPreferences?.outputstyle === 5">
+</app-sem-vis>
 <h3>Log:</h3>
 <div class="editor-restr">
   <app-editor #log1 [mode]="'glue'">  </app-editor>

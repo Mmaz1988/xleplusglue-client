@@ -113,3 +113,19 @@ button.chip.selected.current-hit{
 .highlight-toggle input{
   margin-right: 6px;
 }
+
+.sem-svg {
+  min-height: 300px;
+  max-height: 520px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.sem-svg svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
