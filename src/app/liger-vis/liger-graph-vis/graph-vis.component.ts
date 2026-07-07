@@ -38,6 +38,21 @@ const style = [
       "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60"
     }
+  }
+  ,
+  {
+    selector: 'node[node_type="gnode"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'blue',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'height': '60px',
+      'width': '60px',
+      "background-fill": "linear-gradient",
+      "background-gradient-stop-colors": "orange white", // get data from data.color in each node
+      "background-gradient-stop-positions": "0 30 60"
+    }
   },
   {
     selector: 'node[node_type="annotation"]',
