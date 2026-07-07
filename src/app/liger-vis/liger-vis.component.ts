@@ -101,7 +101,7 @@ export class LigerVisComponent {
       }
     );
   }
-x
+
   /*
   hybridAnalysis(inputValue: string, ruleString: string) {
     const sentence = inputValue;
@@ -228,4 +228,3 @@ x
   }
 
 }
-

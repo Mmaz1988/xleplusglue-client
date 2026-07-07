@@ -14,7 +14,7 @@ const style = [
   {
     selector: 'node[node_type="input"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'blue',
       'text-valign': 'center',
       'text-halign': 'center',
@@ -28,7 +28,7 @@ const style = [
   {
     selector: 'node[node_type="cnode"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'blue',
       'text-valign': 'center',
       'text-halign': 'center',
@@ -43,7 +43,7 @@ const style = [
   {
     selector: 'node[node_type="gnode"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'blue',
       'text-valign': 'center',
       'text-halign': 'center',
@@ -57,7 +57,7 @@ const style = [
   {
     selector: 'node[node_type="annotation"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'blue',
       'text-valign': 'center',
       'text-halign': 'center',
@@ -66,6 +66,76 @@ const style = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "red white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60"
+    }
+  },
+  {
+    selector: 'node[node_type="root"]',
+    style: {
+      'content': 'data(label)',
+      'color': 'white',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'height': '60px',
+      'width': '60px',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#4b0082 white',
+      'background-gradient-stop-positions': '0 30 60'
+    }
+  },
+  {
+    selector: 'node[node_type="state"]',
+    style: {
+      'content': 'data(label)',
+      'color': 'white',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'height': '60px',
+      'width': '60px',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#7b2cbf white',
+      'background-gradient-stop-positions': '0 30 60'
+    }
+  },
+  {
+    selector: 'node[node_type="referent"]',
+    style: {
+      'content': 'data(label)',
+      'color': 'white',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'height': '60px',
+      'width': '60px',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#0b3d91 white',
+      'background-gradient-stop-positions': '0 30 60'
+    }
+  },
+  {
+    selector: 'node[node_type="value"]',
+    style: {
+      'content': 'data(label)',
+      'color': 'white',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'height': '60px',
+      'width': '60px',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#455a64 white',
+      'background-gradient-stop-positions': '0 30 60'
+    }
+  },
+  {
+    selector: 'node[node_type="condition"]',
+    style: {
+      'content': 'data(label)',
+      'color': 'white',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'height': '60px',
+      'width': '60px',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#2e7d32 white',
+      'background-gradient-stop-positions': '0 30 60'
     }
   },
   {
@@ -111,17 +181,18 @@ export class GraphVisComponent implements OnInit {
   @ViewChild('subgraphDialog') subgraphDialog: SubGraphDialogComponent;
 
   @Input() graphID!: string;
+  @Input() graphStyle: 'liger' | 'drs' = 'liger';
   private cy: Core;
   private nodesHidden: boolean = false;
-  private selector = 'node[node_type="cnode"]';
+   private selector = 'node[node_type="cnode"]';
 
   defaultWidth = '800px';
   defaultHeight = '600px';
 
-    ngOnInit(): void {
+  ngOnInit(): void {
 
     this.cy = cytoscape({
-      container: document.getElementById('cy'),
+      container: document.getElementById(this.graphID || 'cy'),
       style: style as cytoscape.Stylesheet[],
       layout: {
         name: 'dagre'
@@ -176,7 +247,7 @@ export class GraphVisComponent implements OnInit {
 
   renderGraph(graphData): void {
     this.cy = cytoscape({
-        container: document.getElementById(this.graphID), // Use the appropriate container element ID
+        container: document.getElementById(this.graphID || 'cy'), // Use the appropriate container element ID
         elements: graphData,
         style: style as cytoscape.Stylesheet[],
         layout: {
@@ -197,12 +268,14 @@ export class GraphVisComponent implements OnInit {
 
   showDialog(){
 
+      this.subgraphDialog.subgraphStyle = this.graphStyle
       this.subgraphDialog.setContent(this.cy.data())
       this.subgraphDialog.showDialog()
   }
 
   toggleNodes() {
-    const nodes = this.cy.nodes(this.selector);
+    const selector = this.graphStyle === 'drs' ? 'node[node_type="state"]' : this.selector;
+    const nodes = this.cy.nodes(selector);
 
     this.cy.batch(() => {
       if (this.nodesHidden) {
@@ -216,6 +289,3 @@ export class GraphVisComponent implements OnInit {
   }
 
 }
-
-
-

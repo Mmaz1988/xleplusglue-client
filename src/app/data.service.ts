@@ -7,6 +7,8 @@ import {
   LigerBatchParsingAnalysis,
   LigerRuleAnnotation
   ,
+  LigerStructureUploadRequest,
+  LigerStructureQueryRequest,
   GrammarList,
   GrammarString,
   FileTree,
@@ -62,6 +64,14 @@ export class DataService {
   //currently used for multistage
   ligerMulti(ligerRequest): Observable<any> {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_xle`, ligerRequest);
+  }
+
+  ligerUploadStructure(uploadRequest: LigerStructureUploadRequest): Observable<LigerRuleAnnotation> {
+    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_uploaded_structure`, uploadRequest);
+  }
+
+  ligerQueryStructure(queryRequest: LigerStructureQueryRequest): Observable<{ success: string }> {
+    return this.http.post<{ success: string }>(`${this.ligerpage}/query_uploaded_structure`, queryRequest);
   }
 
   ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {

@@ -51,6 +51,86 @@ const ligerStyle = [
     }
   },
   {
+    selector: 'node[node_type="root"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#4b0082 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="state"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#7b2cbf white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="referent"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#0b3d91 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="value"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#455a64 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="condition"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#2e7d32 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
     selector: 'edge[edge_type="edge"]',
     style: {
       'width': 3,
@@ -81,6 +161,110 @@ const ligerStyle = [
     }
   }
 ];
+
+const drsStyle = [
+  {
+    selector: 'node[node_type="root"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-color': '#4b0082',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="state"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-color': '#7b2cbf',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="referent"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-color': '#0b3d91',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="value"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-color': '#455a64',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="condition"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-color': '#2e7d32',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'edge[edge_type="default"]',
+    style: {
+      'width': 3,
+      'line-color': '#ccc',
+      'target-arrow-color': '#ccc',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier'
+    }
+  },
+  {
+    selector: 'edge[edge_type="external"]',
+    style: {
+      'width': 3,
+      'line-color': '#ccc',
+      'target-arrow-color': '#ccc',
+      'line-style': 'dashed',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier'
+    }
+  },
+  {
+    selector: 'edge[edge_type="parent"]',
+    style: {
+      'width': 3,
+      'line-color': '#ccc',
+      'target-arrow-color': '#ccc',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier'
+    }
+  }
+]
 
 const gswbStyle = [
   {
@@ -213,6 +397,10 @@ export class SubGraphComponent {
       {
         this.styleArray = ligerStyle;
         this.layout = 'dagre'
+      } else if (this.graphStyle == 'drs')
+      {
+        this.styleArray = ligerStyle;
+        this.layout = 'dagre'
       } else if (this.graphStyle == 'glue')
       {
         this.styleArray = gswbStyle;
@@ -246,6 +434,8 @@ export class SubGraphComponent {
     console.log("Cy element with data:", this.cy)
 
     if (this.graphStyle == 'liger'){
+      this.createAndBindLigerPoppers()
+    } else if (this.graphStyle == 'drs'){
       this.createAndBindLigerPoppers()
     } else if (this.graphStyle == 'glue'){
       this.createAndBindGswbPoppers()

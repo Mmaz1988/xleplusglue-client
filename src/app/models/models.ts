@@ -24,6 +24,19 @@ export interface LigerRuleAnnotation {
   axioms?: string[];
 }
 
+export interface LigerStructureUploadRequest {
+  content: string;
+  format: 'json' | 'prolog';
+  id?: string;
+}
+
+export interface LigerStructureQueryRequest {
+  content: string;
+  format: 'json' | 'prolog';
+  id?: string;
+  query: string;
+}
+
 export interface LigerWebGraph {
   graphElements: LigerGraphComponent[];
   semantics: string;

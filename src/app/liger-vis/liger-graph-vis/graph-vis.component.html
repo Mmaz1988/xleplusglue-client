@@ -3,5 +3,5 @@
   <div class="cy" [id]="graphID" #graphContainer></div>
   <button (click)="resizeToDefault()">Resize to Default</button>
   <button (click)="toggleNodes()">Toggle c-structure</button>
-  <app-sub-graph-dialog [subgraphID] ="'sub' + graphID" [subgraphStyle]="'liger'" #subgraphDialog></app-sub-graph-dialog>
+  <app-sub-graph-dialog [subgraphID] ="'sub' + graphID" [subgraphStyle]="graphStyle" #subgraphDialog></app-sub-graph-dialog>
 </div>

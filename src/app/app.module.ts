@@ -9,6 +9,7 @@ import { LogComponent } from './gswb-vis/log/log.component';
 import { ReactiveFormsModule } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
 import { LigerVisComponent } from './liger-vis/liger-vis.component';
+import { GraphInspectorComponent } from './graph-inspector/graph-inspector.component';
 import { GlueInterfaceComponent } from './glue-interface/glue-interface.component';
 import { RuleListComponent } from './liger-vis/rule-list/rule-list.component';
 import { RuleListElementComponent } from './liger-vis/rule-list-element/rule-list-element.component';
@@ -64,6 +65,7 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     EditorComponent,
     LogComponent,
     LigerVisComponent,
+    GraphInspectorComponent,
     GlueInterfaceComponent,
     RuleListComponent,
     RuleListElementComponent,
