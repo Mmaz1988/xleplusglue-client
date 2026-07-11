@@ -13,7 +13,7 @@ export class SubGraphDialogComponent {
  // private subgraphID: string
 
   @Input() subgraphID!: string;
-  @Input() subgraphStyle!: string;
+  @Input() subgraphStyle: 'liger' | 'glue' = 'liger';
 
   setContent(content: any)
   {

@@ -162,110 +162,6 @@ const ligerStyle = [
   }
 ];
 
-const drsStyle = [
-  {
-    selector: 'node[node_type="root"]',
-    style: {
-      'content': 'data(id)',
-      'color': 'white',
-      'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
-      'background-color': '#4b0082',
-      'width': 'label',
-      'height': 'label',
-      'padding': '10px'
-    }
-  },
-  {
-    selector: 'node[node_type="state"]',
-    style: {
-      'content': 'data(id)',
-      'color': 'white',
-      'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
-      'background-color': '#7b2cbf',
-      'width': 'label',
-      'height': 'label',
-      'padding': '10px'
-    }
-  },
-  {
-    selector: 'node[node_type="referent"]',
-    style: {
-      'content': 'data(id)',
-      'color': 'white',
-      'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
-      'background-color': '#0b3d91',
-      'width': 'label',
-      'height': 'label',
-      'padding': '10px'
-    }
-  },
-  {
-    selector: 'node[node_type="value"]',
-    style: {
-      'content': 'data(id)',
-      'color': 'white',
-      'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
-      'background-color': '#455a64',
-      'width': 'label',
-      'height': 'label',
-      'padding': '10px'
-    }
-  },
-  {
-    selector: 'node[node_type="condition"]',
-    style: {
-      'content': 'data(id)',
-      'color': 'white',
-      'shape': 'rectangle',
-      'text-valign': 'center',
-      'text-halign': 'center',
-      'background-color': '#2e7d32',
-      'width': 'label',
-      'height': 'label',
-      'padding': '10px'
-    }
-  },
-  {
-    selector: 'edge[edge_type="default"]',
-    style: {
-      'width': 3,
-      'line-color': '#ccc',
-      'target-arrow-color': '#ccc',
-      'target-arrow-shape': 'triangle',
-      'curve-style': 'bezier'
-    }
-  },
-  {
-    selector: 'edge[edge_type="external"]',
-    style: {
-      'width': 3,
-      'line-color': '#ccc',
-      'target-arrow-color': '#ccc',
-      'line-style': 'dashed',
-      'target-arrow-shape': 'triangle',
-      'curve-style': 'bezier'
-    }
-  },
-  {
-    selector: 'edge[edge_type="parent"]',
-    style: {
-      'width': 3,
-      'line-color': '#ccc',
-      'target-arrow-color': '#ccc',
-      'target-arrow-shape': 'triangle',
-      'curve-style': 'bezier'
-    }
-  }
-]
-
 const gswbStyle = [
   {
     selector: 'node[color="yellow"]',
@@ -386,18 +282,14 @@ const gswbStyle = [
   styleUrls: ['./sub-graph.component.css']
 })
 export class SubGraphComponent {
-  @Input() graphStyle!: string;
+  @Input() graphStyle: 'liger' | 'glue' = 'liger';
   @Input() graphID!: string;
   private cy: Core;
-  private styleArray;
-  private layout;
+  private styleArray = ligerStyle;
+  private layout = 'dagre';
 
     ngAfterViewInit(): void {
       if (this.graphStyle == 'liger')
-      {
-        this.styleArray = ligerStyle;
-        this.layout = 'dagre'
-      } else if (this.graphStyle == 'drs')
       {
         this.styleArray = ligerStyle;
         this.layout = 'dagre'
@@ -434,8 +326,6 @@ export class SubGraphComponent {
     console.log("Cy element with data:", this.cy)
 
     if (this.graphStyle == 'liger'){
-      this.createAndBindLigerPoppers()
-    } else if (this.graphStyle == 'drs'){
       this.createAndBindLigerPoppers()
     } else if (this.graphStyle == 'glue'){
       this.createAndBindGswbPoppers()

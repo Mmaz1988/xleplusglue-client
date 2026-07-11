@@ -181,7 +181,7 @@ export class GraphVisComponent implements OnInit {
   @ViewChild('subgraphDialog') subgraphDialog: SubGraphDialogComponent;
 
   @Input() graphID!: string;
-  @Input() graphStyle: 'liger' | 'drs' = 'liger';
+  @Input() graphStyle: 'liger' = 'liger';
   private cy: Core;
   private nodesHidden: boolean = false;
    private selector = 'node[node_type="cnode"]';
@@ -274,8 +274,7 @@ export class GraphVisComponent implements OnInit {
   }
 
   toggleNodes() {
-    const selector = this.graphStyle === 'drs' ? 'node[node_type="state"]' : this.selector;
-    const nodes = this.cy.nodes(selector);
+    const nodes = this.cy.nodes(this.selector);
 
     this.cy.batch(() => {
       if (this.nodesHidden) {
