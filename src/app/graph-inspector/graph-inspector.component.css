@@ -1,0 +1,39 @@
+:host {
+  display: block;
+  padding-left: 1rem;
+}
+
+.inspector-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+textarea {
+  width: 600px;
+  min-height: 140px;
+  resize: vertical;
+}
+
+.inspector-help {
+  margin: -0.25rem 0 0.75rem;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.errorhandling {
+  margin: 0.5rem 0 1rem;
+  font-weight: 600;
+}
+
+.graph-shell {
+  max-width: 900px;
+}
+
+.spinner-border {
+  width: 1rem;
+  height: 1rem;
+  border-width: 0.2em;
+}

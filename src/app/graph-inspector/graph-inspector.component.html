@@ -1,0 +1,28 @@
+<h3>Graph inspector</h3>
+
+<div class="inspector-controls">
+  <input type="file" accept=".json,.pl,.prolog,.txt" (change)="onUploadFile($event)">
+  <select [(ngModel)]="uploadedFormat">
+    <option value="json">JSON</option>
+    <option value="prolog">Prolog</option>
+  </select>
+</div>
+
+<div class="inspector-controls">
+  <textarea [(ngModel)]="queryText" placeholder="Enter a graph query"></textarea>
+  <button type="button" (click)="runQuery()" [disabled]="queryLoading">
+    <span *ngIf="!queryLoading">Run query</span>
+    <span *ngIf="queryLoading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    <span *ngIf="queryLoading">Loading...</span>
+  </button>
+</div>
+
+<div class="inspector-help">
+  You can prepend template and hierarchy definitions above the query, one per line.
+</div>
+
+<div class="errorhandling" #errorhandle></div>
+
+<div class="graph-shell">
+  <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>
+</div>
