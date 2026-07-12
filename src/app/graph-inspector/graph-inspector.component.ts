@@ -100,7 +100,15 @@ export class GraphInspectorComponent {
     this.dataService.ligerQueryStructure(queryRequest).subscribe(
       data => {
         this.queryLoading = false;
-        this.displayMessage(data.success === 'true' ? 'Query matched.' : 'Query did not match.', data.success === 'true' ? 'green' : 'red');
+        this.graphElements = data.graph?.graphElements ?? [];
+        if (this.graphElements.length) {
+          this.cy1.renderGraph(this.graphElements);
+        }
+
+        this.queryResult = data.success === 'true'
+          ? `Query matched ${data.matchCount} solution${data.matchCount === 1 ? '' : 's'}.`
+          : 'Query did not match.';
+        this.displayMessage(this.queryResult, data.success === 'true' ? 'green' : 'red');
       },
       error => {
         this.queryLoading = false;

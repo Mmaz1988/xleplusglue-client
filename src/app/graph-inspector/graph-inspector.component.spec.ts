@@ -14,6 +14,11 @@ import { GraphInspectorComponent } from './graph-inspector.component';
 class GraphVisStubComponent {
   @Input() graphID!: string;
   @Input() graphStyle!: string;
+  lastRendered: any[] = [];
+
+  renderGraph(elements: any[]) {
+    this.lastRendered = elements;
+  }
 }
 
 describe('GraphInspectorComponent', () => {
@@ -27,7 +32,11 @@ describe('GraphInspectorComponent', () => {
   beforeEach(() => {
     dataServiceMock = {
       ligerUploadStructure: () => of({}),
-      ligerQueryStructure: jasmine.createSpy('ligerQueryStructure').and.returnValue(of({ success: 'false' }))
+      ligerQueryStructure: jasmine.createSpy('ligerQueryStructure').and.returnValue(of({
+        success: 'true',
+        matchCount: 2,
+        graph: { graphElements: [{ data: { id: '1', query_selector: 'query-match' } }] }
+      }))
     };
 
     TestBed.configureTestingModule({
@@ -62,5 +71,6 @@ describe('GraphInspectorComponent', () => {
     const request = dataServiceMock.ligerQueryStructure.calls.mostRecent().args[0];
     expect(request.query).toContain('GF ::= SUBJ > OBJ > OBL .');
     expect(request.query).toContain('feature-label() := TENSE | PERF .');
+    expect(component.queryResult).toContain('2 solutions');
   });
 });

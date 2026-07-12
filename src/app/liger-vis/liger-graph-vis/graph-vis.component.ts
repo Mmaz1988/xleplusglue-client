@@ -167,6 +167,22 @@ const style = [
       'text-margin-x': 15, // Adjusted to a number value
       'text-margin-y': 0 // Adjusted to a number value
     }
+  },
+  {
+    selector: 'node[query_selector="query-match"]',
+    style: {
+      'border-width': 5,
+      'border-color': '#ff8f00',
+      'background-color': '#fff3e0'
+    }
+  },
+  {
+    selector: 'edge[query_selector="query-match"]',
+    style: {
+      'width': 5,
+      'line-color': '#ff8f00',
+      'target-arrow-color': '#ff8f00'
+    }
   }
 ];
 

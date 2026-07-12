@@ -28,6 +28,11 @@ textarea {
   font-weight: 600;
 }
 
+.query-result {
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
 .graph-shell {
   max-width: 900px;
 }

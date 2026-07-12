@@ -9,6 +9,7 @@ import {
   ,
   LigerStructureUploadRequest,
   LigerStructureQueryRequest,
+  LigerStructureQueryResponse,
   GrammarList,
   GrammarString,
   FileTree,
@@ -70,8 +71,8 @@ export class DataService {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_uploaded_structure`, uploadRequest);
   }
 
-  ligerQueryStructure(queryRequest: LigerStructureQueryRequest): Observable<{ success: string }> {
-    return this.http.post<{ success: string }>(`${this.ligerpage}/query_uploaded_structure`, queryRequest);
+  ligerQueryStructure(queryRequest: LigerStructureQueryRequest): Observable<LigerStructureQueryResponse> {
+    return this.http.post<LigerStructureQueryResponse>(`${this.ligerpage}/query_uploaded_structure`, queryRequest);
   }
 
   ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {

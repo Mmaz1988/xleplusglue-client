@@ -37,6 +37,12 @@ export interface LigerStructureQueryRequest {
   query: string;
 }
 
+export interface LigerStructureQueryResponse {
+  success: string;
+  matchCount: number;
+  graph: LigerWebGraph;
+}
+
 export interface LigerWebGraph {
   graphElements: LigerGraphComponent[];
   semantics: string;

@@ -23,6 +23,10 @@
 
 <div class="errorhandling" #errorhandle></div>
 
+<div class="query-result" *ngIf="queryResult">
+  {{ queryResult }}
+</div>
+
 <div class="graph-shell">
   <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>
 </div>
