@@ -17,6 +17,7 @@ import {
   vampireRequest,
   vampireResponse,
   GswbBatchOutput,
+  LigerSolutionAnnotationResponse,
   vampireMultipleRequest, vampireMultipleResponse,
   VampireSessionSummary,
   RegressionSessionSummary,
@@ -58,13 +59,13 @@ export class DataService {
   //Liger models
 
   //Currently used for parse and rewrite
-  ligerAnnotate(ligerRequest): Observable<any> {
-    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
+  ligerAnnotate(ligerRequest): Observable<LigerSolutionAnnotationResponse> {
+    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
   }
 
   //currently used for multistage
-  ligerMulti(ligerRequest): Observable<any> {
-    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_xle`, ligerRequest);
+  ligerMulti(ligerRequest): Observable<LigerSolutionAnnotationResponse> {
+    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/parse_xle`, ligerRequest);
   }
 
   ligerUploadStructure(uploadRequest: LigerStructureUploadRequest): Observable<LigerRuleAnnotation> {

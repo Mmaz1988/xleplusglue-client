@@ -22,3 +22,10 @@ div.errorhandling {
   height: 1rem;
   border-width: 0.2em;
 }
+
+.solution-nav {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0 12px;
+}

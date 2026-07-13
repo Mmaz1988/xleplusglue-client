@@ -3,7 +3,7 @@ import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import { DataService } from '../data.service';
-import { LigerBatchParsingAnalysis, LigerRule, LigerRuleAnnotation, LigerWebGraph, LigerGraphComponent } from '../models/models';
+import { LigerSolutionAnnotation } from '../models/models';
 
 @Component({
   selector: 'app-liger-vis',
@@ -20,6 +20,8 @@ export class LigerVisComponent {
   changeDetector: EventEmitter<any> = new EventEmitter();
   graphElements: any
   loading: boolean = false;
+  solutions: LigerSolutionAnnotation[] = [];
+  selectedSolutionIndex = 0;
 
   @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
@@ -45,51 +47,22 @@ export class LigerVisComponent {
       data => {
         this.loading = false;
         this.errorhandle.nativeElement.innerHTML = "";
+        this.solutions = Array.isArray(data.solutions) ? data.solutions : [];
+        this.selectedSolutionIndex = 0;
 
-        if (data.hasOwnProperty("graph")) {
-          if (data.graph.hasOwnProperty("graphElements")) {
-            if (!(data.graph.graphElements.length == 0)) {
-              console.log(data.graph.graphElements);
-              this.cy1.renderGraph(data.graph.graphElements);
-              this.graphElements = data.graph.graphElements;
-              this.displayMessage("Parsing successful...", "green");
-            } else {
-              this.displayMessage("Parsing failed...", "red");
-            }
-          }
+        if (this.solutions.length > 0) {
+          this.renderSelectedSolution(0);
+          this.displayMessage(`Parsing successful... ${this.solutions.length} solution(s) found`, "green");
         } else {
+          this.cy1.renderGraph([]);
+          this.rulelist1.clearList();
+          this.meaningConstructors = '';
+          this.graphElements = [];
           this.displayMessage("Parsing failed...", "red")
         }
 
-        if (data.hasOwnProperty("appliedRules") && data.appliedRules !== null){
-          console.log(data.appliedRules);
-
-          /*
-          for (let rule of data.appliedRules) {
-            this.rulelist1.addElement(rule);
-          }
-
-           */
-
-          // iterate through data.appliedRules via index
-
-          //remove all elements from ruleList1 via removeElement(index)
-       //   console.log("Before clearing:", this.rulelist1);
-          this.rulelist1.clearList();
-        // console.log("After clearing:", this.rulelist1);
-
-          for (let i = 0; i < data.appliedRules.length; i++) {
-            this.rulelist1.addElement({rule: data.appliedRules[i], index: i});
-          }
-        }
-        if (data.hasOwnProperty("meaningConstructors")) {
-          console.log(data.meaningConstructors);
-          this.meaningConstructors = data.meaningConstructors;
-          this.changeDetector.emit(data.meaningConstructors);
-        }
-
-        if (data.hasOwnProperty('axioms')) {
-          console.log("Axioms: ", data.axioms);
+        if (data.hasOwnProperty('sentence')) {
+          console.log('Sentence:', data.sentence);
         }
 
 
@@ -160,26 +133,18 @@ export class LigerVisComponent {
     this.dataService.ligerMulti(ligerRequest).subscribe(
       data => {
         this.loading = false;
+        this.solutions = Array.isArray(data.solutions) ? data.solutions : [];
+        this.selectedSolutionIndex = 0;
 
-        if (data.hasOwnProperty("graph")) {
-          if (data.graph.hasOwnProperty("graphElements")) {
-            if (!(data.graph.graphElements.length == 0)) {
-              console.log(data.graph.graphElements);
-              this.cy1.renderGraph(data.graph.graphElements);
-              this.graphElements = data.graph.graphElements;
-            } else {
-              this.displayMessage("Parsing failed...", "red");
-            }
-          }
-        } else
-        {
+        if (this.solutions.length > 0) {
+          this.renderSelectedSolution(0);
+          this.displayMessage(`Parsing successful... ${this.solutions.length} solution(s) found`, "green");
+        } else {
+          this.cy1.renderGraph([]);
+          this.rulelist1.clearList();
+          this.meaningConstructors = '';
+          this.graphElements = [];
           this.displayMessage("Parsing failed...", "red");
-        }
-
-        if (data.hasOwnProperty("meaningConstructors")) {
-          console.log(data.meaningConstructors);
-          this.meaningConstructors = data.meaningConstructors;
-          this.changeDetector.emit(data.meaningConstructors);
         }
 
 
@@ -216,6 +181,55 @@ export class LigerVisComponent {
   showDialog(){
     this.cy1.subgraphDialog.setContent(this.graphElements)
     this.cy1.subgraphDialog.showDialog()
+  }
+
+  selectSolution(index: number): void {
+    if (index < 0 || index >= this.solutions.length) {
+      return;
+    }
+
+    this.selectedSolutionIndex = index;
+    this.renderSelectedSolution(index);
+  }
+
+  previousSolution(): void {
+    if (!this.solutions.length) return;
+    this.selectSolution((this.selectedSolutionIndex - 1 + this.solutions.length) % this.solutions.length);
+  }
+
+  nextSolution(): void {
+    if (!this.solutions.length) return;
+    this.selectSolution((this.selectedSolutionIndex + 1) % this.solutions.length);
+  }
+
+  collectAllMeaningConstructors(): void {
+    const allMeaningConstructors = this.solutions
+      .map(solution => solution.meaningConstructors ?? '')
+      .filter(text => text.trim().length > 0)
+      .join('\n');
+
+    this.meaningConstructors = allMeaningConstructors;
+    this.changeDetector.emit(allMeaningConstructors);
+  }
+
+  private renderSelectedSolution(index: number): void {
+    const solution = this.solutions[index];
+    if (!solution) {
+      return;
+    }
+
+    const graphElements = solution.graph?.graphElements ?? [];
+    this.graphElements = graphElements;
+
+    this.cy1.renderGraph(graphElements);
+
+    this.rulelist1.clearList();
+    for (let i = 0; i < (solution.appliedRules?.length ?? 0); i++) {
+      this.rulelist1.addElement({rule: solution.appliedRules[i], index: i});
+    }
+
+    this.meaningConstructors = solution.meaningConstructors ?? '';
+    this.changeDetector.emit(this.meaningConstructors);
   }
 
   displayMessage(message: string, color: string) {

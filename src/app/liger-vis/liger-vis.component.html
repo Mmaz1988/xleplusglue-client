@@ -26,6 +26,17 @@
 <app-toggle-display showText="Show graph vis" hideText="Hide graph vis">
 <h3> Graph visualization: </h3>
 
+<div *ngIf="solutions.length > 0" class="solution-nav">
+  <button type="button" (click)="previousSolution()" [disabled]="solutions.length < 2">◀ Prev solution</button>
+  <span>
+    Solution {{ selectedSolutionIndex + 1 }} / {{ solutions.length }}
+    <span *ngIf="solutions[selectedSolutionIndex]?.solutionKey"> ({{ solutions[selectedSolutionIndex]?.solutionKey }})</span>
+    <span *ngIf="solutions[selectedSolutionIndex]?.numberOfMCsets !== undefined"> - MC sets: {{ solutions[selectedSolutionIndex]?.numberOfMCsets }}</span>
+  </span>
+  <button type="button" (click)="nextSolution()" [disabled]="solutions.length < 2">Next solution ▶</button>
+  <button type="button" (click)="collectAllMeaningConstructors()">Use all solution MCs</button>
+</div>
+
 <div class="ligergraphcontainer">
 <app-graph-vis #cy1 [graphID]="'liger-graph'" ></app-graph-vis>
 <button (click)="showDialog()">Show dialog</button>
@@ -33,6 +44,6 @@
 </app-toggle-display>
 
 <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
-<h3> Rule list: </h3>
-<app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>
+  <h3> Rule list: </h3>
+  <app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>
 </app-toggle-display>

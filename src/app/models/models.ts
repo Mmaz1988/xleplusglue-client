@@ -24,6 +24,20 @@ export interface LigerRuleAnnotation {
   axioms?: string[];
 }
 
+export interface LigerSolutionAnnotation {
+  solutionKey: string;
+  graph: LigerWebGraph;
+  appliedRules: LigerRule[];
+  meaningConstructors: string;
+  numberOfMCsets: number;
+  axioms?: string[];
+}
+
+export interface LigerSolutionAnnotationResponse {
+  sentence?: string;
+  solutions: LigerSolutionAnnotation[];
+}
+
 export interface LigerStructureUploadRequest {
   content: string;
   format: 'json' | 'prolog';

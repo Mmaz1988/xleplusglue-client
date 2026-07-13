@@ -262,9 +262,13 @@ export class GraphVisComponent implements OnInit {
   }
 
   renderGraph(graphData): void {
+    if (this.cy) {
+      this.cy.destroy();
+    }
+
     this.cy = cytoscape({
         container: document.getElementById(this.graphID || 'cy'), // Use the appropriate container element ID
-        elements: graphData,
+        elements: graphData ?? [],
         style: style as cytoscape.Stylesheet[],
         layout: {
           name: 'dagre'
