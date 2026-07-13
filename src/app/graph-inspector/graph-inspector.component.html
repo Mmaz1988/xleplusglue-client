@@ -27,6 +27,33 @@
   {{ queryResult }}
 </div>
 
-<div class="graph-shell">
-  <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>
+<div class="graph-results-layout">
+  <div class="graph-shell">
+    <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>
+  </div>
+
+  <aside class="solutions-panel" *ngIf="querySolutions.length">
+    <div class="solutions-header">
+      <h4>Solutions</h4>
+      <span>{{ querySolutions.length }}</span>
+    </div>
+
+    <details #solutionCard class="solution-card" *ngFor="let solution of querySolutions; let i = index" [open]="isSolutionActive(i)" (toggle)="onSolutionToggle(i, solutionCard.open)">
+      <summary>
+        Solution {{ i + 1 }}
+        <span class="solution-signature">{{ solution.signature }}</span>
+      </summary>
+
+      <div class="solution-variable" *ngFor="let variable of solutionEntries(solution)">
+        <div class="solution-variable-name">{{ variable.variable }}</div>
+
+        <div class="solution-node" *ngFor="let node of variable.nodes">
+          <div class="solution-node-id">Node {{ node.node }}</div>
+          <ul class="solution-constraints">
+            <li *ngFor="let constraint of node.constraints">{{ constraint }}</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </aside>
 </div>

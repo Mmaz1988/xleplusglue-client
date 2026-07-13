@@ -35,7 +35,27 @@ describe('GraphInspectorComponent', () => {
       ligerQueryStructure: jasmine.createSpy('ligerQueryStructure').and.returnValue(of({
         success: 'true',
         matchCount: 2,
-        graph: { graphElements: [{ data: { id: '1', query_selector: 'query-match' } }] }
+        graph: {
+          graphElements: [
+            { data: { id: '1', query_selector: 'query-match' } },
+            { data: { id: '2', query_selector: 'query-match' } },
+            { data: { id: '3' } }
+          ]
+        },
+        solutions: [
+          {
+            signature: '#a=1',
+            bindings: {
+              '#a': { '1': ['SUBJ=#2', 'PRED=semform(\'John\',0,[],[])'] }
+            }
+          },
+          {
+            signature: '#a=2',
+            bindings: {
+              '#a': { '2': ['SUBJ=#4'] }
+            }
+          }
+        ]
       }))
     };
 
@@ -72,5 +92,43 @@ describe('GraphInspectorComponent', () => {
     expect(request.query).toContain('GF ::= SUBJ > OBJ > OBL .');
     expect(request.query).toContain('feature-label() := TENSE | PERF .');
     expect(component.queryResult).toContain('2 solutions');
+    expect(component.querySolutions.length).toBe(2);
+  });
+
+  it('should expose solution bindings for the inspector panel', () => {
+    component.querySolutions = [{
+      signature: '#a=1',
+      bindings: {
+        '#a': { '1': ['SUBJ=#2'] }
+      }
+    }];
+
+    const entries = component.solutionEntries(component.querySolutions[0]);
+
+    expect(entries.length).toBe(1);
+    expect(entries[0].variable).toBe('#a');
+    expect(entries[0].nodes[0].node).toBe('1');
+    expect(entries[0].nodes[0].constraints).toEqual(['SUBJ=#2']);
+  });
+
+  it('should narrow graph highlighting to the expanded solution', () => {
+    component.uploadedContent = '{"constraints":[],"annotation":[]}';
+    component.queryText = '#a SUBJ #b';
+
+    component.runQuery();
+
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    const highlightedIds = graphVis.lastRendered.filter(element => element.data?.query_selector === 'query-match').map(element => element.data.id);
+    expect(highlightedIds).toEqual(['1', '2']);
+
+    component.onSolutionToggle(0, true);
+
+    const narrowedIds = graphVis.lastRendered.filter(element => element.data?.query_selector === 'query-match').map(element => element.data.id);
+    expect(narrowedIds).toEqual(['1']);
+
+    component.onSolutionToggle(0, false);
+
+    const resetIds = graphVis.lastRendered.filter(element => element.data?.query_selector === 'query-match').map(element => element.data.id);
+    expect(resetIds).toEqual(['1', '2']);
   });
 });

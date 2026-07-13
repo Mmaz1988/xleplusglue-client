@@ -41,6 +41,12 @@ export interface LigerStructureQueryResponse {
   success: string;
   matchCount: number;
   graph: LigerWebGraph;
+  solutions?: LigerQuerySolution[];
+}
+
+export interface LigerQuerySolution {
+  signature: string;
+  bindings: { [variable: string]: { [node: string]: string[] } };
 }
 
 export interface LigerWebGraph {
