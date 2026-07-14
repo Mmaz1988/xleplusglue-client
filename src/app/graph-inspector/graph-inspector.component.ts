@@ -1,15 +1,28 @@
-import { Component, ElementRef, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, ViewChild } from '@angular/core';
 import { DataService } from '../data.service';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
-import { LigerQuerySolution, LigerStructureQueryRequest, LigerStructureUploadRequest } from '../models/models';
+import { LigerQuerySolution, LigerStructure, LigerStructureQueryRequest, LigerStructureUploadRequest } from '../models/models';
 
 @Component({
   selector: 'app-graph-inspector',
   templateUrl: './graph-inspector.component.html',
   styleUrls: ['./graph-inspector.component.css']
 })
-export class GraphInspectorComponent {
-  constructor(private dataService: DataService) {}
+export class GraphInspectorComponent implements AfterViewInit {
+  private preloadedGraphElements: any[] = [];
+
+  constructor(private dataService: DataService) {
+    const state = (typeof history !== 'undefined' ? history.state : null) as any;
+    const graphElements = Array.isArray(state?.graphElements)
+      ? state.graphElements
+      : Array.isArray(state?.syntaxGraph)
+        ? state.syntaxGraph
+        : [];
+
+    if (graphElements.length) {
+      this.preloadedGraphElements = this.cloneGraphElements(graphElements);
+    }
+  }
 
   uploadedContent = '';
   uploadedFormat: 'json' | 'prolog' = 'json';
@@ -26,7 +39,20 @@ export class GraphInspectorComponent {
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
 
+  ngAfterViewInit(): void {
+    if (this.preloadedGraphElements.length) {
+      this.baseGraphElements = this.cloneGraphElements(this.preloadedGraphElements);
+      this.graphElements = this.cloneGraphElements(this.baseGraphElements);
+      this.cy1.renderGraph(this.graphElements);
+      this.displayMessage('Loaded graph.', 'green');
+    }
+  }
+
   onUploadFile(event: Event) {
+    this.loadUploadedStructure(event);
+  }
+
+  private loadUploadedStructure(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files && input.files.length > 0 ? input.files[0] : null;
 
@@ -34,12 +60,14 @@ export class GraphInspectorComponent {
       return;
     }
 
+    this.preloadedGraphElements = [];
     this.uploadedFileName = file.name;
     this.uploadedFormat = file.name.endsWith('.pl') || file.name.endsWith('.prolog') ? 'prolog' : 'json';
 
     const reader = new FileReader();
     reader.onload = () => {
-      this.uploadedContent = String(reader.result ?? '');
+      const content = String(reader.result ?? '');
+      this.uploadedContent = content;
       this.displayMessage(`Loaded ${file.name}`, 'green');
       this.renderUploadedGraph();
     };
@@ -47,6 +75,21 @@ export class GraphInspectorComponent {
       this.displayMessage(`Could not read ${file.name}`, 'red');
     };
     reader.readAsText(file);
+  }
+
+  private parseStructure(content: string, format: 'json' | 'prolog', id: string): LigerStructure | null {
+    if (format !== 'json') {
+      return null;
+    }
+
+    const parsed = JSON.parse(content) as Partial<LigerStructure>;
+    return {
+      id: parsed.id ?? id,
+      text: parsed.text ?? id,
+      constraints: Array.isArray(parsed.constraints) ? parsed.constraints : [],
+      annotations: Array.isArray(parsed.annotations) ? parsed.annotations : [],
+      choiceSpace: parsed.choiceSpace ?? {},
+    };
   }
 
   renderUploadedGraph() {

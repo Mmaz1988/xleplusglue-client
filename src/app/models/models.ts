@@ -68,6 +68,39 @@ export interface LigerWebGraph {
   semantics: string;
 }
 
+export interface LigerStructureConstraint {
+  fsNode: string;
+  relationLabel: string;
+  fsValue: string;
+  proj?: string;
+  root?: boolean;
+}
+
+export interface LigerStructureChoiceSpace {
+  rootChoice?: any[];
+  choiceNodes?: any[];
+  choices?: any[];
+  allVars?: string[];
+}
+
+export interface LigerStructure {
+  id?: string;
+  text?: string;
+  constraints: LigerStructureConstraint[];
+  annotations: LigerStructureConstraint[];
+  choiceSpace: LigerStructureChoiceSpace;
+}
+
+export interface LigerStructureMergeRequest {
+  syntax?: LigerStructure;
+  syntaxGraph?: LigerWebGraph;
+  drs: LigerStructure;
+}
+
+export interface LigerMergeResponse {
+  graph: LigerWebGraph;
+}
+
 export interface LigerGraphComponent {
   data: { [key: string]: any };
 }
@@ -100,6 +133,8 @@ export interface GswbDiscriminant {
 export interface GswbSolution {
 solution: string;
 id: string;
+sourceIndices?: number[];
+graph?: LigerStructure;
 }
 
 export interface GswbOutput {

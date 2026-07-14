@@ -1,5 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
@@ -67,7 +68,8 @@ describe('GraphInspectorComponent', () => {
           provide: DataService,
           useValue: dataServiceMock
         }
-      ]
+      ],
+      schemas: [NO_ERRORS_SCHEMA]
     });
     fixture = TestBed.createComponent(GraphInspectorComponent);
     component = fixture.componentInstance;
@@ -79,6 +81,14 @@ describe('GraphInspectorComponent', () => {
 
     expect(component).toBeTruthy();
     expect(graphVis.graphStyle).toBe('liger');
+  });
+
+  it('should render a preloaded graph from route state', () => {
+    (component as any).preloadedGraphElements = [{ data: { id: 'g1' } }];
+    component.ngAfterViewInit();
+
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['g1']);
   });
 
   it('should include embedded query definitions in the query payload', () => {

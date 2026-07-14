@@ -26,6 +26,11 @@
 </style>
 
 <div class="container">
+  <div style="position: absolute; top: 8px; right: 24px; z-index: 5;">
+    <button type="button" (click)="openMergedGraphInspector()" [disabled]="!canOpenMergedGraphInspector()">
+      Open graph inspector
+    </button>
+  </div>
   <div [ngStyle]="{'display': isFirstDivMinimized ? 'none' : 'block'}" class="scrollable-div">
     <button class="toggle-button" (click)="isFirstDivMinimized = !isFirstDivMinimized">
       <<
@@ -46,4 +51,3 @@
     <<
   </button>
 </div>
-

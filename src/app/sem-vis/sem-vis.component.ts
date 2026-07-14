@@ -20,13 +20,23 @@ export class SemVisComponent implements AfterViewInit {
   @Input() meaningConstructors: string = '';
   @Input() svgSolutions = false;
 
+  @Input()
+  set items(value: GswbSolution[]) {
+    this.assignItems(value ?? []);
+    this.applyCurrent();
+    this.rebuildDiscriminantViews();
+  }
+
   @Output() selectionChange = new EventEmitter<{
     items: GswbSolution[];
     selectedScopeIds: string[];
     selectedMcIds: string[];
   }>();
 
-  items: GswbSolution[] = [];
+  private _items: GswbSolution[] = [];
+  get items(): GswbSolution[] {
+    return this._items;
+  }
   currentSvg: SafeHtml | null = null;
 
   scope_discriminants: GswbDiscriminant[] = [];
@@ -51,6 +61,14 @@ export class SemVisComponent implements AfterViewInit {
 
   constructor(private sanitizer: DomSanitizer) {}
 
+  private assignItems(items: GswbSolution[]): void {
+    this._items = Array.isArray(items) ? items : [];
+    this.allItems = this._items;
+    if (this.index >= this._items.length) {
+      this.index = Math.max(this._items.length - 1, 0);
+    }
+  }
+
   ngAfterViewInit(): void {
     this.viewReady = true;
 
@@ -64,7 +82,7 @@ export class SemVisComponent implements AfterViewInit {
 
 
   public setItems(items: GswbSolution[], startIndex = 0): void {
-    this.allItems = Array.isArray(items) ? items : [];
+    this.assignItems(items);
     this.applyFiltersAndResetIndex(startIndex, false);
   }
 
@@ -143,16 +161,16 @@ export class SemVisComponent implements AfterViewInit {
     const currentId = preserveCurrent ? this.items[this.index]?.id ?? null : null;
     const filtered = this.filterItemsBySelectedDiscriminants(this.allItems);
 
-    this.items = filtered;
-    if (!this.items.length) {
+    this._items = filtered;
+    if (!this._items.length) {
       this.index = 0;
     } else if (currentId) {
-      const nextIndex = this.items.findIndex(item => item.id === currentId);
+      const nextIndex = this._items.findIndex(item => item.id === currentId);
       this.index = nextIndex >= 0
         ? nextIndex
-        : Math.min(Math.max(startIndex, 0), this.items.length - 1);
+        : Math.min(Math.max(startIndex, 0), this._items.length - 1);
     } else {
-      this.index = Math.min(Math.max(startIndex, 0), this.items.length - 1);
+      this.index = Math.min(Math.max(startIndex, 0), this._items.length - 1);
     }
 
     this.applyCurrent();

@@ -7,6 +7,9 @@ import {
   LigerBatchParsingAnalysis,
   LigerRuleAnnotation
   ,
+  LigerMergeResponse,
+  LigerStructure,
+  LigerStructureMergeRequest,
   LigerStructureUploadRequest,
   LigerStructureQueryRequest,
   LigerStructureQueryResponse,
@@ -74,6 +77,10 @@ export class DataService {
 
   ligerQueryStructure(queryRequest: LigerStructureQueryRequest): Observable<LigerStructureQueryResponse> {
     return this.http.post<LigerStructureQueryResponse>(`${this.ligerpage}/query_uploaded_structure`, queryRequest);
+  }
+
+  ligerMergeStructure(mergeRequest: LigerStructureMergeRequest): Observable<LigerMergeResponse> {
+    return this.http.post<LigerMergeResponse>(`${this.ligerpage}/merge_uploaded_structures`, mergeRequest);
   }
 
   ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {
