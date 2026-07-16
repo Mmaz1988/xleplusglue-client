@@ -6,6 +6,9 @@
     <option value="json">JSON</option>
     <option value="prolog">Prolog</option>
   </select>
+  <button type="button" (click)="downloadUploadedStructure()" [disabled]="!uploadedContent.trim() || uploadedFormat !== 'json'">
+    Download JSON
+  </button>
 </div>
 
 <div class="inspector-controls">

@@ -18,7 +18,8 @@ describe('GlueInterfaceComponent', () => {
     };
     dataServiceMock = {
       ligerMergeStructure: jasmine.createSpy('ligerMergeStructure').and.returnValue(of({
-        graph: { graphElements: [{ data: { id: 'm1' } }] }
+        graph: { graphElements: [{ data: { id: 'm1', label: 'merged' } }] },
+        structureJson: { id: 'merged-graph', text: 'merged graph', constraints: [], annotations: [], choiceSpace: {} }
       }))
     };
 
@@ -64,5 +65,9 @@ describe('GlueInterfaceComponent', () => {
     const [commands, extras] = routerMock.navigate.calls.mostRecent().args;
     expect(commands).toEqual(['/graph-inspector']);
     expect(extras.state.graphElements.length).toBe(1);
+    expect(extras.state.uploadedFormat).toBe('json');
+    expect(extras.state.uploadedFileName).toBe('merged-graph.json');
+    expect(extras.state.uploadedContent).toContain('merged-graph');
+    expect(extras.state.uploadedContent).toContain('constraints');
   });
 });

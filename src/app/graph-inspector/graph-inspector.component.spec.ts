@@ -91,6 +91,19 @@ describe('GraphInspectorComponent', () => {
     expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['g1']);
   });
 
+  it('should hydrate uploaded JSON from route state for querying', () => {
+    (component as any).initializeFromRouteState({
+      uploadedContent: '{"id":"merged-graph","text":"merged graph","constraints":[],"annotations":[],"choiceSpace":{}}',
+      uploadedFormat: 'json',
+      uploadedFileName: 'merged-graph.json',
+      graphElements: [{ data: { id: 'g1' } }]
+    });
+
+    expect(component.uploadedContent).toContain('merged-graph');
+    expect(component.uploadedFormat).toBe('json');
+    expect(component.uploadedFileName).toBe('merged-graph.json');
+  });
+
   it('should include embedded query definitions in the query payload', () => {
     component.uploadedContent = '{"constraints":[],"annotation":[]}';
     component.queryText = "GF ::= SUBJ > OBJ > OBL .\nfeature-label() := TENSE | PERF .\n#a SUBJ #b";
@@ -103,6 +116,31 @@ describe('GraphInspectorComponent', () => {
     expect(request.query).toContain('feature-label() := TENSE | PERF .');
     expect(component.queryResult).toContain('2 solutions');
     expect(component.querySolutions.length).toBe(2);
+  });
+
+  it('should download the uploaded JSON structure unchanged', async () => {
+    component.uploadedContent = '{\n  "id": "merged-graph",\n  "text": "merged graph",\n  "constraints": [],\n  "annotations": [],\n  "choiceSpace": {}\n}';
+    component.uploadedFileName = 'merged-graph.json';
+
+    const createObjectURLSpy = spyOn(window.URL, 'createObjectURL').and.returnValue('blob:mock');
+    spyOn(window.URL, 'revokeObjectURL');
+    const clickSpy = jasmine.createSpy('click');
+    const anchor = {
+      href: '',
+      download: '',
+      click: clickSpy,
+    } as any;
+    spyOn(document, 'createElement').and.returnValue(anchor);
+
+    component.downloadUploadedStructure();
+
+    expect(createObjectURLSpy).toHaveBeenCalled();
+    expect(anchor.download).toBe('merged-graph.json');
+    expect(clickSpy).toHaveBeenCalled();
+
+    const blob = createObjectURLSpy.calls.mostRecent().args[0] as Blob;
+    const text = await blob.text();
+    expect(text).toBe(component.uploadedContent);
   });
 
   it('should expose solution bindings for the inspector panel', () => {

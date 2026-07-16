@@ -34,3 +34,9 @@
   color: white;
   border-radius: 10px;
 }
+
+.graph-inspector-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}

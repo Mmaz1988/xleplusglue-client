@@ -13,6 +13,8 @@ export class GraphInspectorComponent implements AfterViewInit {
 
   constructor(private dataService: DataService) {
     const state = (typeof history !== 'undefined' ? history.state : null) as any;
+    this.initializeFromRouteState(state);
+
     const graphElements = Array.isArray(state?.graphElements)
       ? state.graphElements
       : Array.isArray(state?.syntaxGraph)
@@ -50,6 +52,20 @@ export class GraphInspectorComponent implements AfterViewInit {
 
   onUploadFile(event: Event) {
     this.loadUploadedStructure(event);
+  }
+
+  downloadUploadedStructure(): void {
+    if (!this.uploadedContent.trim()) {
+      return;
+    }
+
+    const blob = new Blob([this.uploadedContent], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = this.uploadedFileName.endsWith('.json') ? this.uploadedFileName : `${this.uploadedFileName}.json`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
   }
 
   private loadUploadedStructure(event: Event) {
@@ -111,6 +127,7 @@ export class GraphInspectorComponent implements AfterViewInit {
         this.loading = false;
         if (data?.graph?.graphElements?.length) {
           this.baseGraphElements = data.graph.graphElements;
+          console.log("Graph elements: ",data.graph.graphElements)
           this.graphElements = this.cloneGraphElements(this.baseGraphElements);
           this.cy1.renderGraph(this.graphElements);
           this.displayMessage('Graph loaded.', 'green');
@@ -244,6 +261,14 @@ export class GraphInspectorComponent implements AfterViewInit {
       ...element,
       data: element?.data ? {...element.data} : element?.data,
     };
+  }
+
+  private initializeFromRouteState(state: any): void {
+    if (typeof state?.uploadedContent === 'string' && state.uploadedContent.trim()) {
+      this.uploadedContent = state.uploadedContent;
+      this.uploadedFormat = state.uploadedFormat === 'prolog' ? 'prolog' : 'json';
+      this.uploadedFileName = state.uploadedFileName ?? 'merged-graph.json';
+    }
   }
 
   displayMessage(message: string, color: string) {

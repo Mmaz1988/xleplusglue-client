@@ -26,11 +26,6 @@
 </style>
 
 <div class="container">
-  <div style="position: absolute; top: 8px; right: 24px; z-index: 5;">
-    <button type="button" (click)="openMergedGraphInspector()" [disabled]="!canOpenMergedGraphInspector()">
-      Open graph inspector
-    </button>
-  </div>
   <div [ngStyle]="{'display': isFirstDivMinimized ? 'none' : 'block'}" class="scrollable-div">
     <button class="toggle-button" (click)="isFirstDivMinimized = !isFirstDivMinimized">
       <<
@@ -46,6 +41,11 @@
       >>
     </button>
     <app-gswb-vis #g1></app-gswb-vis>
+    <div class="graph-inspector-actions">
+      <button type="button" (click)="openMergedGraphInspector()" [disabled]="!canOpenMergedGraphInspector()">
+        Open graph inspector
+      </button>
+    </div>
   </div>
   <button *ngIf="isSecondDivMinimized" class="toggle-button-max" (click)="isSecondDivMinimized = !isSecondDivMinimized">
     <<

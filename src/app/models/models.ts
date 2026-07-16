@@ -99,6 +99,7 @@ export interface LigerStructureMergeRequest {
 
 export interface LigerMergeResponse {
   graph: LigerWebGraph;
+  structureJson?: Record<string, unknown>;
 }
 
 export interface LigerGraphComponent {
@@ -133,7 +134,7 @@ export interface GswbDiscriminant {
 export interface GswbSolution {
 solution: string;
 id: string;
-sourceIndices?: number[];
+sourceIndex?: number;
 graph?: LigerStructure;
 }
 

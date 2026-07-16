@@ -46,8 +46,15 @@ export class GlueInterfaceComponent {
       },
       drs: semanticStructure,
     }).subscribe(response => {
+      const structureJson = typeof response?.structureJson === 'string'
+        ? response.structureJson
+        : JSON.stringify(response?.structureJson ?? {}, null, 2);
+
       this.router.navigate(['/graph-inspector'], {
         state: {
+          uploadedContent: structureJson,
+          uploadedFormat: 'json',
+          uploadedFileName: 'merged-graph.json',
           graphElements: response.graph?.graphElements ?? [],
         }
       });
