@@ -18,6 +18,7 @@ export interface LigerRule {
 export interface LigerRuleAnnotation {
   sentence?: string;
   graph: LigerWebGraph;
+  structureJson?: LigerStructure;
   appliedRules: LigerRule[];
   meaningConstructors?: string;
   numberOfMCsets?: number;
@@ -27,6 +28,7 @@ export interface LigerRuleAnnotation {
 export interface LigerSolutionAnnotation {
   solutionKey: string;
   graph: LigerWebGraph;
+  structureJson?: LigerStructure;
   appliedRules: LigerRule[];
   meaningConstructors: string;
   numberOfMCsets: number;
@@ -36,12 +38,17 @@ export interface LigerSolutionAnnotation {
 export interface LigerSolutionAnnotationResponse {
   sentence?: string;
   solutions: LigerSolutionAnnotation[];
+  structureJson?: Record<string, unknown>;
 }
 
 export interface LigerStructureUploadRequest {
   content: string;
   format: 'json' | 'prolog';
   id?: string;
+}
+
+export interface LigerStructureRuleRequest extends LigerStructureUploadRequest {
+  ruleString: string;
 }
 
 export interface LigerStructureQueryRequest {
@@ -56,6 +63,7 @@ export interface LigerStructureQueryResponse {
   matchCount: number;
   graph: LigerWebGraph;
   solutions?: LigerQuerySolution[];
+  structureJson?: Record<string, unknown>;
 }
 
 export interface LigerQuerySolution {

@@ -226,6 +226,7 @@ export class EditorComponent implements AfterViewInit, OnChanges {
 
   @Input() id: string;
   @Input() mode: string;
+  @Input() showControls = true;
   @Output() contentChange = new EventEmitter<string>();
 
   defaultWidth = '800px';

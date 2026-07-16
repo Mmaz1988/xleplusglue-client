@@ -3,7 +3,7 @@ import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import { DataService } from '../data.service';
-import { LigerSolutionAnnotation } from '../models/models';
+import { LigerSolutionAnnotation, LigerStructure } from '../models/models';
 
 @Component({
   selector: 'app-liger-vis',
@@ -17,6 +17,7 @@ export class LigerVisComponent {
 
   defaultValue: string = 'Every man hugged a woman.';
   meaningConstructors: string;
+  structureJson: LigerStructure | null = null;
   changeDetector: EventEmitter<any> = new EventEmitter();
   graphElements: any
   loading: boolean = false;
@@ -57,6 +58,7 @@ export class LigerVisComponent {
           this.cy1.renderGraph([]);
           this.rulelist1.clearList();
           this.meaningConstructors = '';
+          this.structureJson = null;
           this.graphElements = [];
           this.displayMessage("Parsing failed...", "red")
         }
@@ -140,11 +142,12 @@ export class LigerVisComponent {
           this.renderSelectedSolution(0);
           this.displayMessage(`Parsing successful... ${this.solutions.length} solution(s) found`, "green");
         } else {
-          this.cy1.renderGraph([]);
-          this.rulelist1.clearList();
-          this.meaningConstructors = '';
-          this.graphElements = [];
-          this.displayMessage("Parsing failed...", "red");
+        this.cy1.renderGraph([]);
+        this.rulelist1.clearList();
+        this.meaningConstructors = '';
+        this.structureJson = null;
+        this.graphElements = [];
+        this.displayMessage("Parsing failed...", "red");
         }
 
 
@@ -220,6 +223,7 @@ export class LigerVisComponent {
 
     const graphElements = solution.graph?.graphElements ?? [];
     this.graphElements = graphElements;
+    this.structureJson = solution.structureJson ?? null;
 
     this.cy1.renderGraph(graphElements);
 

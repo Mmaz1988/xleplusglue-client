@@ -42,10 +42,7 @@ describe('GlueInterfaceComponent', () => {
 
   it('should navigate to the graph inspector', () => {
     component.liger = {
-      graphElements: [
-        { data: { id: '1', label: 'root' } },
-        { data: { id: 'e1', source: '1', target: '2', label: 'ARG0' } }
-      ]
+      structureJson: { id: 'syntax-graph', text: 'syntax graph', constraints: [], annotations: [], choiceSpace: {} }
     } as any;
     component.glue = {
       semvis: {
@@ -61,10 +58,10 @@ describe('GlueInterfaceComponent', () => {
     component.openMergedGraphInspector();
 
     expect(dataServiceMock.ligerMergeStructure).toHaveBeenCalled();
+    expect(dataServiceMock.ligerMergeStructure.calls.mostRecent().args[0].syntax).toBeTruthy();
     expect(routerMock.navigate).toHaveBeenCalled();
     const [commands, extras] = routerMock.navigate.calls.mostRecent().args;
     expect(commands).toEqual(['/graph-inspector']);
-    expect(extras.state.graphElements.length).toBe(1);
     expect(extras.state.uploadedFormat).toBe('json');
     expect(extras.state.uploadedFileName).toBe('merged-graph.json');
     expect(extras.state.uploadedContent).toContain('merged-graph');

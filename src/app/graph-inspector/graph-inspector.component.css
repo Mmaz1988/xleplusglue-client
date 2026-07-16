@@ -11,14 +11,41 @@
   margin-bottom: 0.75rem;
 }
 
-textarea {
-  width: 600px;
-  min-height: 140px;
-  resize: vertical;
+.editor-section {
+  margin-bottom: 0.9rem;
+}
+
+.editor-label {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+}
+
+.editor-restr {
+  width: 800px;
+  max-width: 100%;
+  justify-content: center;
+  align-items: center;
+}
+
+:host ::ng-deep app-editor {
+  display: block;
+  max-width: 100%;
+}
+
+:host ::ng-deep app-editor .editor-container {
+  min-width: 0;
+}
+
+:host ::ng-deep app-editor .CodeMirror {
+  width: 100%;
+}
+
+:host ::ng-deep app-editor .CodeMirror-scroll {
+  min-height: 220px;
 }
 
 .inspector-help {
-  margin: -0.25rem 0 0.75rem;
+  margin: 0 0 0.5rem;
   font-size: 0.9rem;
   color: #666;
 }

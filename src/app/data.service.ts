@@ -11,6 +11,7 @@ import {
   LigerStructure,
   LigerStructureMergeRequest,
   LigerStructureUploadRequest,
+  LigerStructureRuleRequest,
   LigerStructureQueryRequest,
   LigerStructureQueryResponse,
   GrammarList,
@@ -73,6 +74,14 @@ export class DataService {
 
   ligerUploadStructure(uploadRequest: LigerStructureUploadRequest): Observable<LigerRuleAnnotation> {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/parse_uploaded_structure`, uploadRequest);
+  }
+
+  ligerRenderStructure(uploadRequest: LigerStructureUploadRequest): Observable<LigerRuleAnnotation> {
+    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/render_graph`, uploadRequest);
+  }
+
+  ligerApplyRulesToStructure(ruleRequest: LigerStructureRuleRequest): Observable<LigerRuleAnnotation> {
+    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/apply_rules_uploaded_structure`, ruleRequest);
   }
 
   ligerQueryStructure(queryRequest: LigerStructureQueryRequest): Observable<LigerStructureQueryResponse> {

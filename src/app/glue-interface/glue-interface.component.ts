@@ -32,18 +32,15 @@ export class GlueInterfaceComponent {
   }
 
   openMergedGraphInspector(): void {
-    const syntaxGraph = this.cloneGraphElements(this.liger?.graphElements ?? []);
+    const syntax = this.liger?.structureJson ?? null;
     const semanticStructure = this.currentSemanticStructure();
 
-    if (!syntaxGraph.length || !semanticStructure) {
+    if (!syntax || !semanticStructure) {
       return;
     }
 
     this.dataService.ligerMergeStructure({
-      syntaxGraph: {
-        graphElements: syntaxGraph,
-        semantics: '',
-      },
+      syntax,
       drs: semanticStructure,
     }).subscribe(response => {
       const structureJson = typeof response?.structureJson === 'string'
@@ -62,7 +59,7 @@ export class GlueInterfaceComponent {
   }
 
   canOpenMergedGraphInspector(): boolean {
-    return (this.liger?.graphElements?.length ?? 0) > 0 && !!this.currentSemanticStructure();
+    return !!this.liger?.structureJson && !!this.currentSemanticStructure();
   }
 
   private currentSemanticStructure(): LigerStructure | null {
@@ -71,13 +68,5 @@ export class GlueInterfaceComponent {
 
     return selected?.graph ?? null;
   }
-
-  private cloneGraphElements(elements: any[]): any[] {
-    return elements.map(element => ({
-      ...element,
-      data: element?.data ? {...element.data} : element?.data,
-    }));
-  }
-
 
 }

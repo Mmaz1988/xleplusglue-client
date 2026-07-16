@@ -1,7 +1,8 @@
 import { AfterViewInit, Component, ElementRef, ViewChild } from '@angular/core';
 import { DataService } from '../data.service';
+import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
-import { LigerQuerySolution, LigerStructure, LigerStructureQueryRequest, LigerStructureUploadRequest } from '../models/models';
+import { LigerQuerySolution, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
 
 @Component({
   selector: 'app-graph-inspector',
@@ -29,10 +30,12 @@ export class GraphInspectorComponent implements AfterViewInit {
   uploadedContent = '';
   uploadedFormat: 'json' | 'prolog' = 'json';
   uploadedFileName = 'uploaded-graph';
+  rulesText = '';
   queryText = '';
   queryResult = '';
   loading = false;
   queryLoading = false;
+  currentStructureJson = '';
   private baseGraphElements: any[] = [];
   graphElements: any[] = [];
   querySolutions: LigerQuerySolution[] = [];
@@ -40,6 +43,8 @@ export class GraphInspectorComponent implements AfterViewInit {
 
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
+  @ViewChild('rulesEditor') rulesEditor: EditorComponent;
+  @ViewChild('queryEditor') queryEditor: EditorComponent;
 
   ngAfterViewInit(): void {
     if (this.preloadedGraphElements.length) {
@@ -48,24 +53,59 @@ export class GraphInspectorComponent implements AfterViewInit {
       this.cy1.renderGraph(this.graphElements);
       this.displayMessage('Loaded graph.', 'green');
     }
+
+    this.syncEditorContents();
   }
 
   onUploadFile(event: Event) {
     this.loadUploadedStructure(event);
   }
 
-  downloadUploadedStructure(): void {
-    if (!this.uploadedContent.trim()) {
+  downloadCurrentStructure(): void {
+    if (!this.currentStructureJson.trim()) {
       return;
     }
 
-    const blob = new Blob([this.uploadedContent], { type: 'application/json' });
+    const blob = new Blob([this.currentStructureJson], { type: 'application/json' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = this.uploadedFileName.endsWith('.json') ? this.uploadedFileName : `${this.uploadedFileName}.json`;
     link.click();
     setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+  }
+
+  applyRules() {
+    if (!this.uploadedContent.trim()) {
+      this.displayMessage('Upload a graph first.', 'red');
+      return;
+    }
+
+    this.loading = true;
+    this.querySolutions = [];
+    this.activeSolutionIndex = null;
+
+    const ruleRequest: LigerStructureRuleRequest = {
+      content: this.uploadedContent,
+      format: this.uploadedFormat,
+      id: this.uploadedFileName,
+      ruleString: this.rulesText,
+    };
+
+    this.dataService.ligerApplyRulesToStructure(ruleRequest).subscribe(
+      data => {
+        this.loading = false;
+        this.updateGraphResponse(data?.graph?.graphElements ?? []);
+        this.updateCurrentStructureJson(data?.structureJson);
+        this.displayMessage('Rules applied.', 'green');
+      },
+      error => {
+        this.loading = false;
+        console.error('Apply rules failed:', error);
+        const message = error?.error?.message || error?.message || 'Failed to apply rules.';
+        this.displayMessage(message, 'red');
+      }
+    );
   }
 
   private loadUploadedStructure(event: Event) {
@@ -84,6 +124,7 @@ export class GraphInspectorComponent implements AfterViewInit {
     reader.onload = () => {
       const content = String(reader.result ?? '');
       this.uploadedContent = content;
+      this.currentStructureJson = this.uploadedFormat === 'json' ? content : '';
       this.displayMessage(`Loaded ${file.name}`, 'green');
       this.renderUploadedGraph();
     };
@@ -122,14 +163,12 @@ export class GraphInspectorComponent implements AfterViewInit {
       id: this.uploadedFileName,
     };
 
-    this.dataService.ligerUploadStructure(uploadRequest).subscribe(
+    this.dataService.ligerRenderStructure(uploadRequest).subscribe(
       data => {
         this.loading = false;
         if (data?.graph?.graphElements?.length) {
-          this.baseGraphElements = data.graph.graphElements;
-          console.log("Graph elements: ",data.graph.graphElements)
-          this.graphElements = this.cloneGraphElements(this.baseGraphElements);
-          this.cy1.renderGraph(this.graphElements);
+          this.updateGraphResponse(data.graph.graphElements);
+          this.updateCurrentStructureJson(data?.structureJson);
           this.displayMessage('Graph loaded.', 'green');
         } else {
           this.displayMessage('No graph elements returned.', 'red');
@@ -138,7 +177,8 @@ export class GraphInspectorComponent implements AfterViewInit {
       error => {
         this.loading = false;
         console.error('Upload failed:', error);
-        this.displayMessage('Failed to load graph.', 'red');
+        const message = error?.error?.message || error?.message || 'Failed to load graph.';
+        this.displayMessage(message, 'red');
       }
     );
   }
@@ -156,9 +196,11 @@ export class GraphInspectorComponent implements AfterViewInit {
 
     this.queryLoading = true;
     this.displayMessage('Running query...', 'blue');
+    const queryContent = this.currentStructureJson.trim() ? this.currentStructureJson : this.uploadedContent;
+    const queryFormat: 'json' | 'prolog' = this.currentStructureJson.trim() ? 'json' : this.uploadedFormat;
     const queryRequest: LigerStructureQueryRequest = {
-      content: this.uploadedContent,
-      format: this.uploadedFormat,
+      content: queryContent,
+      format: queryFormat,
       id: this.uploadedFileName,
       query: this.queryText,
     };
@@ -166,9 +208,10 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.dataService.ligerQueryStructure(queryRequest).subscribe(
       data => {
         this.queryLoading = false;
-        this.baseGraphElements = data.graph?.graphElements ?? [];
+        this.updateGraphResponse(data.graph?.graphElements ?? []);
         this.querySolutions = data.solutions ?? [];
         this.activeSolutionIndex = null;
+        this.updateCurrentStructureJson(data.structureJson);
         this.refreshGraph();
 
         this.queryResult = data.success === 'true'
@@ -268,6 +311,29 @@ export class GraphInspectorComponent implements AfterViewInit {
       this.uploadedContent = state.uploadedContent;
       this.uploadedFormat = state.uploadedFormat === 'prolog' ? 'prolog' : 'json';
       this.uploadedFileName = state.uploadedFileName ?? 'merged-graph.json';
+      this.currentStructureJson = this.uploadedFormat === 'json' ? this.uploadedContent : '';
+    }
+  }
+
+  private updateGraphResponse(graphElements: any[]): void {
+    this.baseGraphElements = this.cloneGraphElements(graphElements);
+    this.graphElements = this.cloneGraphElements(this.baseGraphElements);
+    this.cy1.renderGraph(this.graphElements);
+  }
+
+  private updateCurrentStructureJson(structureJson?: LigerStructure | Record<string, unknown> | null): void {
+    if (structureJson) {
+      this.currentStructureJson = JSON.stringify(structureJson, null, 2);
+    }
+  }
+
+  private syncEditorContents(): void {
+    if (this.rulesEditor && typeof (this.rulesEditor as any).updateContent === 'function') {
+      (this.rulesEditor as any).updateContent(this.rulesText);
+    }
+
+    if (this.queryEditor && typeof (this.queryEditor as any).updateContent === 'function') {
+      (this.queryEditor as any).updateContent(this.queryText);
     }
   }
 

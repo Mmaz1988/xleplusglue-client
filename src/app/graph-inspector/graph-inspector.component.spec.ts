@@ -27,12 +27,27 @@ describe('GraphInspectorComponent', () => {
   let fixture: ComponentFixture<GraphInspectorComponent>;
   let dataServiceMock: {
     ligerUploadStructure: () => any;
+    ligerRenderStructure: () => any;
+    ligerApplyRulesToStructure: jasmine.Spy;
     ligerQueryStructure: jasmine.Spy;
   };
 
   beforeEach(() => {
     dataServiceMock = {
       ligerUploadStructure: () => of({}),
+      ligerRenderStructure: () => of({}),
+      ligerApplyRulesToStructure: jasmine.createSpy('ligerApplyRulesToStructure').and.returnValue(of({
+        graph: {
+          graphElements: [{ data: { id: 'r1' } }]
+        },
+        structureJson: {
+          id: 'annotated-graph',
+          text: 'annotated graph',
+          constraints: [],
+          annotations: [],
+          choiceSpace: {}
+        }
+      })),
       ligerQueryStructure: jasmine.createSpy('ligerQueryStructure').and.returnValue(of({
         success: 'true',
         matchCount: 2,
@@ -118,9 +133,24 @@ describe('GraphInspectorComponent', () => {
     expect(component.querySolutions.length).toBe(2);
   });
 
+  it('should query the currently rendered structure after applying rules', () => {
+    component.uploadedContent = '{"id":"old-graph","constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.currentStructureJson = '{"id":"new-graph","constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.queryText = '#a SUBJ #b';
+
+    component.runQuery();
+
+    expect(dataServiceMock.ligerQueryStructure).toHaveBeenCalled();
+    const request = dataServiceMock.ligerQueryStructure.calls.mostRecent().args[0];
+    expect(request.content).toContain('new-graph');
+    expect(request.content).not.toContain('old-graph');
+    expect(request.format).toBe('json');
+  });
+
   it('should download the uploaded JSON structure unchanged', async () => {
     component.uploadedContent = '{\n  "id": "merged-graph",\n  "text": "merged graph",\n  "constraints": [],\n  "annotations": [],\n  "choiceSpace": {}\n}';
     component.uploadedFileName = 'merged-graph.json';
+    component.currentStructureJson = '{\n  "id": "annotated-graph",\n  "text": "annotated graph",\n  "constraints": [],\n  "annotations": [],\n  "choiceSpace": {}\n}';
 
     const createObjectURLSpy = spyOn(window.URL, 'createObjectURL').and.returnValue('blob:mock');
     spyOn(window.URL, 'revokeObjectURL');
@@ -132,7 +162,7 @@ describe('GraphInspectorComponent', () => {
     } as any;
     spyOn(document, 'createElement').and.returnValue(anchor);
 
-    component.downloadUploadedStructure();
+    component.downloadCurrentStructure();
 
     expect(createObjectURLSpy).toHaveBeenCalled();
     expect(anchor.download).toBe('merged-graph.json');
@@ -140,7 +170,24 @@ describe('GraphInspectorComponent', () => {
 
     const blob = createObjectURLSpy.calls.mostRecent().args[0] as Blob;
     const text = await blob.text();
-    expect(text).toBe(component.uploadedContent);
+    expect(text).toBe(component.currentStructureJson);
+  });
+
+  it('should apply LiGER rules and render the annotated graph', () => {
+    component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.uploadedFormat = 'json';
+    component.uploadedFileName = 'merged-graph.json';
+    component.rulesText = '--replace(true);';
+
+    component.applyRules();
+
+    expect(dataServiceMock.ligerApplyRulesToStructure).toHaveBeenCalled();
+    const request = dataServiceMock.ligerApplyRulesToStructure.calls.mostRecent().args[0];
+    expect(request.ruleString).toBe('--replace(true);');
+
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['r1']);
+    expect(component.currentStructureJson).toContain('annotated-graph');
   });
 
   it('should expose solution bindings for the inspector panel', () => {
