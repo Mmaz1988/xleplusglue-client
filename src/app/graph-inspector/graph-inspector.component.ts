@@ -10,7 +10,24 @@ import { LigerQuerySolution, LigerStructure, LigerStructureQueryRequest, LigerSt
   styleUrls: ['./graph-inspector.component.css']
 })
 export class GraphInspectorComponent implements AfterViewInit {
+  private readonly defaultRulesText = `//Connects referents via SRC with syntactic indices via SYN-ID
+#a SRC %a & #b SYN-ID %b & %a == %b & #b ^(in_set>GLUE>g::>cproj) #c phi #d ==> #a SYNSEM #d.`;
+
+  private readonly defaultQueryText = `// hierarchies here
+GF ::= SUBJ > OBJ > OBL .
+
+GF := SUBJ | OBJ | OBL .
+
+// templates here
+
+MCN-PATH(#a,#b) := #a ^(@GF*:~(->SUBJ)) #b.
+
+REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#i) .
+
+#a ant #a & #a SYNSEM #b & @REFL-BIND(#b,#c)`;
+
   private preloadedGraphElements: any[] = [];
+  private pendingEditorSync = false;
 
   constructor(private dataService: DataService) {
     const state = (typeof history !== 'undefined' ? history.state : null) as any;
@@ -30,8 +47,8 @@ export class GraphInspectorComponent implements AfterViewInit {
   uploadedContent = '';
   uploadedFormat: 'json' | 'prolog' = 'json';
   uploadedFileName = 'uploaded-graph';
-  rulesText = '';
-  queryText = '';
+  rulesText = this.defaultRulesText;
+  queryText = this.defaultQueryText;
   queryResult = '';
   loading = false;
   queryLoading = false;
@@ -54,7 +71,7 @@ export class GraphInspectorComponent implements AfterViewInit {
       this.displayMessage('Loaded graph.', 'green');
     }
 
-    this.syncEditorContents();
+    this.scheduleEditorSync();
   }
 
   onUploadFile(event: Event) {
@@ -313,6 +330,14 @@ export class GraphInspectorComponent implements AfterViewInit {
       this.uploadedFileName = state.uploadedFileName ?? 'merged-graph.json';
       this.currentStructureJson = this.uploadedFormat === 'json' ? this.uploadedContent : '';
     }
+
+    if (typeof state?.rulesText === 'string' && state.rulesText.trim()) {
+      this.rulesText = state.rulesText;
+    }
+
+    if (typeof state?.queryText === 'string' && state.queryText.trim()) {
+      this.queryText = state.queryText;
+    }
   }
 
   private updateGraphResponse(graphElements: any[]): void {
@@ -335,6 +360,18 @@ export class GraphInspectorComponent implements AfterViewInit {
     if (this.queryEditor && typeof (this.queryEditor as any).updateContent === 'function') {
       (this.queryEditor as any).updateContent(this.queryText);
     }
+  }
+
+  private scheduleEditorSync(): void {
+    if (this.pendingEditorSync) {
+      return;
+    }
+
+    this.pendingEditorSync = true;
+    setTimeout(() => {
+      this.pendingEditorSync = false;
+      this.syncEditorContents();
+    }, 0);
   }
 
   displayMessage(message: string, color: string) {

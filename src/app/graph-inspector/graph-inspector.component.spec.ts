@@ -98,6 +98,12 @@ describe('GraphInspectorComponent', () => {
     expect(graphVis.graphStyle).toBe('liger');
   });
 
+  it('should seed default rules and query text', () => {
+    expect(component.rulesText).toContain('Connects referents via SRC');
+    expect(component.queryText).toContain('MCN-PATH(#a,#b)');
+    expect(component.queryText).toContain('REFL-BIND(#f,#h)');
+  });
+
   it('should render a preloaded graph from route state', () => {
     (component as any).preloadedGraphElements = [{ data: { id: 'g1' } }];
     component.ngAfterViewInit();
