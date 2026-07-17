@@ -1,4 +1,4 @@
-import {Component, ElementRef, ViewChild, AfterViewInit} from '@angular/core';
+import {Component, ElementRef, ViewChild, AfterViewInit, Input, Output, EventEmitter} from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { SemComponent } from './sem/sem.component';
 import { LogComponent } from './log/log.component';
@@ -10,6 +10,7 @@ import {GswbRequest,GswbPreferences} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
+import { APP_DEFAULTS } from "../app-defaults";
 
 
 @Component({
@@ -20,6 +21,9 @@ import { GswbWorkspaceState } from "../analysis-workspace-state.service";
 
 
 export class GswbVisComponent implements AfterViewInit {
+  @Input() canPostProcess = false;
+  @Output() postProcessing = new EventEmitter<void>();
+
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
   @ViewChild('sem1') sem: EditorComponent;
@@ -34,18 +38,7 @@ export class GswbVisComponent implements AfterViewInit {
 
   ngAfterViewInit() {
     if (this.gswbPreferences) {
-      this.gswbPreferences.gswbPreferences = {
-        prover: 1,
-        debugging: false,
-        outputstyle: 4,
-        parseSem: false,
-        resolveDrs: true,
-        betaReduce: true,
-        glueOnly: false,
-        meaningOnly: false,
-        explainFail: false,
-        naturalDeductionStyle: 0,
-      };
+      this.gswbPreferences.gswbPreferences = { ...APP_DEFAULTS.gswb.preferences };
       this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences)
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
@@ -163,6 +156,10 @@ export class GswbVisComponent implements AfterViewInit {
     // Use your preferred method to send data to backend (for instance, HttpClient).
   }
 
+  requestPostProcessing(): void {
+    this.postProcessing.emit();
+  }
+
   displayMessage(message: string, color: string) {
     this.errorhandle.nativeElement.style.color = color;
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
@@ -202,7 +199,7 @@ export class GswbVisComponent implements AfterViewInit {
     this.editor1.updateContent(state.editorText ?? '');
     this.log.updateContent(state.logText ?? '');
 
-    const prefs = state.gswbPreferences ?? this.gswbPreferences.gswbPreferences;
+    const prefs = state.gswbPreferences ?? APP_DEFAULTS.gswb.preferences;
     this.gswbPreferences.gswbPreferences = { ...prefs };
     this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences);
 
@@ -214,4 +211,3 @@ export class GswbVisComponent implements AfterViewInit {
 
 
 // Inside ParentComponent
-

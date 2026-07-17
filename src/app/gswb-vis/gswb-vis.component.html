@@ -7,11 +7,16 @@
 </div>
 
 <app-gswb-settings #gswbPrefs></app-gswb-settings>
-<button (click)="calculateSemantics()">
-  <span *ngIf="!loading">Calculate semantics</span>
-  <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-  <span *ngIf="loading">Loading...</span>
-</button>
+<div class="analysis-actions">
+  <button (click)="calculateSemantics()">
+    <span *ngIf="!loading">Calculate semantics</span>
+    <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    <span *ngIf="loading">Loading...</span>
+  </button>
+  <button type="button" (click)="requestPostProcessing()" [disabled]="!canPostProcess">
+    Post processing
+  </button>
+</div>
 
 <div class="errorhandling" #errorhandle></div>
 

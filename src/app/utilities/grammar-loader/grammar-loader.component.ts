@@ -4,6 +4,7 @@ import { FileTree } from "../../models/models";
 import { tap } from 'rxjs/operators';
 import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component";  // Import tap operator
 import { EventEmitter, Output } from '@angular/core';
+import { APP_DEFAULTS } from '../../app-defaults';
 
 @Component({
   selector: 'app-grammar-loader',
@@ -19,7 +20,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   grammarList: string[] = [];
   @Output() grammarLoaded = new EventEmitter<string>();
   @Input() loadedPath = '';
-  defaultGrammar: string = "./grammars/demo/fracas_inference_grammar/main_fracas_grammar.lfg.glue";
+  defaultGrammar: string = APP_DEFAULTS.grammar.ligerPath;
   grammarsDirectory: string = "./grammars";
   currentStatusMessage: string = ""
   grammarFileTree: FileTree[] = [];  // Initialize as an empty array

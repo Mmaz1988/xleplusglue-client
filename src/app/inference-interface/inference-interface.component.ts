@@ -4,6 +4,7 @@ import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.com
 import {ChatComponent} from "../chat-interface/chat/chat.component";
 import {HistoryComponent} from "../chat-interface/history/history.component";
 import {EditorComponent} from "../editor/editor.component";
+import { APP_DEFAULTS } from '../app-defaults';
 
 @Component({
   selector: 'app-inference-interface',
@@ -30,18 +31,7 @@ export class InferenceInterfaceComponent {
     this.cdRef.detectChanges();
 
     if (this.gswbPreferences) {
-      this.gswbPreferences.gswbPreferences = {
-        prover: 1,
-        debugging: false,
-        outputstyle: 4,
-        parseSem: false,
-        betaReduce: true,
-        resolveDrs: false,
-        glueOnly: false,
-        meaningOnly: false,
-        explainFail: false,
-        naturalDeductionStyle: 0,
-      };
+      this.gswbPreferences.gswbPreferences = { ...APP_DEFAULTS.gswb.preferences, resolveDrs: false };
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }

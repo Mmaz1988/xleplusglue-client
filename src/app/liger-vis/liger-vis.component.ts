@@ -6,6 +6,7 @@ import {GrammarLoaderComponent} from "../utilities/grammar-loader/grammar-loader
 import { DataService } from '../data.service';
 import { LigerSolutionAnnotation, LigerStructure } from '../models/models';
 import { AnalysisWorkspaceStateService, LigerWorkspaceState } from '../analysis-workspace-state.service';
+import { APP_DEFAULTS } from "../app-defaults";
 
 @Component({
   selector: 'app-liger-vis',
@@ -21,7 +22,7 @@ export class LigerVisComponent implements AfterViewInit {
     }
   }
 
-  defaultValue: string = 'Every man hugged a woman.';
+  defaultValue: string = APP_DEFAULTS.liger.sentence;
   loadedGrammarPath = '';
   meaningConstructors: string;
   structureJson: LigerStructure | null = null;

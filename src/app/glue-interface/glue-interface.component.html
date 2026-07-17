@@ -40,12 +40,11 @@
     <button class="toggle-button" (click)="isSecondDivMinimized = !isSecondDivMinimized">
       >>
     </button>
-    <app-gswb-vis #g1></app-gswb-vis>
-    <div class="graph-inspector-actions">
-      <button type="button" (click)="openMergedGraphInspector()" [disabled]="!canOpenMergedGraphInspector()">
-        Open graph inspector
-      </button>
-    </div>
+    <app-gswb-vis
+      #g1
+      [canPostProcess]="canOpenMergedGraphInspector()"
+      (postProcessing)="openMergedGraphInspector()">
+    </app-gswb-vis>
   </div>
   <button *ngIf="isSecondDivMinimized" class="toggle-button-max" (click)="isSecondDivMinimized = !isSecondDivMinimized">
     <<

@@ -2,7 +2,8 @@ import { AfterViewInit, Component, ElementRef, ViewChild } from '@angular/core';
 import { DataService } from '../data.service';
 import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
-import { LigerQuerySolution, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
+import { LigerQuerySolution, LigerRule, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
+import { APP_DEFAULTS } from '../app-defaults';
 
 @Component({
   selector: 'app-graph-inspector',
@@ -10,22 +11,6 @@ import { LigerQuerySolution, LigerStructure, LigerStructureQueryRequest, LigerSt
   styleUrls: ['./graph-inspector.component.css']
 })
 export class GraphInspectorComponent implements AfterViewInit {
-  private readonly defaultRulesText = `//Connects referents via SRC with syntactic indices via SYN-ID
-#a SRC %a & #b SYN-ID %b & %a == %b & #b ^(in_set>GLUE>g::>cproj) #c phi #d ==> #a SYNSEM #d.`;
-
-  private readonly defaultQueryText = `// hierarchies here
-GF ::= SUBJ > OBJ > OBL .
-
-GF := SUBJ | OBJ | OBL .
-
-// templates here
-
-MCN-PATH(#a,#b) := #a ^(@GF*:~(->SUBJ)) #b.
-
-REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#i) .
-
-#a ant #a & #a SYNSEM #b & @REFL-BIND(#b,#c)`;
-
   private preloadedGraphElements: any[] = [];
 
   constructor(private dataService: DataService) {
@@ -46,16 +31,25 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
   uploadedContent = '';
   uploadedFormat: 'json' | 'prolog' = 'json';
   uploadedFileName = 'uploaded-graph';
-  rulesText = this.defaultRulesText;
-  queryText = this.defaultQueryText;
+  rulesText = APP_DEFAULTS.graphInspector.rulesText;
+  queryText = APP_DEFAULTS.graphInspector.queryText;
   queryResult = '';
   loading = false;
   queryLoading = false;
   currentStructureJson = '';
   private baseGraphElements: any[] = [];
   graphElements: any[] = [];
+  activeResultKind: 'query' | 'rules' | null = null;
   querySolutions: LigerQuerySolution[] = [];
+  appliedRules: LigerRule[] = [];
+  appliedMeaningConstructors = '';
+  appliedNumberOfMCsets = 0;
+  private highlightedNodeIds = new Set<string>();
   activeSolutionIndex: number | null = null;
+
+  get highlightedNodeIdList(): string[] {
+    return Array.from(this.highlightedNodeIds);
+  }
 
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
@@ -96,8 +90,13 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
     }
 
     this.loading = true;
+    this.activeResultKind = 'rules';
     this.querySolutions = [];
     this.activeSolutionIndex = null;
+    this.appliedRules = [];
+    this.appliedMeaningConstructors = '';
+    this.appliedNumberOfMCsets = 0;
+    this.highlightedNodeIds = new Set<string>();
 
     const ruleRequest: LigerStructureRuleRequest = {
       content: this.uploadedContent,
@@ -109,8 +108,12 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
     this.dataService.ligerApplyRulesToStructure(ruleRequest).subscribe(
       data => {
         this.loading = false;
+        this.highlightedNodeIds = this.extractHighlightedNodeIds(data);
         this.updateGraphResponse(data?.graph?.graphElements ?? []);
         this.updateCurrentStructureJson(data?.structureJson);
+        this.appliedRules = Array.isArray(data?.appliedRules) ? data.appliedRules : [];
+        this.appliedMeaningConstructors = typeof data?.meaningConstructors === 'string' ? data.meaningConstructors : '';
+        this.appliedNumberOfMCsets = Number.isFinite(data?.numberOfMCsets) ? data.numberOfMCsets : 0;
         this.displayMessage('Rules applied.', 'green');
       },
       error => {
@@ -139,6 +142,9 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
       const content = String(reader.result ?? '');
       this.uploadedContent = content;
       this.currentStructureJson = this.uploadedFormat === 'json' ? content : '';
+      this.highlightedNodeIds = new Set<string>();
+      this.appliedRules = [];
+      this.querySolutions = [];
       this.displayMessage(`Loaded ${file.name}`, 'green');
       this.renderUploadedGraph();
     };
@@ -169,8 +175,13 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
     }
 
     this.loading = true;
+    this.activeResultKind = null;
     this.querySolutions = [];
     this.activeSolutionIndex = null;
+    this.highlightedNodeIds = new Set<string>();
+    this.appliedRules = [];
+    this.appliedMeaningConstructors = '';
+    this.appliedNumberOfMCsets = 0;
     const uploadRequest: LigerStructureUploadRequest = {
       content: this.uploadedContent,
       format: this.uploadedFormat,
@@ -210,6 +221,11 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
 
     this.queryLoading = true;
     this.displayMessage('Running query...', 'blue');
+    this.activeResultKind = 'query';
+    this.appliedRules = [];
+    this.appliedMeaningConstructors = '';
+    this.appliedNumberOfMCsets = 0;
+    this.highlightedNodeIds = new Set<string>();
     const queryContent = this.currentStructureJson.trim() ? this.currentStructureJson : this.uploadedContent;
     const queryFormat: 'json' | 'prolog' = this.currentStructureJson.trim() ? 'json' : this.uploadedFormat;
     const queryRequest: LigerStructureQueryRequest = {
@@ -269,34 +285,27 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
 
     this.graphElements = this.cloneGraphElements(this.baseGraphElements);
 
+    if (this.activeResultKind === 'rules') {
+      this.graphElements = this.applyRuleHighlights(this.graphElements);
+      this.cy1.updateGraph(this.graphElements);
+      return;
+    }
+
     if (this.activeSolutionIndex === null) {
-      this.cy1.renderGraph(this.graphElements);
+      this.cy1.updateGraph(this.graphElements);
       return;
     }
 
     const selectedSolution = this.querySolutions[this.activeSolutionIndex];
     if (!selectedSolution) {
-      this.cy1.renderGraph(this.graphElements);
+      this.cy1.renderGraph(this.graphElements, true);
       return;
     }
 
     const selectedNodeIds = this.solutionNodeIds(selectedSolution);
-    this.graphElements = this.graphElements.map(element => {
-      if (!element?.data?.id) {
-        return element;
-      }
+    this.graphElements = this.applyQueryHighlights(this.graphElements, selectedNodeIds);
 
-      const nextElement = this.cloneGraphElement(element);
-      if (selectedNodeIds.has(String(nextElement.data.id))) {
-        nextElement.data.query_selector = 'query-match';
-      } else {
-        delete nextElement.data.query_selector;
-      }
-
-      return nextElement;
-    });
-
-    this.cy1.renderGraph(this.graphElements);
+    this.cy1.updateGraph(this.graphElements);
   }
 
   private solutionNodeIds(solution: LigerQuerySolution): Set<string> {
@@ -311,6 +320,84 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
 
   private cloneGraphElements(elements: any[]): any[] {
     return elements.map(element => this.cloneGraphElement(element));
+  }
+
+  private applyQueryHighlights(elements: any[], highlightedIds: Set<string>): any[] {
+    if (!highlightedIds.size) {
+      return elements;
+    }
+
+    return elements.map(element => {
+      const nodeId = element?.data?.id;
+      if (!nodeId) {
+        return element;
+      }
+
+      const nextElement = this.cloneGraphElement(element);
+      if (highlightedIds.has(String(nextElement.data.id))) {
+        nextElement.data.query_selector = 'query-match';
+      } else {
+        delete nextElement.data.query_selector;
+      }
+      return nextElement;
+    });
+  }
+
+  private applyRuleHighlights(elements: any[]): any[] {
+    if (!this.highlightedNodeIds.size) {
+      return elements;
+    }
+
+    return elements.map(element => {
+      const nodeId = element?.data?.id;
+      if (!nodeId) {
+        return element;
+      }
+
+      const nextElement = this.cloneGraphElement(element);
+      if (this.highlightedNodeIds.has(String(nextElement.data.id))) {
+        nextElement.data.query_selector = 'query-match';
+      } else {
+        delete nextElement.data.query_selector;
+      }
+      return nextElement;
+    });
+  }
+
+  private extractHighlightedNodeIds(payload: any): Set<string> {
+    const ids = new Set<string>();
+
+    const explicit = payload?.highlightedNodeIds;
+    if (Array.isArray(explicit)) {
+      explicit.forEach(value => {
+        if (value !== undefined && value !== null && String(value).trim()) {
+          ids.add(String(value));
+        }
+      });
+    } else if (explicit instanceof Set) {
+      explicit.forEach(value => ids.add(String(value)));
+    }
+
+    const addFromAnnotation = (annotation: any) => {
+      const nodeId = annotation?.fsNode ?? annotation?.nodeId ?? annotation?.id ?? annotation?.data?.id;
+      if (nodeId !== undefined && nodeId !== null && String(nodeId).trim()) {
+        ids.add(String(nodeId));
+      }
+    };
+
+    const annotations = payload?.annotations;
+    if (Array.isArray(annotations)) {
+      annotations.forEach(addFromAnnotation);
+    } else if (annotations && typeof annotations === 'object') {
+      Object.values(annotations).forEach(addFromAnnotation);
+    }
+
+    const structureAnnotations = payload?.structureJson?.annotations;
+    if (Array.isArray(structureAnnotations)) {
+      structureAnnotations.forEach(addFromAnnotation);
+    }
+
+    return ids;
   }
 
   private cloneGraphElement(element: any): any {
@@ -339,8 +426,7 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
 
   private updateGraphResponse(graphElements: any[]): void {
     this.baseGraphElements = this.cloneGraphElements(graphElements);
-    this.graphElements = this.cloneGraphElements(this.baseGraphElements);
-    this.cy1.renderGraph(this.graphElements);
+    this.refreshGraph();
   }
 
   private updateCurrentStructureJson(structureJson?: LigerStructure | Record<string, unknown> | null): void {

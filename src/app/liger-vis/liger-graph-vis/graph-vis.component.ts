@@ -204,6 +204,7 @@ export class GraphVisComponent implements OnInit {
   private readonly typeCompactionRankTolerance = 28;
   private readonly typeCompactionPullStrength = 0.28;
   private readonly typeCompactionMaxShift = 90;
+  private lastNodePositions = new Map<string, { x: number; y: number }>();
 
   defaultWidth = '800px';
   defaultHeight = '600px';
@@ -264,38 +265,178 @@ export class GraphVisComponent implements OnInit {
     });
   }
 
-  renderGraph(graphData): void {
+  renderGraph(graphData, preserveLayout = false): void {
+    const canPreserveLayout = preserveLayout && this.lastNodePositions.size > 0;
+
     if (this.cy) {
+      if (canPreserveLayout) {
+        this.captureCurrentPositions();
+      } else {
+        this.lastNodePositions.clear();
+      }
       this.cy.destroy();
     }
 
+    const elements = this.applyPresetPositions(graphData ?? [], canPreserveLayout);
+
     this.cy = cytoscape({
         container: document.getElementById(this.graphID || 'cy'), // Use the appropriate container element ID
-        elements: graphData ?? [],
+        elements: elements,
         style: style as cytoscape.Stylesheet[]
       }
     );
 
-    const layoutOptions: any = {
-      name: 'dagre',
-      rankDir: 'TB',
-      rankSep: 70,
-      nodeSep: 40,
-      edgeSep: 12,
-      ranker: 'network-simplex'
-    };
-
-    const layout = this.cy.layout(layoutOptions);
-
-    layout.on('layoutstop', () => {
-      this.compactByNodeType();
+    if (canPreserveLayout) {
       this.createAndBindPoppers();
       this.cy.fit(undefined, 24);
-    });
+    } else {
+      const layoutOptions: any = {
+        name: 'dagre',
+        rankDir: 'TB',
+        rankSep: 70,
+        nodeSep: 40,
+        edgeSep: 12,
+        ranker: 'network-simplex'
+      };
 
-    layout.run();
+      const layout = this.cy.layout(layoutOptions);
+
+      layout.on('layoutstop', () => {
+        this.compactByNodeType();
+        this.createAndBindPoppers();
+        this.cy.fit(undefined, 24);
+        this.captureCurrentPositions();
+      });
+
+      layout.run();
+    }
     console.log("Container of the subgraph: ",this.cy.container().id);
     console.log("Cy element with data:", this.cy)
+  }
+
+  updateGraph(graphData: any[]): void {
+    if (!this.cy) {
+      this.renderGraph(graphData);
+      return;
+    }
+
+    const currentIds = new Set<string>();
+    this.cy.nodes().forEach((node) => {
+      currentIds.add(String(node.id()));
+    });
+    this.cy.edges().forEach((edge) => {
+      currentIds.add(String(edge.id()));
+    });
+
+    const nextIds = new Set<string>();
+    for (const element of graphData ?? []) {
+      const id = element?.data?.id;
+      if (id) {
+        nextIds.add(String(id));
+      }
+    }
+
+    const sameShape = currentIds.size === nextIds.size && [...currentIds].every(id => nextIds.has(id));
+    if (!sameShape) {
+      this.renderGraph(graphData);
+      return;
+    }
+
+    this.cy.batch(() => {
+      for (const element of graphData ?? []) {
+        const data = element?.data;
+        if (!data?.id) {
+          continue;
+        }
+
+        const existing: any = this.cy.getElementById(String(data.id)) as any;
+        if (!existing || (typeof existing.empty === 'function' && existing.empty())) {
+          continue;
+        }
+
+        if (existing.isNode()) {
+          existing.data({ ...existing.data(), ...data });
+        } else {
+          existing.data({ ...existing.data(), ...data });
+        }
+
+        if (element?.classes !== undefined) {
+          existing.classes(String(element.classes).split(/\s+/).filter(Boolean));
+        }
+
+        if (element?.position && existing.isNode()) {
+          existing.position({ ...element.position });
+        }
+      }
+    });
+
+    this.cy.style().update();
+    this.createAndBindPoppers();
+  }
+
+  private captureCurrentPositions(): void {
+    if (!this.cy) {
+      return;
+    }
+
+    this.cy.nodes().forEach((node) => {
+      const position = node.position();
+      this.lastNodePositions.set(String(node.id()), { x: position.x, y: position.y });
+    });
+  }
+
+  private applyPresetPositions(graphData: any[], preserveLayout: boolean): any[] {
+    if (!preserveLayout || !this.lastNodePositions.size) {
+      return graphData;
+    }
+
+    const elements = graphData.map((element) => ({
+      ...element,
+      data: element?.data ? { ...element.data } : element?.data,
+      position: element?.position ? { ...element.position } : element?.position,
+    }));
+
+    const incomingById = new Map<string, any>();
+    const adjacency = new Map<string, string[]>();
+
+    for (const element of elements) {
+      const data = element?.data;
+      if (!data) continue;
+
+      if (data.source && data.target) {
+        const source = String(data.source);
+        const target = String(data.target);
+        if (!adjacency.has(source)) adjacency.set(source, []);
+        if (!adjacency.has(target)) adjacency.set(target, []);
+        adjacency.get(source)!.push(target);
+        adjacency.get(target)!.push(source);
+      } else if (data.id) {
+        incomingById.set(String(data.id), element);
+      }
+    }
+
+    let fallbackIndex = 0;
+    const fallbackPosition = () => ({ x: 120 + (fallbackIndex++ % 6) * 70, y: 120 + Math.floor(fallbackIndex / 6) * 70 });
+
+    for (const [id, element] of incomingById.entries()) {
+      const previous = this.lastNodePositions.get(id);
+      if (previous) {
+        element.position = { ...previous };
+        continue;
+      }
+
+      const neighbors = adjacency.get(id) ?? [];
+      const anchoredNeighbor = neighbors.find((neighbor) => this.lastNodePositions.has(neighbor));
+      if (anchoredNeighbor) {
+        const base = this.lastNodePositions.get(anchoredNeighbor)!;
+        const offset = (neighbors.indexOf(anchoredNeighbor) + 1) * 18;
+        element.position = { x: base.x + offset, y: base.y + offset };
+      } else {
+        element.position = fallbackPosition();
+      }
+    }
+
+    return elements;
   }
 
   resizeToDefault(): void {

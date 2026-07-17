@@ -26,6 +26,7 @@ import { catchError, EMPTY, Observable, forkJoin, finalize, timeout } from "rxjs
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
+import { APP_DEFAULTS } from '../app-defaults';
 
 type ParsedRegressionRunSnapshot = {
   regressionTestItems: any[];
@@ -200,30 +201,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   ngAfterViewInit() {
     if (this.gswbPreferences) {
-      this.gswbPreferences.gswbPreferences = {
-        prover: 1,
-        debugging: false,
-        outputstyle: 4,
-        parseSem: false,
-        resolveDrs: true,
-        betaReduce: true,
-        glueOnly: false,
-        meaningOnly: false,
-        explainFail: false,
-        naturalDeductionStyle: 0,
-      };
+      this.gswbPreferences.gswbPreferences = { ...APP_DEFAULTS.gswb.preferences };
       this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences);
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }
 
     if (this.vampirePreferences) {
-      this.vampirePreferences.vampirePreferences = {
-        logic_type: 0,
-        model_building: true,
-        max_duration: 10,
-        layered: false
-      };
+      this.vampirePreferences.vampirePreferences = { ...APP_DEFAULTS.vampire.regression };
       this.vampirePreferences.updateFormFromPreferences(this.vampirePreferences.vampirePreferences);
     } else {
       console.error("ERROR: `vampirePreferences` ViewChild not initialized!");

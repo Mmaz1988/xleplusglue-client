@@ -15,6 +15,7 @@ import { DataService } from "../../data.service";
 import { FileTree } from "../../models/models";
 import { tap } from 'rxjs/operators';
 import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component";  // Import tap operator
+import { APP_DEFAULTS } from '../../app-defaults';
 
 @Component({
   selector: 'app-rule-loader',
@@ -35,7 +36,7 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   @Input() loadedPath = '';
   @Input() loadedContent = '';
 
-  defaultRules: string = "./liger_resources/rules/basic_axiom_rules.txt";
+  defaultRules: string = APP_DEFAULTS.grammar.ligerRulesPath;
   rulesDirectory: string = "./liger_resources/rules";
   currentStatusMessage: string = ""
   rulesFileTree: FileTree[] = [];  // Initialize as an empty array

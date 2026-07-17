@@ -41,7 +41,7 @@ export class GswbSettingsComponent {
     });
 
 
-    //Makes the resolveDrs option visible only when outputstyle is 4 (Prolog DRT)
+    // Makes the resolveDrs option visible for DRT-style outputs.
     this.gswbPreferencesForm.get('outputstyle')?.valueChanges.subscribe(value => {
       console.log('outputstyle changed to:', value);
       if (Number(value) === 4 || Number(value) === 5) {
@@ -92,7 +92,7 @@ export class GswbSettingsComponent {
       ndstyle: prefs.naturalDeductionStyle
     }, { emitEvent: false });
 
-    if (prefs.outputstyle === 4) {
+    if (prefs.outputstyle === 4 || prefs.outputstyle === 5) {
       this.showResolveDrs = true;
     } else {
       this.showResolveDrs = false;

@@ -6,6 +6,7 @@ import {HistoryComponent} from "./history/history.component";
 import {EditorComponent} from "../editor/editor.component";
 import {ChangeDetectorRef} from "@angular/core";
 import {InferenceSettingsComponent} from "../inference-interface/inference-settings/inference-settings.component";
+import { APP_DEFAULTS } from '../app-defaults';
 
 @Component({
   selector: 'app-inference-vis',
@@ -23,15 +24,7 @@ export class ChatInterfaceComponent implements AfterViewInit {
   @ViewChild('history') historyComponent: HistoryComponent;
   @ViewChild('axiomEdit') editor: EditorComponent;
 
-  axioms: string = "tff(fast_type, type, fast: ($i * $int) > $o).\n" +
-      "tff(kind_type, type, kind: ($i * $i) > $o).\n" +
-      "tff(arg1_type, type, arg1: ($i * $i) > $o).\n" +
-      "tff(arg2_type, type, arg2: ($i * $i) > $o).\n" +
-      "tff(computer_type, type, computer: $i > $o).\n" +
-      "tff(be_type, type, be: $i > $o).\n" +
-      "\n" +
-      "tff(pn_type1, type, 'pc-6082': $i).\n" +
-      "tff(pn_type2, type, 'itel-zx': $i).\n";
+  axioms: string = APP_DEFAULTS.chat.axioms;
 
   selectedElements: number[] = []; // Stores selected box indices from history
 
@@ -44,30 +37,14 @@ export class ChatInterfaceComponent implements AfterViewInit {
     this.cdRef.detectChanges();
 
     if (this.gswbPreferences) {
-      this.gswbPreferences.gswbPreferences = {
-        prover: 1,
-        debugging: false,
-        outputstyle: 4,
-        parseSem: false,
-        betaReduce: true,
-        resolveDrs: false,
-        glueOnly: false,
-        meaningOnly: false,
-        explainFail: false,
-        naturalDeductionStyle: 0,
-      };
+      this.gswbPreferences.gswbPreferences = { ...APP_DEFAULTS.gswb.preferences, resolveDrs: false };
       this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences)
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }
 
     if (this.vampirePreferences) {
-      this.vampirePreferences.vampirePreferences = {
-        logic_type: 1,
-        model_building: true,
-        max_duration: 10,
-        layered: false
-      };
+        this.vampirePreferences.vampirePreferences = { ...APP_DEFAULTS.vampire.chat };
         this.vampirePreferences.updateFormFromPreferences(this.vampirePreferences.vampirePreferences);
     } else {
       console.error("ERROR: `vampirePreferences` ViewChild not initialized!");
