@@ -31,8 +31,13 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   ngOnInit() {
     this.getGrammars(this.grammarsDirectory);
     console.log("Initial file tree:", this.grammarFileTree);
-    this.selectedPath = this.defaultGrammar;
-    this.updateGrammar();
+    this.selectedPath = this.loadedPath || this.defaultGrammar;
+
+    if (this.loadedPath) {
+      this.refreshStatusMessage();
+    } else {
+      this.updateGrammar();
+    }
   }
 
   ngAfterViewInit() {
@@ -58,6 +63,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
     console.log("Selected path from file tree:", path);
     this.selectedPath = path;  // Store the selected path
    // this.selectedIsDirectory = this.grammarFileTree.find(node => node.path === path).isDirectory;  // Store if the selected path is a directory
+    this.refreshStatusMessage();
   }
 
   // Method to change the grammar using the selected path
@@ -95,11 +101,33 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
   private refreshStatusMessage(): void {
     if (!this.loadedPath) {
+      this.currentStatusMessage = this.selectedPath
+        ? `Selected grammar: ${this.selectedPath}`
+        : '';
       return;
     }
 
     const modified = this.selectedPath !== this.loadedPath;
     this.currentStatusMessage = `Currently loaded grammar: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
+  }
+
+  captureState(): { loadedPath: string; selectedPath: string; currentStatusMessage: string } {
+    return {
+      loadedPath: this.loadedPath,
+      selectedPath: this.selectedPath,
+      currentStatusMessage: this.currentStatusMessage,
+    };
+  }
+
+  restoreState(state: { loadedPath?: string; selectedPath?: string; currentStatusMessage?: string } | null): void {
+    if (!state) {
+      return;
+    }
+
+    this.loadedPath = state.loadedPath ?? this.loadedPath;
+    this.selectedPath = state.selectedPath ?? this.selectedPath ?? this.defaultGrammar;
+    this.currentStatusMessage = state.currentStatusMessage ?? this.currentStatusMessage;
+    this.refreshStatusMessage();
   }
 
   getGrammars(directory: string) {

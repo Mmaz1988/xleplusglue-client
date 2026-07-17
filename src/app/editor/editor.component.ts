@@ -227,6 +227,7 @@ export class EditorComponent implements AfterViewInit, OnChanges {
   @Input() id: string;
   @Input() mode: string;
   @Input() showControls = true;
+  @Input() initialContent: string | null = null;
   @Output() contentChange = new EventEmitter<string>();
 
   defaultWidth = '800px';
@@ -250,7 +251,9 @@ export class EditorComponent implements AfterViewInit, OnChanges {
       this.contentChange.emit(this.codeMirror.getValue());
     });
 
-    if (this.mode === "liger") {
+    if (this.initialContent !== null && this.initialContent !== undefined) {
+      this.codeMirror.setValue(this.initialContent);
+    } else if (this.mode === "liger") {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
     } else if (this.mode === "text") {
       this.codeMirror.setValue(DEFAULT_TEST_SUITE);

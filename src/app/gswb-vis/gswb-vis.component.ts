@@ -1,4 +1,4 @@
-import {Component, ElementRef, ViewChild} from '@angular/core';
+import {Component, ElementRef, ViewChild, AfterViewInit} from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { SemComponent } from './sem/sem.component';
 import { LogComponent } from './log/log.component';
@@ -9,6 +9,7 @@ import {DialogComponent} from "../utilities/dialog/dialog.component";
 import {GswbRequest,GswbPreferences} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
+import { GswbWorkspaceState } from "../analysis-workspace-state.service";
 
 
 @Component({
@@ -18,7 +19,7 @@ import {SemVisComponent} from "../sem-vis/sem-vis.component";
 })
 
 
-export class GswbVisComponent {
+export class GswbVisComponent implements AfterViewInit {
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
   @ViewChild('sem1') sem: EditorComponent;
@@ -28,6 +29,8 @@ export class GswbVisComponent {
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
   meaningConstructors = '';
+
+  private pendingState: GswbWorkspaceState | null = null;
 
   ngAfterViewInit() {
     if (this.gswbPreferences) {
@@ -47,6 +50,8 @@ export class GswbVisComponent {
     } else {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }
+
+    this.applyPendingState();
   }
 
 
@@ -168,9 +173,45 @@ export class GswbVisComponent {
     this.meaningConstructors = this.editor1?.getContent() ?? '';
   }
 
+  captureState(): GswbWorkspaceState | null {
+    if (!this.editor1 || !this.semvis || !this.gswbPreferences || !this.log) {
+      return this.pendingState;
+    }
+
+    return {
+      meaningConstructors: this.meaningConstructors ?? '',
+      editorText: this.editor1.getContent(),
+      logText: this.log.getContent(),
+      gswbPreferences: { ...this.gswbPreferences.gswbPreferences },
+      semvis: this.semvis.captureState(),
+    };
+  }
+
+  restoreState(state: GswbWorkspaceState | null): void {
+    this.pendingState = state;
+    this.applyPendingState();
+  }
+
+  private applyPendingState(): void {
+    const state = this.pendingState;
+    if (!state || !this.editor1 || !this.semvis || !this.gswbPreferences || !this.log) {
+      return;
+    }
+
+    this.meaningConstructors = state.meaningConstructors ?? '';
+    this.editor1.updateContent(state.editorText ?? '');
+    this.log.updateContent(state.logText ?? '');
+
+    const prefs = state.gswbPreferences ?? this.gswbPreferences.gswbPreferences;
+    this.gswbPreferences.gswbPreferences = { ...prefs };
+    this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences);
+
+    this.semvis.restoreState(state.semvis);
+    this.pendingState = null;
+  }
+
 }
 
 
 // Inside ParentComponent
-
 

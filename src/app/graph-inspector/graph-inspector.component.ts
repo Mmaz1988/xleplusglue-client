@@ -27,7 +27,6 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
 #a ant #a & #a SYNSEM #b & @REFL-BIND(#b,#c)`;
 
   private preloadedGraphElements: any[] = [];
-  private pendingEditorSync = false;
 
   constructor(private dataService: DataService) {
     const state = (typeof history !== 'undefined' ? history.state : null) as any;
@@ -70,8 +69,6 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
       this.cy1.renderGraph(this.graphElements);
       this.displayMessage('Loaded graph.', 'green');
     }
-
-    this.scheduleEditorSync();
   }
 
   onUploadFile(event: Event) {
@@ -350,28 +347,6 @@ REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#
     if (structureJson) {
       this.currentStructureJson = JSON.stringify(structureJson, null, 2);
     }
-  }
-
-  private syncEditorContents(): void {
-    if (this.rulesEditor && typeof (this.rulesEditor as any).updateContent === 'function') {
-      (this.rulesEditor as any).updateContent(this.rulesText);
-    }
-
-    if (this.queryEditor && typeof (this.queryEditor as any).updateContent === 'function') {
-      (this.queryEditor as any).updateContent(this.queryText);
-    }
-  }
-
-  private scheduleEditorSync(): void {
-    if (this.pendingEditorSync) {
-      return;
-    }
-
-    this.pendingEditorSync = true;
-    setTimeout(() => {
-      this.pendingEditorSync = false;
-      this.syncEditorContents();
-    }, 0);
   }
 
   displayMessage(message: string, color: string) {

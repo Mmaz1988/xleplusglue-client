@@ -1,21 +1,28 @@
-import { Component, ViewChild, EventEmitter, ElementRef } from '@angular/core';
+import { Component, ViewChild, EventEmitter, ElementRef, AfterViewInit } from '@angular/core';
 import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
+import {GrammarLoaderComponent} from "../utilities/grammar-loader/grammar-loader.component";
 import { DataService } from '../data.service';
 import { LigerSolutionAnnotation, LigerStructure } from '../models/models';
+import { AnalysisWorkspaceStateService, LigerWorkspaceState } from '../analysis-workspace-state.service';
 
 @Component({
   selector: 'app-liger-vis',
   templateUrl: './liger-vis.component.html',
   styleUrls: ['./liger-vis.component.css']
 })
-export class LigerVisComponent {
+export class LigerVisComponent implements AfterViewInit {
 
-  constructor(private dataService: DataService) {
+  constructor(private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {
+    const savedGrammarPath = this.workspaceState.getState().liger?.grammarLoadedPath;
+    if (savedGrammarPath) {
+      this.loadedGrammarPath = savedGrammarPath;
+    }
   }
 
   defaultValue: string = 'Every man hugged a woman.';
+  loadedGrammarPath = '';
   meaningConstructors: string;
   structureJson: LigerStructure | null = null;
   changeDetector: EventEmitter<any> = new EventEmitter();
@@ -27,8 +34,15 @@ export class LigerVisComponent {
   @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
   @ViewChild('cy1') cy1: GraphVisComponent;
+  @ViewChild('grammarLoader') grammarLoader: GrammarLoaderComponent;
   @ViewChild('textareaElement') textarea: ElementRef;
   @ViewChild('errorhandle') errorhandle: ElementRef;
+
+  private pendingState: LigerWorkspaceState | null = null;
+
+  ngAfterViewInit(): void {
+    this.applyPendingState();
+  }
 
 
 
@@ -243,6 +257,69 @@ export class LigerVisComponent {
 
   updateRules(ruleFile: string) {
     this.ligerRules.updateContent(ruleFile);
+  }
+
+  onGrammarLoaded(path: string): void {
+    this.loadedGrammarPath = path;
+  }
+
+  captureState(): LigerWorkspaceState | null {
+    if (!this.textarea || !this.ligerRules) {
+      return this.pendingState;
+    }
+
+    return {
+      sentence: this.textarea.nativeElement.value ?? this.defaultValue,
+      rulesText: this.ligerRules.getContent(),
+      grammarLoadedPath: this.loadedGrammarPath ?? '',
+      grammarSelectedPath: this.grammarLoader?.selectedPath ?? this.loadedGrammarPath ?? '',
+      structureJson: this.structureJson,
+      graphElements: Array.isArray(this.graphElements)
+        ? this.graphElements.map(element => ({
+          ...element,
+          data: element?.data ? { ...element.data } : element?.data,
+        }))
+        : [],
+      solutions: Array.isArray(this.solutions)
+        ? this.solutions.map(solution => ({ ...solution }))
+        : [],
+      selectedSolutionIndex: this.selectedSolutionIndex,
+      meaningConstructors: this.meaningConstructors ?? '',
+    };
+  }
+
+  restoreState(state: LigerWorkspaceState | null): void {
+    this.pendingState = state;
+    this.applyPendingState();
+  }
+
+  private applyPendingState(): void {
+    const state = this.pendingState;
+    if (!state || !this.textarea || !this.ligerRules || !this.cy1) {
+      return;
+    }
+
+    this.defaultValue = state.sentence || this.defaultValue;
+    this.textarea.nativeElement.value = this.defaultValue;
+    this.ligerRules.updateContent(state.rulesText || '');
+    this.loadedGrammarPath = state.grammarLoadedPath || state.grammarSelectedPath || this.loadedGrammarPath;
+    if (this.grammarLoader) {
+      this.grammarLoader.restoreState({
+        loadedPath: state.grammarLoadedPath ?? state.grammarSelectedPath ?? this.loadedGrammarPath,
+        selectedPath: state.grammarSelectedPath ?? state.grammarLoadedPath ?? this.loadedGrammarPath,
+      });
+    }
+    this.structureJson = state.structureJson ?? null;
+    this.graphElements = Array.isArray(state.graphElements) ? state.graphElements : [];
+    this.solutions = Array.isArray(state.solutions) ? state.solutions : [];
+    this.selectedSolutionIndex = Math.min(
+      Math.max(state.selectedSolutionIndex ?? 0, 0),
+      Math.max(this.solutions.length - 1, 0)
+    );
+    this.meaningConstructors = state.meaningConstructors ?? '';
+
+    this.cy1.renderGraph(this.graphElements);
+    this.pendingState = null;
   }
 
 }

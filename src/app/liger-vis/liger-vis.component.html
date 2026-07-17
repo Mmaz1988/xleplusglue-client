@@ -13,7 +13,11 @@
   <span *ngIf="loading">Loading...</span>
 </button>
 <br>
-<app-grammar-loader></app-grammar-loader>
+<app-grammar-loader
+  #grammarLoader
+  [loadedPath]="loadedGrammarPath"
+  (grammarLoaded)="onGrammarLoaded($event)">
+</app-grammar-loader>
 <app-rule-loader (dataEmitter)="updateRules($event)"></app-rule-loader>
 
 <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">

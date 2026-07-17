@@ -200,7 +200,10 @@ export class GraphVisComponent implements OnInit {
   @Input() graphStyle: 'liger' = 'liger';
   private cy: Core;
   private nodesHidden: boolean = false;
-   private selector = 'node[node_type="cnode"]';
+  private selector = 'node[node_type="cnode"]';
+  private readonly typeCompactionRankTolerance = 28;
+  private readonly typeCompactionPullStrength = 0.28;
+  private readonly typeCompactionMaxShift = 90;
 
   defaultWidth = '800px';
   defaultHeight = '600px';
@@ -269,13 +272,28 @@ export class GraphVisComponent implements OnInit {
     this.cy = cytoscape({
         container: document.getElementById(this.graphID || 'cy'), // Use the appropriate container element ID
         elements: graphData ?? [],
-        style: style as cytoscape.Stylesheet[],
-        layout: {
-          name: 'dagre'
-        }
+        style: style as cytoscape.Stylesheet[]
       }
     );
-    this.createAndBindPoppers();
+
+    const layoutOptions: any = {
+      name: 'dagre',
+      rankDir: 'TB',
+      rankSep: 70,
+      nodeSep: 40,
+      edgeSep: 12,
+      ranker: 'network-simplex'
+    };
+
+    const layout = this.cy.layout(layoutOptions);
+
+    layout.on('layoutstop', () => {
+      this.compactByNodeType();
+      this.createAndBindPoppers();
+      this.cy.fit(undefined, 24);
+    });
+
+    layout.run();
     console.log("Container of the subgraph: ",this.cy.container().id);
     console.log("Cy element with data:", this.cy)
   }
@@ -304,6 +322,81 @@ export class GraphVisComponent implements OnInit {
       }
 
       this.nodesHidden = !this.nodesHidden;
+    });
+  }
+
+  private compactByNodeType(): void {
+    if (!this.cy) {
+      return;
+    }
+
+    const nodes = this.cy.nodes().filter((node) => !!node.data('node_type')).toArray() as cytoscape.NodeSingular[];
+    if (nodes.length === 0) {
+      return;
+    }
+
+    const orderedNodes = nodes.sort((a, b) => {
+      const yDiff = a.position('y') - b.position('y');
+      if (Math.abs(yDiff) > this.typeCompactionRankTolerance) {
+        return yDiff;
+      }
+
+      return a.position('x') - b.position('x');
+    });
+
+    const ranks: cytoscape.NodeSingular[][] = [];
+    let currentRank: cytoscape.NodeSingular[] = [];
+    let currentRankY = orderedNodes[0].position('y');
+
+    orderedNodes.forEach((node) => {
+      if (currentRank.length && Math.abs(node.position('y') - currentRankY) > this.typeCompactionRankTolerance) {
+        ranks.push(currentRank);
+        currentRank = [node];
+        currentRankY = node.position('y');
+        return;
+      }
+
+      currentRank.push(node);
+      currentRankY = (currentRankY * (currentRank.length - 1) + node.position('y')) / currentRank.length;
+    });
+
+    if (currentRank.length) {
+      ranks.push(currentRank);
+    }
+
+    this.cy.batch(() => {
+      ranks.forEach((rank) => {
+        const typeMap = new Map<string, cytoscape.NodeSingular[]>();
+
+        rank.forEach((node) => {
+          const nodeType = String(node.data('node_type') ?? '');
+          if (!typeMap.has(nodeType)) {
+            typeMap.set(nodeType, []);
+          }
+          typeMap.get(nodeType)!.push(node);
+        });
+
+        typeMap.forEach((members) => {
+          if (members.length < 2) {
+            return;
+          }
+
+          const sortedMembers = members.sort((a, b) => a.position('x') - b.position('x'));
+          const targetX = sortedMembers.reduce((sum, node) => sum + node.position('x'), 0) / sortedMembers.length;
+
+          sortedMembers.forEach((node, index) => {
+            const currentX = node.position('x');
+            const offset = targetX - currentX;
+            const maxShift = Math.max(this.typeCompactionMaxShift - index * 8, 24);
+            const shift = Math.max(-maxShift, Math.min(maxShift, offset * this.typeCompactionPullStrength));
+
+            node.position({
+              x: currentX + shift,
+              y: node.position('y'),
+            });
+          });
+        });
+      });
     });
   }
 

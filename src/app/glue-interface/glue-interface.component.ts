@@ -1,16 +1,17 @@
-import { Component, ViewChild, AfterViewInit } from '@angular/core';
+import { Component, ViewChild, AfterViewInit, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
 import { GswbSolution, LigerStructure } from '../models/models';
+import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 
 @Component({
   selector: 'app-glue-interface',
   templateUrl: './glue-interface.component.html',
   styleUrls: ['./glue-interface.component.css']
 })
-export class GlueInterfaceComponent {
+export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('l1') liger: LigerVisComponent;
   @ViewChild('g1') glue: GswbVisComponent;
@@ -18,17 +19,21 @@ export class GlueInterfaceComponent {
   isFirstDivMinimized = false;
   isSecondDivMinimized = false;
 
-  constructor(private router: Router, private dataService: DataService) {}
+  constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
   ngAfterViewInit() {
-    if (!this.liger?.changeDetector || !this.glue?.editor1) {
-      return;
+    if (this.liger?.changeDetector && this.glue?.editor1) {
+      this.liger.changeDetector.subscribe(newValue => {
+        // Update glue's variable here
+        this.glue.editor1.updateContent(newValue);
+      });
     }
 
-    this.liger.changeDetector.subscribe(newValue => {
-      // Update glue's variable here
-      this.glue.editor1.updateContent(newValue);
-    });
+    setTimeout(() => this.restoreWorkspaceState(), 0);
+  }
+
+  ngOnDestroy(): void {
+    this.saveWorkspaceState();
   }
 
   openMergedGraphInspector(): void {
@@ -67,6 +72,31 @@ export class GlueInterfaceComponent {
     const selected = this.glue?.semvis?.items?.[selectedIndex] as GswbSolution | undefined;
 
     return selected?.graph ?? null;
+  }
+
+  private saveWorkspaceState(): void {
+    const ligerState = this.liger?.captureState() ?? null;
+    const gswbState = this.glue?.captureState() ?? null;
+
+    if (ligerState) {
+      this.workspaceState.saveLiger(ligerState);
+    }
+
+    if (gswbState) {
+      this.workspaceState.saveGswb(gswbState);
+    }
+  }
+
+  private restoreWorkspaceState(): void {
+    const state = this.workspaceState.getState();
+
+    if (state.liger) {
+      this.liger?.restoreState(state.liger);
+    }
+
+    if (state.gswb) {
+      this.glue?.restoreState(state.gswb);
+    }
   }
 
 }

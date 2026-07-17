@@ -368,6 +368,40 @@ export class SemVisComponent implements AfterViewInit {
     this.applyFiltersAndResetIndex(0);
   }
 
+  captureState(): any {
+    return {
+      items: this.items.map(item => ({ ...item })),
+      index: this.index,
+      selectedScopeIds: [...this.selectedScopeIds],
+      selectedMcIds: [...this.selectedMcIds],
+      scopeDiscriminants: this.scope_discriminants.map(item => ({ ...item })),
+      mcDiscriminants: this.mc_discriminants.map(item => ({ ...item })),
+      svgSolutions: this.svgSolutions,
+      meaningConstructors: this.meaningConstructors,
+    };
+  }
+
+  restoreState(state: any): void {
+    if (!state) {
+      return;
+    }
+
+    this.scope_discriminants = Array.isArray(state.scopeDiscriminants) ? state.scopeDiscriminants.map((item: GswbDiscriminant) => ({ ...item })) : [];
+    this.mc_discriminants = Array.isArray(state.mcDiscriminants) ? state.mcDiscriminants.map((item: GswbDiscriminant) => ({ ...item })) : [];
+    this.selectedScopeIds = Array.isArray(state.selectedScopeIds) ? [...state.selectedScopeIds] : [];
+    this.selectedMcIds = Array.isArray(state.selectedMcIds) ? [...state.selectedMcIds] : [];
+    this.svgSolutions = Boolean(state.svgSolutions);
+    this.meaningConstructors = typeof state.meaningConstructors === 'string' ? state.meaningConstructors : this.meaningConstructors;
+
+    if (Array.isArray(state.items)) {
+      this.assignItems(state.items.map((item: GswbSolution) => ({ ...item })));
+    }
+
+    this.index = Number.isFinite(state.index) ? state.index : this.index;
+    this.applyCurrent();
+    this.rebuildDiscriminantViews();
+  }
+
   isCurrentSolutionIn(d: GswbDiscriminant): boolean {
     const cur = this.items?.[this.index];
     if (!cur?.id) return false;
