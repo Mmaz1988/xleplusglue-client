@@ -19,16 +19,37 @@ export interface LigerRuleAnnotation {
   sentence?: string;
   graph: LigerWebGraph;
   structureJson?: LigerStructure;
+  structureVariants?: LigerStructure[];
+  structureVariantGraphs?: LigerWebGraph[];
   appliedRules: LigerRule[];
   meaningConstructors?: string;
   numberOfMCsets?: number;
   axioms?: string[];
+  highlightedNodeIds?: string[];
+  addedAnnotationsByRule?: Record<string, LigerRuleAnnotationFact[]>;
+}
+
+export interface LigerRuleAnnotationResponse {
+  sentence?: string;
+  annotations: LigerRuleAnnotation[];
+}
+
+export interface LigerRuleAnnotationFact {
+  fsNode?: string;
+  fsValue?: string;
+  sourceNode?: string;
+  relationLabel?: string;
+  targetNode?: string;
+  choiceVars?: any[];
+  [key: string]: any;
 }
 
 export interface LigerSolutionAnnotation {
   solutionKey: string;
   graph: LigerWebGraph;
   structureJson?: LigerStructure;
+  structureVariants?: LigerStructure[];
+  structureVariantGraphs?: LigerWebGraph[];
   appliedRules: LigerRule[];
   meaningConstructors: string;
   numberOfMCsets: number;

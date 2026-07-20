@@ -20,6 +20,10 @@ class GraphVisStubComponent {
   renderGraph(elements: any[]) {
     this.lastRendered = elements;
   }
+
+  updateGraph(elements: any[]) {
+    this.lastRendered = elements;
+  }
 }
 
 describe('GraphInspectorComponent', () => {
@@ -37,16 +41,33 @@ describe('GraphInspectorComponent', () => {
       ligerUploadStructure: () => of({}),
       ligerRenderStructure: () => of({}),
       ligerApplyRulesToStructure: jasmine.createSpy('ligerApplyRulesToStructure').and.returnValue(of({
-        graph: {
-          graphElements: [{ data: { id: 'r1' } }]
-        },
-        structureJson: {
-          id: 'annotated-graph',
-          text: 'annotated graph',
-          constraints: [],
-          annotations: [],
-          choiceSpace: {}
-        }
+        sentence: 'annotated graph',
+        annotations: [
+          {
+            sentence: 'branch 1',
+            graph: {
+              graphElements: [{ data: { id: 'branch-1-node' } }],
+              semantics: ''
+            },
+            appliedRules: [],
+            meaningConstructors: '',
+            numberOfMCsets: 0,
+            highlightedNodeIds: ['branch-1-node'],
+            addedAnnotationsByRule: {}
+          },
+          {
+            sentence: 'branch 2',
+            graph: {
+              graphElements: [{ data: { id: 'branch-2-node' } }],
+              semantics: ''
+            },
+            appliedRules: [],
+            meaningConstructors: '',
+            numberOfMCsets: 0,
+            highlightedNodeIds: ['branch-2-node'],
+            addedAnnotationsByRule: {}
+          }
+        ]
       })),
       ligerQueryStructure: jasmine.createSpy('ligerQueryStructure').and.returnValue(of({
         success: 'true',
@@ -192,8 +213,41 @@ describe('GraphInspectorComponent', () => {
     expect(request.ruleString).toBe('--replace(true);');
 
     const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
-    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['r1']);
-    expect(component.currentStructureJson).toContain('annotated-graph');
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['branch-1-node']);
+    expect(component.ruleAnnotations.length).toBe(2);
+  });
+
+  it('should expose all rule branches when a rule forks the structure', () => {
+    component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.uploadedFormat = 'json';
+    component.uploadedFileName = 'merged-graph.json';
+    component.rulesText = '#a SUBJ #b ?=> #a TOP #b';
+
+    component.applyRules();
+    fixture.detectChanges();
+
+    expect(component.ruleAnnotations.length).toBe(2);
+
+    const nav = fixture.nativeElement.querySelector('aside.solutions-panel .solution-nav');
+    expect(nav.textContent).toContain('Result 1 / 2');
+  });
+
+  it('should iterate branch graphs with prev and next controls', () => {
+    component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.uploadedFormat = 'json';
+    component.uploadedFileName = 'merged-graph.json';
+    component.rulesText = '#a SUBJ #b ?=> #a TOP #b';
+
+    component.applyRules();
+
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['branch-1-node']);
+
+    component.nextRuleVariant();
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['branch-2-node']);
+
+    component.previousRuleVariant();
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['branch-1-node']);
   });
 
   it('should expose solution bindings for the inspector panel', () => {

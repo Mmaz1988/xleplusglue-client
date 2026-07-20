@@ -6,7 +6,7 @@ import {
   GswbMultipleRequest,
   LigerBatchParsingAnalysis,
   LigerRuleAnnotation
-  ,
+    ,
   LigerMergeResponse,
   LigerStructure,
   LigerStructureMergeRequest,
@@ -14,6 +14,7 @@ import {
   LigerStructureRuleRequest,
   LigerStructureQueryRequest,
   LigerStructureQueryResponse,
+  LigerRuleAnnotationResponse,
   GrammarList,
   GrammarString,
   FileTree,
@@ -80,8 +81,8 @@ export class DataService {
     return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/render_graph`, uploadRequest);
   }
 
-  ligerApplyRulesToStructure(ruleRequest: LigerStructureRuleRequest): Observable<LigerRuleAnnotation> {
-    return this.http.post<LigerRuleAnnotation>(`${this.ligerpage}/apply_rules_uploaded_structure`, ruleRequest);
+  ligerApplyRulesToStructure(ruleRequest: LigerStructureRuleRequest): Observable<LigerRuleAnnotationResponse> {
+    return this.http.post<LigerRuleAnnotationResponse>(`${this.ligerpage}/apply_rules_uploaded_structure`, ruleRequest);
   }
 
   ligerQueryStructure(queryRequest: LigerStructureQueryRequest): Observable<LigerStructureQueryResponse> {

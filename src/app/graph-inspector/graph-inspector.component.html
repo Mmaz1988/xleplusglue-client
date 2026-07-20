@@ -74,34 +74,58 @@
     </details>
   </aside>
 
-  <aside class="solutions-panel" *ngIf="activeResultKind === 'rules' && appliedRules.length">
+  <aside class="solutions-panel" *ngIf="activeResultKind === 'rules' && ruleAnnotations.length">
     <div class="solutions-header">
       <h4>Applied rules</h4>
-      <span>{{ appliedRules.length }}</span>
+      <span>{{ ruleAnnotations.length }}</span>
     </div>
 
-    <div class="solution-variable">
+    <div class="solution-nav" *ngIf="ruleAnnotations.length">
+      <button type="button" (click)="previousRuleVariant()" [disabled]="ruleAnnotations.length < 2">◀ Prev result</button>
+      <span>
+        Result {{ (activeRuleAnnotationIndex ?? 0) + 1 }} / {{ ruleAnnotations.length }}
+        <span *ngIf="ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.sentence"> ({{ ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.sentence }})</span>
+      </span>
+      <button type="button" (click)="nextRuleVariant()" [disabled]="ruleAnnotations.length < 2">Next result ▶</button>
+    </div>
+
+    <div class="solution-variable" *ngIf="ruleAnnotations[activeRuleAnnotationIndex ?? 0] as selectedAnnotation">
+      <div class="solution-variable-name">Selected result</div>
+      <div class="solution-node">
+        <div class="solution-node-id">Sentence</div>
+        <pre class="solution-constraints">{{ selectedAnnotation.sentence || 'n/a' }}</pre>
+      </div>
       <div class="solution-variable-name">MC sets: {{ appliedNumberOfMCsets }}</div>
       <div class="solution-node" *ngIf="appliedMeaningConstructors.trim().length">
         <div class="solution-node-id">Meaning constructors</div>
         <pre class="solution-constraints">{{ appliedMeaningConstructors }}</pre>
       </div>
-      <div class="solution-node" *ngIf="highlightedNodeIdList.length">
-        <div class="solution-node-id">Highlighted nodes ({{ highlightedNodeIdList.length }})</div>
-        <ul class="solution-constraints">
-          <li *ngFor="let nodeId of highlightedNodeIdList">{{ nodeId }}</li>
-        </ul>
-      </div>
     </div>
 
-    <div class="solution-variable" *ngFor="let rule of appliedRules">
-      <div class="solution-variable-name">Rule {{ rule.index + 1 }}</div>
-      <div class="solution-node">
-        <div class="solution-node-id" *ngIf="rule.lineNumber !== undefined">Line {{ rule.lineNumber }}</div>
-        <ul class="solution-constraints">
-          <li>{{ rule.rule }}</li>
-        </ul>
+    <details #ruleCard class="solution-card" *ngFor="let rule of appliedRules; let i = index" [open]="isRuleActive(i)" (toggle)="onRuleToggle(i, ruleCard.open)">
+      <summary>
+        Rule {{ rule.index + 1 }}
+        <span class="solution-signature" *ngIf="rule.lineNumber !== undefined">Line {{ rule.lineNumber }}</span>
+      </summary>
+
+      <div class="solution-variable">
+        <div class="solution-node">
+          <div class="solution-node-id">Rule text</div>
+          <ul class="solution-constraints">
+            <li>{{ rule.rule }}</li>
+          </ul>
+        </div>
+
+        <div class="solution-node">
+          <div class="solution-node-id">Added facts</div>
+          <ul class="solution-constraints" *ngIf="ruleFacts(rule).length; else noRuleFacts">
+            <li *ngFor="let fact of ruleFacts(rule)">{{ ruleFactText(fact) }}</li>
+          </ul>
+          <ng-template #noRuleFacts>
+            <div class="inspector-help">No added facts.</div>
+          </ng-template>
+        </div>
       </div>
-    </div>
+    </details>
   </aside>
 </div>

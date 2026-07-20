@@ -2,7 +2,7 @@ import { AfterViewInit, Component, ElementRef, ViewChild } from '@angular/core';
 import { DataService } from '../data.service';
 import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
-import { LigerQuerySolution, LigerRule, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
+import { LigerQuerySolution, LigerRule, LigerRuleAnnotation, LigerRuleAnnotationFact, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
 import { APP_DEFAULTS } from '../app-defaults';
 
 @Component({
@@ -42,14 +42,14 @@ export class GraphInspectorComponent implements AfterViewInit {
   activeResultKind: 'query' | 'rules' | null = null;
   querySolutions: LigerQuerySolution[] = [];
   appliedRules: LigerRule[] = [];
+  appliedRuleFactsByIndex: Record<number, LigerRuleAnnotationFact[]> = {};
   appliedMeaningConstructors = '';
   appliedNumberOfMCsets = 0;
+  ruleAnnotations: LigerRuleAnnotation[] = [];
   private highlightedNodeIds = new Set<string>();
   activeSolutionIndex: number | null = null;
-
-  get highlightedNodeIdList(): string[] {
-    return Array.from(this.highlightedNodeIds);
-  }
+  activeRuleIndex: number | null = null;
+  activeRuleAnnotationIndex: number | null = null;
 
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
@@ -94,9 +94,13 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.querySolutions = [];
     this.activeSolutionIndex = null;
     this.appliedRules = [];
+    this.appliedRuleFactsByIndex = {};
     this.appliedMeaningConstructors = '';
     this.appliedNumberOfMCsets = 0;
+    this.ruleAnnotations = [];
     this.highlightedNodeIds = new Set<string>();
+    this.activeRuleIndex = null;
+    this.activeRuleAnnotationIndex = null;
 
     const ruleRequest: LigerStructureRuleRequest = {
       content: this.uploadedContent,
@@ -108,12 +112,23 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.dataService.ligerApplyRulesToStructure(ruleRequest).subscribe(
       data => {
         this.loading = false;
-        this.highlightedNodeIds = this.extractHighlightedNodeIds(data);
-        this.updateGraphResponse(data?.graph?.graphElements ?? []);
-        this.updateCurrentStructureJson(data?.structureJson);
-        this.appliedRules = Array.isArray(data?.appliedRules) ? data.appliedRules : [];
-        this.appliedMeaningConstructors = typeof data?.meaningConstructors === 'string' ? data.meaningConstructors : '';
-        this.appliedNumberOfMCsets = Number.isFinite(data?.numberOfMCsets) ? data.numberOfMCsets : 0;
+        console.debug('[GraphInspector] applyRules response', data);
+        this.ruleAnnotations = Array.isArray(data?.annotations) ? data.annotations : [];
+        if (this.ruleAnnotations.length) {
+          this.selectRuleAnnotation(0);
+        } else {
+          this.baseGraphElements = [];
+          this.graphElements = [];
+          this.currentStructureJson = '';
+          this.appliedRules = [];
+          this.appliedRuleFactsByIndex = {};
+          this.appliedMeaningConstructors = '';
+          this.appliedNumberOfMCsets = 0;
+          this.highlightedNodeIds = new Set<string>();
+          this.cy1.renderGraph([]);
+          this.displayMessage('No rule results returned.', 'red');
+          return;
+        }
         this.displayMessage('Rules applied.', 'green');
       },
       error => {
@@ -144,7 +159,11 @@ export class GraphInspectorComponent implements AfterViewInit {
       this.currentStructureJson = this.uploadedFormat === 'json' ? content : '';
       this.highlightedNodeIds = new Set<string>();
       this.appliedRules = [];
+      this.appliedRuleFactsByIndex = {};
+      this.ruleAnnotations = [];
       this.querySolutions = [];
+      this.activeRuleIndex = null;
+      this.activeRuleAnnotationIndex = null;
       this.displayMessage(`Loaded ${file.name}`, 'green');
       this.renderUploadedGraph();
     };
@@ -180,8 +199,12 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.activeSolutionIndex = null;
     this.highlightedNodeIds = new Set<string>();
     this.appliedRules = [];
+    this.appliedRuleFactsByIndex = {};
     this.appliedMeaningConstructors = '';
     this.appliedNumberOfMCsets = 0;
+    this.ruleAnnotations = [];
+    this.activeRuleIndex = null;
+    this.activeRuleAnnotationIndex = null;
     const uploadRequest: LigerStructureUploadRequest = {
       content: this.uploadedContent,
       format: this.uploadedFormat,
@@ -223,9 +246,13 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.displayMessage('Running query...', 'blue');
     this.activeResultKind = 'query';
     this.appliedRules = [];
+    this.appliedRuleFactsByIndex = {};
     this.appliedMeaningConstructors = '';
     this.appliedNumberOfMCsets = 0;
+    this.ruleAnnotations = [];
     this.highlightedNodeIds = new Set<string>();
+    this.activeRuleIndex = null;
+    this.activeRuleAnnotationIndex = null;
     const queryContent = this.currentStructureJson.trim() ? this.currentStructureJson : this.uploadedContent;
     const queryFormat: 'json' | 'prolog' = this.currentStructureJson.trim() ? 'json' : this.uploadedFormat;
     const queryRequest: LigerStructureQueryRequest = {
@@ -263,8 +290,59 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.refreshGraph();
   }
 
+  onRuleToggle(index: number, isOpen: boolean) {
+    this.activeRuleIndex = isOpen ? index : null;
+    this.refreshGraph();
+  }
+
+  selectRuleAnnotation(index: number): void {
+    if (index < 0 || index >= this.ruleAnnotations.length) {
+      return;
+    }
+
+    this.activeRuleAnnotationIndex = index;
+    this.activeRuleIndex = null;
+
+    const selectedAnnotation = this.ruleAnnotations[index];
+    this.appliedRules = Array.isArray(selectedAnnotation?.appliedRules) ? selectedAnnotation.appliedRules : [];
+    this.appliedRuleFactsByIndex = this.extractRuleFactsByIndex(selectedAnnotation);
+    this.appliedMeaningConstructors = typeof selectedAnnotation?.meaningConstructors === 'string' ? selectedAnnotation.meaningConstructors : '';
+    this.appliedNumberOfMCsets = Number.isFinite(selectedAnnotation?.numberOfMCsets) ? selectedAnnotation.numberOfMCsets : 0;
+    this.highlightedNodeIds = this.extractHighlightedNodeIds(selectedAnnotation);
+
+    if (selectedAnnotation?.graph?.graphElements) {
+      this.updateGraphResponse(selectedAnnotation.graph.graphElements);
+    }
+
+    if (selectedAnnotation?.structureJson) {
+      this.currentStructureJson = JSON.stringify(selectedAnnotation.structureJson, null, 2);
+    }
+  }
+
+  previousRuleVariant(): void {
+    if (!this.ruleAnnotations.length) {
+      return;
+    }
+
+    const nextIndex = (this.activeRuleAnnotationIndex === null ? 0 : this.activeRuleAnnotationIndex - 1 + this.ruleAnnotations.length) % this.ruleAnnotations.length;
+    this.selectRuleAnnotation(nextIndex);
+  }
+
+  nextRuleVariant(): void {
+    if (!this.ruleAnnotations.length) {
+      return;
+    }
+
+    const nextIndex = (this.activeRuleAnnotationIndex === null ? 0 : this.activeRuleAnnotationIndex + 1) % this.ruleAnnotations.length;
+    this.selectRuleAnnotation(nextIndex);
+  }
+
   isSolutionActive(index: number): boolean {
     return this.activeSolutionIndex === index;
+  }
+
+  isRuleActive(index: number): boolean {
+    return this.activeRuleIndex === index;
   }
 
   solutionEntries(solution: LigerQuerySolution) {
@@ -286,7 +364,7 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.graphElements = this.cloneGraphElements(this.baseGraphElements);
 
     if (this.activeResultKind === 'rules') {
-      this.graphElements = this.applyRuleHighlights(this.graphElements);
+      this.graphElements = this.applyQueryHighlights(this.graphElements, this.ruleHighlightedNodeIds());
       this.cy1.updateGraph(this.graphElements);
       return;
     }
@@ -343,25 +421,95 @@ export class GraphInspectorComponent implements AfterViewInit {
     });
   }
 
-  private applyRuleHighlights(elements: any[]): any[] {
-    if (!this.highlightedNodeIds.size) {
-      return elements;
+  private ruleHighlightedNodeIds(): Set<string> {
+    if (!this.appliedRules.length) {
+      return this.highlightedNodeIds;
     }
 
-    return elements.map(element => {
-      const nodeId = element?.data?.id;
-      if (!nodeId) {
-        return element;
-      }
+    const selectedRules = this.activeRuleIndex === null
+      ? this.appliedRules
+      : [this.appliedRules[this.activeRuleIndex]].filter(Boolean);
 
-      const nextElement = this.cloneGraphElement(element);
-      if (this.highlightedNodeIds.has(String(nextElement.data.id))) {
-        nextElement.data.query_selector = 'query-match';
-      } else {
-        delete nextElement.data.query_selector;
-      }
-      return nextElement;
+    const ids = this.collectRuleHighlightedNodeIds(selectedRules.length ? selectedRules : this.appliedRules);
+    console.debug('[GraphInspector] ruleHighlightedNodeIds', {
+      activeRuleIndex: this.activeRuleIndex,
+      selectedRuleIndexes: (selectedRules.length ? selectedRules : this.appliedRules).map(rule => rule.index),
+      ids: Array.from(ids),
     });
+    return ids;
+  }
+
+  private collectRuleHighlightedNodeIds(rules: LigerRule[]): Set<string> {
+    const ids = new Set<string>();
+
+    rules.forEach(rule => {
+      const facts = this.appliedRuleFactsByIndex[rule.index] ?? [];
+      facts.forEach(fact => this.collectNodeIdsFromFact(fact).forEach(id => ids.add(id)));
+    });
+
+    if (!ids.size) {
+      this.highlightedNodeIds.forEach(id => ids.add(id));
+    }
+
+    return ids;
+  }
+
+  private collectNodeIdsFromFact(fact: LigerRuleAnnotationFact): Set<string> {
+    const ids = new Set<string>();
+
+    const sourceNode = fact?.fsNode ?? fact?.sourceNode;
+    if (sourceNode !== undefined && sourceNode !== null && String(sourceNode).trim()) {
+      const source = String(sourceNode).replace(/^#/, '');
+      if (this.graphHasNodeId(source)) {
+        ids.add(source);
+      }
+    }
+
+    const targetNode = fact?.fsValue ?? fact?.targetNode;
+    if (targetNode !== undefined && targetNode !== null && String(targetNode).trim()) {
+      const target = String(targetNode).replace(/^#/, '');
+      if (/^-?\d+$/.test(target) || this.graphHasNodeId(target)) {
+        ids.add(target);
+      }
+    }
+
+    return ids;
+  }
+
+  private graphHasNodeId(nodeId: string): boolean {
+    return this.baseGraphElements.some(element => String(element?.data?.id) === nodeId);
+  }
+
+  private extractRuleFactsByIndex(payload: any): Record<number, LigerRuleAnnotationFact[]> {
+    const factsByIndex: Record<number, LigerRuleAnnotationFact[]> = {};
+    const rawFacts = payload?.addedAnnotationsByRule;
+
+    if (!rawFacts || typeof rawFacts !== 'object') {
+      return factsByIndex;
+    }
+
+    Object.entries(rawFacts).forEach(([ruleIndex, facts]) => {
+      factsByIndex[Number(ruleIndex)] = Array.isArray(facts)
+        ? facts.map(fact => ({ ...fact }))
+        : [];
+    });
+
+    console.debug('[GraphInspector] parsed addedAnnotationsByRule', Object.keys(factsByIndex));
+
+    return factsByIndex;
+  }
+
+  ruleFacts(rule: LigerRule): LigerRuleAnnotationFact[] {
+    return this.appliedRuleFactsByIndex[rule.index] ?? [];
+  }
+
+  ruleFactText(fact: LigerRuleAnnotationFact): string {
+    const sourceNode = String(fact?.fsNode ?? fact?.sourceNode ?? '?').replace(/^#/, '');
+    const relationLabel = fact?.relationLabel ?? '?';
+    const rawTargetNode = String(fact?.fsValue ?? fact?.targetNode ?? '?');
+    const normalizedTargetNode = rawTargetNode.replace(/^#/, '');
+    const targetNode = /^-?\d+$/.test(normalizedTargetNode) ? `#${normalizedTargetNode}` : rawTargetNode;
+    return `#${sourceNode} ${relationLabel} ${targetNode}`;
   }
 
   private extractHighlightedNodeIds(payload: any): Set<string> {

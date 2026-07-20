@@ -320,6 +320,11 @@ export class GraphVisComponent implements OnInit {
       return;
     }
 
+    console.debug('[GraphVis] updateGraph', {
+      incomingCount: Array.isArray(graphData) ? graphData.length : 0,
+      sampleIds: (graphData ?? []).slice(0, 12).map((element) => element?.data?.id),
+    });
+
     const currentIds = new Set<string>();
     this.cy.nodes().forEach((node) => {
       currentIds.add(String(node.id()));
@@ -355,8 +360,14 @@ export class GraphVisComponent implements OnInit {
         }
 
         if (existing.isNode()) {
+          if (data.query_selector === undefined) {
+            existing.removeData('query_selector');
+          }
           existing.data({ ...existing.data(), ...data });
         } else {
+          if (data.query_selector === undefined) {
+            existing.removeData('query_selector');
+          }
           existing.data({ ...existing.data(), ...data });
         }
 
