@@ -250,6 +250,64 @@ describe('GraphInspectorComponent', () => {
     expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['branch-1-node']);
   });
 
+  it('should clear stale highlights when a rule has an explicit empty highlight set', () => {
+    component.activeResultKind = 'rules';
+    component['ruleAnnotations'] = [
+      {
+        sentence: 'deletion rule',
+        graph: {
+          graphElements: [
+            { data: { id: '1', query_selector: 'query-match' } },
+            { data: { id: '2', query_selector: 'query-match' } }
+          ],
+          semantics: ''
+        },
+        appliedRules: [],
+        meaningConstructors: '',
+        numberOfMCsets: 0,
+        highlightedNodeIds: [],
+        addedAnnotationsByRule: {}
+      }
+    ] as any;
+
+    component.selectRuleAnnotation(0);
+    component.onRuleToggle(0, true);
+
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    const highlightedIds = graphVis.lastRendered.filter(element => element.data?.query_selector === 'query-match').map(element => element.data.id);
+
+    expect(highlightedIds).toEqual([]);
+  });
+
+  it('should not fall back to stale rule highlights when the active rule has no matched facts', () => {
+    component.activeResultKind = 'rules';
+    component['ruleAnnotations'] = [
+      {
+        sentence: 'deletion rule',
+        graph: {
+          graphElements: [
+            { data: { id: '1', query_selector: 'query-match' } },
+            { data: { id: '2', query_selector: 'query-match' } }
+          ],
+          semantics: ''
+        },
+        appliedRules: [{ rule: '#a POTENTIAL-ANT #b =-> 0.', index: 6, lineNumber: 6 }],
+        meaningConstructors: '',
+        numberOfMCsets: 0,
+        highlightedNodeIds: ['1', '2'],
+        addedAnnotationsByRule: { 6: [] }
+      }
+    ] as any;
+
+    component.selectRuleAnnotation(0);
+    component.onRuleToggle(0, true);
+
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    const highlightedIds = graphVis.lastRendered.filter(element => element.data?.query_selector === 'query-match').map(element => element.data.id);
+
+    expect(highlightedIds).toEqual([]);
+  });
+
   it('should expose solution bindings for the inspector panel', () => {
     component.querySolutions = [{
       signature: '#a=1',

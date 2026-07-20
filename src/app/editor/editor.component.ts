@@ -3,6 +3,15 @@ import * as CodeMirror from 'codemirror';
 import 'codemirror/addon/edit/matchbrackets.js';
 import 'codemirror/mode/javascript/javascript';
 
+const LIGER_TEMPLATE_NAME = /[A-Za-z][A-Za-z0-9_-]*/;
+const LIGER_BUILTIN_FUNCTIONS = ['id', 'lex', 'strip', 'superior'];
+const LIGER_TEMPLATE_DEFINITION_REGEX = new RegExp(
+  `^\\s*(${LIGER_TEMPLATE_NAME.source})(?=\\s*(?:\\([^\\n)]*\\))?\\s*:=)`
+);
+const LIGER_BUILTIN_FUNCTIONS_REGEX = new RegExp(
+  `\\b(?:${LIGER_BUILTIN_FUNCTIONS.join('|')})\\b(?=\\s*\\()`
+);
+
 CodeMirror.defineMode('nli', function() {
   return {
     token: function(stream) {
@@ -45,6 +54,20 @@ CodeMirror.defineMode('nli', function() {
 CodeMirror.defineMode("liger", function() {
   return {
     token: function(stream,state) {
+      if (stream.sol()) {
+        if (stream.match(LIGER_TEMPLATE_DEFINITION_REGEX)) {
+          return 'liger_template_definition';
+        }
+      }
+
+      if (stream.match(/^@([A-Za-z][A-Za-z0-9_-]*)/)) {
+        return 'liger_template_call';
+      }
+
+      if (stream.match(LIGER_BUILTIN_FUNCTIONS_REGEX)) {
+        return 'liger_builtin_function';
+      }
+
       if (stream.match("==>") ) {
         return "rule_separator";
       }

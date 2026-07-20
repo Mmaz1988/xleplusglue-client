@@ -55,6 +55,23 @@
   color: #ff0000;
 }
 
+.cm-liger_template_definition,
+.cm-liger_template_call {
+  font-weight: bold;
+}
+
+.cm-liger_template_definition {
+  color: #ff9d00;
+}
+
+.cm-liger_template_call {
+  color: #f062ff;
+}
+
+.cm-liger_builtin_function {
+  color: #ff6f00;
+}
+
 .cm-angular_brackets
 {
   color: #d100ff;

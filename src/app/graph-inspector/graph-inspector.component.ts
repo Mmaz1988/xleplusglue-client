@@ -401,10 +401,6 @@ export class GraphInspectorComponent implements AfterViewInit {
   }
 
   private applyQueryHighlights(elements: any[], highlightedIds: Set<string>): any[] {
-    if (!highlightedIds.size) {
-      return elements;
-    }
-
     return elements.map(element => {
       const nodeId = element?.data?.id;
       if (!nodeId) {
@@ -431,12 +427,30 @@ export class GraphInspectorComponent implements AfterViewInit {
       : [this.appliedRules[this.activeRuleIndex]].filter(Boolean);
 
     const ids = this.collectRuleHighlightedNodeIds(selectedRules.length ? selectedRules : this.appliedRules);
+    if (this.activeRuleIndex !== null) {
+      console.debug('[GraphInspector] ruleHighlightedNodeIds', {
+        activeRuleIndex: this.activeRuleIndex,
+        selectedRuleIndexes: (selectedRules.length ? selectedRules : this.appliedRules).map(rule => rule.index),
+        ids: Array.from(ids),
+      });
+      return ids;
+    }
+
+    if (ids.size) {
+      console.debug('[GraphInspector] ruleHighlightedNodeIds', {
+        activeRuleIndex: this.activeRuleIndex,
+        selectedRuleIndexes: (selectedRules.length ? selectedRules : this.appliedRules).map(rule => rule.index),
+        ids: Array.from(ids),
+      });
+      return ids;
+    }
+
     console.debug('[GraphInspector] ruleHighlightedNodeIds', {
       activeRuleIndex: this.activeRuleIndex,
       selectedRuleIndexes: (selectedRules.length ? selectedRules : this.appliedRules).map(rule => rule.index),
-      ids: Array.from(ids),
+      ids: Array.from(this.highlightedNodeIds),
     });
-    return ids;
+    return this.highlightedNodeIds;
   }
 
   private collectRuleHighlightedNodeIds(rules: LigerRule[]): Set<string> {
@@ -446,10 +460,6 @@ export class GraphInspectorComponent implements AfterViewInit {
       const facts = this.appliedRuleFactsByIndex[rule.index] ?? [];
       facts.forEach(fact => this.collectNodeIdsFromFact(fact).forEach(id => ids.add(id)));
     });
-
-    if (!ids.size) {
-      this.highlightedNodeIds.forEach(id => ids.add(id));
-    }
 
     return ids;
   }
@@ -514,16 +524,21 @@ export class GraphInspectorComponent implements AfterViewInit {
 
   private extractHighlightedNodeIds(payload: any): Set<string> {
     const ids = new Set<string>();
+    const hasExplicitHighlightSet = payload != null && Object.prototype.hasOwnProperty.call(payload, 'highlightedNodeIds');
 
-    const explicit = payload?.highlightedNodeIds;
-    if (Array.isArray(explicit)) {
-      explicit.forEach(value => {
-        if (value !== undefined && value !== null && String(value).trim()) {
-          ids.add(String(value));
-        }
-      });
-    } else if (explicit instanceof Set) {
-      explicit.forEach(value => ids.add(String(value)));
+    if (hasExplicitHighlightSet) {
+      const explicit = payload?.highlightedNodeIds;
+      if (Array.isArray(explicit)) {
+        explicit.forEach(value => {
+          if (value !== undefined && value !== null && String(value).trim()) {
+            ids.add(String(value));
+          }
+        });
+      } else if (explicit instanceof Set) {
+        explicit.forEach(value => ids.add(String(value)));
+      }
+
+      return ids;
     }
 
     const addFromAnnotation = (annotation: any) => {

@@ -277,7 +277,8 @@ export class GraphVisComponent implements OnInit {
       this.cy.destroy();
     }
 
-    const elements = this.applyPresetPositions(graphData ?? [], canPreserveLayout);
+    const normalizedElements = this.normalizeGraphElements(graphData ?? []);
+    const elements = this.applyPresetPositions(normalizedElements, canPreserveLayout);
 
     this.cy = cytoscape({
         container: document.getElementById(this.graphID || 'cy'), // Use the appropriate container element ID
@@ -320,9 +321,11 @@ export class GraphVisComponent implements OnInit {
       return;
     }
 
+    const normalizedGraphData = this.normalizeGraphElements(graphData ?? []);
+
     console.debug('[GraphVis] updateGraph', {
-      incomingCount: Array.isArray(graphData) ? graphData.length : 0,
-      sampleIds: (graphData ?? []).slice(0, 12).map((element) => element?.data?.id),
+      incomingCount: Array.isArray(normalizedGraphData) ? normalizedGraphData.length : 0,
+      sampleIds: normalizedGraphData.slice(0, 12).map((element) => element?.data?.id),
     });
 
     const currentIds = new Set<string>();
@@ -334,7 +337,7 @@ export class GraphVisComponent implements OnInit {
     });
 
     const nextIds = new Set<string>();
-    for (const element of graphData ?? []) {
+    for (const element of normalizedGraphData) {
       const id = element?.data?.id;
       if (id) {
         nextIds.add(String(id));
@@ -343,12 +346,12 @@ export class GraphVisComponent implements OnInit {
 
     const sameShape = currentIds.size === nextIds.size && [...currentIds].every(id => nextIds.has(id));
     if (!sameShape) {
-      this.renderGraph(graphData);
+      this.renderGraph(normalizedGraphData);
       return;
     }
 
     this.cy.batch(() => {
-      for (const element of graphData ?? []) {
+      for (const element of normalizedGraphData) {
         const data = element?.data;
         if (!data?.id) {
           continue;
@@ -383,6 +386,46 @@ export class GraphVisComponent implements OnInit {
 
     this.cy.style().update();
     this.createAndBindPoppers();
+  }
+
+  private normalizeGraphElements(graphData: any[]): any[] {
+    const elements = (graphData ?? []).map((element) => ({
+      ...element,
+      data: element?.data ? { ...element.data } : element?.data,
+      position: element?.position ? { ...element.position } : element?.position,
+    }));
+
+    const seenIds = new Map<string, number>();
+
+    return elements.map((element, index) => {
+      if (!element.data) {
+        element.data = {};
+      }
+
+      const currentId = element.data.id !== undefined && element.data.id !== null
+        ? String(element.data.id).trim()
+        : '';
+      const baseId = currentId || this.buildFallbackElementId(element, index);
+      const seenCount = seenIds.get(baseId) ?? 0;
+      seenIds.set(baseId, seenCount + 1);
+
+      element.data.id = seenCount === 0 ? baseId : `${baseId}__${seenCount + 1}`;
+      return element;
+    });
+  }
+
+  private buildFallbackElementId(element: any, index: number): string {
+    const data = element?.data ?? {};
+
+    if (data.source !== undefined || data.target !== undefined) {
+      const source = String(data.source ?? 'source');
+      const relation = String(data.label ?? data.relationLabel ?? data.edge_type ?? 'edge');
+      const target = String(data.target ?? 'target');
+      return `edge:${source}:${relation}:${target}:${index}`;
+    }
+
+    const label = String(data.label ?? data.node_type ?? 'node');
+    return `node:${label}:${index}`;
   }
 
   private captureCurrentPositions(): void {
