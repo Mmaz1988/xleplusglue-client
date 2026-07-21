@@ -10,13 +10,21 @@ export const APP_DEFAULTS = {
   },
   graphInspector: {
     rulesText: "// HIERARCHIES\n" +
+      "\n" +
+      "//Functional hierarchy\n" +
       "GF ::= SUBJ > OBJ > OBJ2 > OBL .\n" +
       "\n" +
-      "// TEMPLATES\n" +
+      "//Templates\n" +
       "GF := SUBJ | OBJ | OBL .\n" +
+      "\n" +
+      "DRS := IMP | NOT | IN | MERGE | SUB . \n" +
+      "\n" +
+      "BIND-PATH(#a,#b) := #a ^(PRSP>@DRS*) #b & #a NAME %a & #b NAME %b & id(%b) < id(%a).\n" +
       "\n" +
       "//Link DRs to their originating GFs\n" +
       "DR-GF-LINK(#a, #d) := #a SRC %a & #b SYN-ID %b & %a == %b & #b ^(in_set>GLUE>g::>cproj) #c phi #d .\n" +
+      "\n" +
+      "// ***** PRONOUNS *****\n" +
       "\n" +
       "//Minimal complete nucleus path\n" +
       "MCN-PATH(#a,#b,#c) := #a ^(@GF*:~(->SUBJ)) #b & #b ^(@GF) #c.\n" +
@@ -29,11 +37,9 @@ export const APP_DEFAULTS = {
       "\n" +
       "COARG(#a,#b) := @COARG-PATH(#a,#r,#s) & #s !(@GF) #b & id(#a) != id(#b).\n" +
       "\n" +
-      "\n" +
       "DR-PRECEDENCE(#a,#b) := #a NAME %a & #a NODE_TYPE referent &\n" +
       "                        #b NAME %b & #b NODE_TYPE referent &\n" +
-      "\t\t\tid(%a) < id(%b).  \n" +
-      "\n" +
+      "\t\t\t            id(%a) < id(%b).  \n" +
       "\n" +
       "//Personal pronoun binding constraint (negative constraint)\n" +
       "// For preventing:\n" +
@@ -42,6 +48,8 @@ export const APP_DEFAULTS = {
       "//EX.: John_i likes him_i\n" +
       "//Ex.: John thinks that he likes him. \n" +
       "//PERS-BIND-FILTER(#a,#b) := \n" +
+      "\n" +
+      "// ***** PRESUPPOSITIONS *****\n" +
       "\n" +
       "// RULES\n" +
       "\n" +
@@ -53,9 +61,8 @@ export const APP_DEFAULTS = {
       "//Reflexives\n" +
       "#a ant #a & #a SYNSEM #b & @REFL-BIND(#b,#c) & #c ^(SYNSEM) #d ==> #a POSSIBLE-ANT #d.\n" +
       "\n" +
-      "\n" +
       "//Personal pronouns\n" +
-      "#a ant #a & #a SYNSEM #b & #c SYNSEM #d &\n" +
+      "#a ant #a & #a SYNSEM #b PRON-TYPE 'pers' & #c SYNSEM #d & \n" +
       "@DR-PRECEDENCE(#c,#a) & -(@COARG(#b,#d)) ==> #a POTENTIAL-ANT #c.\n" +
       "\n" +
       "//For cases like EX.: Kim thought he saw him\" \n" +
@@ -63,7 +70,16 @@ export const APP_DEFAULTS = {
       "@DR-PRECEDENCE(#c,#a) & @COARG(#b,#d) & #a POTENTIAL-ANT #e & \n" +
       "#c POTENTIAL-ANT #f & id(#f) != id(#e) ?=> #a POSSIBLE-ANT #e & #c POSSIBLE-ANT #f.\n" +
       "\n" +
-      "edge=POTENTIAL-ANT =-> 0.",
+      "//Preparing for elimination of redundant edges (reflexive closure)\n" +
+      "#a POTENTIAL-ANT #c & \n" +
+      "-(#a POTENTIAL-ANT #b POTENTIAL-ANT #c) &\n" +
+      "-(#a POSSIBLE-ANT) ==> #a POSSIBLE-ANT #c.\n" +
+      "\n" +
+      "edge=POTENTIAL-ANT =-> 0.\n" +
+      "\n" +
+      "//Presupposition rules\n" +
+      "//search for potential binders\n" +
+      "@BIND-PATH(#a,#b) ==> #a POTENTIAL-BINDER #b .",
     queryText: `// hierarchies here
 GF ::= SUBJ > OBJ > OBL .
 

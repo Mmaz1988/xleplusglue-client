@@ -64,7 +64,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   canOpenMergedGraphInspector(): boolean {
-    return !!this.liger?.structureJson && !!this.currentSemanticStructure();
+    const betaReduce = this.glue?.gswbPreferences?.gswbPreferences?.betaReduce;
+    return betaReduce === true && !!this.liger?.structureJson && !!this.currentSemanticStructure();
   }
 
   private currentSemanticStructure(): LigerStructure | null {
@@ -75,8 +76,12 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   private saveWorkspaceState(): void {
-    const ligerState = this.liger?.captureState() ?? null;
-    const gswbState = this.glue?.captureState() ?? null;
+    const ligerState = typeof this.liger?.captureState === 'function'
+      ? this.liger.captureState()
+      : null;
+    const gswbState = typeof this.glue?.captureState === 'function'
+      ? this.glue.captureState()
+      : null;
 
     if (ligerState) {
       this.workspaceState.saveLiger(ligerState);

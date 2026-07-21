@@ -52,6 +52,9 @@ describe('GlueInterfaceComponent', () => {
           solution: 'drs example',
           graph: { id: 'drs-1', text: 'drs example', constraints: [], annotations: [], choiceSpace: {} }
         }]
+      },
+      gswbPreferences: {
+        gswbPreferences: { betaReduce: true }
       }
     } as any;
 
@@ -66,5 +69,39 @@ describe('GlueInterfaceComponent', () => {
     expect(extras.state.uploadedFileName).toBe('merged-graph.json');
     expect(extras.state.uploadedContent).toContain('merged-graph');
     expect(extras.state.uploadedContent).toContain('constraints');
+  });
+
+  it('does not allow graph post-processing for non-beta-reduced semantics', () => {
+    component.liger = {
+      structureJson: { id: 'syntax-graph' }
+    } as any;
+    component.glue = {
+      semvis: {
+        index: 0,
+        items: [{ graph: { id: 'drs-1' } }]
+      },
+      gswbPreferences: {
+        gswbPreferences: { betaReduce: false }
+      }
+    } as any;
+
+    expect(component.canOpenMergedGraphInspector()).toBeFalse();
+  });
+
+  it('allows graph post-processing for beta-reduced unresolved DRSs', () => {
+    component.liger = {
+      structureJson: { id: 'syntax-graph' }
+    } as any;
+    component.glue = {
+      semvis: {
+        index: 0,
+        items: [{ graph: { id: 'drs-1' } }]
+      },
+      gswbPreferences: {
+        gswbPreferences: { betaReduce: true, resolveDrs: false }
+      }
+    } as any;
+
+    expect(component.canOpenMergedGraphInspector()).toBeTrue();
   });
 });

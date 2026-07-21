@@ -52,6 +52,18 @@ export class GswbSettingsComponent {
       }
     });
 
+    this.gswbPreferencesForm.get('resolveDrs')?.valueChanges.subscribe(resolveDrs => {
+      if (resolveDrs && !this.gswbPreferencesForm.get('betaReduce')?.value) {
+        this.gswbPreferencesForm.get('betaReduce')?.setValue(true);
+      }
+    });
+
+    this.gswbPreferencesForm.get('betaReduce')?.valueChanges.subscribe(betaReduce => {
+      if (!betaReduce && this.gswbPreferencesForm.get('resolveDrs')?.value) {
+        this.gswbPreferencesForm.get('resolveDrs')?.setValue(false);
+      }
+    });
+
     // Call onSubmit whenever any value changes
     this.gswbPreferencesForm.valueChanges.subscribe(() => {
       this.onSubmit();
