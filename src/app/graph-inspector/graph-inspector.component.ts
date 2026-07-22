@@ -43,6 +43,7 @@ export class GraphInspectorComponent implements AfterViewInit {
   querySolutions: LigerQuerySolution[] = [];
   appliedRules: LigerRule[] = [];
   appliedRuleFactsByIndex: Record<number, LigerRuleAnnotationFact[]> = {};
+  appliedRuleHighlightIdsByIndex: Record<number, Set<string>> = {};
   appliedMeaningConstructors = '';
   appliedNumberOfMCsets = 0;
   ruleAnnotations: LigerRuleAnnotation[] = [];
@@ -84,7 +85,10 @@ export class GraphInspectorComponent implements AfterViewInit {
   }
 
   applyRules() {
-    if (!this.uploadedContent.trim()) {
+    const ruleContent = this.currentStructureJson.trim() || this.uploadedContent;
+    const ruleFormat: 'json' | 'prolog' = this.currentStructureJson.trim() ? 'json' : this.uploadedFormat;
+
+    if (!ruleContent.trim()) {
       this.displayMessage('Upload a graph first.', 'red');
       return;
     }
@@ -95,6 +99,7 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.activeSolutionIndex = null;
     this.appliedRules = [];
     this.appliedRuleFactsByIndex = {};
+    this.appliedRuleHighlightIdsByIndex = {};
     this.appliedMeaningConstructors = '';
     this.appliedNumberOfMCsets = 0;
     this.ruleAnnotations = [];
@@ -103,8 +108,8 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.activeRuleAnnotationIndex = null;
 
     const ruleRequest: LigerStructureRuleRequest = {
-      content: this.uploadedContent,
-      format: this.uploadedFormat,
+      content: ruleContent,
+      format: ruleFormat,
       id: this.uploadedFileName,
       ruleString: this.rulesText,
     };
@@ -200,6 +205,7 @@ export class GraphInspectorComponent implements AfterViewInit {
     this.highlightedNodeIds = new Set<string>();
     this.appliedRules = [];
     this.appliedRuleFactsByIndex = {};
+    this.appliedRuleHighlightIdsByIndex = {};
     this.appliedMeaningConstructors = '';
     this.appliedNumberOfMCsets = 0;
     this.ruleAnnotations = [];
@@ -306,6 +312,7 @@ export class GraphInspectorComponent implements AfterViewInit {
     const selectedAnnotation = this.ruleAnnotations[index];
     this.appliedRules = Array.isArray(selectedAnnotation?.appliedRules) ? selectedAnnotation.appliedRules : [];
     this.appliedRuleFactsByIndex = this.extractRuleFactsByIndex(selectedAnnotation);
+    this.appliedRuleHighlightIdsByIndex = this.extractRuleHighlightIdsByIndex(selectedAnnotation);
     this.appliedMeaningConstructors = typeof selectedAnnotation?.meaningConstructors === 'string' ? selectedAnnotation.meaningConstructors : '';
     this.appliedNumberOfMCsets = Number.isFinite(selectedAnnotation?.numberOfMCsets) ? selectedAnnotation.numberOfMCsets : 0;
     this.highlightedNodeIds = this.extractHighlightedNodeIds(selectedAnnotation);
@@ -457,6 +464,12 @@ export class GraphInspectorComponent implements AfterViewInit {
     const ids = new Set<string>();
 
     rules.forEach(rule => {
+      const explicitIds = this.appliedRuleHighlightIdsByIndex[rule.index];
+      if (explicitIds) {
+        explicitIds.forEach(id => ids.add(id));
+        return;
+      }
+
       const facts = this.appliedRuleFactsByIndex[rule.index] ?? [];
       facts.forEach(fact => this.collectNodeIdsFromFact(fact).forEach(id => ids.add(id)));
     });
@@ -507,6 +520,27 @@ export class GraphInspectorComponent implements AfterViewInit {
     console.debug('[GraphInspector] parsed addedAnnotationsByRule', Object.keys(factsByIndex));
 
     return factsByIndex;
+  }
+
+  private extractRuleHighlightIdsByIndex(payload: any): Record<number, Set<string>> {
+    const highlightsByIndex: Record<number, Set<string>> = {};
+    const rawHighlights = payload?.highlightedNodeIdsByRule;
+
+    if (!rawHighlights || typeof rawHighlights !== 'object') {
+      return highlightsByIndex;
+    }
+
+    Object.entries(rawHighlights).forEach(([ruleIndex, ids]) => {
+      if (Array.isArray(ids)) {
+        highlightsByIndex[Number(ruleIndex)] = new Set(
+          ids
+            .filter(id => id !== undefined && id !== null && String(id).trim())
+            .map(id => String(id))
+        );
+      }
+    });
+
+    return highlightsByIndex;
   }
 
   ruleFacts(rule: LigerRule): LigerRuleAnnotationFact[] {

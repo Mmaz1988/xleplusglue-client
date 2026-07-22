@@ -26,6 +26,7 @@ export interface LigerRuleAnnotation {
   numberOfMCsets?: number;
   axioms?: string[];
   highlightedNodeIds?: string[];
+  highlightedNodeIdsByRule?: Record<string, string[]>;
   addedAnnotationsByRule?: Record<string, LigerRuleAnnotationFact[]>;
 }
 

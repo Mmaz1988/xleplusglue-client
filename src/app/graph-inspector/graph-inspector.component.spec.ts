@@ -49,6 +49,7 @@ describe('GraphInspectorComponent', () => {
               graphElements: [{ data: { id: 'branch-1-node' } }],
               semantics: ''
             },
+            structureJson: { id: 'branch-1', constraints: [], annotations: [], choiceSpace: {} },
             appliedRules: [],
             meaningConstructors: '',
             numberOfMCsets: 0,
@@ -61,6 +62,7 @@ describe('GraphInspectorComponent', () => {
               graphElements: [{ data: { id: 'branch-2-node' } }],
               semantics: ''
             },
+            structureJson: { id: 'branch-2', constraints: [], annotations: [], choiceSpace: {} },
             appliedRules: [],
             meaningConstructors: '',
             numberOfMCsets: 0,
@@ -215,6 +217,37 @@ describe('GraphInspectorComponent', () => {
     const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
     expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['branch-1-node']);
     expect(component.ruleAnnotations.length).toBe(2);
+  });
+
+  it('should apply rules to the currently selected structure instead of the original upload', () => {
+    component.uploadedContent = '{"id":"original","constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.uploadedFormat = 'json';
+    component.uploadedFileName = 'merged-graph.json';
+    component.currentStructureJson = '{"id":"selected-branch","constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.rulesText = '--replace(true);';
+
+    component.applyRules();
+
+    const request = dataServiceMock.ligerApplyRulesToStructure.calls.mostRecent().args[0];
+    expect(request.content).toContain('selected-branch');
+    expect(request.content).not.toContain('original');
+    expect(request.format).toBe('json');
+  });
+
+  it('should apply a later rule to the selected branch structure', () => {
+    component.uploadedContent = '{"id":"original","constraints":[],"annotations":[],"choiceSpace":{}}';
+    component.uploadedFormat = 'json';
+    component.uploadedFileName = 'merged-graph.json';
+    component.rulesText = '#a SUBJ #b ?=> #a TOP #b';
+
+    component.applyRules();
+    component.selectRuleAnnotation(1);
+    component.rulesText = '--replace(true);';
+    component.applyRules();
+
+    const request = dataServiceMock.ligerApplyRulesToStructure.calls.mostRecent().args[0];
+    expect(request.content).toContain('branch-2');
+    expect(request.content).not.toContain('original');
   });
 
   it('should expose all rule branches when a rule forks the structure', () => {
