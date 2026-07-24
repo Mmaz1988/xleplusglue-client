@@ -124,6 +124,29 @@ button.chip.selected.current-hit{
   padding: 8px;
 }
 
+.sem-vis {
+  position: relative;
+}
+
+.solution-action-tag {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  border: 1px solid #74a9c6;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: #eef9ff;
+  color: #16445b;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.solution-action-tag:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .sem-svg svg {
   display: block;
   max-width: 100%;

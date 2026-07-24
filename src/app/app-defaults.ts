@@ -6,7 +6,7 @@ export const APP_DEFAULTS = {
     ligerRulesPath: './liger_resources/rules/basic_axiom_rules.txt',
   },
   liger: {
-    sentence: 'Kim thought that he said that he saw a dog.',
+    sentence: 'Kim told a man about himself',
   },
   graphInspector: {
     rulesText: "// HIERARCHIES\n" +

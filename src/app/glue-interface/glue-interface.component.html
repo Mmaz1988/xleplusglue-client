@@ -59,4 +59,23 @@
     [initialUploadedFileName]="mergedStructureFileName"
     [initialGraphElements]="mergedGraphElements">
   </app-graph-inspector>
+  <div class="pcdrs-actions">
+    <button type="button" (click)="generatePcdrs()" [disabled]="!canGeneratePcdrs() || pcdrsLoading">
+      <span *ngIf="!pcdrsLoading">Generate PCDRS</span>
+      <span *ngIf="pcdrsLoading">Generating PCDRS...</span>
+    </button>
+    <button type="button" (click)="collapseAllAnaphora()" [disabled]="!canCollapseAllAnaphora() || collapseAnaphoraLoading">
+      <span *ngIf="!collapseAnaphoraLoading">Collapse all</span>
+      <span *ngIf="collapseAnaphoraLoading">Collapsing...</span>
+    </button>
+  </div>
+  <div #pcdrsResults class="pcdrs-results" *ngIf="pcdrsSolutions.length" tabindex="-1">
+    <h3>{{ showCollapsedAnaphora ? 'Collapsed anaphora' : 'PCDRS solutions' }}</h3>
+    <app-sem-vis
+      #pcdrsSemvis
+      [items]="pcdrsDisplaySolutions"
+      [svgSolutions]="true"
+      [solutionToggleLabel]="canToggleCollapsedAnaphora() ? (showCollapsedAnaphora ? 'Show PCDRS' : 'Show collapsed') : null"
+      (solutionToggle)="toggleCollapsedAnaphora()"></app-sem-vis>
+  </div>
 </section>

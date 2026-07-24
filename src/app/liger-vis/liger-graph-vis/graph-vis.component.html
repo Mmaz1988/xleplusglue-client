@@ -1,7 +1,18 @@
 
-<div>
+<div class="graph-view">
   <div class="cy" [id]="graphID" #graphContainer></div>
-  <button (click)="resizeToDefault()">Resize to Default</button>
-  <button (click)="toggleNodes()">Toggle c-structure</button>
+  <fieldset class="structure-filters">
+    <legend>Show structures</legend>
+    <label *ngFor="let structure of availableStructureFilters">
+      <input
+        type="checkbox"
+        [checked]="isStructureVisible(structure.key)"
+        (change)="setStructureVisibility(structure.key, $any($event.target).checked)">
+      {{ structure.label }}
+    </label>
+  </fieldset>
+  <div class="graph-actions">
+    <button (click)="resizeToDefault()">Resize to Default</button>
+  </div>
   <app-sub-graph-dialog [subgraphID] ="'sub' + graphID" [subgraphStyle]="graphStyle" #subgraphDialog></app-sub-graph-dialog>
 </div>

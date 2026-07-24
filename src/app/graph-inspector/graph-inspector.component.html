@@ -11,31 +11,30 @@
   </button>
 </div>
 
-<div class="editor-section">
-  <div class="editor-label">LiGER rules</div>
-  <div class="editor-restr">
-    <app-editor #rulesEditor [mode]="'liger'" [showControls]="false" [initialContent]="rulesText" (contentChange)="rulesText = $event"></app-editor>
+<div class="inspector-editors">
+  <div class="editor-section">
+    <div class="editor-label">LiGER rules</div>
+    <div class="editor-restr">
+      <app-editor #rulesEditor [mode]="'liger'" [showControls]="false" [initialContent]="rulesText" (contentChange)="rulesText = $event"></app-editor>
+    </div>
+    <button type="button" (click)="applyRules()" [disabled]="loading || !uploadedContent.trim()">
+      <span *ngIf="!loading">Apply rules</span>
+      <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      <span *ngIf="loading">Loading...</span>
+    </button>
   </div>
-  <button type="button" (click)="applyRules()" [disabled]="loading || !uploadedContent.trim()">
-    <span *ngIf="!loading">Apply rules</span>
-    <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-    <span *ngIf="loading">Loading...</span>
-  </button>
-</div>
 
-<div class="editor-section">
-  <div class="editor-label">Graph query</div>
-  <div class="inspector-help">
-    You can prepend template and hierarchy definitions above the query, one per line.
+  <div class="editor-section">
+    <div class="editor-label">Graph query</div>
+    <div class="editor-restr">
+      <app-editor #queryEditor [mode]="'liger'" [showControls]="false" [initialContent]="queryText" (contentChange)="queryText = $event"></app-editor>
+    </div>
+    <button type="button" (click)="runQuery()" [disabled]="queryLoading">
+      <span *ngIf="!queryLoading">Run query</span>
+      <span *ngIf="queryLoading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      <span *ngIf="queryLoading">Loading...</span>
+    </button>
   </div>
-  <div class="editor-restr">
-    <app-editor #queryEditor [mode]="'liger'" [showControls]="false" [initialContent]="queryText" (contentChange)="queryText = $event"></app-editor>
-  </div>
-  <button type="button" (click)="runQuery()" [disabled]="queryLoading">
-    <span *ngIf="!queryLoading">Run query</span>
-    <span *ngIf="queryLoading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-    <span *ngIf="queryLoading">Loading...</span>
-  </button>
 </div>
 
 <div class="errorhandling" #errorhandle></div>
@@ -44,7 +43,7 @@
   {{ queryResult }}
 </div>
 
-<div class="graph-results-layout">
+<div #graphResults class="graph-results-layout" tabindex="-1">
   <div class="graph-shell">
     <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>
   </div>

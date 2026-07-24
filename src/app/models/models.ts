@@ -162,10 +162,28 @@ export interface GswbDiscriminant {
 }
 
 export interface GswbSolution {
-solution: string;
-id: string;
-sourceIndex?: number;
-graph?: LigerStructure;
+  solution: string;
+  id: string;
+  sourceIndex?: number;
+  graph?: LigerStructure;
+  semantic?: string;
+  anaphoraMapping?: string;
+}
+
+export interface GswbPcdrsRequest {
+  semantic: string;
+  parentSolutionId?: string;
+  mergedStructure: LigerStructure;
+}
+
+export interface GswbPcdrsOutput {
+  parentSolutionId?: string;
+  solutions: GswbSolution[];
+}
+
+export interface GswbCollapseAnaphoraRequest {
+  semantic: string;
+  parentSolutionId?: string;
 }
 
 export interface GswbOutput {

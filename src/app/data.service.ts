@@ -22,6 +22,10 @@ import {
   vampireRequest,
   vampireResponse,
   GswbBatchOutput,
+  GswbPcdrsOutput,
+  GswbPcdrsRequest,
+  GswbCollapseAnaphoraRequest,
+  GswbSolution,
   LigerSolutionAnnotationResponse,
   vampireMultipleRequest, vampireMultipleResponse,
   VampireSessionSummary,
@@ -47,6 +51,14 @@ export class DataService {
 
   gswbBatchDeduce(gswbBatchRequest): Observable<any> {
     return this.http.post<GswbMultipleRequest>(`${this.gswbpage}/gswb_batch_proof`,gswbBatchRequest);
+  }
+
+  gswbGeneratePcdrs(request: GswbPcdrsRequest): Observable<GswbPcdrsOutput> {
+    return this.http.post<GswbPcdrsOutput>(`${this.gswbpage}/generate_pcdrs`, request);
+  }
+
+  gswbCollapseAnaphora(request: GswbCollapseAnaphoraRequest): Observable<GswbSolution> {
+    return this.http.post<GswbSolution>(`${this.gswbpage}/collapse_anaphora`, request);
   }
 
   getLastGswbSession(sessionKey: string = this.defaultRedisSessionKey): Observable<GswbBatchOutput> {

@@ -1,4 +1,4 @@
-import {Component, ViewChild, AfterViewInit, Output, Input, EventEmitter} from '@angular/core';
+import {ChangeDetectorRef, Component, ViewChild, AfterViewInit, Output, Input, EventEmitter} from '@angular/core';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import { EditorComponent } from '../editor/editor.component';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
@@ -19,6 +19,12 @@ export class SemVisComponent implements AfterViewInit {
 
   @Input() meaningConstructors: string = '';
   @Input() svgSolutions = false;
+  @Input() solutionActionLabel: string | null = null;
+  @Input() solutionActionDisabled = false;
+  @Output() solutionAction = new EventEmitter<void>();
+  @Input() solutionToggleLabel: string | null = null;
+  @Input() solutionToggleDisabled = false;
+  @Output() solutionToggle = new EventEmitter<void>();
 
   @Input()
   set items(value: GswbSolution[]) {
@@ -59,7 +65,7 @@ export class SemVisComponent implements AfterViewInit {
   scope_rows: DiscRow[] = [];
   mc_rows: DiscRow[] = [];
 
-  constructor(private sanitizer: DomSanitizer) {}
+  constructor(private sanitizer: DomSanitizer, private changeDetector: ChangeDetectorRef) {}
 
   private assignItems(items: GswbSolution[]): void {
     this._items = Array.isArray(items) ? items : [];
@@ -72,12 +78,16 @@ export class SemVisComponent implements AfterViewInit {
   ngAfterViewInit(): void {
     this.viewReady = true;
 
-    if (this.pendingValue !== null) {
+    if (this.svgSolutions) {
+      this.pendingValue = null;
+      this.applyCurrent();
+    } else if (this.pendingValue !== null && this.sem) {
       this.sem.updateContent(this.pendingValue);
       this.pendingValue = null;
     } else {
       this.applyCurrent();
     }
+    this.changeDetector.detectChanges();
   }
 
 

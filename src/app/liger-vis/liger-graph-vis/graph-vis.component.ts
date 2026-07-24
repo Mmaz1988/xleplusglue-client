@@ -5,6 +5,8 @@ import popper from 'cytoscape-popper';
 import tippy from 'tippy.js';
 import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
 
+type StructureType = 'c' | 'f' | 'd' | 'g' | 'annotation';
+
 cytoscape.use(dagre);
 cytoscape.use(popper);
 
@@ -198,6 +200,21 @@ export class GraphVisComponent implements OnInit {
 
   @Input() graphID!: string;
   @Input() graphStyle: 'liger' = 'liger';
+  readonly structureFilters: Array<{ key: StructureType; label: string }> = [
+    { key: 'c', label: 'Show c-structure' },
+    { key: 'f', label: 'Show f-structure' },
+    { key: 'd', label: 'Show d-structure' },
+    { key: 'g', label: 'Show g-structure' },
+    { key: 'annotation', label: 'Show annotations' },
+  ];
+  private structureVisibility: Record<StructureType, boolean> = {
+    c: true,
+    f: true,
+    d: true,
+    g: true,
+    annotation: true,
+  };
+  availableStructureFilters: Array<{ key: StructureType; label: string }> = [];
   private cy: Core;
   private nodesHidden: boolean = false;
   private selector = 'node[node_type="cnode"]';
@@ -205,6 +222,7 @@ export class GraphVisComponent implements OnInit {
   private readonly typeCompactionPullStrength = 0.28;
   private readonly typeCompactionMaxShift = 90;
   private lastNodePositions = new Map<string, { x: number; y: number }>();
+  private lastGraphData: any[] = [];
 
   defaultWidth = '800px';
   defaultHeight = '600px';
@@ -266,6 +284,8 @@ export class GraphVisComponent implements OnInit {
   }
 
   renderGraph(graphData, preserveLayout = false): void {
+    this.lastGraphData = this.cloneGraphElements(graphData ?? []);
+    this.updateAvailableStructureFilters(this.lastGraphData);
     const canPreserveLayout = preserveLayout && this.lastNodePositions.size > 0;
 
     if (this.cy) {
@@ -277,7 +297,7 @@ export class GraphVisComponent implements OnInit {
       this.cy.destroy();
     }
 
-    const normalizedElements = this.normalizeGraphElements(graphData ?? []);
+    const normalizedElements = this.normalizeGraphElements(this.visibleGraphElements(this.lastGraphData));
     const elements = this.applyPresetPositions(normalizedElements, canPreserveLayout);
 
     this.cy = cytoscape({
@@ -316,12 +336,14 @@ export class GraphVisComponent implements OnInit {
   }
 
   updateGraph(graphData: any[]): void {
+    this.lastGraphData = this.cloneGraphElements(graphData ?? []);
+    this.updateAvailableStructureFilters(this.lastGraphData);
     if (!this.cy) {
-      this.renderGraph(graphData);
+      this.renderGraph(this.lastGraphData);
       return;
     }
 
-    const normalizedGraphData = this.normalizeGraphElements(graphData ?? []);
+    const normalizedGraphData = this.normalizeGraphElements(this.visibleGraphElements(this.lastGraphData));
 
     console.debug('[GraphVis] updateGraph', {
       incomingCount: Array.isArray(normalizedGraphData) ? normalizedGraphData.length : 0,
@@ -499,6 +521,16 @@ export class GraphVisComponent implements OnInit {
     graphContainer.style.height = this.defaultHeight;
   }
 
+  isStructureVisible(type: StructureType): boolean {
+    return this.structureVisibility[type];
+  }
+
+  setStructureVisibility(type: StructureType, visible: boolean): void {
+    this.structureVisibility[type] = visible;
+    // Re-run Dagre after filtering so the remaining graph gets a fresh layout.
+    this.renderGraph(this.lastGraphData);
+  }
+
   showDialog(){
 
       this.subgraphDialog.subgraphStyle = this.graphStyle
@@ -518,6 +550,69 @@ export class GraphVisComponent implements OnInit {
 
       this.nodesHidden = !this.nodesHidden;
     });
+  }
+
+  private visibleGraphElements(elements: any[]): any[] {
+    const hiddenNodeIds = new Set(
+      elements
+        .filter(element => !element?.data?.source && !element?.data?.target)
+        .filter(element => {
+          const type = this.structureType(element);
+          return type !== null && !this.isStructureVisible(type);
+        })
+        .map(element => String(element.data.id))
+    );
+
+    return elements.filter(element => {
+      const data = element?.data;
+      if (!data) {
+        return false;
+      }
+
+      if (data.source !== undefined || data.target !== undefined) {
+        return !hiddenNodeIds.has(String(data.source)) && !hiddenNodeIds.has(String(data.target));
+      }
+
+      return !hiddenNodeIds.has(String(data.id));
+    });
+  }
+
+  private structureType(element: any): StructureType | null {
+    const data = element?.data ?? {};
+    const rawType = String(data.node_type ?? data.structure_type ?? data.structure ?? '').toLowerCase();
+    const normalizedType = rawType.replace(/[_\s]/g, '-');
+
+    if (normalizedType === 'c' || normalizedType === 'cnode' || normalizedType === 'c-structure') return 'c';
+    if (normalizedType === 'f' || normalizedType === 'fnode' || normalizedType === 'f-structure' || normalizedType === 'input') return 'f';
+    if (normalizedType === 'd' || normalizedType === 'dnode' || normalizedType === 'd-structure'
+      || normalizedType === 'drt' || ['root', 'state', 'referent', 'value', 'condition'].includes(normalizedType)) return 'd';
+    if (normalizedType === 'g' || normalizedType === 'gnode' || normalizedType === 'g-structure' || normalizedType === 'glue') return 'g';
+    if (normalizedType === 'annotation' || normalizedType === 'anode') return 'annotation';
+
+    return null;
+  }
+
+  private updateAvailableStructureFilters(elements: any[]): void {
+    const presentTypes = new Set<StructureType>();
+
+    elements
+      .filter(element => !element?.data?.source && !element?.data?.target)
+      .forEach(element => {
+        const type = this.structureType(element);
+        if (type) {
+          presentTypes.add(type);
+        }
+      });
+
+    this.availableStructureFilters = this.structureFilters.filter(structure => presentTypes.has(structure.key));
+  }
+
+  private cloneGraphElements(elements: any[]): any[] {
+    return elements.map(element => ({
+      ...element,
+      data: element?.data ? { ...element.data } : element?.data,
+      position: element?.position ? { ...element.position } : element?.position,
+    }));
   }
 
   private compactByNodeType(): void {

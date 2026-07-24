@@ -1,5 +1,21 @@
 <div class="editor-restr">
   <div class="sem-vis">
+    <button
+      *ngIf="solutionActionLabel"
+      type="button"
+      class="solution-action-tag"
+      [disabled]="solutionActionDisabled"
+      (click)="solutionAction.emit()">
+      {{ solutionActionLabel }}
+    </button>
+    <button
+      *ngIf="solutionToggleLabel"
+      type="button"
+      class="solution-action-tag solution-toggle-tag"
+      [disabled]="solutionToggleDisabled"
+      (click)="solutionToggle.emit()">
+      {{ solutionToggleLabel }}
+    </button>
 
     <!-- Your existing controls -->
     <div class="controls" *ngIf="items?.length; else noItems">

@@ -42,8 +42,10 @@
 </div>
 
 <div class="ligergraphcontainer">
-<app-graph-vis #cy1 [graphID]="'liger-graph'" ></app-graph-vis>
-<button (click)="showDialog()">Show dialog</button>
+  <app-graph-vis #cy1 [graphID]="'liger-graph'"></app-graph-vis>
+  <div class="graph-actions">
+    <button (click)="showDialog()">Show dialog</button>
+  </div>
 </div><br>
 </app-toggle-display>
 

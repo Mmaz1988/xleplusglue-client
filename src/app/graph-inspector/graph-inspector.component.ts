@@ -13,6 +13,7 @@ import { APP_DEFAULTS } from '../app-defaults';
 export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   private preloadedGraphElements: any[] = [];
 
+
   @Input() initialUploadedContent = '';
   @Input() initialUploadedFileName = 'uploaded-graph';
   @Input() initialGraphElements: any[] = [];
@@ -58,6 +59,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   activeRuleAnnotationIndex: number | null = null;
 
   @ViewChild('cy1') cy1: GraphVisComponent;
+  @ViewChild('graphResults') graphResults: ElementRef<HTMLElement>;
   @ViewChild('errorhandle') errorhandle: ElementRef;
   @ViewChild('rulesEditor') rulesEditor: EditorComponent;
   @ViewChild('queryEditor') queryEditor: EditorComponent;
@@ -162,6 +164,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
           return;
         }
         this.displayMessage('Rules applied.', 'green');
+        this.focusGraphResults();
       },
       error => {
         this.loading = false;
@@ -651,6 +654,17 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   private updateGraphResponse(graphElements: any[]): void {
     this.baseGraphElements = this.cloneGraphElements(graphElements);
     this.refreshGraph();
+  }
+
+  private focusGraphResults(): void {
+    setTimeout(() => {
+      const target = this.graphResults?.nativeElement;
+      if (!target) {
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    }, 0);
   }
 
   private updateCurrentStructureJson(structureJson?: LigerStructure | Record<string, unknown> | null): void {

@@ -10,7 +10,7 @@ describe('GlueInterfaceComponent', () => {
   let component: GlueInterfaceComponent;
   let fixture: ComponentFixture<GlueInterfaceComponent>;
   let routerMock: { navigate: jasmine.Spy };
-  let dataServiceMock: { ligerMergeStructure: jasmine.Spy };
+  let dataServiceMock: { ligerMergeStructure: jasmine.Spy; gswbGeneratePcdrs: jasmine.Spy; gswbCollapseAnaphora: jasmine.Spy };
 
   beforeEach(() => {
     routerMock = {
@@ -20,6 +20,12 @@ describe('GlueInterfaceComponent', () => {
       ligerMergeStructure: jasmine.createSpy('ligerMergeStructure').and.returnValue(of({
         graph: { graphElements: [{ data: { id: 'm1', label: 'merged' } }] },
         structureJson: { id: 'merged-graph', text: 'merged graph', constraints: [], annotations: [], choiceSpace: {} }
+      })),
+      gswbGeneratePcdrs: jasmine.createSpy('gswbGeneratePcdrs').and.returnValue(of({
+        solutions: [{ id: 's1-pcdrs-1', solution: '<svg></svg>' }]
+      })),
+      gswbCollapseAnaphora: jasmine.createSpy('gswbCollapseAnaphora').and.callFake((request: any) => of({
+        id: `${request.parentSolutionId}-collapsed`, solution: '<svg></svg>'
       }))
     };
 
@@ -125,5 +131,82 @@ describe('GlueInterfaceComponent', () => {
     } as any;
 
     expect(component.canOpenMergedGraphInspector()).toBeTrue();
+  });
+
+  it('generates PCDRS only from the selected merged solution', () => {
+    component.showInlinePostProcessing = true;
+    component.mergedStructureContent = JSON.stringify({
+      constraints: [],
+      annotations: [],
+      choiceSpace: {}
+    });
+    component.glue = {
+      semvis: {
+        index: 0,
+        items: [{ id: 's1', semantic: '([x1],[dog(x1)])', graph: { id: 'drs-1' } }]
+      }
+    } as any;
+
+    component.generatePcdrs();
+
+    expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledWith({
+      semantic: '([x1],[dog(x1)])',
+      parentSolutionId: 's1',
+      mergedStructure: { constraints: [], annotations: [], choiceSpace: {} }
+    });
+    expect(component.pcdrsSolutions.length).toBe(1);
+  });
+
+  it('uses the rule-applied structure for PCDRS generation', () => {
+    component.showInlinePostProcessing = true;
+    component.mergedStructureContent = JSON.stringify({ constraints: [], annotations: [] });
+    component.inlineGraphInspector = {
+      currentStructureJson: JSON.stringify({
+        constraints: [],
+        annotations: [{ sourceNode: 'd8', relationLabel: 'POSSIBLE-ANT', targetNode: 'd6' }]
+      })
+    } as any;
+    component.glue = {
+      semvis: {
+        index: 0,
+        items: [{ id: 's1', semantic: '([d8,d6],[ant(d8)])', graph: { id: 'drs-1' } }]
+      }
+    } as any;
+
+    component.generatePcdrs();
+
+    expect(dataServiceMock.gswbGeneratePcdrs.calls.mostRecent().args[0].mergedStructure.annotations)
+      .toEqual([{ sourceNode: 'd8', relationLabel: 'POSSIBLE-ANT', targetNode: 'd6' }]);
+  });
+
+  it('collapses all PCDRS solutions and switches their display', () => {
+    component.pcdrsSolutions = [{
+      id: 's1-pcdrs-1',
+      solution: '<svg></svg>',
+      semantic: '([x1,x2],[loves(x2,x1)]),A:[a(x2,x1)]'
+    }, {
+      id: 's1-pcdrs-2',
+      solution: '<svg></svg>',
+      semantic: '([x1,x2],[ant(x2)]),A:[a(x2,x1)]'
+    }];
+    component.pcdrsSemvis = { index: 0, items: component.pcdrsSolutions } as any;
+
+    component.collapseAllAnaphora();
+
+    expect(dataServiceMock.gswbCollapseAnaphora).toHaveBeenCalledWith({
+      semantic: '([x1,x2],[loves(x2,x1)]),A:[a(x2,x1)]',
+      parentSolutionId: 's1-pcdrs-1'
+    });
+    expect(dataServiceMock.gswbCollapseAnaphora).toHaveBeenCalledTimes(2);
+    expect(component.collapsedPcdrsById['s1-pcdrs-1']).toBeTruthy();
+    expect(component.collapsedPcdrsById['s1-pcdrs-2']).toBeTruthy();
+    expect(component.showCollapsedAnaphora).toBeTrue();
+    expect(component.pcdrsDisplaySolutions[0].id).toBe('s1-pcdrs-1-collapsed');
+    expect(component.pcdrsDisplaySolutions[1].id).toBe('s1-pcdrs-2-collapsed');
+
+    component.toggleCollapsedAnaphora();
+
+    expect(component.showCollapsedAnaphora).toBeFalse();
+    expect(component.pcdrsDisplaySolutions[0].id).toBe('s1-pcdrs-1');
   });
 });

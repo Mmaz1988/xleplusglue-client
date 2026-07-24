@@ -1,11 +1,13 @@
 import { Component, ViewChild, AfterViewInit, OnDestroy, ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
 import { GswbSolution, LigerStructure } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
+import { SemVisComponent } from '../sem-vis/sem-vis.component';
 
 @Component({
   selector: 'app-glue-interface',
@@ -17,15 +19,23 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   @ViewChild('l1') liger: LigerVisComponent;
   @ViewChild('g1') glue: GswbVisComponent;
   @ViewChild('postProcessingSection') postProcessingSection?: ElementRef<HTMLElement>;
+  @ViewChild('pcdrsResults') pcdrsResults?: ElementRef<HTMLElement>;
   @ViewChild(GraphInspectorComponent) inlineGraphInspector?: GraphInspectorComponent;
+  @ViewChild('pcdrsSemvis') pcdrsSemvis?: SemVisComponent;
 
   isFirstDivMinimized = false;
   isSecondDivMinimized = false;
   showInlinePostProcessing = false;
   postProcessingLoading = false;
+  pcdrsLoading = false;
+  collapseAnaphoraLoading = false;
+  showCollapsedAnaphora = false;
   mergedStructureContent = '';
   mergedStructureFileName = 'merged-graph.json';
   mergedGraphElements: any[] = [];
+  pcdrsSolutions: GswbSolution[] = [];
+  pcdrsDisplaySolutions: GswbSolution[] = [];
+  collapsedPcdrsById: Record<string, GswbSolution> = {};
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
@@ -78,6 +88,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.mergedStructureContent = structureJson;
       this.mergedStructureFileName = 'merged-graph.json';
       this.mergedGraphElements = response.graph?.graphElements ?? [];
+      this.pcdrsSolutions = [];
+      this.pcdrsDisplaySolutions = [];
+      this.collapsedPcdrsById = {};
+      this.showCollapsedAnaphora = false;
       this.showInlinePostProcessing = true;
       setTimeout(() => this.postProcessingSection?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
     }, () => {
@@ -89,16 +103,143 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.handlePostProcessing('standalone');
   }
 
+  generatePcdrs(): void {
+    const selected = this.selectedSemanticSolution();
+    const structureContent = this.currentPostProcessedStructureContent();
+    if (!selected?.semantic || !structureContent || this.pcdrsLoading) {
+      return;
+    }
+
+    let mergedStructure: any;
+    try {
+      mergedStructure = JSON.parse(structureContent);
+    } catch {
+      return;
+    }
+
+    this.pcdrsLoading = true;
+    this.dataService.gswbGeneratePcdrs({
+      semantic: selected.semantic,
+      parentSolutionId: selected.id,
+      mergedStructure,
+    }).subscribe(response => {
+      this.pcdrsLoading = false;
+      this.pcdrsSolutions = response?.solutions ?? [];
+      this.collapsedPcdrsById = {};
+      this.showCollapsedAnaphora = false;
+      this.refreshPcdrsDisplay();
+      this.focusPcdrsResults();
+    }, () => {
+      this.pcdrsLoading = false;
+      this.pcdrsSolutions = [];
+    });
+  }
+
+  canGeneratePcdrs(): boolean {
+    return this.showInlinePostProcessing
+      && !!this.currentPostProcessedStructureContent()
+      && !!this.selectedSemanticSolution()?.semantic;
+  }
+
+  collapseAllAnaphora(): void {
+    const candidates = this.pcdrsSolutions.filter(solution =>
+      !!solution.semantic && !this.collapsedPcdrsById[solution.id]);
+    if (!candidates.length || this.collapseAnaphoraLoading) {
+      return;
+    }
+
+    this.collapseAnaphoraLoading = true;
+    forkJoin(candidates.map(solution => this.dataService.gswbCollapseAnaphora({
+      semantic: solution.semantic as string,
+      parentSolutionId: solution.id,
+    }))).subscribe(responses => {
+      this.collapseAnaphoraLoading = false;
+      responses.forEach((response, index) => {
+        if (response) {
+          this.collapsedPcdrsById[candidates[index].id] = response;
+        }
+      });
+      if (responses.length) {
+        this.showCollapsedAnaphora = true;
+      }
+      this.refreshPcdrsDisplay();
+    }, () => {
+      this.collapseAnaphoraLoading = false;
+    });
+  }
+
+  canCollapseAllAnaphora(): boolean {
+    return this.pcdrsSolutions.some(solution =>
+      !!solution.semantic && !this.collapsedPcdrsById[solution.id]);
+  }
+
+  canToggleCollapsedAnaphora(): boolean {
+    const selected = this.selectedPcdrsSolution();
+    return !!selected && !!this.collapsedPcdrsById[selected.id];
+  }
+
+  toggleCollapsedAnaphora(): void {
+    if (!this.canToggleCollapsedAnaphora()) {
+      return;
+    }
+    this.showCollapsedAnaphora = !this.showCollapsedAnaphora;
+    this.refreshPcdrsDisplay();
+  }
+
   canOpenMergedGraphInspector(): boolean {
     const betaReduce = this.glue?.gswbPreferences?.gswbPreferences?.betaReduce;
     return betaReduce === true && !!this.liger?.structureJson && !!this.currentSemanticStructure();
   }
 
   private currentSemanticStructure(): LigerStructure | null {
-    const selectedIndex = this.glue?.semvis?.index ?? 0;
-    const selected = this.glue?.semvis?.items?.[selectedIndex] as GswbSolution | undefined;
+    const selected = this.selectedSemanticSolution();
 
     return selected?.graph ?? null;
+  }
+
+  private selectedSemanticSolution(): GswbSolution | undefined {
+    const selectedIndex = this.glue?.semvis?.index ?? 0;
+    return this.glue?.semvis?.items?.[selectedIndex] as GswbSolution | undefined;
+  }
+
+  private currentPostProcessedStructureContent(): string {
+    return this.inlineGraphInspector?.currentStructureJson?.trim()
+      || this.mergedStructureContent.trim();
+  }
+
+  private selectedPcdrsSolution(): GswbSolution | undefined {
+    const selectedIndex = this.pcdrsSemvis?.index ?? 0;
+    const displayed = this.pcdrsSemvis?.items?.[selectedIndex];
+    if (!displayed) {
+      return undefined;
+    }
+    const original = this.pcdrsSolutions.find(solution => solution.id === displayed.id);
+    if (original) {
+      return original;
+    }
+    const collapsedEntry = Object.entries(this.collapsedPcdrsById)
+      .find(([, collapsed]) => collapsed.id === displayed.id);
+    return collapsedEntry
+      ? this.pcdrsSolutions.find(solution => solution.id === collapsedEntry[0])
+      : undefined;
+  }
+
+  private refreshPcdrsDisplay(): void {
+    this.pcdrsDisplaySolutions = this.pcdrsSolutions.map(solution =>
+      this.showCollapsedAnaphora && this.collapsedPcdrsById[solution.id]
+        ? this.collapsedPcdrsById[solution.id]
+        : solution);
+  }
+
+  private focusPcdrsResults(): void {
+    setTimeout(() => {
+      const target = this.pcdrsResults?.nativeElement;
+      if (!target) {
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    }, 0);
   }
 
   private saveWorkspaceState(): void {
