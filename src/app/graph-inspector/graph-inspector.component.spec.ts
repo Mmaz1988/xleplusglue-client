@@ -135,6 +135,23 @@ describe('GraphInspectorComponent', () => {
     expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['g1']);
   });
 
+  it('should render graph data supplied by the inline inspector inputs', () => {
+    component.initialUploadedContent = '{"id":"inline-graph"}';
+    component.initialUploadedFileName = 'inline-graph.json';
+    component.initialGraphElements = [{ data: { id: 'inline-node' } }];
+    component.ngOnChanges({
+      initialUploadedContent: {} as any,
+      initialUploadedFileName: {} as any,
+      initialGraphElements: {} as any,
+    });
+    component.ngAfterViewInit();
+
+    expect(component.uploadedContent).toContain('inline-graph');
+    expect(component.uploadedFileName).toBe('inline-graph.json');
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['inline-node']);
+  });
+
   it('should hydrate uploaded JSON from route state for querying', () => {
     (component as any).initializeFromRouteState({
       uploadedContent: '{"id":"merged-graph","text":"merged graph","constraints":[],"annotations":[],"choiceSpace":{}}',

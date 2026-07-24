@@ -43,10 +43,20 @@
     <app-gswb-vis
       #g1
       [canPostProcess]="canOpenMergedGraphInspector()"
-      (postProcessing)="openMergedGraphInspector()">
+      [postProcessingLoading]="postProcessingLoading"
+      (postProcessing)="handlePostProcessing($event)">
     </app-gswb-vis>
   </div>
   <button *ngIf="isSecondDivMinimized" class="toggle-button-max" (click)="isSecondDivMinimized = !isSecondDivMinimized">
     <<
   </button>
 </div>
+
+<section #postProcessingSection class="post-processing-section" *ngIf="showInlinePostProcessing">
+  <h2>Post processing</h2>
+  <app-graph-inspector
+    [initialUploadedContent]="mergedStructureContent"
+    [initialUploadedFileName]="mergedStructureFileName"
+    [initialGraphElements]="mergedGraphElements">
+  </app-graph-inspector>
+</section>

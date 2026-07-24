@@ -13,8 +13,13 @@
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
     <span *ngIf="loading">Loading...</span>
   </button>
-  <button type="button" (click)="requestPostProcessing()" [disabled]="!canPostProcess">
-    Post processing
+  <select [(ngModel)]="postProcessingMode" [disabled]="!canPostProcess || postProcessingLoading" aria-label="Post-processing destination">
+    <option value="inline">Show below in Analysis</option>
+    <option value="standalone">Open separately</option>
+  </select>
+  <button type="button" (click)="requestPostProcessing(postProcessingMode)" [disabled]="!canPostProcess || postProcessingLoading">
+    <span *ngIf="!postProcessingLoading">Post processing</span>
+    <span *ngIf="postProcessingLoading">Merging...</span>
   </button>
 </div>
 

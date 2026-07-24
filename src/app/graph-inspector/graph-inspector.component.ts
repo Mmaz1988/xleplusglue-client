@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnChanges, SimpleChanges, ViewChild } from '@angular/core';
 import { DataService } from '../data.service';
 import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
@@ -10,8 +10,12 @@ import { APP_DEFAULTS } from '../app-defaults';
   templateUrl: './graph-inspector.component.html',
   styleUrls: ['./graph-inspector.component.css']
 })
-export class GraphInspectorComponent implements AfterViewInit {
+export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   private preloadedGraphElements: any[] = [];
+
+  @Input() initialUploadedContent = '';
+  @Input() initialUploadedFileName = 'uploaded-graph';
+  @Input() initialGraphElements: any[] = [];
 
   constructor(private dataService: DataService) {
     const state = (typeof history !== 'undefined' ? history.state : null) as any;
@@ -48,6 +52,7 @@ export class GraphInspectorComponent implements AfterViewInit {
   appliedNumberOfMCsets = 0;
   ruleAnnotations: LigerRuleAnnotation[] = [];
   private highlightedNodeIds = new Set<string>();
+  private viewInitialized = false;
   activeSolutionIndex: number | null = null;
   activeRuleIndex: number | null = null;
   activeRuleAnnotationIndex: number | null = null;
@@ -58,11 +63,33 @@ export class GraphInspectorComponent implements AfterViewInit {
   @ViewChild('queryEditor') queryEditor: EditorComponent;
 
   ngAfterViewInit(): void {
+    this.viewInitialized = true;
     if (this.preloadedGraphElements.length) {
       this.baseGraphElements = this.cloneGraphElements(this.preloadedGraphElements);
       this.graphElements = this.cloneGraphElements(this.baseGraphElements);
       this.cy1.renderGraph(this.graphElements);
       this.displayMessage('Loaded graph.', 'green');
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['initialUploadedContent'] && !changes['initialUploadedFileName'] && !changes['initialGraphElements']) {
+      return;
+    }
+
+    if (this.initialUploadedContent.trim()) {
+      this.uploadedContent = this.initialUploadedContent;
+      this.currentStructureJson = this.initialUploadedContent;
+      this.uploadedFileName = this.initialUploadedFileName || 'uploaded-graph';
+    }
+
+    if (Array.isArray(this.initialGraphElements)) {
+      this.preloadedGraphElements = this.cloneGraphElements(this.initialGraphElements);
+      if (this.viewInitialized) {
+        this.baseGraphElements = this.cloneGraphElements(this.preloadedGraphElements);
+        this.graphElements = this.cloneGraphElements(this.baseGraphElements);
+        this.cy1?.renderGraph(this.graphElements);
+      }
     }
   }
 

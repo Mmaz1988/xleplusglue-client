@@ -1,10 +1,11 @@
-import { Component, ViewChild, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, ViewChild, AfterViewInit, OnDestroy, ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
 import { GswbSolution, LigerStructure } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
+import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 
 @Component({
   selector: 'app-glue-interface',
@@ -15,9 +16,16 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('l1') liger: LigerVisComponent;
   @ViewChild('g1') glue: GswbVisComponent;
+  @ViewChild('postProcessingSection') postProcessingSection?: ElementRef<HTMLElement>;
+  @ViewChild(GraphInspectorComponent) inlineGraphInspector?: GraphInspectorComponent;
 
   isFirstDivMinimized = false;
   isSecondDivMinimized = false;
+  showInlinePostProcessing = false;
+  postProcessingLoading = false;
+  mergedStructureContent = '';
+  mergedStructureFileName = 'merged-graph.json';
+  mergedGraphElements: any[] = [];
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
@@ -36,14 +44,15 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.saveWorkspaceState();
   }
 
-  openMergedGraphInspector(): void {
+  handlePostProcessing(mode: 'inline' | 'standalone'): void {
     const syntax = this.liger?.structureJson ?? null;
     const semanticStructure = this.currentSemanticStructure();
 
-    if (!syntax || !semanticStructure) {
+    if (!syntax || !semanticStructure || this.postProcessingLoading) {
       return;
     }
 
+    this.postProcessingLoading = true;
     this.dataService.ligerMergeStructure({
       syntax,
       drs: semanticStructure,
@@ -52,15 +61,32 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         ? response.structureJson
         : JSON.stringify(response?.structureJson ?? {}, null, 2);
 
-      this.router.navigate(['/graph-inspector'], {
-        state: {
-          uploadedContent: structureJson,
-          uploadedFormat: 'json',
-          uploadedFileName: 'merged-graph.json',
-          graphElements: response.graph?.graphElements ?? [],
-        }
-      });
+      this.postProcessingLoading = false;
+
+      if (mode === 'standalone') {
+        this.router.navigate(['/graph-inspector'], {
+          state: {
+            uploadedContent: structureJson,
+            uploadedFormat: 'json',
+            uploadedFileName: 'merged-graph.json',
+            graphElements: response.graph?.graphElements ?? [],
+          }
+        });
+        return;
+      }
+
+      this.mergedStructureContent = structureJson;
+      this.mergedStructureFileName = 'merged-graph.json';
+      this.mergedGraphElements = response.graph?.graphElements ?? [];
+      this.showInlinePostProcessing = true;
+      setTimeout(() => this.postProcessingSection?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    }, () => {
+      this.postProcessingLoading = false;
     });
+  }
+
+  openMergedGraphInspector(): void {
+    this.handlePostProcessing('standalone');
   }
 
   canOpenMergedGraphInspector(): boolean {

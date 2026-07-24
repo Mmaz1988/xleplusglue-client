@@ -22,7 +22,8 @@ import { APP_DEFAULTS } from "../app-defaults";
 
 export class GswbVisComponent implements AfterViewInit {
   @Input() canPostProcess = false;
-  @Output() postProcessing = new EventEmitter<void>();
+  @Input() postProcessingLoading = false;
+  @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
 
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
@@ -33,6 +34,7 @@ export class GswbVisComponent implements AfterViewInit {
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
   meaningConstructors = '';
+  postProcessingMode: 'inline' | 'standalone' = 'inline';
 
   private pendingState: GswbWorkspaceState | null = null;
 
@@ -156,8 +158,8 @@ export class GswbVisComponent implements AfterViewInit {
     // Use your preferred method to send data to backend (for instance, HttpClient).
   }
 
-  requestPostProcessing(): void {
-    this.postProcessing.emit();
+  requestPostProcessing(mode: 'inline' | 'standalone'): void {
+    this.postProcessing.emit(mode);
   }
 
   displayMessage(message: string, color: string) {

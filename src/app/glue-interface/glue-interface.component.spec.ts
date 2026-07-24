@@ -71,6 +71,28 @@ describe('GlueInterfaceComponent', () => {
     expect(extras.state.uploadedContent).toContain('constraints');
   });
 
+  it('should display the same merged response inline without navigating', () => {
+    component.liger = {
+      structureJson: { id: 'syntax-graph' }
+    } as any;
+    component.glue = {
+      semvis: {
+        index: 0,
+        items: [{ graph: { id: 'drs-1' } }]
+      },
+      gswbPreferences: {
+        gswbPreferences: { betaReduce: true }
+      }
+    } as any;
+
+    component.handlePostProcessing('inline');
+
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+    expect(component.showInlinePostProcessing).toBeTrue();
+    expect(component.mergedStructureContent).toContain('merged-graph');
+    expect(component.mergedGraphElements).toEqual([{ data: { id: 'm1', label: 'merged' } }]);
+  });
+
   it('does not allow graph post-processing for non-beta-reduced semantics', () => {
     component.liger = {
       structureJson: { id: 'syntax-graph' }
