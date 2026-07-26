@@ -40,6 +40,11 @@ export const APP_DEFAULTS = {
       "DR-PRECEDENCE(#a,#b) := #a NAME %a & #a NODE_TYPE referent &\n" +
       "                        #b NAME %b & #b NODE_TYPE referent &\n" +
       "\t\t\t            id(%a) < id(%b).  \n" +
+      "//Checks if two antecedent paths remain disjoint\n" +
+      "DISJOINT(#a,#b) := -(#a !(POSSIBLE-ANT+) #g & #b !(POSSIBLE-ANT+) #h & id(#g) == id(#h)) .\n" +
+      "\n" +
+      "CLOSEST-POTENTIAL-ANT(#a,#c) := #a POTENTIAL-ANT #c .\n" +
+      "// & -(#a POTENTIAL-ANT #b POTENTIAL-ANT #c) .\n" +
       "\n" +
       "//Personal pronoun binding constraint (negative constraint)\n" +
       "// For preventing:\n" +
@@ -58,6 +63,24 @@ export const APP_DEFAULTS = {
       "\n" +
       "@COARG(#a,#b) ==> #a COARG #b.\n" +
       "\n" +
+      "//Presupposition rules\n" +
+      "\n" +
+      "//search for potential binders\n" +
+      "@BIND-PATH(#a,#b) ==> #a POTENTIAL-BINDER #b .\n" +
+      "\n" +
+      "//Check if DRs in PRSP have binders\n" +
+      "#a ^(POTENTIAL-BINDER) #b & #b IN #c &  #c bind #c & #a IN #d &\n" +
+      "@DR-PRECEDENCE(#d,#c) ==> #c PRSP-ANT #d.\n" +
+      "\n" +
+      "//search for bound referents \n" +
+      "#a POTENTIAL-BINDER #b IN #c & #a IN #d & #d bind #d ==> #d POSSIBLE-BINDER #c .\n" +
+      "\n" +
+      "#a POTENTIAL-BINDER #b IN #c & #a IN #d & -(#d POSSIBLE-BINDER #c) ?=> #d acc #d.\n" +
+      "\n" +
+      "#d bind #d & #d acc #d =-> #d acc #d.\n" +
+      "\n" +
+      "//Pronoun rules\n" +
+      "\n" +
       "//Reflexives\n" +
       "#a ant #a & #a SYNSEM #b & @REFL-BIND(#b,#c) & #c ^(SYNSEM) #d ==> #a POSSIBLE-ANT #d.\n" +
       "\n" +
@@ -65,33 +88,39 @@ export const APP_DEFAULTS = {
       "#a ant #a & #a SYNSEM #b PRON-TYPE 'pers' & #c SYNSEM #d & \n" +
       "@DR-PRECEDENCE(#c,#a) & -(@COARG(#b,#d)) ==> #a POTENTIAL-ANT #c.\n" +
       "\n" +
-      "//For cases like EX.: Kim thought he saw him\" \n" +
+      "//For cases like EX.: Kim thought he saw him\"\n" +
+      "//More precise -(#a !(POTENTIAL-ANT+) #e & #c !(POTENTIAL-ANT+) #f & id(#f) == id(#e))\n" +
+      "//There is no antecedent path such that two coargs refer to the same DR \n" +
       "#a ant #a & #a SYNSEM #b & #c ant #c & #c SYNSEM #d &\n" +
-      "@DR-PRECEDENCE(#c,#a) & @COARG(#b,#d) & #a POTENTIAL-ANT #e & \n" +
-      "#c POTENTIAL-ANT #f & id(#f) != id(#e) ?=> #a POSSIBLE-ANT #e & #c POSSIBLE-ANT #f.\n" +
+      "@DR-PRECEDENCE(#c,#a) & @COARG(#b,#d) & \n" +
+      "@CLOSEST-POTENTIAL-ANT(#a,#e) & \n" +
+      "@CLOSEST-POTENTIAL-ANT(#c,#f) & \n" +
+      "id(#f) != id(#e) ?=> #a POSSIBLE-ANT #e & #c POSSIBLE-ANT #f.\n" +
       "\n" +
       "//Preparing for elimination of redundant edges (reflexive closure)\n" +
       "#a POTENTIAL-ANT #c & \n" +
       "-(#a POTENTIAL-ANT #b POTENTIAL-ANT #c) &\n" +
       "-(#a POSSIBLE-ANT) ==> #a POSSIBLE-ANT #c.\n" +
       "\n" +
-      "edge=POTENTIAL-ANT =-> 0.\n" +
+      "#a ant #a & #a SYNSEM #b & #c ant #c & #c SYNSEM #d &\n" +
+      "@COARG(#b,#d) & @DISJOINT(#a,#c) ?=> #z KEEP +.\n" +
       "\n" +
-      "//Presupposition rules\n" +
-      "//search for potential binders\n" +
-      "@BIND-PATH(#a,#b) ==> #a POTENTIAL-BINDER #b .",
-    queryText: `// hierarchies here
-GF ::= SUBJ > OBJ > OBL .
-
-GF := SUBJ | OBJ | OBL .
-
-// templates here
-
-MCN-PATH(#a,#b) := #a ^(@GF*:~(->SUBJ)) #b.
-
-REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#i) .
-
-#a ant #a & #a SYNSEM #b & @REFL-BIND(#b,#c)`,
+      "//Clean up\n" +
+      "edge=POTENTIAL-ANT =-> 0.",
+    queryText: "// hierarchies here\n" +
+      "GF ::= SUBJ > OBJ > OBL .\n" +
+      "\n" +
+      "GF := SUBJ | OBJ | OBL .\n" +
+      "\n" +
+      "// templates here\n" +
+      "\n" +
+      "DR-GF-LINK(#a, #d) := #a SRC %a & #b SYN-ID %b & %a == %b & #b ^(in_set>GLUE>g::>cproj) #c phi #d .\n" +
+      "\n" +
+      "MCN-PATH(#a,#b) := #a ^(@GF*:~(->SUBJ)) #b.\n" +
+      "\n" +
+      "REFL-BIND(#f,#h) := @MCN-PATH(#f,#i) & #i ^(@GF) #j !(@GF) #h & superior(GF,#h,#i) .\n" +
+      "\n" +
+      "#a ant #a & @DR-GF-LINK(#a,#b) & @REFL-BIND(#b,#c)",
   },
   gswb: {
     preferences: {
