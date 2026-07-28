@@ -192,6 +192,24 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     }
   }
 
+  resetForNewStructure(): void {
+    this.currentStructureJson = '';
+    this.ruleAnnotations = [];
+    this.appliedRules = [];
+    this.appliedRuleFactsByIndex = {};
+    this.appliedRuleHighlightIdsByIndex = {};
+    this.appliedMeaningConstructors = '';
+    this.appliedNumberOfMCsets = 0;
+    this.highlightedNodeIds = new Set<string>();
+    this.activeResultKind = null;
+    this.activeSolutionIndex = null;
+    this.activeRuleIndex = null;
+    this.activeRuleAnnotationIndex = null;
+    this.baseGraphElements = [];
+    this.graphElements = [];
+    this.cy1?.renderGraph([]);
+  }
+
   private loadUploadedStructure(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files && input.files.length > 0 ? input.files[0] : null;

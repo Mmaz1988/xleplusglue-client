@@ -44,6 +44,11 @@ export const APP_DEFAULTS = {
       "DISJOINT(#a,#b) := -(#a !(POSSIBLE-ANT+) #g & #b !(POSSIBLE-ANT+) #h & id(#g) == id(#h)) .\n" +
       "\n" +
       "CLOSEST-POTENTIAL-ANT(#a,#c) := #a POTENTIAL-ANT #c .\n" +
+      "\n" +
+      "ANT(#a) := #a ^(TERM1) #b & #b NAME 'ant' .\n" +
+      "\n" +
+      "BIND(#a) := #a ^(TERM1) #b & #b NAME 'bind' .\n" +
+      "\n" +
       "// & -(#a POTENTIAL-ANT #b POTENTIAL-ANT #c) .\n" +
       "\n" +
       "//Personal pronoun binding constraint (negative constraint)\n" +
@@ -69,29 +74,29 @@ export const APP_DEFAULTS = {
       "@BIND-PATH(#a,#b) ==> #a POTENTIAL-BINDER #b .\n" +
       "\n" +
       "//Check if DRs in PRSP have binders\n" +
-      "#a ^(POTENTIAL-BINDER) #b & #b IN #c &  #c bind #c & #a IN #d &\n" +
+      "#a ^(POTENTIAL-BINDER) #b & #b IN #c & @BIND(#c) & #a IN #d &\n" +
       "@DR-PRECEDENCE(#d,#c) ==> #c PRSP-ANT #d.\n" +
       "\n" +
       "//search for bound referents \n" +
-      "#a POTENTIAL-BINDER #b IN #c & #a IN #d & #d bind #d ==> #d POSSIBLE-BINDER #c .\n" +
+      "#a POTENTIAL-BINDER #b IN #c & #a IN #d & @BIND(#d) ==> #d POSSIBLE-BINDER #c .\n" +
       "\n" +
       "#a POTENTIAL-BINDER #b IN #c & #a IN #d & -(#d POSSIBLE-BINDER #c) ?=> #d acc #d.\n" +
       "\n" +
-      "#d bind #d & #d acc #d =-> #d acc #d.\n" +
+      "@BIND(#d) & #d acc #d =-> #d acc #d.\n" +
       "\n" +
       "//Pronoun rules\n" +
       "\n" +
       "//Reflexives\n" +
-      "#a ant #a & #a SYNSEM #b & @REFL-BIND(#b,#c) & #c ^(SYNSEM) #d ==> #a POSSIBLE-ANT #d.\n" +
+      "@ANT(#a) & #a SYNSEM #b & @REFL-BIND(#b,#c) & #c ^(SYNSEM) #d ==> #a POSSIBLE-ANT #d.\n" +
       "\n" +
       "//Personal pronouns\n" +
-      "#a ant #a & #a SYNSEM #b PRON-TYPE 'pers' & #c SYNSEM #d & \n" +
+      "@ANT(#a) & #a SYNSEM #b PRON-TYPE 'pers' & #c SYNSEM #d & \n" +
       "@DR-PRECEDENCE(#c,#a) & -(@COARG(#b,#d)) ==> #a POTENTIAL-ANT #c.\n" +
       "\n" +
       "//For cases like EX.: Kim thought he saw him\"\n" +
       "//More precise -(#a !(POTENTIAL-ANT+) #e & #c !(POTENTIAL-ANT+) #f & id(#f) == id(#e))\n" +
       "//There is no antecedent path such that two coargs refer to the same DR \n" +
-      "#a ant #a & #a SYNSEM #b & #c ant #c & #c SYNSEM #d &\n" +
+      "@ANT(#a) & #a SYNSEM #b & @ANT(#c) & #c SYNSEM #d &\n" +
       "@DR-PRECEDENCE(#c,#a) & @COARG(#b,#d) & \n" +
       "@CLOSEST-POTENTIAL-ANT(#a,#e) & \n" +
       "@CLOSEST-POTENTIAL-ANT(#c,#f) & \n" +
@@ -102,11 +107,11 @@ export const APP_DEFAULTS = {
       "-(#a POTENTIAL-ANT #b POTENTIAL-ANT #c) &\n" +
       "-(#a POSSIBLE-ANT) ==> #a POSSIBLE-ANT #c.\n" +
       "\n" +
-      "#a ant #a & #a SYNSEM #b & #c ant #c & #c SYNSEM #d &\n" +
+      "@ANT(#a) & #a SYNSEM #b & @ANT(#c) & #c SYNSEM #d &\n" +
       "@COARG(#b,#d) & @DISJOINT(#a,#c) ?=> #z KEEP +.\n" +
       "\n" +
       "//Clean up\n" +
-      "edge=POTENTIAL-ANT =-> 0.",
+      "edge=POTENTIAL-ANT =-> 0.\n",
     queryText: "// hierarchies here\n" +
       "GF ::= SUBJ > OBJ > OBL .\n" +
       "\n" +

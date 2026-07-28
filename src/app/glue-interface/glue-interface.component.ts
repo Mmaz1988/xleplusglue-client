@@ -95,6 +95,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
+    this.inlineGraphInspector?.resetForNewStructure();
     this.postProcessingLoading = true;
     forkJoin(semanticSolutions.map(semanticSolution => this.dataService.ligerMergeStructure({
       syntax,
@@ -219,7 +220,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     }
 
     const results = this.postProcessingResults.length
-      ? this.postProcessingResults
+      ? [this.postProcessingResults[this.selectedPostProcessingIndex]].filter(Boolean)
       : (() => {
         const selected = this.selectedSemanticSolution();
         const structure = this.parseStructureContent(structureContent);

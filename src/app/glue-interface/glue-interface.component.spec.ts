@@ -230,7 +230,7 @@ describe('GlueInterfaceComponent', () => {
     expect(component.postProcessingResults[1].rulesApplied).toBeTrue();
   });
 
-  it('creates PCDRS for every annotated merged graph solution', () => {
+  it('creates PCDRS only for the selected annotated merged graph', () => {
     component.showInlinePostProcessing = true;
     component.mergedStructureContent = '{"constraints":[],"annotations":[]}';
     component.postProcessingResults = [{
@@ -252,8 +252,31 @@ describe('GlueInterfaceComponent', () => {
 
     component.generatePcdrs();
 
-    expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledTimes(3);
-    expect(component.pcdrsSolutions.length).toBe(3);
+    expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledTimes(2);
+    expect(component.pcdrsSolutions.length).toBe(2);
+    expect(dataServiceMock.gswbGeneratePcdrs.calls.allArgs()
+      .every(args => args[0].parentSolutionId.startsWith('s1-'))).toBeTrue();
+  });
+
+  it('resets stale graph inspector state before a new post-processing run', () => {
+    component.liger = {
+      structureJson: { id: 'syntax-graph' }
+    } as any;
+    component.glue = {
+      semvis: {
+        index: 0,
+        items: [{ id: 's1', graph: { id: 'drs-1' } }]
+      },
+      gswbPreferences: { gswbPreferences: { betaReduce: true } }
+    } as any;
+    component.inlineGraphInspector = {
+      currentStructureJson: '{"id":"old-annotated"}',
+      resetForNewStructure: jasmine.createSpy('resetForNewStructure')
+    } as any;
+
+    component.handlePostProcessing('inline');
+
+    expect(component.inlineGraphInspector.resetForNewStructure).toHaveBeenCalled();
   });
 
   it('uses the rule-applied structure for PCDRS generation', () => {
