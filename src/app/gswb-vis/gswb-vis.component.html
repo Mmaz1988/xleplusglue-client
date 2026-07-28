@@ -34,7 +34,8 @@
 <app-sem-vis
   #semvis
   [meaningConstructors]='meaningConstructors'
-  [svgSolutions]="gswbPreferences?.gswbPreferences?.outputstyle === 5">
+  [svgSolutions]="gswbPreferences?.gswbPreferences?.outputstyle === 5"
+  (selectionChange)="onSemanticSelectionChange($event)">
 </app-sem-vis>
 <h3>Log:</h3>
 <div class="editor-restr">

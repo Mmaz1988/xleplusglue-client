@@ -25,8 +25,10 @@ import {
   GswbPcdrsOutput,
   GswbPcdrsRequest,
   GswbCollapseAnaphoraRequest,
+  GswbSequenceMergeRequest,
   GswbSolution,
   LigerSolutionAnnotationResponse,
+  LigerSequenceRequest,
   vampireMultipleRequest, vampireMultipleResponse,
   VampireSessionSummary,
   RegressionSessionSummary,
@@ -61,6 +63,10 @@ export class DataService {
     return this.http.post<GswbSolution>(`${this.gswbpage}/collapse_anaphora`, request);
   }
 
+  gswbMergeSequenceSemantics(request: GswbSequenceMergeRequest): Observable<GswbSolution> {
+    return this.http.post<GswbSolution>(`${this.gswbpage}/merge_sequence_semantics`, request);
+  }
+
   getLastGswbSession(sessionKey: string = this.defaultRedisSessionKey): Observable<GswbBatchOutput> {
     return this.http.get<GswbBatchOutput>(`${this.gswbpage}/gswb_batch_session/${sessionKey}`);
   }
@@ -83,6 +89,10 @@ export class DataService {
   //currently used for multistage
   ligerMulti(ligerRequest): Observable<LigerSolutionAnnotationResponse> {
     return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/parse_xle`, ligerRequest);
+  }
+
+  ligerSequence(request: LigerSequenceRequest): Observable<LigerSolutionAnnotationResponse> {
+    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/apply_rules_xle_sequence`, request);
   }
 
   ligerUploadStructure(uploadRequest: LigerStructureUploadRequest): Observable<LigerRuleAnnotation> {

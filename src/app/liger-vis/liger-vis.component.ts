@@ -1,4 +1,4 @@
-import { Component, ViewChild, EventEmitter, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, ViewChild, EventEmitter, ElementRef, AfterViewInit, Input } from '@angular/core';
 import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
@@ -15,6 +15,8 @@ import { APP_DEFAULTS } from "../app-defaults";
 })
 export class LigerVisComponent implements AfterViewInit {
 
+  @Input() semanticSolutionReady = false;
+
   constructor(private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {
     const savedGrammarPath = this.workspaceState.getState().liger?.grammarLoadedPath;
     if (savedGrammarPath) {
@@ -23,6 +25,7 @@ export class LigerVisComponent implements AfterViewInit {
   }
 
   defaultValue: string = APP_DEFAULTS.liger.sentence;
+  sequenceSentences: string[] = [];
   loadedGrammarPath = '';
   meaningConstructors: string;
   structureJson: LigerStructure | null = null;
@@ -55,15 +58,14 @@ export class LigerVisComponent implements AfterViewInit {
     this.errorhandle.nativeElement.innerHTML = "";
     const sentence = inputValue;
 
-    const ligerRequest = {sentence: sentence, ruleString: ruleString};
-
-    // console.log(ligerRequest);
-
-    this.dataService.ligerAnnotate(ligerRequest).subscribe(
+    this.dataService.ligerSequence({ sentences: [sentence], ruleString }).subscribe(
       data => {
         this.loading = false;
         this.errorhandle.nativeElement.innerHTML = "";
         this.solutions = Array.isArray(data.solutions) ? data.solutions : [];
+        if (this.solutions.length > 0) {
+          this.sequenceSentences = [sentence];
+        }
         this.selectedSolutionIndex = 0;
 
         if (this.solutions.length > 0) {
@@ -90,6 +92,61 @@ export class LigerVisComponent implements AfterViewInit {
         this.displayMessage("An error occurred while calling LiGER...", "red");
       }
     );
+  }
+
+  addSentence(inputValue: string, ruleString: string): void {
+    const sentence = inputValue.trim();
+    if (!sentence || !this.canAppendSentence() || this.loading) {
+      if (sentence && this.sequenceSentences.length && !this.canAppendSentence()) {
+        this.displayMessage("Calculate and select a GSWB semantic solution before adding a sentence.", "red");
+      }
+      return;
+    }
+
+    const sentences = [...this.sequenceSentences, sentence];
+    this.loading = true;
+    this.errorhandle.nativeElement.innerHTML = "";
+
+    this.dataService.ligerSequence({ sentences, ruleString }).subscribe(
+      data => {
+        this.loading = false;
+        const solutions = Array.isArray(data.solutions) ? data.solutions : [];
+        const graphAvailable = solutions.some(solution =>
+          Array.isArray(solution?.graph?.graphElements) && solution.graph.graphElements.length > 0);
+        if (data.success === false || !solutions.length || !graphAvailable) {
+          const failedIndex = Number.isInteger(data.failedSentenceIndex)
+            ? (data.failedSentenceIndex as number) + 1
+            : sentences.length;
+          this.displayMessage(
+            data.failureMessage || `Sentence ${failedIndex} could not be parsed; sequence unchanged.`,
+            "red");
+          return;
+        }
+
+        this.solutions = solutions;
+        this.selectedSolutionIndex = 0;
+        if (this.solutions.length > 0) {
+          this.sequenceSentences = sentences;
+          this.renderSelectedSolution(0);
+          this.displayMessage(`Sentence appended... ${this.solutions.length} sequence variant(s) found`, "green");
+        } else {
+          this.displayMessage("No sequence parse was found...", "red");
+        }
+      },
+      error => {
+        this.loading = false;
+        this.displayMessage("An error occurred while appending the sentence...", "red");
+        console.log("ERROR: ", error);
+      }
+    );
+  }
+
+  canAppendSentence(): boolean {
+    const selectedSolution = this.solutions[this.selectedSolutionIndex];
+    return this.sequenceSentences.length > 0
+      && !!selectedSolution
+      && typeof selectedSolution.meaningConstructors === 'string'
+      && selectedSolution.meaningConstructors.trim().length > 0;
   }
 
   /*
@@ -271,6 +328,7 @@ export class LigerVisComponent implements AfterViewInit {
 
     return {
       sentence: this.textarea.nativeElement.value ?? this.defaultValue,
+      sequenceSentences: [...this.sequenceSentences],
       rulesText: this.ligerRules.getContent(),
       grammarLoadedPath: this.loadedGrammarPath ?? '',
       grammarSelectedPath: this.grammarLoader?.selectedPath ?? this.loadedGrammarPath ?? '',
@@ -301,6 +359,9 @@ export class LigerVisComponent implements AfterViewInit {
     }
 
     this.defaultValue = state.sentence || this.defaultValue;
+    this.sequenceSentences = Array.isArray(state.sequenceSentences) && state.sequenceSentences.length
+      ? [...state.sequenceSentences]
+      : (state.sentence ? [state.sentence] : []);
     this.textarea.nativeElement.value = this.defaultValue;
     this.ligerRules.updateContent(state.rulesText || '');
     this.loadedGrammarPath = state.grammarLoadedPath || state.grammarSelectedPath || this.loadedGrammarPath;

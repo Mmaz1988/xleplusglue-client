@@ -6,11 +6,12 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbRequest,GswbPreferences} from "../models/models";
+import {GswbRequest,GswbPreferences, GswbSolution} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
 import { APP_DEFAULTS } from "../app-defaults";
+import { forkJoin } from 'rxjs';
 
 
 @Component({
@@ -23,6 +24,7 @@ import { APP_DEFAULTS } from "../app-defaults";
 export class GswbVisComponent implements AfterViewInit {
   @Input() canPostProcess = false;
   @Input() postProcessingLoading = false;
+  @Input() previousSemanticSolutions: string[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
 
   @ViewChild('edit1') editor1: EditorComponent;
@@ -34,6 +36,8 @@ export class GswbVisComponent implements AfterViewInit {
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
   meaningConstructors = '';
+  private hasSemanticSolutions = false;
+  semanticSolutionReady = false;
   postProcessingMode: 'inline' | 'standalone' = 'inline';
 
   private pendingState: GswbWorkspaceState | null = null;
@@ -58,6 +62,8 @@ export class GswbVisComponent implements AfterViewInit {
 
   calculateSemantics(){
     this.loading = true;
+    this.hasSemanticSolutions = false;
+    this.semanticSolutionReady = false;
 
     this.updateMeaningConstructors();
 
@@ -79,7 +85,10 @@ export class GswbVisComponent implements AfterViewInit {
 
 
           //Check if data.solutions is not null and not empty
-          if (data.solutions.length > 0) {
+           if (data.solutions.some(solution =>
+             typeof solution?.solution === 'string' && solution.solution.trim().length > 0)) {
+             this.hasSemanticSolutions = true;
+             this.semanticSolutionReady = true;
             console.log("Solutions:", data.solutions)
             // data.solutions.forEach(element => {
             //   console.log(element);
@@ -93,8 +102,9 @@ export class GswbVisComponent implements AfterViewInit {
             this.semvis.clearScope();
             this.semvis.applyFiltersAndResetIndex();
 
-            this.semvis.setItems(data.solutions);
-            this.semvis.setDiscriminants(data.discriminants);
+             this.semvis.setItems(data.solutions);
+             this.semvis.setDiscriminants(data.discriminants);
+             this.mergeCurrentSolutions(data.solutions);
            // this.sem.updateContent(solutions);
           } else {
             //create error message with request time stamp
@@ -172,6 +182,42 @@ export class GswbVisComponent implements AfterViewInit {
     this.meaningConstructors = this.editor1?.getContent() ?? '';
   }
 
+  onSemanticSelectionChange(selection: { items: any[] }): void {
+    this.semanticSolutionReady = this.hasSemanticSolutions
+      && Array.isArray(selection?.items)
+      && selection.items.some(solution =>
+        typeof solution?.solution === 'string' && solution.solution.trim().length > 0);
+  }
+
+  private mergeCurrentSolutions(solutions: GswbSolution[]): void {
+    const previous = this.previousSemanticSolutions.filter(
+      semantic => typeof semantic === 'string' && semantic.trim().length > 0);
+    if (!previous.length) {
+      return;
+    }
+
+    const current = solutions.filter(solution =>
+      typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
+    if (!current.length) {
+      this.hasSemanticSolutions = false;
+      this.semanticSolutionReady = false;
+      return;
+    }
+
+    forkJoin(current.map(solution => this.dataService.gswbMergeSequenceSemantics({
+      semantics: [...previous, solution.semantic as string],
+      parentSolutionId: solution.id,
+    }))).subscribe(mergedSolutions => {
+      this.semvis.setItems(mergedSolutions);
+      this.semvis.setDiscriminants([]);
+      this.hasSemanticSolutions = mergedSolutions.length > 0;
+      this.semanticSolutionReady = this.hasSemanticSolutions;
+    }, () => {
+      this.hasSemanticSolutions = false;
+      this.semanticSolutionReady = false;
+    });
+  }
+
   captureState(): GswbWorkspaceState | null {
     if (!this.editor1 || !this.semvis || !this.gswbPreferences || !this.log) {
       return this.pendingState;
@@ -206,6 +252,10 @@ export class GswbVisComponent implements AfterViewInit {
     this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences);
 
     this.semvis.restoreState(state.semvis);
+    this.hasSemanticSolutions = Array.isArray(state.semvis?.items)
+      && state.semvis.items.some((solution: any) =>
+        typeof solution?.solution === 'string' && solution.solution.trim().length > 0);
+    this.semanticSolutionReady = this.hasSemanticSolutions;
     this.pendingState = null;
   }
 

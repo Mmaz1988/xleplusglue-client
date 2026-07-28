@@ -6,6 +6,75 @@ textarea {
   resize: none;
 }
 
+.sequence-history {
+  width: min(600px, 100%);
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #f7f9fc;
+  box-sizing: border-box;
+}
+
+.sequence-history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sequence-history h4 {
+  margin: 0;
+  color: #243247;
+  font-size: 0.95rem;
+}
+
+.sequence-count {
+  color: #68758a;
+  font-size: 0.8rem;
+}
+
+.sequence-history ol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 168px;
+  margin: 8px 0 0;
+  padding: 0 4px 0 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.sequence-history li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #30405a;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.sequence-index {
+  flex: 0 0 1.25rem;
+  color: #536b8b;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.sequence-text {
+  overflow-wrap: anywhere;
+}
+
+.sequence-empty {
+  margin: 8px 0 0;
+  color: #68758a;
+  font-size: 0.85rem;
+}
+
 div.ligergraphcontainer{
   max-width: 800px;
   width: 800px;

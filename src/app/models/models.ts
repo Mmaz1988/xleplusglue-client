@@ -61,6 +61,15 @@ export interface LigerSolutionAnnotationResponse {
   sentence?: string;
   solutions: LigerSolutionAnnotation[];
   structureJson?: Record<string, unknown>;
+  success?: boolean;
+  failedSentenceIndex?: number;
+  failureMessage?: string;
+}
+
+export interface LigerSequenceRequest {
+  sentences: string[];
+  ruleString?: string;
+  logicType?: string;
 }
 
 export interface LigerStructureUploadRequest {
@@ -183,6 +192,11 @@ export interface GswbPcdrsOutput {
 
 export interface GswbCollapseAnaphoraRequest {
   semantic: string;
+  parentSolutionId?: string;
+}
+
+export interface GswbSequenceMergeRequest {
+  semantics: string[];
   parentSolutionId?: string;
 }
 

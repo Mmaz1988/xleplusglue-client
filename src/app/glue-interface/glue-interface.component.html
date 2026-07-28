@@ -30,7 +30,7 @@
     <button class="toggle-button" (click)="isFirstDivMinimized = !isFirstDivMinimized">
       <<
     </button>
-    <app-liger-vis #l1></app-liger-vis>
+    <app-liger-vis #l1 [semanticSolutionReady]="hasGswbSemanticSolution()"></app-liger-vis>
   </div>
   <button *ngIf="isFirstDivMinimized" class="toggle-button-max" (click)="isFirstDivMinimized = !isFirstDivMinimized">
     >>
@@ -42,6 +42,7 @@
     </button>
     <app-gswb-vis
       #g1
+      [previousSemanticSolutions]="previousSemanticSolutions"
       [canPostProcess]="canOpenMergedGraphInspector()"
       [postProcessingLoading]="postProcessingLoading"
       (postProcessing)="handlePostProcessing($event)">

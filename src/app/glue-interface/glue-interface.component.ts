@@ -36,14 +36,27 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   pcdrsSolutions: GswbSolution[] = [];
   pcdrsDisplaySolutions: GswbSolution[] = [];
   collapsedPcdrsById: Record<string, GswbSolution> = {};
+  previousSemanticSolutions: string[] = [];
+  private lastSequenceLength = 0;
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
   ngAfterViewInit() {
     if (this.liger?.changeDetector && this.glue?.editor1) {
       this.liger.changeDetector.subscribe(newValue => {
+        const sequenceLength = this.liger.sequenceSentences.length;
+        if (sequenceLength <= 1) {
+          this.previousSemanticSolutions = [];
+        } else if (sequenceLength !== this.lastSequenceLength) {
+          const previous = this.selectedSemanticSolution()?.semantic;
+          if (previous) {
+            this.previousSemanticSolutions = [previous];
+          }
+        }
+        this.lastSequenceLength = sequenceLength;
         // Update glue's variable here
         this.glue.editor1.updateContent(newValue);
+        this.glue.semanticSolutionReady = false;
       });
     }
 
@@ -189,6 +202,15 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   canOpenMergedGraphInspector(): boolean {
     const betaReduce = this.glue?.gswbPreferences?.gswbPreferences?.betaReduce;
     return betaReduce === true && !!this.liger?.structureJson && !!this.currentSemanticStructure();
+  }
+
+  hasGswbSemanticSolution(): boolean {
+    if (!this.glue?.semanticSolutionReady) {
+      return false;
+    }
+    const solutions = this.glue.semvis?.items;
+    return Array.isArray(solutions) && solutions.some(solution =>
+      typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
   }
 
   private currentSemanticStructure(): LigerStructure | null {
