@@ -144,6 +144,7 @@ export class LigerVisComponent implements AfterViewInit {
   canAppendSentence(): boolean {
     const selectedSolution = this.solutions[this.selectedSolutionIndex];
     return this.sequenceSentences.length > 0
+      && this.semanticSolutionReady
       && !!selectedSolution
       && typeof selectedSolution.meaningConstructors === 'string'
       && selectedSolution.meaningConstructors.trim().length > 0;
