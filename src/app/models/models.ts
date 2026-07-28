@@ -196,7 +196,7 @@ export interface GswbCollapseAnaphoraRequest {
 }
 
 export interface GswbSequenceMergeRequest {
-  semantics: string[];
+  graphs: LigerStructure[];
   parentSolutionId?: string;
 }
 

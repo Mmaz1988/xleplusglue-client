@@ -36,7 +36,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   pcdrsSolutions: GswbSolution[] = [];
   pcdrsDisplaySolutions: GswbSolution[] = [];
   collapsedPcdrsById: Record<string, GswbSolution> = {};
-  previousSemanticSolutions: string[] = [];
+  previousSemanticGraphs: LigerStructure[] = [];
   private lastSequenceLength = 0;
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
@@ -46,11 +46,11 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.liger.changeDetector.subscribe(newValue => {
         const sequenceLength = this.liger.sequenceSentences.length;
         if (sequenceLength <= 1) {
-          this.previousSemanticSolutions = [];
+          this.previousSemanticGraphs = [];
         } else if (sequenceLength !== this.lastSequenceLength) {
-          const previous = this.selectedSemanticSolution()?.semantic;
-          if (previous) {
-            this.previousSemanticSolutions = [previous];
+          const selected = this.selectedSemanticSolution();
+          if (selected?.graph) {
+            this.previousSemanticGraphs = [selected.graph];
           }
         }
         this.lastSequenceLength = sequenceLength;

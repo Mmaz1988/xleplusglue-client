@@ -6,7 +6,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbRequest,GswbPreferences, GswbSolution} from "../models/models";
+import {GswbRequest,GswbPreferences, GswbSolution, LigerStructure} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -24,7 +24,7 @@ import { forkJoin } from 'rxjs';
 export class GswbVisComponent implements AfterViewInit {
   @Input() canPostProcess = false;
   @Input() postProcessingLoading = false;
-  @Input() previousSemanticSolutions: string[] = [];
+  @Input() previousSemanticGraphs: LigerStructure[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
 
   @ViewChild('edit1') editor1: EditorComponent;
@@ -190,14 +190,12 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
-    const previous = this.previousSemanticSolutions.filter(
-      semantic => typeof semantic === 'string' && semantic.trim().length > 0);
+    const previous = this.previousSemanticGraphs.filter(graph => !!graph);
     if (!previous.length) {
       return;
     }
 
-    const current = solutions.filter(solution =>
-      typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
+    const current = solutions.filter(solution => !!solution?.graph);
     if (!current.length) {
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
@@ -205,7 +203,7 @@ export class GswbVisComponent implements AfterViewInit {
     }
 
     forkJoin(current.map(solution => this.dataService.gswbMergeSequenceSemantics({
-      semantics: [...previous, solution.semantic as string],
+      graphs: [...previous, solution.graph as LigerStructure],
       parentSolutionId: solution.id,
     }))).subscribe(mergedSolutions => {
       this.semvis.setItems(mergedSolutions);

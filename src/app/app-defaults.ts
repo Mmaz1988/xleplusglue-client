@@ -22,7 +22,7 @@ export const APP_DEFAULTS = {
       "BIND-PATH(#a,#b) := #a ^(PRSP>@DRS*) #b & #a NAME %a & #b NAME %b & id(%b) < id(%a).\n" +
       "\n" +
       "//Link DRs to their originating GFs\n" +
-      "DR-GF-LINK(#a, #d) := #a SRC %a & #b SYN-ID %b & %a == %b & #b ^(in_set>GLUE>g::>cproj) #c phi #d .\n" +
+      "DR-GF-LINK(#a, #d) := #a NODE_TYPE 'referent' & #a SRC %a & #b SYN-ID %b & %a == %b & #b ^(in_set>GLUE>g::>cproj) #c phi #d .\n" +
       "\n" +
       "// ***** PRONOUNS *****\n" +
       "\n" +
