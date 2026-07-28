@@ -25,6 +25,7 @@ export class GswbVisComponent implements AfterViewInit {
   @Input() canPostProcess = false;
   @Input() postProcessingLoading = false;
   @Input() previousSemanticGraphs: LigerStructure[] = [];
+  @Input() previousSemanticStrings: string[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
 
   @ViewChild('edit1') editor1: EditorComponent;
@@ -203,9 +204,21 @@ export class GswbVisComponent implements AfterViewInit {
     }
 
     forkJoin(current.map(solution => this.dataService.gswbMergeSequenceSemantics({
+      semantics: [...this.previousSemanticStrings, solution.semantic || ''],
       graphs: [...previous, solution.graph as LigerStructure],
       parentSolutionId: solution.id,
     }))).subscribe(mergedSolutions => {
+      console.groupCollapsed('[GSWB] sequence merge response rendered by SemVis');
+      console.log('solutions:', mergedSolutions);
+      mergedSolutions.forEach((solution, index) => {
+        console.log(`solution[${index}]`, {
+          id: solution.id,
+          semantic: solution.semantic,
+          svg: solution.solution,
+          graph: solution.graph,
+        });
+      });
+      console.groupEnd();
       this.semvis.setItems(mergedSolutions);
       this.semvis.setDiscriminants([]);
       this.hasSemanticSolutions = mergedSolutions.length > 0;
