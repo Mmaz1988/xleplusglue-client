@@ -88,8 +88,10 @@ export class GswbVisComponent implements AfterViewInit {
           //Check if data.solutions is not null and not empty
            if (data.solutions.some(solution =>
              typeof solution?.solution === 'string' && solution.solution.trim().length > 0)) {
-             this.hasSemanticSolutions = true;
-             this.semanticSolutionReady = true;
+              this.hasSemanticSolutions = true;
+              // For a sequence, the raw current-sentence readings are not
+              // ready for the next append until their sequence merge finishes.
+              this.semanticSolutionReady = this.previousSemanticGraphs.length === 0;
             console.log("Solutions:", data.solutions)
             // data.solutions.forEach(element => {
             //   console.log(element);
@@ -203,11 +205,14 @@ export class GswbVisComponent implements AfterViewInit {
       return;
     }
 
-    forkJoin(current.map(solution => this.dataService.gswbMergeSequenceSemantics({
-      semantics: [...this.previousSemanticStrings, solution.semantic || ''],
-      graphs: [...previous, solution.graph as LigerStructure],
-      parentSolutionId: solution.id,
-    }))).subscribe(mergedSolutions => {
+    const mergeRequests = current.flatMap(solution => previous.map((previousGraph, index) =>
+      this.dataService.gswbMergeSequenceSemantics({
+        semantics: [this.previousSemanticStrings[index] || '', solution.semantic || ''],
+        graphs: [previousGraph, solution.graph as LigerStructure],
+        parentSolutionId: solution.id,
+      })));
+
+    forkJoin(mergeRequests).subscribe(mergedSolutions => {
       console.groupCollapsed('[GSWB] sequence merge response rendered by SemVis');
       console.log('solutions:', mergedSolutions);
       mergedSolutions.forEach((solution, index) => {

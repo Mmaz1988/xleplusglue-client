@@ -59,7 +59,21 @@
   <app-graph-inspector
     [initialUploadedContent]="mergedStructureContent"
     [initialUploadedFileName]="mergedStructureFileName"
-    [initialGraphElements]="mergedGraphElements">
+    [initialGraphElements]="mergedGraphElements"
+    (rulesApplied)="onRulesApplied($event)">
+    <div graph-navigation class="solution-nav" *ngIf="postProcessingResults.length > 1">
+      <button type="button" (click)="previousPostProcessingResult()">◀ Prev merged graph</button>
+      <span>
+        Result {{ selectedPostProcessingIndex + 1 }} / {{ postProcessingResults.length }}
+        <span *ngIf="postProcessingResults[selectedPostProcessingIndex]?.semanticSolution?.id">
+          ({{ postProcessingResults[selectedPostProcessingIndex].semanticSolution.id }})
+        </span>
+        <span>
+          Rules: {{ postProcessingResults[selectedPostProcessingIndex].ruleAnnotations.length }} solution{{ postProcessingResults[selectedPostProcessingIndex].ruleAnnotations.length === 1 ? '' : 's' }}
+        </span>
+      </span>
+      <button type="button" (click)="nextPostProcessingResult()">Next merged graph ▶</button>
+    </div>
   </app-graph-inspector>
   <div class="pcdrs-actions">
     <button type="button" (click)="generatePcdrs()" [disabled]="!canGeneratePcdrs() || pcdrsLoading">

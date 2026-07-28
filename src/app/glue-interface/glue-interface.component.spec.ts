@@ -10,7 +10,7 @@ describe('GlueInterfaceComponent', () => {
   let component: GlueInterfaceComponent;
   let fixture: ComponentFixture<GlueInterfaceComponent>;
   let routerMock: { navigate: jasmine.Spy };
-  let dataServiceMock: { ligerMergeStructure: jasmine.Spy; gswbGeneratePcdrs: jasmine.Spy; gswbCollapseAnaphora: jasmine.Spy };
+  let dataServiceMock: { ligerMergeStructure: jasmine.Spy; ligerApplyRulesToStructure: jasmine.Spy; gswbGeneratePcdrs: jasmine.Spy; gswbCollapseAnaphora: jasmine.Spy };
 
   beforeEach(() => {
     routerMock = {
@@ -21,6 +21,7 @@ describe('GlueInterfaceComponent', () => {
         graph: { graphElements: [{ data: { id: 'm1', label: 'merged' } }] },
         structureJson: { id: 'merged-graph', text: 'merged graph', constraints: [], annotations: [], choiceSpace: {} }
       })),
+      ligerApplyRulesToStructure: jasmine.createSpy('ligerApplyRulesToStructure').and.returnValue(of({ annotations: [] })),
       gswbGeneratePcdrs: jasmine.createSpy('gswbGeneratePcdrs').and.returnValue(of({
         solutions: [{ id: 's1-pcdrs-1', solution: '<svg></svg>' }]
       })),
@@ -133,6 +134,52 @@ describe('GlueInterfaceComponent', () => {
     expect(component.canOpenMergedGraphInspector()).toBeTrue();
   });
 
+  it('merges every semantic solution when no discriminant is selected', () => {
+    component.liger = {
+      structureJson: { id: 'syntax-graph' }
+    } as any;
+    const first = { id: 'drs-1', semantic: 'first', graph: { id: 'drs-1' } };
+    const second = { id: 'drs-2', semantic: 'second', graph: { id: 'drs-2' } };
+    component.glue = {
+      semvis: {
+        index: 0,
+        items: [first],
+        allItems: [first, second],
+        selectedScopeIds: [],
+        selectedMcIds: []
+      },
+      gswbPreferences: { gswbPreferences: { betaReduce: true } }
+    } as any;
+
+    component.handlePostProcessing('inline');
+
+    expect(dataServiceMock.ligerMergeStructure).toHaveBeenCalledTimes(2);
+    expect(component.postProcessingResults.map(result => result.semanticSolution.id))
+      .toEqual(['drs-1', 'drs-2']);
+  });
+
+  it('merges only discriminant-selected semantic solutions', () => {
+    component.liger = {
+      structureJson: { id: 'syntax-graph' }
+    } as any;
+    const first = { id: 'drs-1', graph: { id: 'drs-1' } };
+    const second = { id: 'drs-2', graph: { id: 'drs-2' } };
+    component.glue = {
+      semvis: {
+        items: [second],
+        allItems: [first, second],
+        selectedScopeIds: ['scope-1'],
+        selectedMcIds: []
+      },
+      gswbPreferences: { gswbPreferences: { betaReduce: true } }
+    } as any;
+
+    component.handlePostProcessing('inline');
+
+    expect(dataServiceMock.ligerMergeStructure).toHaveBeenCalledTimes(1);
+    expect(dataServiceMock.ligerMergeStructure.calls.mostRecent().args[0].drs.id).toBe('drs-2');
+  });
+
   it('generates PCDRS only from the selected merged solution', () => {
     component.showInlinePostProcessing = true;
     component.mergedStructureContent = JSON.stringify({
@@ -155,6 +202,58 @@ describe('GlueInterfaceComponent', () => {
       mergedStructure: { constraints: [], annotations: [], choiceSpace: {} }
     });
     expect(component.pcdrsSolutions.length).toBe(1);
+  });
+
+  it('applies rules separately to every merged graph', () => {
+    const ruleResult = {
+      annotations: [{ graph: { graphElements: [] }, appliedRules: [], structureJson: { id: 'annotated' } }]
+    } as any;
+    component.postProcessingResults = [{
+      semanticSolution: { id: 's1', graph: { id: 'd1' } } as any,
+      structureContent: '{"id":"d1"}',
+      graphElements: [],
+      ruleAnnotations: [],
+      rulesApplied: false
+    }, {
+      semanticSolution: { id: 's2', graph: { id: 'd2' } } as any,
+      structureContent: '{"id":"d2"}',
+      graphElements: [],
+      ruleAnnotations: [],
+      rulesApplied: false
+    }];
+    component.inlineGraphInspector = { rulesText: 'rule text' } as any;
+
+    component.onRulesApplied(ruleResult);
+
+    expect(dataServiceMock.ligerApplyRulesToStructure).toHaveBeenCalledTimes(1);
+    expect(component.postProcessingResults[0].ruleAnnotations).toEqual(ruleResult.annotations);
+    expect(component.postProcessingResults[1].rulesApplied).toBeTrue();
+  });
+
+  it('creates PCDRS for every annotated merged graph solution', () => {
+    component.showInlinePostProcessing = true;
+    component.mergedStructureContent = '{"constraints":[],"annotations":[]}';
+    component.postProcessingResults = [{
+      semanticSolution: { id: 's1', semantic: 'first' } as any,
+      structureContent: '{"id":"d1"}',
+      graphElements: [],
+      ruleAnnotations: [
+        { structureJson: { id: 'd1a' } } as any,
+        { structureJson: { id: 'd1b' } } as any
+      ],
+      rulesApplied: true
+    }, {
+      semanticSolution: { id: 's2', semantic: 'second' } as any,
+      structureContent: '{"id":"d2"}',
+      graphElements: [],
+      ruleAnnotations: [{ structureJson: { id: 'd2a' } } as any],
+      rulesApplied: true
+    }];
+
+    component.generatePcdrs();
+
+    expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledTimes(3);
+    expect(component.pcdrsSolutions.length).toBe(3);
   });
 
   it('uses the rule-applied structure for PCDRS generation', () => {

@@ -43,6 +43,8 @@
   {{ queryResult }}
 </div>
 
+<ng-content select="[graph-navigation]"></ng-content>
+
 <div #graphResults class="graph-results-layout" tabindex="-1">
   <div class="graph-shell">
     <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>

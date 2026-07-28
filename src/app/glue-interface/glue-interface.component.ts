@@ -1,13 +1,21 @@
 import { Component, ViewChild, AfterViewInit, OnDestroy, ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { GswbSolution, LigerStructure } from '../models/models';
+import { GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
+
+interface PostProcessingResult {
+  semanticSolution: GswbSolution;
+  structureContent: string;
+  graphElements: any[];
+  ruleAnnotations: LigerRuleAnnotation[];
+  rulesApplied: boolean;
+}
 
 @Component({
   selector: 'app-glue-interface',
@@ -33,6 +41,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   mergedStructureContent = '';
   mergedStructureFileName = 'merged-graph.json';
   mergedGraphElements: any[] = [];
+  postProcessingResults: PostProcessingResult[] = [];
+  selectedPostProcessingIndex = 0;
+  rulesApplicationLoading = false;
   pcdrsSolutions: GswbSolution[] = [];
   pcdrsDisplaySolutions: GswbSolution[] = [];
   collapsedPcdrsById: Record<string, GswbSolution> = {};
@@ -50,11 +61,17 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           this.previousSemanticGraphs = [];
           this.previousSemanticStrings = [];
         } else if (sequenceLength !== this.lastSequenceLength) {
-          const selected = this.selectedSemanticSolution();
-          if (selected?.graph) {
-            this.previousSemanticGraphs = [selected.graph];
-            this.previousSemanticStrings = selected.semantic ? [selected.semantic] : [];
-          }
+          const semvis = this.glue.semvis;
+          const hasDiscriminantSelection = (semvis.selectedScopeIds?.length ?? 0) > 0
+            || (semvis.selectedMcIds?.length ?? 0) > 0;
+          const solutions = hasDiscriminantSelection
+            ? semvis.items
+            : (semvis.allItems ?? semvis.items);
+          const eligible = (Array.isArray(solutions) ? solutions : [])
+            .filter(solution => !!solution?.graph);
+          this.previousSemanticGraphs = eligible.map(solution => solution.graph as LigerStructure);
+          this.previousSemanticStrings = eligible
+            .map(solution => solution.semantic ?? '');
         }
         this.lastSequenceLength = sequenceLength;
         // Update glue's variable here
@@ -72,38 +89,43 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   handlePostProcessing(mode: 'inline' | 'standalone'): void {
     const syntax = this.liger?.structureJson ?? null;
-    const semanticStructure = this.currentSemanticStructure();
+    const semanticSolutions = this.semanticSolutionsForPostProcessing();
 
-    if (!syntax || !semanticStructure || this.postProcessingLoading) {
+    if (!syntax || !semanticSolutions.length || this.postProcessingLoading) {
       return;
     }
 
     this.postProcessingLoading = true;
-    this.dataService.ligerMergeStructure({
+    forkJoin(semanticSolutions.map(semanticSolution => this.dataService.ligerMergeStructure({
       syntax,
-      drs: semanticStructure,
-    }).subscribe(response => {
-      const structureJson = typeof response?.structureJson === 'string'
-        ? response.structureJson
-        : JSON.stringify(response?.structureJson ?? {}, null, 2);
-
+      drs: semanticSolution.graph as LigerStructure,
+    }))).subscribe(responses => {
+      this.postProcessingResults = responses.map((response, index) => ({
+        semanticSolution: semanticSolutions[index],
+        structureContent: typeof response?.structureJson === 'string'
+          ? response.structureJson
+          : JSON.stringify(response?.structureJson ?? {}, null, 2),
+        graphElements: response?.graph?.graphElements ?? [],
+        ruleAnnotations: [],
+        rulesApplied: false,
+      }));
+      this.selectedPostProcessingIndex = 0;
       this.postProcessingLoading = false;
+      this.selectPostProcessingResult(0, false);
 
       if (mode === 'standalone') {
         this.router.navigate(['/graph-inspector'], {
           state: {
-            uploadedContent: structureJson,
+            uploadedContent: this.mergedStructureContent,
             uploadedFormat: 'json',
             uploadedFileName: 'merged-graph.json',
-            graphElements: response.graph?.graphElements ?? [],
+            graphElements: this.mergedGraphElements,
           }
         });
         return;
       }
 
-      this.mergedStructureContent = structureJson;
       this.mergedStructureFileName = 'merged-graph.json';
-      this.mergedGraphElements = response.graph?.graphElements ?? [];
       this.pcdrsSolutions = [];
       this.pcdrsDisplaySolutions = [];
       this.collapsedPcdrsById = {};
@@ -112,6 +134,77 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       setTimeout(() => this.postProcessingSection?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
     }, () => {
       this.postProcessingLoading = false;
+      this.postProcessingResults = [];
+    });
+  }
+
+  selectPostProcessingResult(index: number, resetDownstream = true): void {
+    const result = this.postProcessingResults[index];
+    if (!result) {
+      return;
+    }
+
+    this.selectedPostProcessingIndex = index;
+    this.mergedStructureContent = result.structureContent;
+    this.mergedGraphElements = result.graphElements;
+    if (result.rulesApplied && typeof this.inlineGraphInspector?.showRuleAnnotations === 'function') {
+      this.inlineGraphInspector?.showRuleAnnotations(result.ruleAnnotations);
+    }
+    if (resetDownstream) {
+      this.pcdrsSolutions = [];
+      this.pcdrsDisplaySolutions = [];
+      this.collapsedPcdrsById = {};
+      this.showCollapsedAnaphora = false;
+    }
+  }
+
+  previousPostProcessingResult(): void {
+    if (this.postProcessingResults.length < 2) {
+      return;
+    }
+    const index = (this.selectedPostProcessingIndex - 1 + this.postProcessingResults.length)
+      % this.postProcessingResults.length;
+    this.selectPostProcessingResult(index);
+  }
+
+  nextPostProcessingResult(): void {
+    if (this.postProcessingResults.length < 2) {
+      return;
+    }
+    const index = (this.selectedPostProcessingIndex + 1) % this.postProcessingResults.length;
+    this.selectPostProcessingResult(index);
+  }
+
+  onRulesApplied(response: LigerRuleAnnotationResponse): void {
+    if (!this.postProcessingResults.length || this.rulesApplicationLoading) {
+      return;
+    }
+
+    const activeIndex = this.selectedPostProcessingIndex;
+    const ruleString = this.inlineGraphInspector?.rulesText ?? '';
+    this.rulesApplicationLoading = true;
+
+    const requests = this.postProcessingResults.map((result, index) => {
+      if (index === activeIndex) {
+        return of(response);
+      }
+      return this.dataService.ligerApplyRulesToStructure({
+        content: result.structureContent,
+        format: 'json',
+        id: `merged-graph-${index + 1}.json`,
+        ruleString,
+      });
+    });
+
+    forkJoin(requests).subscribe(responses => {
+      responses.forEach((result, index) => {
+        this.postProcessingResults[index].ruleAnnotations = result?.annotations ?? [];
+        this.postProcessingResults[index].rulesApplied = true;
+      });
+      this.rulesApplicationLoading = false;
+      this.selectPostProcessingResult(activeIndex, false);
+    }, () => {
+      this.rulesApplicationLoading = false;
     });
   }
 
@@ -120,27 +213,46 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   generatePcdrs(): void {
-    const selected = this.selectedSemanticSolution();
     const structureContent = this.currentPostProcessedStructureContent();
-    if (!selected?.semantic || !structureContent || this.pcdrsLoading) {
+    if (!structureContent || this.pcdrsLoading || this.rulesApplicationLoading) {
       return;
     }
 
-    let mergedStructure: any;
-    try {
-      mergedStructure = JSON.parse(structureContent);
-    } catch {
+    const results = this.postProcessingResults.length
+      ? this.postProcessingResults
+      : (() => {
+        const selected = this.selectedSemanticSolution();
+        const structure = this.parseStructureContent(structureContent);
+        return selected?.semantic && structure
+          ? [{ semanticSolution: selected, structureContent, graphElements: [], ruleAnnotations: [], rulesApplied: false }]
+          : [];
+      })();
+    const candidates = results.flatMap((result, graphIndex) => {
+      const annotations = result.ruleAnnotations.length
+        ? result.ruleAnnotations
+        : [{ structureJson: this.parseStructureContent(result.structureContent) } as LigerRuleAnnotation]
+          .filter(annotation => !!annotation.structureJson);
+      return annotations.map((annotation, annotationIndex) => ({
+        result,
+        graphIndex,
+        annotation,
+        annotationIndex,
+      }));
+    });
+    if (!candidates.length) {
       return;
     }
 
     this.pcdrsLoading = true;
-    this.dataService.gswbGeneratePcdrs({
-      semantic: selected.semantic,
-      parentSolutionId: selected.id,
-      mergedStructure,
-    }).subscribe(response => {
+    forkJoin(candidates.map(candidate => this.dataService.gswbGeneratePcdrs({
+      semantic: candidate.result.semanticSolution.semantic ?? '',
+      parentSolutionId: this.postProcessingResults.length
+        ? `${candidate.result.semanticSolution.id}-graph-${candidate.graphIndex + 1}-rule-${candidate.annotationIndex + 1}`
+        : candidate.result.semanticSolution.id,
+      mergedStructure: candidate.annotation.structureJson as LigerStructure,
+    }))).subscribe(responses => {
       this.pcdrsLoading = false;
-      this.pcdrsSolutions = response?.solutions ?? [];
+      this.pcdrsSolutions = responses.flatMap(response => response?.solutions ?? []);
       this.collapsedPcdrsById = {};
       this.showCollapsedAnaphora = false;
       this.refreshPcdrsDisplay();
@@ -154,7 +266,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   canGeneratePcdrs(): boolean {
     return this.showInlinePostProcessing
       && !!this.currentPostProcessedStructureContent()
-      && !!this.selectedSemanticSolution()?.semantic;
+      && !this.rulesApplicationLoading
+      && (this.postProcessingResults.length > 0 || !!this.selectedSemanticSolution()?.semantic);
   }
 
   collapseAllAnaphora(): void {
@@ -204,7 +317,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   canOpenMergedGraphInspector(): boolean {
     const betaReduce = this.glue?.gswbPreferences?.gswbPreferences?.betaReduce;
-    return betaReduce === true && !!this.liger?.structureJson && !!this.currentSemanticStructure();
+    return betaReduce === true && !!this.liger?.structureJson
+      && this.semanticSolutionsForPostProcessing().length > 0;
   }
 
   hasGswbSemanticSolution(): boolean {
@@ -216,10 +330,24 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
   }
 
-  private currentSemanticStructure(): LigerStructure | null {
-    const selected = this.selectedSemanticSolution();
+  private semanticSolutionsForPostProcessing(): GswbSolution[] {
+    const semvis = this.glue?.semvis;
+    if (!semvis) {
+      return [];
+    }
 
-    return selected?.graph ?? null;
+    const hasDiscriminantSelection = (semvis.selectedScopeIds?.length ?? 0) > 0
+      || (semvis.selectedMcIds?.length ?? 0) > 0;
+    const solutions = hasDiscriminantSelection ? semvis.items : (semvis.allItems ?? semvis.items);
+    return (Array.isArray(solutions) ? solutions : []).filter(solution => !!solution?.graph);
+  }
+
+  private parseStructureContent(content: string): LigerStructure | null {
+    try {
+      return JSON.parse(content) as LigerStructure;
+    } catch {
+      return null;
+    }
   }
 
   private selectedSemanticSolution(): GswbSolution | undefined {

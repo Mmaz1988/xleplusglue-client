@@ -1,8 +1,8 @@
-import { AfterViewInit, Component, ElementRef, Input, OnChanges, SimpleChanges, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
 import { DataService } from '../data.service';
 import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
-import { LigerQuerySolution, LigerRule, LigerRuleAnnotation, LigerRuleAnnotationFact, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
+import { LigerQuerySolution, LigerRule, LigerRuleAnnotation, LigerRuleAnnotationFact, LigerRuleAnnotationResponse, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
 import { APP_DEFAULTS } from '../app-defaults';
 
 @Component({
@@ -17,6 +17,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   @Input() initialUploadedContent = '';
   @Input() initialUploadedFileName = 'uploaded-graph';
   @Input() initialGraphElements: any[] = [];
+  @Output() rulesApplied = new EventEmitter<LigerRuleAnnotationResponse>();
 
   constructor(private dataService: DataService) {
     const state = (typeof history !== 'undefined' ? history.state : null) as any;
@@ -164,6 +165,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
           return;
         }
         this.displayMessage('Rules applied.', 'green');
+        this.rulesApplied.emit(data);
         this.focusGraphResults();
       },
       error => {
@@ -173,6 +175,21 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
         this.displayMessage(message, 'red');
       }
     );
+  }
+
+  showRuleAnnotations(annotations: LigerRuleAnnotation[]): void {
+    this.activeResultKind = 'rules';
+    this.ruleAnnotations = Array.isArray(annotations) ? annotations : [];
+    this.activeRuleAnnotationIndex = null;
+    if (this.ruleAnnotations.length) {
+      this.selectRuleAnnotation(0);
+    } else {
+      this.appliedRules = [];
+      this.appliedRuleFactsByIndex = {};
+      this.appliedRuleHighlightIdsByIndex = {};
+      this.highlightedNodeIds = new Set<string>();
+      this.refreshGraph();
+    }
   }
 
   private loadUploadedStructure(event: Event) {
