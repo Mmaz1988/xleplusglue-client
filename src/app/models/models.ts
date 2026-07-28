@@ -27,7 +27,7 @@ export interface LigerRuleAnnotation {
   axioms?: string[];
   highlightedNodeIds?: string[];
   highlightedNodeIdsByRule?: Record<string, string[]>;
-  addedAnnotationsByRule?: Record<string, LigerRuleAnnotationFact[]>;
+  addedAnnotationsByRule?: Record<string, LigerRuleAnnotationFact[] | Record<string, LigerRuleAnnotationFact>>;
 }
 
 export interface LigerRuleAnnotationResponse {

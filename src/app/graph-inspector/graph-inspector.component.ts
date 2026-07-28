@@ -542,12 +542,17 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     }
 
     Object.entries(rawFacts).forEach(([ruleIndex, facts]) => {
-      factsByIndex[Number(ruleIndex)] = Array.isArray(facts)
-        ? facts.map(fact => ({ ...fact }))
-        : [];
+      const factList = Array.isArray(facts)
+        ? facts
+        : facts && typeof facts === 'object'
+          ? Object.values(facts)
+          : [];
+      factsByIndex[Number(ruleIndex)] = factList
+        .filter(fact => fact && typeof fact === 'object')
+        .map(fact => ({ ...(fact as LigerRuleAnnotationFact) }));
     });
 
-    console.debug('[GraphInspector] parsed addedAnnotationsByRule', Object.keys(factsByIndex));
+    console.debug('[GraphInspector] parsed addedAnnotationsByRule', factsByIndex);
 
     return factsByIndex;
   }
@@ -574,7 +579,8 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   }
 
   ruleFacts(rule: LigerRule): LigerRuleAnnotationFact[] {
-    return this.appliedRuleFactsByIndex[rule.index] ?? [];
+    const ruleIndex = Number(rule?.index);
+    return Number.isInteger(ruleIndex) ? this.appliedRuleFactsByIndex[ruleIndex] ?? [] : [];
   }
 
   ruleFactText(fact: LigerRuleAnnotationFact): string {
@@ -582,7 +588,11 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     const relationLabel = fact?.relationLabel ?? '?';
     const rawTargetNode = String(fact?.fsValue ?? fact?.targetNode ?? '?');
     const normalizedTargetNode = rawTargetNode.replace(/^#/, '');
-    const targetNode = /^-?\d+$/.test(normalizedTargetNode) ? `#${normalizedTargetNode}` : rawTargetNode;
+    const targetNode = /^-?\d+$/.test(normalizedTargetNode)
+      || normalizedTargetNode === sourceNode
+      || this.graphHasNodeId(normalizedTargetNode)
+      ? `#${normalizedTargetNode}`
+      : rawTargetNode;
     return `#${sourceNode} ${relationLabel} ${targetNode}`;
   }
 

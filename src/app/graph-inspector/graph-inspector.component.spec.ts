@@ -358,6 +358,39 @@ describe('GraphInspectorComponent', () => {
     expect(highlightedIds).toEqual([]);
   });
 
+  it('renders added facts for the selected rule solution', () => {
+    component.activeResultKind = 'rules';
+    component['ruleAnnotations'] = [{
+      sentence: 'annotated graph',
+      graph: { graphElements: [], semantics: '' },
+      appliedRules: [{ rule: '#a ant #a ==> #a SEM event', index: 0, lineNumber: 1 }],
+      addedAnnotationsByRule: {
+        0: [{ fsNode: 'd2', relationLabel: 'ant', fsValue: 'd2' }]
+      }
+    }] as any;
+
+    component.selectRuleAnnotation(0);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('#d2 ant #d2');
+  });
+
+  it('renders object-shaped added-fact groups from JSON responses', () => {
+    component.activeResultKind = 'rules';
+    component['ruleAnnotations'] = [{
+      graph: { graphElements: [], semantics: '' },
+      appliedRules: [{ rule: '#a ant #a ==> #a SEM event', index: 2, lineNumber: 3 }],
+      addedAnnotationsByRule: {
+        2: { fact1: { fsNode: 'd3', relationLabel: 'SEM', fsValue: 'event' } }
+      }
+    }] as any;
+
+    component.selectRuleAnnotation(0);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('#d3 SEM event');
+  });
+
   it('should expose solution bindings for the inspector panel', () => {
     component.querySolutions = [{
       signature: '#a=1',
