@@ -230,7 +230,67 @@ describe('GlueInterfaceComponent', () => {
     expect(component.postProcessingResults[1].rulesApplied).toBeTrue();
   });
 
-  it('creates PCDRS only for the selected annotated merged graph', () => {
+  it('restores the selected rule result when navigating merged graphs', () => {
+    const showStructure = jasmine.createSpy('showStructure');
+    const showRuleAnnotations = jasmine.createSpy('showRuleAnnotations');
+    component.inlineGraphInspector = { showStructure, showRuleAnnotations } as any;
+    component.postProcessingResultsReady = true;
+    component.postProcessingResults = [{
+      semanticSolution: { id: 's1' } as any,
+      structureContent: '{"id":"base-1"}',
+      graphElements: [{ data: { id: 'base-1' } }],
+      ruleAnnotations: [{ structureJson: { id: 'rule-1' } } as any],
+      rulesApplied: true,
+      annotatedStructureContent: '{"id":"rule-1"}',
+      annotatedGraphElements: [{ data: { id: 'rule-1' } }],
+    }, {
+      semanticSolution: { id: 's2' } as any,
+      structureContent: '{"id":"base-2"}',
+      graphElements: [{ data: { id: 'base-2' } }],
+      ruleAnnotations: [{ structureJson: { id: 'rule-2' } } as any],
+      rulesApplied: true,
+      annotatedStructureContent: '{"id":"rule-2"}',
+      annotatedGraphElements: [{ data: { id: 'rule-2' } }],
+    }];
+
+    component.nextPostProcessingResult();
+
+    expect(showStructure).toHaveBeenCalledWith('{"id":"rule-2"}', [{ data: { id: 'rule-2' } }]);
+    expect(showRuleAnnotations).toHaveBeenCalledWith(component.postProcessingResults[1].ruleAnnotations);
+  });
+
+  it('keeps merged-graph navigation disabled during the initial rule request', () => {
+    component.postProcessingResultsReady = true;
+    component.postProcessingResults = [{}, {}] as any;
+    component.inlineGraphInspector = { loading: true } as any;
+
+    expect(component.canNavigatePostProcessing()).toBeFalse();
+
+    component.inlineGraphInspector.loading = false;
+    expect(component.canNavigatePostProcessing()).toBeTrue();
+  });
+
+  it('reports applied rules only after every merged graph is processed', () => {
+    component.postProcessingResults = [
+      { rulesApplied: true } as any,
+      { rulesApplied: false } as any,
+    ];
+
+    expect(component.allPostProcessingRulesApplied()).toBeFalse();
+
+    component.postProcessingResults[1].rulesApplied = true;
+    expect(component.allPostProcessingRulesApplied()).toBeTrue();
+  });
+
+  it('keeps the rules status pending while the graph inspector is loading', () => {
+    component.postProcessingResults = [{ rulesApplied: true } as any];
+    component.inlineGraphInspector = { loading: true } as any;
+
+    expect(component.rulesApplicationInProgress()).toBeTrue();
+    expect(component.allPostProcessingRulesApplied()).toBeFalse();
+  });
+
+  it('creates PCDRS for every annotated merged graph', () => {
     component.showInlinePostProcessing = true;
     component.mergedStructureContent = '{"constraints":[],"annotations":[]}';
     component.postProcessingResults = [{
@@ -252,10 +312,36 @@ describe('GlueInterfaceComponent', () => {
 
     component.generatePcdrs();
 
-    expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledTimes(2);
-    expect(component.pcdrsSolutions.length).toBe(2);
+    expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledTimes(3);
+    expect(component.pcdrsSolutions.length).toBe(3);
     expect(dataServiceMock.gswbGeneratePcdrs.calls.allArgs()
-      .every(args => args[0].parentSolutionId.startsWith('s1-'))).toBeTrue();
+      .map(args => args[0].parentSolutionId))
+      .toEqual(['s1-graph-1-rule-1', 's1-graph-1-rule-2', 's2-graph-2-rule-1']);
+  });
+
+  it('creates PCDRS only for the selected merged graph', () => {
+    component.showInlinePostProcessing = true;
+    component.mergedStructureContent = '{"graph":2}';
+    component.selectedPostProcessingIndex = 1;
+    component.postProcessingResults = [{
+      semanticSolution: { id: 's1', semantic: 'sem-1' } as any,
+      structureContent: '{"graph":1}',
+      graphElements: [],
+      ruleAnnotations: [{ structureJson: { graph: 1 } } as any],
+      rulesApplied: true,
+    }, {
+      semanticSolution: { id: 's2', semantic: 'sem-2' } as any,
+      structureContent: '{"graph":2}',
+      graphElements: [],
+      ruleAnnotations: [{ structureJson: { graph: 2 } } as any],
+      rulesApplied: true,
+    }];
+
+    component.generatePcdrs(true);
+
+    expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledTimes(1);
+    expect(dataServiceMock.gswbGeneratePcdrs.calls.mostRecent().args[0].parentSolutionId)
+      .toBe('s2-graph-2-rule-1');
   });
 
   it('resets stale graph inspector state before a new post-processing run', () => {

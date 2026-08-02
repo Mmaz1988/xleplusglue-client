@@ -124,6 +124,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     }
 
     this.loading = true;
+    this.displayMessage('Now applying rules ...', 'blue');
     this.activeResultKind = 'rules';
     this.querySolutions = [];
     this.activeSolutionIndex = null;
@@ -152,15 +153,12 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
         if (this.ruleAnnotations.length) {
           this.selectRuleAnnotation(0);
         } else {
-          this.baseGraphElements = [];
-          this.graphElements = [];
-          this.currentStructureJson = '';
           this.appliedRules = [];
           this.appliedRuleFactsByIndex = {};
           this.appliedMeaningConstructors = '';
           this.appliedNumberOfMCsets = 0;
           this.highlightedNodeIds = new Set<string>();
-          this.cy1.renderGraph([]);
+          this.refreshGraph();
           this.displayMessage('No rule results returned.', 'red');
           return;
         }
@@ -190,6 +188,14 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
       this.highlightedNodeIds = new Set<string>();
       this.refreshGraph();
     }
+  }
+
+  showStructure(structureContent: string, graphElements: any[]): void {
+    this.resetForNewStructure();
+    this.currentStructureJson = structureContent ?? '';
+    this.baseGraphElements = this.cloneGraphElements(graphElements ?? []);
+    this.graphElements = this.cloneGraphElements(this.baseGraphElements);
+    this.cy1.renderGraph(this.graphElements);
   }
 
   resetForNewStructure(): void {

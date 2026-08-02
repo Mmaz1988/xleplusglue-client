@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure } from '../models/models';
+import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -15,6 +15,8 @@ interface PostProcessingResult {
   graphElements: any[];
   ruleAnnotations: LigerRuleAnnotation[];
   rulesApplied: boolean;
+  annotatedStructureContent?: string;
+  annotatedGraphElements?: any[];
 }
 
 @Component({
@@ -42,6 +44,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   mergedStructureFileName = 'merged-graph.json';
   mergedGraphElements: any[] = [];
   postProcessingResults: PostProcessingResult[] = [];
+  postProcessingResultsReady = false;
   selectedPostProcessingIndex = 0;
   rulesApplicationLoading = false;
   pcdrsSolutions: GswbSolution[] = [];
@@ -50,6 +53,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   previousSemanticGraphs: LigerStructure[] = [];
   previousSemanticStrings: string[] = [];
   private lastSequenceLength = 0;
+  private syntaxBySolutionKey: Record<string, LigerStructure> = {};
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
@@ -78,6 +82,15 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.glue.editor1.updateContent(newValue);
         this.glue.semanticSolutionReady = false;
       });
+      this.liger.proofInputChange.subscribe((proofInputs: GswbProofInput[]) => {
+        this.syntaxBySolutionKey = {};
+        proofInputs.forEach(input => {
+          if (input.solutionKey && input.structure) {
+            this.syntaxBySolutionKey[input.solutionKey] = input.structure;
+          }
+        });
+        this.glue.setProofInputs(proofInputs);
+      });
     }
 
     setTimeout(() => this.restoreWorkspaceState(), 0);
@@ -88,17 +101,17 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   handlePostProcessing(mode: 'inline' | 'standalone'): void {
-    const syntax = this.liger?.structureJson ?? null;
     const semanticSolutions = this.semanticSolutionsForPostProcessing();
 
-    if (!syntax || !semanticSolutions.length || this.postProcessingLoading) {
+    if (!semanticSolutions.length || this.postProcessingLoading) {
       return;
     }
 
     this.inlineGraphInspector?.resetForNewStructure();
+    this.postProcessingResultsReady = false;
     this.postProcessingLoading = true;
     forkJoin(semanticSolutions.map(semanticSolution => this.dataService.ligerMergeStructure({
-      syntax,
+      syntax: this.syntaxForSolution(semanticSolution),
       drs: semanticSolution.graph as LigerStructure,
     }))).subscribe(responses => {
       this.postProcessingResults = responses.map((response, index) => ({
@@ -111,6 +124,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         rulesApplied: false,
       }));
       this.selectedPostProcessingIndex = 0;
+      this.postProcessingResultsReady = true;
       this.postProcessingLoading = false;
       this.selectPostProcessingResult(0, false);
 
@@ -135,8 +149,15 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       setTimeout(() => this.postProcessingSection?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
     }, () => {
       this.postProcessingLoading = false;
+      this.postProcessingResultsReady = false;
       this.postProcessingResults = [];
     });
+  }
+
+  private syntaxForSolution(solution: GswbSolution): LigerStructure | null {
+    return (solution.solutionKey ? this.syntaxBySolutionKey[solution.solutionKey] : undefined)
+      ?? this.liger?.structureJson
+      ?? null;
   }
 
   selectPostProcessingResult(index: number, resetDownstream = true): void {
@@ -146,9 +167,21 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     }
 
     this.selectedPostProcessingIndex = index;
-    this.mergedStructureContent = result.structureContent;
-    this.mergedGraphElements = result.graphElements;
-    if (result.rulesApplied && typeof this.inlineGraphInspector?.showRuleAnnotations === 'function') {
+    const annotatedContent = result.annotatedStructureContent;
+    const annotatedGraph = result.annotatedGraphElements;
+    const displayContent = result.rulesApplied && annotatedContent
+      ? annotatedContent
+      : result.structureContent;
+    const displayGraph = result.rulesApplied && annotatedGraph
+      ? annotatedGraph
+      : result.graphElements;
+    this.mergedStructureContent = displayContent;
+    this.mergedGraphElements = displayGraph;
+    if (typeof this.inlineGraphInspector?.showStructure === 'function') {
+      this.inlineGraphInspector.showStructure(displayContent, displayGraph);
+    }
+    if (result.rulesApplied && result.ruleAnnotations.length
+      && typeof this.inlineGraphInspector?.showRuleAnnotations === 'function') {
       this.inlineGraphInspector?.showRuleAnnotations(result.ruleAnnotations);
     }
     if (resetDownstream) {
@@ -160,7 +193,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   previousPostProcessingResult(): void {
-    if (this.postProcessingResults.length < 2) {
+    if (!this.canNavigatePostProcessing()) {
       return;
     }
     const index = (this.selectedPostProcessingIndex - 1 + this.postProcessingResults.length)
@@ -169,11 +202,19 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   nextPostProcessingResult(): void {
-    if (this.postProcessingResults.length < 2) {
+    if (!this.canNavigatePostProcessing()) {
       return;
     }
     const index = (this.selectedPostProcessingIndex + 1) % this.postProcessingResults.length;
     this.selectPostProcessingResult(index);
+  }
+
+  canNavigatePostProcessing(): boolean {
+    return this.postProcessingResultsReady
+      && !this.postProcessingLoading
+      && !this.rulesApplicationLoading
+      && !this.inlineGraphInspector?.loading
+      && this.postProcessingResults.length > 1;
   }
 
   onRulesApplied(response: LigerRuleAnnotationResponse): void {
@@ -184,6 +225,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     const activeIndex = this.selectedPostProcessingIndex;
     const ruleString = this.inlineGraphInspector?.rulesText ?? '';
     this.rulesApplicationLoading = true;
+    if (typeof this.inlineGraphInspector?.displayMessage === 'function') {
+      this.inlineGraphInspector.displayMessage('Now applying rules ...', 'blue');
+    }
 
     const requests = this.postProcessingResults.map((result, index) => {
       if (index === activeIndex) {
@@ -199,10 +243,22 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
     forkJoin(requests).subscribe(responses => {
       responses.forEach((result, index) => {
-        this.postProcessingResults[index].ruleAnnotations = result?.annotations ?? [];
-        this.postProcessingResults[index].rulesApplied = true;
+        const target = this.postProcessingResults[index];
+        target.ruleAnnotations = result?.annotations ?? [];
+        target.rulesApplied = true;
+        const firstAnnotation = target.ruleAnnotations.find(annotation =>
+          !!annotation?.structureJson || !!annotation?.graph?.graphElements);
+        if (firstAnnotation?.structureJson) {
+          target.annotatedStructureContent = JSON.stringify(firstAnnotation.structureJson, null, 2);
+        }
+        if (firstAnnotation?.graph?.graphElements) {
+          target.annotatedGraphElements = firstAnnotation.graph.graphElements;
+        }
       });
       this.rulesApplicationLoading = false;
+      if (typeof this.inlineGraphInspector?.displayMessage === 'function') {
+        this.inlineGraphInspector.displayMessage('Rules applied.', 'green');
+      }
       this.selectPostProcessingResult(activeIndex, false);
     }, () => {
       this.rulesApplicationLoading = false;
@@ -213,14 +269,14 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.handlePostProcessing('standalone');
   }
 
-  generatePcdrs(): void {
+  generatePcdrs(selectedOnly = false): void {
     const structureContent = this.currentPostProcessedStructureContent();
     if (!structureContent || this.pcdrsLoading || this.rulesApplicationLoading) {
       return;
     }
 
     const results = this.postProcessingResults.length
-      ? [this.postProcessingResults[this.selectedPostProcessingIndex]].filter(Boolean)
+      ? this.postProcessingResults
       : (() => {
         const selected = this.selectedSemanticSolution();
         const structure = this.parseStructureContent(structureContent);
@@ -228,11 +284,17 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           ? [{ semanticSolution: selected, structureContent, graphElements: [], ruleAnnotations: [], rulesApplied: false }]
           : [];
       })();
-    const candidates = results.flatMap((result, graphIndex) => {
+    const indexedResults = results.map((result, index) => ({ result, graphIndex: index }));
+    const resultsToProcess = selectedOnly && this.postProcessingResults.length
+      ? indexedResults.filter(({ graphIndex }) => graphIndex === this.selectedPostProcessingIndex)
+      : indexedResults;
+    const candidates = resultsToProcess.flatMap(({ result, graphIndex }) => {
       const annotations = result.ruleAnnotations.length
         ? result.ruleAnnotations
-        : [{ structureJson: this.parseStructureContent(result.structureContent) } as LigerRuleAnnotation]
-          .filter(annotation => !!annotation.structureJson);
+        : result.rulesApplied
+          ? []
+          : [{ structureJson: this.parseStructureContent(result.structureContent) } as LigerRuleAnnotation]
+            .filter(annotation => !!annotation.structureJson);
       return annotations.map((annotation, annotationIndex) => ({
         result,
         graphIndex,
@@ -269,6 +331,21 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       && !!this.currentPostProcessedStructureContent()
       && !this.rulesApplicationLoading
       && (this.postProcessingResults.length > 0 || !!this.selectedSemanticSolution()?.semantic);
+  }
+
+  canGenerateSelectedPcdrs(): boolean {
+    return this.canGeneratePcdrs()
+      && (!this.postProcessingResults.length || !!this.postProcessingResults[this.selectedPostProcessingIndex]);
+  }
+
+  rulesApplicationInProgress(): boolean {
+    return this.rulesApplicationLoading || !!this.inlineGraphInspector?.loading;
+  }
+
+  allPostProcessingRulesApplied(): boolean {
+    return this.postProcessingResults.length > 0
+      && !this.rulesApplicationInProgress()
+      && this.postProcessingResults.every(result => result.rulesApplied);
   }
 
   collapseAllAnaphora(): void {

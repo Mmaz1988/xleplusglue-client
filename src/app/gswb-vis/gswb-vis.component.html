@@ -1,6 +1,16 @@
 <h3>
   Meaning constructors:
 </h3>
+<div *ngIf="proofInputs.length" class="solution-nav">
+  <button type="button" (click)="previousProofInput()" [disabled]="proofInputs.length < 2">&#9664; Prev proof</button>
+  <span>
+    Proof {{ selectedProofInputIndex + 1 }} / {{ proofInputs.length }}
+    <span *ngIf="proofInputs[selectedProofInputIndex]?.solutionKey">
+      ({{ proofInputs[selectedProofInputIndex]?.solutionKey }})
+    </span>
+  </span>
+  <button type="button" (click)="nextProofInput()" [disabled]="proofInputs.length < 2">Next proof &#9654;</button>
+</div>
 <div class="editor-restr">
 <app-editor #edit1 [mode]="'glue'" >
 </app-editor>

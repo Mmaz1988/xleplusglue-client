@@ -282,6 +282,14 @@ describe('GraphInspectorComponent', () => {
     expect(nav.textContent).toContain('Result 1 / 2');
   });
 
+  it('renders the selected post-processing structure before applying annotations', () => {
+    component.showStructure('{"id":"raw-branch"}', [{ data: { id: 'raw-node' } }]);
+
+    const graphVis = fixture.debugElement.query(By.directive(GraphVisStubComponent)).componentInstance as GraphVisStubComponent;
+    expect(component.currentStructureJson).toContain('raw-branch');
+    expect(graphVis.lastRendered.map(element => element.data.id)).toEqual(['raw-node']);
+  });
+
   it('should iterate branch graphs with prev and next controls', () => {
     component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';

@@ -4,7 +4,7 @@ import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import {GrammarLoaderComponent} from "../utilities/grammar-loader/grammar-loader.component";
 import { DataService } from '../data.service';
-import { LigerSolutionAnnotation, LigerStructure } from '../models/models';
+import { GswbProofInput, LigerSolutionAnnotation, LigerStructure } from '../models/models';
 import { AnalysisWorkspaceStateService, LigerWorkspaceState } from '../analysis-workspace-state.service';
 import { APP_DEFAULTS } from "../app-defaults";
 
@@ -30,10 +30,12 @@ export class LigerVisComponent implements AfterViewInit {
   meaningConstructors: string;
   structureJson: LigerStructure | null = null;
   changeDetector: EventEmitter<any> = new EventEmitter();
+  proofInputChange: EventEmitter<GswbProofInput[]> = new EventEmitter();
   graphElements: any
   loading: boolean = false;
   solutions: LigerSolutionAnnotation[] = [];
   selectedSolutionIndex = 0;
+  useAllResults = true;
 
   @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
@@ -63,6 +65,7 @@ export class LigerVisComponent implements AfterViewInit {
         this.loading = false;
         this.errorhandle.nativeElement.innerHTML = "";
         this.solutions = Array.isArray(data.solutions) ? data.solutions : [];
+        console.info('[LiGER] parse succeeded', { solutionCount: this.solutions.length });
         if (this.solutions.length > 0) {
           this.sequenceSentences = [sentence];
         }
@@ -88,7 +91,7 @@ export class LigerVisComponent implements AfterViewInit {
       },
       error => {
         this.loading = false;
-        console.log('ERROR: ', error);
+        console.warn('[LiGER] parse failed', error);
         this.displayMessage("An error occurred while calling LiGER...", "red");
       }
     );
@@ -279,13 +282,34 @@ export class LigerVisComponent implements AfterViewInit {
   }
 
   collectAllMeaningConstructors(): void {
-    const allMeaningConstructors = this.solutions
-      .map(solution => solution.meaningConstructors ?? '')
-      .filter(text => text.trim().length > 0)
-      .join('\n');
+    this.useAllResults = true;
+    const selected = this.solutions[this.selectedSolutionIndex];
+    const selectedMeaningConstructors = selected?.meaningConstructors ?? '';
+    this.meaningConstructors = selectedMeaningConstructors;
+    this.changeDetector.emit(selectedMeaningConstructors);
+    const proofInputs = this.proofInputsFor(this.solutions);
+    this.proofInputChange.emit(proofInputs);
+  }
 
-    this.meaningConstructors = allMeaningConstructors;
-    this.changeDetector.emit(allMeaningConstructors);
+  toggleResultScope(): void {
+    this.useAllResults = !this.useAllResults;
+    if (this.useAllResults) {
+      this.collectAllMeaningConstructors();
+      return;
+    }
+    this.renderSelectedSolution(this.selectedSolutionIndex);
+  }
+
+  private proofInputsFor(solutions: LigerSolutionAnnotation[]): GswbProofInput[] {
+    return solutions
+      .map((solution, index) => ({
+        proofId: solution.solutionKey || `solution-${index}`,
+        solutionKey: solution.solutionKey,
+        mcSetId: solution.solutionKey || `solution-${index}`,
+        meaningConstructors: solution.meaningConstructors ?? '',
+        structure: solution.structureJson,
+      }))
+      .filter(input => input.meaningConstructors.trim().length > 0);
   }
 
   private renderSelectedSolution(index: number): void {
@@ -307,6 +331,8 @@ export class LigerVisComponent implements AfterViewInit {
 
     this.meaningConstructors = solution.meaningConstructors ?? '';
     this.changeDetector.emit(this.meaningConstructors);
+    const proofInputs = this.useAllResults ? this.proofInputsFor(this.solutions) : this.proofInputsFor([solution]);
+    this.proofInputChange.emit(proofInputs);
   }
 
   displayMessage(message: string, color: string) {

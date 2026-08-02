@@ -141,6 +141,14 @@ export class SemVisComponent implements AfterViewInit {
     return this.selectedScopeIds.includes(d.id);
   }
 
+  surfaceLabelFor(d: GswbDiscriminant): string {
+    const originLabel = Object.values(d.surfaceLabelsByOrigin ?? {})
+      .find(label => typeof label === 'string' && label.trim().length > 0);
+    return originLabel
+      || d.surfaceLabel
+      || d.identifier;
+  }
+
   toggleScope(d: GswbDiscriminant): void {
     this.selectedScopeIds = this.isScopeSelected(d)
       ? this.selectedScopeIds.filter(id => id !== d.id)

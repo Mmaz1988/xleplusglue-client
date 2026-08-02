@@ -42,4 +42,38 @@ describe('LigerVisComponent', () => {
 
     expect(component.canAppendSentence()).toBeTrue();
   });
+
+  it('uses all proof inputs by default', () => {
+    const inputs: any[] = [];
+    component.proofInputChange.subscribe(value => inputs.push(value));
+    component.solutions = [
+      { solutionKey: 'syntax-a', meaningConstructors: 'a', appliedRules: [], structureJson: { id: 'a' } },
+      { solutionKey: 'syntax-b', meaningConstructors: 'b', appliedRules: [], structureJson: { id: 'b' } },
+    ] as any;
+
+    component.collectAllMeaningConstructors();
+
+    expect(inputs[0].map(input => input.proofId)).toEqual(['syntax-a', 'syntax-b']);
+  });
+
+  it('filters proof inputs to the selected graph when requested', () => {
+    const inputs: any[] = [];
+    component.proofInputChange.subscribe(value => inputs.push(value));
+    component.solutions = [
+      { solutionKey: 'syntax-a', meaningConstructors: 'a', appliedRules: [], structureJson: { id: 'a' } },
+      { solutionKey: 'syntax-b', meaningConstructors: 'b', appliedRules: [], structureJson: { id: 'b' } },
+    ] as any;
+    component.cy1 = { renderGraph: () => {} } as any;
+    component.rulelist1 = { clearList: () => {}, addElement: () => {} } as any;
+
+    component.selectSolution(1);
+    component.toggleResultScope();
+
+    expect(inputs[1]).toEqual([jasmine.objectContaining({
+      proofId: 'syntax-b',
+      solutionKey: 'syntax-b',
+      meaningConstructors: 'b',
+      structure: { id: 'b' },
+    })]);
+  });
 });

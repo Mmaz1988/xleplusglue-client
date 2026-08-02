@@ -63,22 +63,26 @@
     [initialGraphElements]="mergedGraphElements"
     (rulesApplied)="onRulesApplied($event)">
     <div graph-navigation class="solution-nav" *ngIf="postProcessingResults.length > 1">
-      <button type="button" (click)="previousPostProcessingResult()">◀ Prev merged graph</button>
+      <button type="button" (click)="previousPostProcessingResult()" [disabled]="!canNavigatePostProcessing()">◀ Prev merged graph</button>
       <span>
         Result {{ selectedPostProcessingIndex + 1 }} / {{ postProcessingResults.length }}
         <span *ngIf="postProcessingResults[selectedPostProcessingIndex]?.semanticSolution?.id">
           ({{ postProcessingResults[selectedPostProcessingIndex].semanticSolution.id }})
         </span>
-        <span>
+        <span *ngIf="allPostProcessingRulesApplied()">
           Rules: {{ postProcessingResults[selectedPostProcessingIndex].ruleAnnotations.length }} solution{{ postProcessingResults[selectedPostProcessingIndex].ruleAnnotations.length === 1 ? '' : 's' }}
         </span>
       </span>
-      <button type="button" (click)="nextPostProcessingResult()">Next merged graph ▶</button>
+      <button type="button" (click)="nextPostProcessingResult()" [disabled]="!canNavigatePostProcessing()">Next merged graph ▶</button>
     </div>
   </app-graph-inspector>
   <div class="pcdrs-actions">
     <button type="button" (click)="generatePcdrs()" [disabled]="!canGeneratePcdrs() || pcdrsLoading">
-      <span *ngIf="!pcdrsLoading">Generate PCDRS</span>
+      <span *ngIf="!pcdrsLoading">Generate PCDRS for all graphs</span>
+      <span *ngIf="pcdrsLoading">Generating PCDRS...</span>
+    </button>
+    <button type="button" (click)="generatePcdrs(true)" [disabled]="!canGenerateSelectedPcdrs() || pcdrsLoading">
+      <span *ngIf="!pcdrsLoading">Generate PCDRS for selected graph</span>
       <span *ngIf="pcdrsLoading">Generating PCDRS...</span>
     </button>
     <button type="button" (click)="collapseAllAnaphora()" [disabled]="!canCollapseAllAnaphora() || collapseAnaphoraLoading">

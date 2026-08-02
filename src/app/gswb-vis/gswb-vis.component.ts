@@ -5,7 +5,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbRequest,GswbPreferences, GswbSolution, LigerStructure} from "../models/models";
+import {GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -37,6 +37,8 @@ export class GswbVisComponent implements AfterViewInit {
   @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
   meaningConstructors = '';
+  proofInputs: GswbProofInput[] = [];
+  selectedProofInputIndex = 0;
   private hasSemanticSolutions = false;
   semanticSolutionReady = false;
   postProcessingMode: 'inline' | 'standalone' = 'inline';
@@ -74,12 +76,23 @@ export class GswbVisComponent implements AfterViewInit {
       premises: this.editor1.getContent(),
       gswbPreferences: this.gswbPreferences.gswbPreferences,
       structure: this.structureJson ?? undefined
+      , proofs: this.proofInputs.length ? this.proofInputs : undefined
     }
 
     this.displayMessage("[" +  new Date().toLocaleTimeString() + "] Sending request to GSWB ...", "blue");
+    console.info('[GSWB] deduction started', {
+      proofCount: gswbRequest.proofs?.length ?? 0,
+      proofIds: (gswbRequest.proofs ?? []).map(proof => proof.proofId),
+      premisesLength: gswbRequest.premises.length,
+      hasStructure: !!gswbRequest.structure,
+    });
     this.dataService.gswbDeduce(gswbRequest).subscribe(
       data => {
         this.loading = false;
+        console.info('[GSWB] deduction succeeded', {
+          solutionCount: data.solutions?.length ?? 0,
+          discriminantCount: data.discriminants?.length ?? 0,
+        });
         // Handle the data here...
         // Depending on the structure of the data you might need to modify the below code.
         if (data.hasOwnProperty('solutions')) {
@@ -148,11 +161,10 @@ export class GswbVisComponent implements AfterViewInit {
         this.displayMessage("GSWB deduction completed.", "green");
       },
       error => {
-        console.log('ERROR: ', error);
+        console.warn('[GSWB] deduction failed', error);
         this.loading = false;
         // this.sem.updateContent("[" +  new Date().toLocaleTimeString() + "] An error occurred.");
         this.displayMessage( "An error occurred during GSWB deduction.", "red");
-        console.log("Sent following request: ", gswbRequest);
       }
     );
 
@@ -172,6 +184,39 @@ export class GswbVisComponent implements AfterViewInit {
 
   updateMeaningConstructors() {
     this.meaningConstructors = this.editor1?.getContent() ?? '';
+  }
+
+  setProofInputs(proofInputs: GswbProofInput[]): void {
+    this.proofInputs = Array.isArray(proofInputs)
+      ? proofInputs.map(input => ({ ...input }))
+      : [];
+    this.selectedProofInputIndex = Math.min(
+      this.selectedProofInputIndex,
+      Math.max(this.proofInputs.length - 1, 0),
+    );
+    this.showSelectedProofInput();
+  }
+
+  previousProofInput(): void {
+    if (this.proofInputs.length < 2) return;
+    this.selectedProofInputIndex = (this.selectedProofInputIndex - 1 + this.proofInputs.length)
+      % this.proofInputs.length;
+    this.showSelectedProofInput();
+  }
+
+  nextProofInput(): void {
+    if (this.proofInputs.length < 2) return;
+    this.selectedProofInputIndex = (this.selectedProofInputIndex + 1) % this.proofInputs.length;
+    this.showSelectedProofInput();
+  }
+
+  private showSelectedProofInput(): void {
+    const input = this.proofInputs[this.selectedProofInputIndex];
+    if (!input) {
+      return;
+    }
+    this.meaningConstructors = input.meaningConstructors;
+    this.editor1?.updateContent(this.meaningConstructors);
   }
 
   onSemanticSelectionChange(selection: { items: any[] }): void {
@@ -199,6 +244,8 @@ export class GswbVisComponent implements AfterViewInit {
         semantics: [this.previousSemanticStrings[index] || '', solution.semantic || ''],
         graphs: [previousGraph, solution.graph as LigerStructure],
         parentSolutionId: solution.id,
+        solutionKey: solution.solutionKey,
+        mcSetId: solution.mcSetId,
       })));
 
     forkJoin(mergeRequests).subscribe(mergedSolutions => {

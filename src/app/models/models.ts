@@ -155,6 +155,15 @@ export interface GswbRequest {
   gswbPreferences: GswbPreferences;
   sessionKey?: string;
   structure?: LigerStructure;
+  proofs?: GswbProofInput[];
+}
+
+export interface GswbProofInput {
+  proofId: string;
+  solutionKey?: string;
+  mcSetId?: string;
+  meaningConstructors: string;
+  structure?: LigerStructure;
 }
 
 export interface GswbMultipleRequest {
@@ -170,6 +179,8 @@ export interface GswbDiscriminant {
   associatedSolutions: string[];
   instantiations?: string[];
   surfaceLabel?: string;
+  originIds?: string[];
+  surfaceLabelsByOrigin?: Record<string, string>;
 }
 
 export interface GswbSolution {
@@ -179,6 +190,9 @@ export interface GswbSolution {
   graph?: LigerStructure;
   semantic?: string;
   anaphoraMapping?: string;
+  proofId?: string;
+  solutionKey?: string;
+  mcSetId?: string;
 }
 
 export interface GswbPcdrsRequest {
@@ -201,6 +215,8 @@ export interface GswbSequenceMergeRequest {
   semantics: string[];
   graphs: LigerStructure[];
   parentSolutionId?: string;
+  solutionKey?: string;
+  mcSetId?: string;
 }
 
 export interface GswbOutput {
