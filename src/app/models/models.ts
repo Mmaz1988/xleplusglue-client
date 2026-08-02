@@ -154,6 +154,7 @@ export interface GswbRequest {
   premises: string;
   gswbPreferences: GswbPreferences;
   sessionKey?: string;
+  structure?: LigerStructure;
 }
 
 export interface GswbMultipleRequest {
@@ -168,6 +169,7 @@ export interface GswbDiscriminant {
   identifier: string;
   associatedSolutions: string[];
   instantiations?: string[];
+  surfaceLabel?: string;
 }
 
 export interface GswbSolution {

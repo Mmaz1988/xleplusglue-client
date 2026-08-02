@@ -72,7 +72,7 @@
               [disabled]="!isScopeSelected(row.disc) && !wouldFurtherFilter(row.disc)"
               (click)="toggleScope(row.disc)"
               [title]="row.disc.identifier">
-              {{ row.disc.identifier }}
+              {{ row.disc.surfaceLabel || row.disc.identifier }}
             </button>
 
             <app-pill
