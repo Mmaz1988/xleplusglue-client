@@ -1,6 +1,5 @@
 import {Component, ElementRef, ViewChild, AfterViewInit, Input, Output, EventEmitter} from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { SemComponent } from './sem/sem.component';
 import { LogComponent } from './log/log.component';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
@@ -22,6 +21,7 @@ import { forkJoin } from 'rxjs';
 
 
 export class GswbVisComponent implements AfterViewInit {
+  @Input() structureJson: LigerStructure | null = null;
   @Input() canPostProcess = false;
   @Input() postProcessingLoading = false;
   @Input() previousSemanticGraphs: LigerStructure[] = [];
@@ -72,7 +72,8 @@ export class GswbVisComponent implements AfterViewInit {
 
     const gswbRequest: GswbRequest = {
       premises: this.editor1.getContent(),
-      gswbPreferences: this.gswbPreferences.gswbPreferences
+      gswbPreferences: this.gswbPreferences.gswbPreferences,
+      structure: this.structureJson ?? undefined
     }
 
     this.displayMessage("[" +  new Date().toLocaleTimeString() + "] Sending request to GSWB ...", "blue");
@@ -92,15 +93,6 @@ export class GswbVisComponent implements AfterViewInit {
               // For a sequence, the raw current-sentence readings are not
               // ready for the next append until their sequence merge finishes.
               this.semanticSolutionReady = this.previousSemanticGraphs.length === 0;
-            console.log("Solutions:", data.solutions)
-            // data.solutions.forEach(element => {
-            //   console.log(element);
-            //   //print solutions line by line to sem
-            //   this.sem.updateContent(element);
-            // });
-            //translate data.solutions to string with each solution in a new line
-            //let solutions = data.solutions.join('\n');
-
             this.semvis.clearMc();
             this.semvis.clearScope();
             this.semvis.applyFiltersAndResetIndex();
@@ -108,7 +100,6 @@ export class GswbVisComponent implements AfterViewInit {
              this.semvis.setItems(data.solutions);
              this.semvis.setDiscriminants(data.discriminants);
              this.mergeCurrentSolutions(data.solutions);
-           // this.sem.updateContent(solutions);
           } else {
             //create error message with request time stamp
             //create gswb solution with no solutions found and create list to treat as semvis
@@ -124,14 +115,12 @@ export class GswbVisComponent implements AfterViewInit {
         }
 
         if (data.hasOwnProperty('derivation') && this.gswbPreferences.gswbPreferences.explainFail) {
-          console.log(data.derivation)
 
           //check if derivation is a string or an object
 
 
      if (data.derivation.hasOwnProperty('graphElements'))
           {
-            console.log(data.derivation.graphElements);
             this.derivationContainer.showEditor = false;
             this.derivationContainer.showGraph = true;
             const graphElements = data.derivation.graphElements;
@@ -213,17 +202,6 @@ export class GswbVisComponent implements AfterViewInit {
       })));
 
     forkJoin(mergeRequests).subscribe(mergedSolutions => {
-      console.groupCollapsed('[GSWB] sequence merge response rendered by SemVis');
-      console.log('solutions:', mergedSolutions);
-      mergedSolutions.forEach((solution, index) => {
-        console.log(`solution[${index}]`, {
-          id: solution.id,
-          semantic: solution.semantic,
-          svg: solution.solution,
-          graph: solution.graph,
-        });
-      });
-      console.groupEnd();
       this.semvis.setItems(mergedSolutions);
       this.semvis.setDiscriminants([]);
       this.hasSemanticSolutions = mergedSolutions.length > 0;

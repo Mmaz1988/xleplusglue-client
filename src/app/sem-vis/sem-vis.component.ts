@@ -98,9 +98,7 @@ export class SemVisComponent implements AfterViewInit {
 
   public setDiscriminants(items: GswbDiscriminant[]): void {
     this.scope_discriminants = items.filter(s => s.type === "scope");
-    console.log("Scope discriminants", this.scope_discriminants);
     this.mc_discriminants = items.filter(s => s.type === "MCs");
-    console.log("MC discriminants", this.mc_discriminants);
 
     this.applyFiltersAndResetIndex(0, true);
   }
@@ -149,8 +147,6 @@ export class SemVisComponent implements AfterViewInit {
       : [...this.selectedScopeIds, d.id];
 
     this.applyFiltersAndResetIndex(0, true);
-    console.log("Selected scope IDs:", this.selectedScopeIds);
-    console.log("Currently allowed:", this.getCurrentAllowedIds())
   }
 
   isMcSelected(d: GswbDiscriminant): boolean {
@@ -163,7 +159,6 @@ export class SemVisComponent implements AfterViewInit {
       : [...this.selectedMcIds, d.id];
 
     this.applyFiltersAndResetIndex(0, true);
-    console.log("Selected MC IDs:", this.selectedMcIds);
   }
 
 

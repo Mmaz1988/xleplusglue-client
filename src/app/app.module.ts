@@ -3,7 +3,6 @@ import { BrowserModule } from '@angular/platform-browser';
 
 import { AppComponent } from './app.component';
 import { GswbVisComponent } from './gswb-vis/gswb-vis.component';
-import { SemComponent } from './gswb-vis/sem/sem.component';
 import { EditorComponent } from './editor/editor.component';
 import { LogComponent } from './gswb-vis/log/log.component';
 import { ReactiveFormsModule } from '@angular/forms';
@@ -37,7 +36,6 @@ import { MatTreeModule } from '@angular/material/tree';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { ChatInterfaceComponent } from './chat-interface/chat-interface.component';
-import { ChatTabsComponent } from './chat-interface/chat-tabs/chat-tabs.component';
 import {MatTabsModule} from "@angular/material/tabs";
 import { ChatComponent } from './chat-interface/chat/chat.component';
 import { RuleLoaderComponent } from './utilities/rule-loader/rule-loader.component';
@@ -61,7 +59,6 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
   declarations: [
     AppComponent,
     GswbVisComponent,
-    SemComponent,
     EditorComponent,
     LogComponent,
     LigerVisComponent,
@@ -85,7 +82,6 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     GrammarLoaderComponent,
     FileTreeComponent,
     ChatInterfaceComponent,
-    ChatTabsComponent,
     ChatComponent,
     RuleLoaderComponent,
     HistoryComponent,
