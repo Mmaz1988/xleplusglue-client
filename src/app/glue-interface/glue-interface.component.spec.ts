@@ -134,7 +134,7 @@ describe('GlueInterfaceComponent', () => {
     expect(component.canOpenMergedGraphInspector()).toBeTrue();
   });
 
-  it('merges every semantic solution when no discriminant is selected', () => {
+  it('packs every semantic solution when no discriminant is selected', () => {
     component.liger = {
       structureJson: { id: 'syntax-graph' }
     } as any;
@@ -153,9 +153,10 @@ describe('GlueInterfaceComponent', () => {
 
     component.handlePostProcessing('inline');
 
-    expect(dataServiceMock.ligerMergeStructure).toHaveBeenCalledTimes(2);
-    expect(component.postProcessingResults.map(result => result.semanticSolution.id))
-      .toEqual(['drs-1', 'drs-2']);
+    expect(dataServiceMock.ligerMergeStructure).toHaveBeenCalledTimes(1);
+    expect(dataServiceMock.ligerMergeStructure.calls.mostRecent().args[0].drs.alternatives)
+      .toEqual([{ id: 'drs-1' }, { id: 'drs-2' }]);
+    expect(component.postProcessingResults.length).toBe(1);
   });
 
   it('merges only discriminant-selected semantic solutions', () => {
@@ -177,7 +178,8 @@ describe('GlueInterfaceComponent', () => {
     component.handlePostProcessing('inline');
 
     expect(dataServiceMock.ligerMergeStructure).toHaveBeenCalledTimes(1);
-    expect(dataServiceMock.ligerMergeStructure.calls.mostRecent().args[0].drs.id).toBe('drs-2');
+    expect(dataServiceMock.ligerMergeStructure.calls.mostRecent().args[0].drs.alternatives)
+      .toEqual([{ id: 'drs-2' }]);
   });
 
   it('generates PCDRS only from the selected merged solution', () => {

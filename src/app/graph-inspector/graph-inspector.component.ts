@@ -44,7 +44,12 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   queryLoading = false;
   currentStructureJson = '';
   private baseGraphElements: any[] = [];
+  private packedStructureJson = '';
+  private packedGraphElements: any[] = [];
   graphElements: any[] = [];
+  structureVariants: any[] = [];
+  structureVariantGraphs: any[] = [];
+  activeStructureVariantIndex: number | null = null;
   activeResultKind: 'query' | 'rules' | null = null;
   querySolutions: LigerQuerySolution[] = [];
   appliedRules: LigerRule[] = [];
@@ -58,6 +63,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   activeSolutionIndex: number | null = null;
   activeRuleIndex: number | null = null;
   activeRuleAnnotationIndex: number | null = null;
+  activeRuleVariantIndex: number | null = null;
 
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('graphResults') graphResults: ElementRef<HTMLElement>;
@@ -115,8 +121,8 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   }
 
   applyRules() {
-    const ruleContent = this.currentStructureJson.trim() || this.uploadedContent;
-    const ruleFormat: 'json' | 'prolog' = this.currentStructureJson.trim() ? 'json' : this.uploadedFormat;
+    const ruleContent = this.packedStructureJson.trim() || this.currentStructureJson.trim() || this.uploadedContent;
+    const ruleFormat: 'json' | 'prolog' = (this.packedStructureJson.trim() || this.currentStructureJson.trim()) ? 'json' : this.uploadedFormat;
 
     if (!ruleContent.trim()) {
       this.displayMessage('Upload a graph first.', 'red');
@@ -137,6 +143,8 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     this.highlightedNodeIds = new Set<string>();
     this.activeRuleIndex = null;
     this.activeRuleAnnotationIndex = null;
+    this.activeRuleVariantIndex = null;
+    const ruleRequestStartedAt = performance.now();
 
     const ruleRequest: LigerStructureRuleRequest = {
       content: ruleContent,
@@ -148,6 +156,11 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     this.dataService.ligerApplyRulesToStructure(ruleRequest).subscribe(
       data => {
         this.loading = false;
+        console.info('[LiGER][post-processing] rule request completed', {
+          elapsedMs: Math.round(performance.now() - ruleRequestStartedAt),
+          annotationCount: Array.isArray(data?.annotations) ? data.annotations.length : 0,
+          structure: this.structureSummary(data?.annotations?.[0]?.structureJson),
+        });
         console.debug('[GraphInspector] applyRules response', data);
         this.ruleAnnotations = Array.isArray(data?.annotations) ? data.annotations : [];
         if (this.ruleAnnotations.length) {
@@ -168,6 +181,10 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
       },
       error => {
         this.loading = false;
+        console.error('[LiGER][post-processing] rule request failed', {
+          elapsedMs: Math.round(performance.now() - ruleRequestStartedAt),
+          error,
+        });
         console.error('Apply rules failed:', error);
         const message = error?.error?.message || error?.message || 'Failed to apply rules.';
         this.displayMessage(message, 'red');
@@ -190,16 +207,46 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     }
   }
 
-  showStructure(structureContent: string, graphElements: any[]): void {
+  showStructure(structureContent: string, graphElements: any[], structureVariants: any[] = [], structureVariantGraphs: any[] = []): void {
     this.resetForNewStructure();
     this.currentStructureJson = structureContent ?? '';
+    this.packedStructureJson = this.currentStructureJson;
+    this.packedGraphElements = this.cloneGraphElements(graphElements ?? []);
+    this.structureVariants = Array.isArray(structureVariants) ? structureVariants : [];
+    this.structureVariantGraphs = Array.isArray(structureVariantGraphs) ? structureVariantGraphs : [];
+    this.activeStructureVariantIndex = null;
     this.baseGraphElements = this.cloneGraphElements(graphElements ?? []);
     this.graphElements = this.cloneGraphElements(this.baseGraphElements);
     this.cy1.renderGraph(this.graphElements);
   }
 
+  selectStructureVariant(index: number | null): void {
+    if (index === null) {
+      this.activeStructureVariantIndex = null;
+      this.currentStructureJson = this.packedStructureJson;
+      this.baseGraphElements = this.cloneGraphElements(this.packedGraphElements);
+      this.graphElements = this.cloneGraphElements(this.baseGraphElements);
+      this.cy1?.renderGraph(this.graphElements);
+      return;
+    }
+
+    if (index < 0 || index >= this.structureVariants.length) {
+      return;
+    }
+
+    this.activeStructureVariantIndex = index;
+    this.currentStructureJson = JSON.stringify(this.structureVariants[index], null, 2);
+    this.graphElements = this.cloneGraphElements(this.structureVariantGraphs[index]?.graphElements ?? []);
+    this.cy1?.renderGraph(this.graphElements);
+  }
+
   resetForNewStructure(): void {
     this.currentStructureJson = '';
+    this.packedStructureJson = '';
+    this.packedGraphElements = [];
+    this.structureVariants = [];
+    this.structureVariantGraphs = [];
+    this.activeStructureVariantIndex = null;
     this.ruleAnnotations = [];
     this.appliedRules = [];
     this.appliedRuleFactsByIndex = {};
@@ -379,6 +426,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
 
     this.activeRuleAnnotationIndex = index;
     this.activeRuleIndex = null;
+    this.activeRuleVariantIndex = null;
 
     const selectedAnnotation = this.ruleAnnotations[index];
     this.appliedRules = Array.isArray(selectedAnnotation?.appliedRules) ? selectedAnnotation.appliedRules : [];
@@ -395,6 +443,32 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     if (selectedAnnotation?.structureJson) {
       this.currentStructureJson = JSON.stringify(selectedAnnotation.structureJson, null, 2);
     }
+  }
+
+  selectRuleVariant(index: number | null): void {
+    const annotation = this.ruleAnnotations[this.activeRuleAnnotationIndex ?? 0];
+    if (!annotation) {
+      return;
+    }
+
+    if (index === null) {
+      this.activeRuleVariantIndex = null;
+      this.updateGraphResponse(annotation.graph?.graphElements ?? []);
+      if (annotation.structureJson) {
+        this.currentStructureJson = JSON.stringify(annotation.structureJson, null, 2);
+      }
+      return;
+    }
+
+    const structures = annotation.structureVariants ?? [];
+    const graphs = annotation.structureVariantGraphs ?? [];
+    if (index < 0 || index >= structures.length) {
+      return;
+    }
+
+    this.activeRuleVariantIndex = index;
+    this.updateGraphResponse(graphs[index]?.graphElements ?? []);
+    this.currentStructureJson = JSON.stringify(structures[index], null, 2);
   }
 
   previousRuleVariant(): void {
@@ -722,6 +796,22 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     if (structureJson) {
       this.currentStructureJson = JSON.stringify(structureJson, null, 2);
     }
+  }
+
+  private structureSummary(structure: any): Record<string, unknown> {
+    if (!structure || typeof structure !== 'object') {
+      return { present: false };
+    }
+    const choiceSpace = structure.choiceSpace ?? {};
+    return {
+      present: true,
+      id: structure.id,
+      constraints: Array.isArray(structure.constraints) ? structure.constraints.length : 0,
+      annotations: Array.isArray(structure.annotations) ? structure.annotations.length : 0,
+      choices: Array.isArray(choiceSpace.choices) ? choiceSpace.choices.length : 0,
+      choiceNodes: Array.isArray(choiceSpace.choiceNodes) ? choiceSpace.choiceNodes.length : 0,
+      allVariables: Array.isArray(choiceSpace.allVariables) ? choiceSpace.allVariables : [],
+    };
   }
 
   displayMessage(message: string, color: string) {

@@ -50,6 +50,19 @@
     <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>
   </div>
 
+  <aside class="solutions-panel" *ngIf="structureVariants.length">
+    <div class="solutions-header">
+      <h4>Merged graph branches</h4>
+      <span>{{ structureVariants.length }}</span>
+    </div>
+    <div class="solution-nav">
+      <button type="button" (click)="selectStructureVariant(null)" [disabled]="activeStructureVariantIndex === null">Packed graph</button>
+      <span>{{ activeStructureVariantIndex === null ? 'Packed graph' : 'Branch ' + (activeStructureVariantIndex + 1) }}</span>
+      <button type="button" (click)="selectStructureVariant((activeStructureVariantIndex === null ? 0 : activeStructureVariantIndex - 1 + structureVariants.length) % structureVariants.length)">Prev branch</button>
+      <button type="button" (click)="selectStructureVariant((activeStructureVariantIndex === null ? 0 : activeStructureVariantIndex + 1) % structureVariants.length)">Next branch</button>
+    </div>
+  </aside>
+
   <aside class="solutions-panel" *ngIf="activeResultKind === 'query' && querySolutions.length">
     <div class="solutions-header">
       <h4>Solutions</h4>
@@ -88,6 +101,20 @@
         <span *ngIf="ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.sentence"> ({{ ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.sentence }})</span>
       </span>
       <button type="button" (click)="nextRuleVariant()" [disabled]="ruleAnnotations.length < 2">Next result ▶</button>
+    </div>
+
+    <div class="solution-nav" *ngIf="ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.structureVariants?.length">
+      <button type="button" (click)="selectRuleVariant(null)" [disabled]="activeRuleVariantIndex === null">Packed result</button>
+      <span>
+        {{ activeRuleVariantIndex === null ? 'Packed result' : 'Branch ' + (activeRuleVariantIndex + 1) }} /
+        {{ ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.structureVariants?.length }} branches
+      </span>
+      <button type="button"
+              (click)="selectRuleVariant((activeRuleVariantIndex === null ? 0 : activeRuleVariantIndex - 1 + (ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.structureVariants?.length ?? 1)) % (ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.structureVariants?.length ?? 1))"
+              [disabled]="!ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.structureVariants?.length">Prev branch</button>
+      <button type="button"
+              (click)="selectRuleVariant((activeRuleVariantIndex === null ? 0 : activeRuleVariantIndex + 1) % (ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.structureVariants?.length ?? 1))"
+              [disabled]="!ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.structureVariants?.length">Next branch</button>
     </div>
 
     <div class="solution-variable" *ngIf="ruleAnnotations[activeRuleAnnotationIndex ?? 0] as selectedAnnotation">

@@ -60,7 +60,7 @@ export class LigerVisComponent implements AfterViewInit {
     this.errorhandle.nativeElement.innerHTML = "";
     const sentence = inputValue;
 
-    this.dataService.ligerSequence({ sentences: [sentence], ruleString }).subscribe(
+    this.dataService.ligerSequence({ sentences: [sentence], ruleString, packAlternatives: true }).subscribe(
       data => {
         this.loading = false;
         this.errorhandle.nativeElement.innerHTML = "";
@@ -110,7 +110,7 @@ export class LigerVisComponent implements AfterViewInit {
     this.loading = true;
     this.errorhandle.nativeElement.innerHTML = "";
 
-    this.dataService.ligerSequence({ sentences, ruleString }).subscribe(
+    this.dataService.ligerSequence({ sentences, ruleString, packAlternatives: true }).subscribe(
       data => {
         this.loading = false;
         const solutions = Array.isArray(data.solutions) ? data.solutions : [];

@@ -70,6 +70,7 @@ export interface LigerSequenceRequest {
   sentences: string[];
   ruleString?: string;
   logicType?: string;
+  packAlternatives?: boolean;
 }
 
 export interface LigerStructureUploadRequest {
@@ -133,12 +134,18 @@ export interface LigerStructure {
 export interface LigerStructureMergeRequest {
   syntax?: LigerStructure;
   syntaxGraph?: LigerWebGraph;
-  drs: LigerStructure;
+  drs: LigerStructure | LigerStructureAlternatives;
+}
+
+export interface LigerStructureAlternatives {
+  alternatives: LigerStructure[];
 }
 
 export interface LigerMergeResponse {
   graph: LigerWebGraph;
   structureJson?: Record<string, unknown>;
+  structureVariants?: Record<string, unknown>[];
+  structureVariantGraphs?: LigerWebGraph[];
 }
 
 export interface LigerGraphComponent {
