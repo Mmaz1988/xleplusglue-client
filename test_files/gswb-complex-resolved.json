@@ -1,0 +1,24 @@
+{
+  "id": "gswb-complex-resolved",
+  "text": "Complex GSWB example after reduction and resolution",
+  "constraints": [
+    {"sourceNode": 0, "relationLabel": "LABEL", "targetNode": "s0"},
+    {"sourceNode": 1, "relationLabel": "LABEL", "targetNode": "s1"},
+    {"sourceNode": 2, "relationLabel": "LABEL", "targetNode": "s2"},
+    {"sourceNode": 3, "relationLabel": "LABEL", "targetNode": "s2:x1"},
+    {"sourceNode": 4, "relationLabel": "LABEL", "targetNode": "s2:x2"},
+    {"sourceNode": 5, "relationLabel": "LABEL", "targetNode": "s2:x3"},
+    {"sourceNode": 0, "relationLabel": "ROOT", "targetNode": 1},
+    {"sourceNode": 1, "relationLabel": "IMP", "targetNode": 2},
+    {"sourceNode": 2, "relationLabel": "IN", "targetNode": 3},
+    {"sourceNode": 3, "relationLabel": "man", "targetNode": 3},
+    {"sourceNode": 2, "relationLabel": "IN", "targetNode": 4},
+    {"sourceNode": 2, "relationLabel": "IN", "targetNode": 5},
+    {"sourceNode": 4, "relationLabel": "woman", "targetNode": 4},
+    {"sourceNode": 5, "relationLabel": "hug", "targetNode": 5},
+    {"sourceNode": 5, "relationLabel": "arg2", "targetNode": 4},
+    {"sourceNode": 5, "relationLabel": "arg1", "targetNode": 3}
+  ],
+  "annotations": [],
+  "choiceSpace": {}
+}

@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 2,
+  "metadata": {
+    "id": "test-test-upload",
+    "redisSessionKey": "test-test",
+    "createdAt": "2026-05-14T18:08:18.867Z",
+    "updatedAt": "2026-05-14T18:58:55.823513+00:00",
+    "testsuiteUpdateMode": "write",
+    "hasRunVampire": true,
+    "disambiguationMode": false
+  },
+  "inputs": {
+    "grammarPath": "./grammars/demo/fracas_inference_grammar/main_fracas_grammar.lfg.glue",
+    "testsuite": {
+      "filename": "./testsuites/inference/inference-basic.lfg",
+      "text": "{\nA Swede won a Nobel prize.\nEvery Swede is a Scandinavian.\n====\nA Scandinavian won a Nobel prize.\n>>> 1\n}\n\n{\nA Nobel prize was won by a Swede.\nEvery Swede is a Scandinavian.\n====\nA Scandinavian won a Nobel prize.\n>>> 1\n}\n\n{\nA dog appeared.\n====\nNo dog appeared.\n>>> -1\n}",
+      "loadedText": "{\nA Swede won a Nobel prize.\nEvery Swede is a Scandinavian.\n====\nA Scandinavian won a Nobel prize.\n>>> 1\n}\n\n{\nA Nobel prize was won by a Swede.\nEvery Swede is a Scandinavian.\n====\nA Scandinavian won a Nobel prize.\n>>> 1\n}\n\n{\nA dog appeared.\n====\nNo dog appeared.\n>>> -1\n}"
+    },
+    "rules": {
+      "filename": "./liger_resources/rules/basic_axiom_rules.txt",
+      "text": "--replace(true);\n\n#p PRED %p & strip(%p) == 'be' & #p PREDLINK #c s:: #s TYPE 'entity' ==>\n#p EQUAL-AX #e &\n#e AXIOM all(X,all(Y,all(Z,imp(and(be(X),and(arg1(X,Y),arg2(X,Z))),eq(Y,Z))))).",
+      "loadedText": "--replace(true);\n\n#p PRED %p & strip(%p) == 'be' & #p PREDLINK #c s:: #s TYPE 'entity' ==>\n#p EQUAL-AX #e &\n#e AXIOM all(X,all(Y,all(Z,imp(and(be(X),and(arg1(X,Y),arg2(X,Z))),eq(Y,Z)))))."
+    },
+    "axioms": {
+      "filename": "",
+      "text": "",
+      "loadedText": ""
+    },
+    "gswbPreferences": {
+      "prover": 1,
+      "outputstyle": 4,
+      "parseSem": false,
+      "betaReduce": true,
+      "resolveDrs": true,
+      "glueOnly": false,
+      "meaningOnly": false,
+      "explainFail": false,
+      "debugging": false,
+      "naturalDeductionStyle": 0
+    },
+    "vampirePreferences": {
+      "logic_type": 0,
+      "model_building": true,
+      "max_duration": 10,
+      "layered": false
+    }
+  },
+  "analysis": {
+    "system": {
+      "sentenceMap": {
+        "S0": "A Swede won a Nobel prize.",
+        "S1": "Every Swede is a Scandinavian.",
+        "S2": "A Scandinavian won a Nobel prize.",
+        "S3": "A Nobel prize was won by a Swede.",
+        "S4": "Every Swede is a Scandinavian.",
+        "S5": "A Scandinavian won a Nobel prize.",
+        "S6": "A dog appeared.",
+        "S7": "No dog appeared."
+      },
+      "regressionTestItems": [
+        {
+          "id": "n0",
+          "sentences": [
+            "A Swede won a Nobel prize.",
+            "Every Swede is a Scandinavian.",
+            "A Scandinavian won a Nobel prize."
+          ],
+          "premises": ["S0", "S1"],
+          "conclusion": ["S2"],
+          "gold_label": "1"
+        },
+        {
+          "id": "n1",
+          "sentences": [
+            "A Nobel prize was won by a Swede.",
+            "Every Swede is a Scandinavian.",
+            "A Scandinavian won a Nobel prize."
+          ],
+          "premises": ["S3", "S4"],
+          "conclusion": ["S5"],
+          "gold_label": "1"
+        },
+        {
+          "id": "n2",
+          "sentences": [
+            "A dog appeared.",
+            "No dog appeared."
+          ],
+          "premises": ["S6"],
+          "conclusion": ["S7"],
+          "gold_label": "-1"
+        }
+      ],
+      "regressionTestResults": [],
+      "inferenceResults": []
+    },
+    "human": {
+      "selectedSolutionIdsBySentence": {},
+      "selectedScopeIdsBySentence": {},
+      "selectedMcIdsBySentence": {}
+    },
+    "save_state": {
+      "lastGswbOutputs": null,
+      "lastAnnotations": null,
+      "lastVampireResults": null,
+      "lastLogicType": "fof",
+      "lastVampireScopeIdsBySentence": {},
+      "lastVampireMcIdsBySentence": {},
+      "lastVampireSolutionIdsBySentence": {},
+      "sortedMCmap": {}
+    }
+  }
+}

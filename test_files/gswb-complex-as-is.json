@@ -1,0 +1,30 @@
+{
+  "id": "gswb-complex-as-is",
+  "text": "Complex GSWB example before reduction and resolution",
+  "constraints": [
+    {"sourceNode": 0, "relationLabel": "LABEL", "targetNode": "s0"},
+    {"sourceNode": 1, "relationLabel": "LABEL", "targetNode": "s1"},
+    {"sourceNode": 2, "relationLabel": "LABEL", "targetNode": "s1a"},
+    {"sourceNode": 3, "relationLabel": "LABEL", "targetNode": "s1b"},
+    {"sourceNode": 4, "relationLabel": "LABEL", "targetNode": "s1b:x1"},
+    {"sourceNode": 5, "relationLabel": "LABEL", "targetNode": "s1c"},
+    {"sourceNode": 6, "relationLabel": "LABEL", "targetNode": "s1c:x2"},
+    {"sourceNode": 7, "relationLabel": "LABEL", "targetNode": "s1d"},
+    {"sourceNode": 8, "relationLabel": "LABEL", "targetNode": "s1d:x3"},
+    {"sourceNode": 0, "relationLabel": "ROOT", "targetNode": 1},
+    {"sourceNode": 1, "relationLabel": "IMP", "targetNode": 2},
+    {"sourceNode": 2, "relationLabel": "MERGE", "targetNode": 3},
+    {"sourceNode": 3, "relationLabel": "IN", "targetNode": 4},
+    {"sourceNode": 4, "relationLabel": "man", "targetNode": 4},
+    {"sourceNode": 3, "relationLabel": "MERGE", "targetNode": 5},
+    {"sourceNode": 5, "relationLabel": "IN", "targetNode": 6},
+    {"sourceNode": 6, "relationLabel": "woman", "targetNode": 6},
+    {"sourceNode": 5, "relationLabel": "MERGE", "targetNode": 7},
+    {"sourceNode": 7, "relationLabel": "IN", "targetNode": 8},
+    {"sourceNode": 8, "relationLabel": "hug", "targetNode": 8},
+    {"sourceNode": 8, "relationLabel": "arg2", "targetNode": 6},
+    {"sourceNode": 8, "relationLabel": "arg1", "targetNode": 4}
+  ],
+  "annotations": [],
+  "choiceSpace": {}
+}
