@@ -212,11 +212,25 @@ export interface GswbCollapseAnaphoraRequest {
 }
 
 export interface GswbSequenceMergeRequest {
-  semantics: string[];
-  graphs: LigerStructure[];
+  parts?: GswbSequencePart[];
+  semantics?: string[];
+  graphs?: LigerStructure[];
   parentSolutionId?: string;
   solutionKey?: string;
   mcSetId?: string;
+}
+
+export interface GswbSequencePart {
+  id?: string;
+  sentenceId?: string;
+  solutionId?: string;
+  proofId?: string;
+  solutionKey?: string;
+  mcSetId?: string;
+  semantic: string;
+  graph?: LigerStructure;
+  syntax?: LigerStructure;
+  provenance?: Record<string, any>;
 }
 
 export interface GswbOutput {

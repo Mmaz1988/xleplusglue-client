@@ -5,7 +5,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure} from "../models/models";
+import {GswbProofInput, GswbRequest,GswbPreferences, GswbSequencePart, GswbSolution, LigerStructure} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -227,26 +227,59 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
-    const previous = this.previousSemanticGraphs.filter(graph => !!graph);
+    const previous = this.previousSemanticStrings
+      .map((semantic, index) => ({ semantic: semantic || '', graph: this.previousSemanticGraphs[index] }))
+      .filter(part => part.semantic.trim().length > 0 || !!part.graph);
     if (!previous.length) {
       return;
     }
 
-    const current = solutions.filter(solution => !!solution?.graph);
+    const current = solutions.filter(solution =>
+      !!solution?.graph
+      || typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0
+      || typeof solution?.solution === 'string' && solution.solution.trim().length > 0);
     if (!current.length) {
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
       return;
     }
 
-    const mergeRequests = current.flatMap(solution => previous.map((previousGraph, index) =>
-      this.dataService.gswbMergeSequenceSemantics({
-        semantics: [this.previousSemanticStrings[index] || '', solution.semantic || ''],
-        graphs: [previousGraph, solution.graph as LigerStructure],
-        parentSolutionId: solution.id,
-        solutionKey: solution.solutionKey,
-        mcSetId: solution.mcSetId,
-      })));
+    const mergeRequests = current.flatMap(solution => previous.map((previousPart, index) => {
+      const currentSemantic = solution.semantic || solution.solution || '';
+      const parts: GswbSequencePart[] = [
+        {
+          semantic: previousPart.semantic,
+          graph: previousPart.graph,
+          sentenceId: `previous-${index}`,
+        },
+        {
+          semantic: currentSemantic,
+          graph: solution.graph,
+          solutionId: solution.id,
+          solutionKey: solution.solutionKey,
+          mcSetId: solution.mcSetId,
+          proofId: solution.proofId,
+        },
+      ];
+      if (parts.every(part => part.semantic.trim().length > 0)) {
+        return this.dataService.gswbMergeSequenceSemantics({
+          parts,
+          parentSolutionId: solution.id,
+          solutionKey: solution.solutionKey,
+          mcSetId: solution.mcSetId,
+        });
+      }
+      if (parts.every(part => !!part.graph)) {
+        return this.dataService.gswbMergeSequenceSemantics({
+          semantics: parts.map(part => part.semantic),
+          graphs: parts.map(part => part.graph as LigerStructure),
+          parentSolutionId: solution.id,
+          solutionKey: solution.solutionKey,
+          mcSetId: solution.mcSetId,
+        });
+      }
+      return null;
+    }).filter(request => request !== null));
 
     forkJoin(mergeRequests).subscribe(mergedSolutions => {
       this.semvis.setItems(mergedSolutions);
