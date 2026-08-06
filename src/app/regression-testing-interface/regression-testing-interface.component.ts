@@ -22,7 +22,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, forkJoin, finalize, timeout } from "rxjs";
+import { catchError, EMPTY, Observable, forkJoin, finalize, timeout, map } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -1454,10 +1454,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       let axiomCounter = 0;
 
       const premise_strings: string[] = [];
+      const premise_groups: string[][] = [];
       for (let premise of item.premises) {
         if (gswbOutputs[premise] && gswbOutputs[premise].solutions.length > 0) {
           const sols = this.getSolutionsText(premise, gswbOutputs, useDisambiguated);
-          if (sols.length > 0) premise_strings.push(sols.join('\n'));
+          if (sols.length > 0) {
+            premise_strings.push(sols.join('\n'));
+            premise_groups.push(sols);
+          }
 
           const liger_data = annotations[premise];
           if (liger_data?.axioms?.length) {
@@ -1475,10 +1479,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }
 
       const conclusion_strings: string[] = [];
+      const hypothesis_groups: string[][] = [];
       for (let conclusion of item.conclusion) {
         if (gswbOutputs[conclusion] && gswbOutputs[conclusion].solutions.length > 0) {
           const sols = this.getSolutionsText(conclusion, gswbOutputs, useDisambiguated);
-          if (sols.length > 0) conclusion_strings.push(sols.join('\n'));
+          if (sols.length > 0) {
+            conclusion_strings.push(sols.join('\n'));
+            hypothesis_groups.push(sols);
+          }
 
           const liger_data = annotations[conclusion];
           if (liger_data?.axioms?.length) {
@@ -1496,7 +1504,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }
 
       if (premise_strings.length > 0 && conclusion_strings.length > 0) {
-        inference_items[item.id] = { premises: premise_strings, hypothesis: conclusion_strings, axioms: axioms };
+        inference_items[item.id] = {
+          premises: premise_strings,
+          hypothesis: conclusion_strings,
+          axioms: axioms,
+          premise_groups,
+          hypothesis_groups
+        };
         if (previousVampireResults[item.id] && previousVampireResults[item.id].length > 0) {
           this.vampireReprocessingItemCount++;
         } else {
@@ -1505,23 +1519,80 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }
     }
 
-    const pruning = this.contextPruning.nativeElement.checked;
-
-    const vampireRequest: vampireMultipleRequest = {
-      nli_items: inference_items,
-      vampire_preferences: this.vampirePreferences.vampirePreferences,
-      pruning: pruning,
-      session_key: this.redisSessionKey
-    };
-
-    this.logBackendPayload('Vampire batch request', this.testsuiteUpdateMode, vampireRequest);
-
     this.vampireCurrentRunItemCount = Object.keys(inference_items).length;
-    console.log("Vampire request: ", vampireRequest);
     if (Object.keys(inference_items).length === 0) {
       this.displayMessage("No missing Vampire items to process.", "blue");
       return;
     }
+
+    this.displayMessage("Building TPTP reasoning checks ...", "blue");
+    const typed = logicType === 'tff';
+    const preparationRequests: Observable<{ id: string; checks: any }> [] = [];
+    for (const [id, item] of Object.entries(inference_items)) {
+      const premiseAssignments = this.semanticAssignments(item.premise_groups ?? []);
+      const hypothesisAssignments = this.semanticAssignments(item.hypothesis_groups ?? []);
+      for (const premiseParts of premiseAssignments) {
+        for (const hypothesisParts of hypothesisAssignments) {
+          preparationRequests.push(this.dataService.gswbReasoningChecks({
+            premiseParts,
+            hypothesisParts,
+            typed
+          }).pipe(map(output => ({ id, checks: output }))));
+        }
+      }
+    }
+
+    forkJoin(preparationRequests).subscribe({
+      next: prepared => {
+        for (const item of Object.values(inference_items)) item.tptp_checks = [];
+        for (const preparedItem of prepared) {
+          inference_items[preparedItem.id].tptp_checks!.push(preparedItem.checks);
+        }
+        this.submitVampireRequest(
+          inference_items,
+          this.contextPruning.nativeElement.checked,
+          vampireStartedAt,
+          vampireRunToken
+        );
+      },
+      error: () => {
+        this.displayMessage("Could not build TPTP reasoning checks.", "red");
+        this.loading = false;
+      }
+    });
+  }
+
+  private semanticAssignments(groups: string[][]): string[][] {
+    return groups.reduce<string[][]>(
+      (assignments, alternatives) => assignments.flatMap(prefix =>
+        alternatives.map(alternative => [...prefix, alternative])),
+      [[]]
+    );
+  }
+
+  private submitVampireRequest(
+    inference_items: Record<string, nliItem>,
+    pruning: boolean,
+    vampireStartedAt: number,
+    vampireRunToken: number
+  ): void {
+    const tptpItems: Record<string, nliItem> = Object.fromEntries(
+      Object.entries(inference_items).map(([id, item]) => [id, {
+        premises: [],
+        hypothesis: [],
+        axioms: item.axioms,
+        tptp_checks: item.tptp_checks ?? []
+      }])
+    );
+    const vampireRequest: vampireMultipleRequest = {
+      nli_items: tptpItems,
+      vampire_preferences: this.vampirePreferences.vampirePreferences,
+      pruning,
+      session_key: this.redisSessionKey
+    };
+
+    this.logBackendPayload('Vampire batch request', this.testsuiteUpdateMode, vampireRequest);
+    console.log("Vampire request: ", vampireRequest);
 
     this.session.lastVampireScopeIdsBySentence = this.cloneSelectionRecord(this.session.selectedScopeIdsBySentence);
     this.session.lastVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.selectedMcIdsBySentence);

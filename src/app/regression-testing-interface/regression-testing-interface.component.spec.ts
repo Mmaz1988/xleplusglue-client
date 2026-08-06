@@ -22,7 +22,8 @@ describe('RegressionTestingInterfaceComponent', () => {
       'getLastSession',
       'getLastSessionSummary',
       'getLastGswbSession',
-      'getLastGswbSessionSummary'
+      'getLastGswbSessionSummary',
+      'gswbReasoningChecks'
     ]);
     dataServiceSpy.listRegressionSessions.and.returnValue(of([]));
     dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
@@ -32,6 +33,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
     dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
     dataServiceSpy.getLastGswbSessionSummary.and.returnValue(of({} as any));
+    dataServiceSpy.gswbReasoningChecks.and.returnValue(of({ checks: {} }));
 
     TestBed.configureTestingModule({
       imports: [FormsModule],

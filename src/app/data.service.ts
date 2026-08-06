@@ -27,6 +27,8 @@ import {
   GswbCollapseAnaphoraRequest,
   GswbSequenceMergeRequest,
   GswbSolution,
+  GswbReasoningChecksRequest,
+  GswbReasoningChecksOutput,
   LigerSolutionAnnotationResponse,
   LigerSequenceRequest,
   vampireMultipleRequest, vampireMultipleResponse,
@@ -65,6 +67,10 @@ export class DataService {
 
   gswbMergeSequenceSemantics(request: GswbSequenceMergeRequest): Observable<GswbSolution> {
     return this.http.post<GswbSolution>(`${this.gswbpage}/merge_sequence_semantics`, request);
+  }
+
+  gswbReasoningChecks(request: GswbReasoningChecksRequest): Observable<GswbReasoningChecksOutput> {
+    return this.http.post<GswbReasoningChecksOutput>(`${this.gswbpage}/reasoning_checks`, request);
   }
 
   getLastGswbSession(sessionKey: string = this.defaultRedisSessionKey): Observable<GswbBatchOutput> {

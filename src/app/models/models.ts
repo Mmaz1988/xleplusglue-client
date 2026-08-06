@@ -233,6 +233,23 @@ export interface GswbSequencePart {
   provenance?: Record<string, any>;
 }
 
+export interface GswbReasoningChecksRequest {
+  premiseParts: string[];
+  hypothesisParts: string[];
+  typed: boolean;
+}
+
+export interface GswbReasoningCheck {
+  semantic: string;
+  graph: LigerStructure;
+  semanticSvg: string;
+  tptp: string;
+}
+
+export interface GswbReasoningChecksOutput {
+  checks: Record<string, GswbReasoningCheck>;
+}
+
 export interface GswbOutput {
   solutions: GswbSolution[];
   log: string;
@@ -698,6 +715,9 @@ export interface nliItem {
   premises: string[];
   hypothesis: string[];
   axioms: string;
+  premise_groups?: string[][];
+  hypothesis_groups?: string[][];
+  tptp_checks?: GswbReasoningChecksOutput[];
 }
 
 export interface vampireResponse {
