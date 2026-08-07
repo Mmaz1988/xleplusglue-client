@@ -62,6 +62,10 @@ export interface XlePlusGlueDocument {
   semanticType: string;
   sentences: SentenceAnalysis[];
   elements: XlePlusGlueElement[];
+  activeElementId?: string;
+  revision?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface LigerRuleAnnotation {

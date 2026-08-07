@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SentenceAnalysis, SequenceAnalysis } from '../models/models';
+import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -58,10 +58,18 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   private sequenceAnalyses: SequenceAnalysis[] = [];
   previousSentenceAnalyses: SentenceAnalysis[] = [];
   previousSequenceAnalyses: SequenceAnalysis[] = [];
+  private readonly analysisDocumentSessionKey = 'active';
+  private analysisDocument: XlePlusGlueDocument = this.newAnalysisDocument();
+  private pendingDocumentSave: XlePlusGlueDocument | null = null;
+  private documentSaveInProgress = false;
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
   ngAfterViewInit() {
+    this.dataService.clearAnalysisDocument(this.analysisDocumentSessionKey).subscribe({
+      next: () => console.info('[Analysis] cleared volatile Redis document for new session'),
+      error: error => console.warn('[Analysis] could not clear volatile Redis document', error),
+    });
     if (this.liger?.changeDetector && this.glue?.editor1) {
       this.liger.changeDetector.subscribe(newValue => {
         const sequenceLength = this.liger.sequenceSentences.length;
@@ -116,7 +124,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             this.syntaxBySolutionKey[input.solutionKey] = input.structure;
           }
         });
-      this.glue.setProofInputs(proofInputs);
+        this.glue.setProofInputs(proofInputs);
+        this.upsertSentenceAnalyses(
+          proofInputs.map(input => input.sentenceAnalysis).filter((analysis): analysis is SentenceAnalysis => !!analysis)
+        );
         console.info('[Analysis] updated GSWB proof inputs from LiGER', {
           proofCount: proofInputs.length,
           proofInputs: proofInputs.map(input => ({
@@ -131,6 +142,14 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       });
       this.glue.sequenceAnalysisChange.subscribe((analyses: SequenceAnalysis[]) => {
         this.sequenceAnalyses = analyses;
+        analyses.forEach(analysis => {
+          this.upsertSentenceAnalyses(analysis.sentences, false);
+          this.analysisDocument.elements = this.analysisDocument.elements
+            .filter(element => element.id !== analysis.id)
+            .concat(analysis);
+          this.analysisDocument.activeElementId = analysis.id;
+        });
+        this.persistAnalysisDocument();
         console.info('[Analysis] canonical sequence analyses updated', {
           count: analyses.length,
           analyses: analyses.map(analysis => ({
@@ -144,6 +163,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       });
       this.glue.sentenceAnalysisChange.subscribe((analyses: SentenceAnalysis[]) => {
         this.sentenceAnalyses = analyses;
+        this.upsertSentenceAnalyses(analyses);
         console.info('[Analysis] canonical sentence analyses updated', {
           count: analyses.length,
           analysisIds: analyses.map(analysis => analysis.id),
@@ -152,6 +172,83 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     }
 
     setTimeout(() => this.restoreWorkspaceState(), 0);
+  }
+
+  private newAnalysisDocument(): XlePlusGlueDocument {
+    return {
+      id: 'analysis-active',
+      semanticType: 'lfgxdrt',
+      sentences: [],
+      elements: [],
+    };
+  }
+
+  private upsertSentenceAnalyses(analyses: SentenceAnalysis[], persist = true): void {
+    analyses.forEach(incoming => {
+      const existing = this.analysisDocument.sentences.find(sentence => sentence.id === incoming.id);
+      if (!existing) {
+        this.analysisDocument.sentences.push({
+          ...incoming,
+          syntax: [...incoming.syntax],
+          semantics: [...incoming.semantics],
+          synSemMapping: { ...incoming.synSemMapping },
+        });
+        this.analysisDocument.elements = this.analysisDocument.elements
+          .filter(element => element.id !== incoming.id)
+          .concat(this.analysisDocument.sentences[this.analysisDocument.sentences.length - 1]);
+        this.analysisDocument.activeElementId = incoming.id;
+        return;
+      }
+
+      existing.syntax = this.mergeById(existing.syntax, incoming.syntax, item => item.synId);
+      existing.semantics = this.mergeById(existing.semantics, incoming.semantics, item => item.semId);
+      Object.entries(incoming.synSemMapping).forEach(([syntaxId, semanticIds]) => {
+        existing.synSemMapping[syntaxId] = Array.from(new Set([
+          ...(existing.synSemMapping[syntaxId] ?? []),
+          ...semanticIds,
+        ]));
+      });
+      this.analysisDocument.elements = this.analysisDocument.elements
+        .map(element => element.id === existing.id ? existing : element);
+    });
+    if (persist) {
+      this.persistAnalysisDocument();
+    }
+  }
+
+  private mergeById<T>(existing: T[], incoming: T[], id: (item: T) => string): T[] {
+    const merged = new Map(existing.map(item => [id(item), item]));
+    incoming.forEach(item => merged.set(id(item), item));
+    return Array.from(merged.values());
+  }
+
+  private persistAnalysisDocument(): void {
+    this.pendingDocumentSave = JSON.parse(JSON.stringify(this.analysisDocument));
+    if (this.documentSaveInProgress) return;
+    this.saveNextAnalysisDocument();
+  }
+
+  private saveNextAnalysisDocument(): void {
+    if (!this.pendingDocumentSave) return;
+    const document = this.pendingDocumentSave;
+    this.pendingDocumentSave = null;
+    this.documentSaveInProgress = true;
+    this.dataService.saveAnalysisDocument(this.analysisDocumentSessionKey, document).subscribe({
+      next: response => {
+        this.analysisDocument.revision = response.document.revision;
+        this.analysisDocument.createdAt = response.document.createdAt;
+        this.analysisDocument.updatedAt = response.document.updatedAt;
+      },
+      error: error => {
+        console.warn('[Analysis] could not persist volatile document', error);
+        this.documentSaveInProgress = false;
+        if (this.pendingDocumentSave) this.saveNextAnalysisDocument();
+      },
+      complete: () => {
+        this.documentSaveInProgress = false;
+        if (this.pendingDocumentSave) this.saveNextAnalysisDocument();
+      },
+    });
   }
 
   ngOnDestroy(): void {

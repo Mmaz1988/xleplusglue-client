@@ -36,7 +36,8 @@ import {
   vampireMultipleRequest, vampireMultipleResponse,
   VampireSessionSummary,
   RegressionSessionSummary,
-  RegressionSessionDocument
+  RegressionSessionDocument,
+  XlePlusGlueDocument
 } from './models/models';
 
 @Injectable({
@@ -45,6 +46,7 @@ import {
 export class DataService {
   private readonly defaultRedisSessionKey = 'last_session';
   private vampirepage = 'http://localhost:8082'
+  private redispage = 'http://localhost:8083';
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
   constructor(private http: HttpClient) { }
@@ -199,6 +201,15 @@ callVampire(vampireRequest: vampireRequest){
 
   deleteRegressionSession(sessionKey: string): Observable<any> {
     return this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`);
+  }
+
+  saveAnalysisDocument(sessionKey: string, document: XlePlusGlueDocument): Observable<{ status: string; document: XlePlusGlueDocument }> {
+    return this.http.put<{ status: string; document: XlePlusGlueDocument }>(
+      `${this.redispage}/analysis_document/${sessionKey}`, document);
+  }
+
+  clearAnalysisDocument(sessionKey: string): Observable<any> {
+    return this.http.delete(`${this.redispage}/analysis_document/${sessionKey}`);
   }
 
 
