@@ -1,4 +1,4 @@
-import {Component, Input, OnInit, ViewChild, ElementRef} from '@angular/core';
+import {ChangeDetectorRef, Component, Input, OnInit, ViewChild, ElementRef} from '@angular/core';
 import cytoscape, {Core} from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import popper from 'cytoscape-popper';
@@ -195,6 +195,8 @@ const style = [
 })
 export class GraphVisComponent implements OnInit {
 
+  constructor(private changeDetector: ChangeDetectorRef) {}
+
   @ViewChild('graphContainer') graphContainer: ElementRef;
   @ViewChild('subgraphDialog') subgraphDialog: SubGraphDialogComponent;
 
@@ -228,16 +230,7 @@ export class GraphVisComponent implements OnInit {
   defaultHeight = '600px';
 
   ngOnInit(): void {
-
-    this.cy = cytoscape({
-      container: document.getElementById(this.graphID || 'cy'),
-      style: style as cytoscape.Stylesheet[],
-      layout: {
-        name: 'dagre'
-      }
-      // rest of your cytoscape config
-    });
-
+    // The host element is not available until after view initialization.
   }
 
   makePopper(ele: any): void {
@@ -284,6 +277,10 @@ export class GraphVisComponent implements OnInit {
   }
 
   renderGraph(graphData, preserveLayout = false): void {
+    const container = document.getElementById(this.graphID || 'cy');
+    if (!container) {
+      return;
+    }
     this.lastGraphData = this.cloneGraphElements(graphData ?? []);
     this.updateAvailableStructureFilters(this.lastGraphData);
     const canPreserveLayout = preserveLayout && this.lastNodePositions.size > 0;
@@ -301,7 +298,7 @@ export class GraphVisComponent implements OnInit {
     const elements = this.applyPresetPositions(normalizedElements, canPreserveLayout);
 
     this.cy = cytoscape({
-        container: document.getElementById(this.graphID || 'cy'), // Use the appropriate container element ID
+        container,
         elements: elements,
         style: style as cytoscape.Stylesheet[]
       }
@@ -605,6 +602,7 @@ export class GraphVisComponent implements OnInit {
       });
 
     this.availableStructureFilters = this.structureFilters.filter(structure => presentTypes.has(structure.key));
+    setTimeout(() => this.changeDetector.detectChanges());
   }
 
   private cloneGraphElements(elements: any[]): any[] {
