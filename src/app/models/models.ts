@@ -15,6 +15,44 @@ export interface LigerRule {
   lineNumber: number;
 }
 
+export type SynSemMapping = Record<string, string[]>;
+
+export interface SyntacticAnalysis {
+  synId: string;
+  structure: LigerStructure;
+  graph: LigerWebGraph;
+}
+
+export interface SemanticAnalysis {
+  syntacticOrigin: string;
+  semId: string;
+  semString: string;
+  structure?: LigerStructure;
+  graph?: LigerWebGraph;
+  semType: string;
+  svg?: string;
+  prologRender?: string;
+}
+
+export type GswbSemanticAnalysis = SemanticAnalysis;
+
+export interface SentenceAnalysis {
+  id: string;
+  text: string;
+  syntax: SyntacticAnalysis[];
+  semantics: SemanticAnalysis[];
+  synSemMapping: SynSemMapping;
+}
+
+export interface SequenceAnalysis {
+  id: string;
+  text: string;
+  sentences: SentenceAnalysis[];
+  syntax: SyntacticAnalysis[];
+  semantics: SemanticAnalysis[];
+  synSemMapping: SynSemMapping;
+}
+
 export interface LigerRuleAnnotation {
   sentence?: string;
   graph: LigerWebGraph;
@@ -67,6 +105,8 @@ export interface LigerSolutionAnnotation {
   numberOfMCsets: number;
   axioms?: string[];
   sequenceParts?: LigerSequencePart[];
+  sentenceAnalysis?: SentenceAnalysis;
+  sequenceAnalysis?: SequenceAnalysis;
 }
 
 export interface LigerSolutionAnnotationResponse {
@@ -80,6 +120,7 @@ export interface LigerSolutionAnnotationResponse {
 
 export interface LigerSequenceRequest {
   sentences: string[];
+  sentenceIds?: string[];
   ruleString?: string;
   logicType?: string;
   parsedLastSentence?: LigerStructure[];
@@ -207,6 +248,7 @@ export interface GswbSolution {
   proofId?: string;
   solutionKey?: string;
   mcSetId?: string;
+  semanticAnalysis?: SemanticAnalysis;
 }
 
 export interface GswbPcdrsRequest {

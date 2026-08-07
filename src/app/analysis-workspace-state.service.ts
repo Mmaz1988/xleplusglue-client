@@ -3,6 +3,7 @@ import { Injectable } from '@angular/core';
 export interface LigerWorkspaceState {
   sentence: string;
   sequenceSentences?: string[];
+  sequenceSentenceIds?: string[];
   rulesText: string;
   grammarLoadedPath: string;
   grammarSelectedPath: string;

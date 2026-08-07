@@ -26,6 +26,7 @@ export class LigerVisComponent implements AfterViewInit {
 
   defaultValue: string = APP_DEFAULTS.liger.sentence;
   sequenceSentences: string[] = [];
+  sequenceSentenceIds: string[] = [];
   loadedGrammarPath = '';
   meaningConstructors: string;
   structureJson: LigerStructure | null = null;
@@ -68,6 +69,7 @@ export class LigerVisComponent implements AfterViewInit {
         console.info('[LiGER] parse succeeded', { solutionCount: this.solutions.length });
         if (this.solutions.length > 0) {
           this.sequenceSentences = [sentence];
+          this.sequenceSentenceIds = ['sentence-1'];
         }
         this.selectedSolutionIndex = 0;
 
@@ -107,6 +109,7 @@ export class LigerVisComponent implements AfterViewInit {
     }
 
     const sentences = [...this.sequenceSentences, sentence];
+    const sentenceIds = [...this.sequenceSentenceIds, `sentence-${sentences.length}`];
     this.loading = true;
     this.errorhandle.nativeElement.innerHTML = "";
 
@@ -118,7 +121,7 @@ export class LigerVisComponent implements AfterViewInit {
       hasRuleString: !!ruleString?.trim(),
     });
 
-    this.dataService.ligerSequence({ sentences, ruleString }).subscribe(
+    this.dataService.ligerSequence({ sentences, sentenceIds, ruleString }).subscribe(
       data => {
         this.loading = false;
         const solutions = Array.isArray(data.solutions) ? data.solutions : [];
@@ -150,6 +153,7 @@ export class LigerVisComponent implements AfterViewInit {
         this.selectedSolutionIndex = 0;
         if (this.solutions.length > 0) {
           this.sequenceSentences = sentences;
+          this.sequenceSentenceIds = sentenceIds;
           console.info('[Analysis] accepted LiGER sequence append', {
             sequenceSentences: this.sequenceSentences,
             selectedSolutionKey: this.solutions[0].solutionKey,
@@ -382,6 +386,7 @@ export class LigerVisComponent implements AfterViewInit {
     return {
       sentence: this.textarea.nativeElement.value ?? this.defaultValue,
       sequenceSentences: [...this.sequenceSentences],
+      sequenceSentenceIds: [...this.sequenceSentenceIds],
       rulesText: this.ligerRules.getContent(),
       grammarLoadedPath: this.loadedGrammarPath ?? '',
       grammarSelectedPath: this.grammarLoader?.selectedPath ?? this.loadedGrammarPath ?? '',
@@ -415,6 +420,10 @@ export class LigerVisComponent implements AfterViewInit {
     this.sequenceSentences = Array.isArray(state.sequenceSentences) && state.sequenceSentences.length
       ? [...state.sequenceSentences]
       : (state.sentence ? [state.sentence] : []);
+    this.sequenceSentenceIds = Array.isArray(state.sequenceSentenceIds)
+      && state.sequenceSentenceIds.length === this.sequenceSentences.length
+      ? [...state.sequenceSentenceIds]
+      : this.sequenceSentences.map((_, index) => `sentence-${index + 1}`);
     this.textarea.nativeElement.value = this.defaultValue;
     this.ligerRules.updateContent(state.rulesText || '');
     this.loadedGrammarPath = state.grammarLoadedPath || state.grammarSelectedPath || this.loadedGrammarPath;
