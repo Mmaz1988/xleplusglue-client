@@ -130,6 +130,24 @@ An API may transport it directly as an ordered graph list, or wrap it in
 sequence parts when sentence IDs, proof IDs, and other provenance need to be
 carried alongside each graph. The wrapper does not replace graph merging.
 
+## Coordinated Element Merge
+
+Semantic merging is never treated as an independent document update. It is
+one stage of a coordinated merge of two document elements:
+
+```text
+Element 1 + Element 2
+  -> LiGER syntax merge
+  -> GSWB semantic graph merge
+  -> new Sequence
+```
+
+Both services receive the same ordered parent identities. LiGER produces the
+merged syntactic analysis, while GSWB produces the merged semantic analysis
+and its syntax-semantic mapping. The frontend coordinator combines those
+results into one new `Sequence` object and stores that object as the next
+document element. Neither service result alone is the complete sequence.
+
 ### Sentence
 
 ```text
