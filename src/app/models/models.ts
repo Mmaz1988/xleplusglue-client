@@ -249,6 +249,7 @@ export interface GswbSolution {
   solutionKey?: string;
   mcSetId?: string;
   semanticAnalysis?: SemanticAnalysis;
+  synSemMapping?: SynSemMapping;
 }
 
 export interface GswbPcdrsRequest {
@@ -826,6 +827,8 @@ export interface context {
   semantic?: string;
   semanticGraph?: LigerStructure;
   syntax?: LigerStructure;
+  semanticAnalysis?: SemanticAnalysis;
+  synSemMapping?: SynSemMapping;
 }
 
 

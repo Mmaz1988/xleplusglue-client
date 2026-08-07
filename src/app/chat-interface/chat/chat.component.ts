@@ -461,7 +461,9 @@ export class ChatComponent {
           box: solution.solution || '',
            semantic,
            semanticGraph: solution.graph,
-           syntax: solution.syntax ?? syntax
+           syntax: solution.syntax ?? syntax,
+           semanticAnalysis: solution.semanticAnalysis,
+           synSemMapping: solution.synSemMapping
         } as context;
       })
       .filter(item => item.semantic?.trim());
@@ -544,7 +546,9 @@ export class ChatComponent {
         box: item.merged.solution ?? '',
         semantic: item.merged.semantic,
          semanticGraph: item.merged.graph,
-         syntax: item.syntax
+         syntax: item.syntax,
+         semanticAnalysis: item.merged.semanticAnalysis,
+         synSemMapping: item.merged.synSemMapping
       } as context);
     });
 
