@@ -230,6 +230,7 @@ export interface GswbProofInput {
   mcSetId?: string;
   meaningConstructors: string;
   structure?: LigerStructure;
+  sentenceAnalysis?: SentenceAnalysis;
   sequenceAnalysis?: SequenceAnalysis;
 }
 

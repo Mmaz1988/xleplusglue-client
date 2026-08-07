@@ -112,10 +112,6 @@ export class LigerVisComponent implements AfterViewInit {
 
     const sentences = [...this.sequenceSentences, sentence];
     const sentenceIds = [...this.sequenceSentenceIds, `sentence-${sentences.length}`];
-    const parsedSentences = this.parsedSentenceStructures.length === this.sequenceSentences.length
-      && this.parsedSentenceStructures.every(structures => structures.length > 0)
-      ? this.parsedSentenceStructures
-      : undefined;
     this.loading = true;
     this.errorhandle.nativeElement.innerHTML = "";
 
@@ -125,10 +121,10 @@ export class LigerVisComponent implements AfterViewInit {
       sequenceLength: sentences.length,
       reparsingSentences: sentences,
       hasRuleString: !!ruleString?.trim(),
-      reusingParsedSentences: !!parsedSentences,
+      analyzingNewSentenceOnly: true,
     });
 
-    this.dataService.ligerSequence({ sentences, sentenceIds, ruleString, parsedSentences }).subscribe(
+    this.dataService.ligerAnnotate({ sentence, ruleString }).subscribe(
       data => {
         this.loading = false;
         const solutions = Array.isArray(data.solutions) ? data.solutions : [];
@@ -157,7 +153,6 @@ export class LigerVisComponent implements AfterViewInit {
         }
 
         this.solutions = solutions;
-        this.cacheParsedSentenceStructures(this.solutions);
         this.selectedSolutionIndex = 0;
         if (this.solutions.length > 0) {
           this.sequenceSentences = sentences;
@@ -346,6 +341,7 @@ export class LigerVisComponent implements AfterViewInit {
         mcSetId: solution.solutionKey || `solution-${index}`,
          meaningConstructors: solution.meaningConstructors ?? '',
          structure: solution.structureJson,
+         sentenceAnalysis: solution.sentenceAnalysis,
          sequenceAnalysis: solution.sequenceAnalysis,
        }))
       .filter(input => input.meaningConstructors.trim().length > 0);

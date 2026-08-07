@@ -10,7 +10,7 @@ import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
 import { APP_DEFAULTS } from "../app-defaults";
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
 
 
 @Component({
@@ -231,9 +231,10 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
-    const canonicalPrevious = (this.previousSequenceAnalyses.length
+    const previousElements: Array<SentenceAnalysis | SequenceAnalysis> = this.previousSequenceAnalyses.length
       ? this.previousSequenceAnalyses
-      : this.previousSentenceAnalyses)
+      : this.previousSentenceAnalyses;
+    const canonicalPrevious = previousElements
       .flatMap(analysis => analysis.semantics)
       .filter(semantic => !!semantic.graph);
     const previous = canonicalPrevious.length
@@ -273,16 +274,27 @@ export class GswbVisComponent implements AfterViewInit {
       })),
     });
 
-    const mergeRequests = current.flatMap(solution => previous.map((previousGraph, index) =>
-      this.dataService.gswbMergeSequenceSemantics({
+    const mergeRequests = current.flatMap(solution =>
+      previous.map((previousGraph, index) =>
+        this.dataService.gswbMergeSequenceSemantics({
         semantics: [previousSemantics[index] || '', solution.semantic || ''],
         graphs: [previousGraph, solution.graph as LigerStructure],
         parentSolutionId: solution.id,
         solutionKey: solution.solutionKey,
         mcSetId: solution.mcSetId,
-      })));
+        }).pipe(
+          map(merged => ({
+            merged,
+            previousElement: previousElements[index],
+            currentElement: this.sentenceAnalysisFor(solution),
+          }))
+        )
+      )
+    );
 
-    forkJoin(mergeRequests).subscribe(mergedSolutions => {
+    forkJoin(mergeRequests).pipe(
+      switchMap(results => this.mergeSyntaxForResults(results))
+    ).subscribe(mergedSolutions => {
       this.updateSequenceAnalyses(mergedSolutions);
       console.info('[Analysis] GSWB sequence semantic merges completed', {
         mergeCount: mergedSolutions.length,
@@ -304,6 +316,57 @@ export class GswbVisComponent implements AfterViewInit {
     });
   }
 
+  private mergeSyntaxForResults(results: Array<{
+    merged: GswbSolution;
+    previousElement?: SentenceAnalysis | SequenceAnalysis;
+    currentElement?: SentenceAnalysis;
+  }>): import('rxjs').Observable<GswbSolution[]> {
+    return forkJoin(results.map(result => {
+      if (!result.previousElement) {
+        return of(result.merged);
+      }
+      const previousSentences = 'sentences' in result.previousElement
+        ? result.previousElement.sentences
+        : [result.previousElement];
+      const current = result.currentElement;
+      if (!current) {
+        return of(result.merged);
+      }
+      const sentences = [...previousSentences, current];
+      return this.dataService.ligerSequence({
+        sentences: sentences.map(sentence => sentence.text),
+        sentenceIds: sentences.map(sentence => sentence.id),
+        parsedSentences: sentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
+      }).pipe(
+        map(sequence => {
+          const syntax = sequence?.solutions?.[0]?.sequenceAnalysis;
+          if (syntax) {
+            const semantic = this.semanticAnalysisFor(result.merged);
+            result.merged.sequenceAnalysis = {
+              ...syntax,
+              id: result.merged.id || syntax.id,
+              semantics: [semantic],
+              synSemMapping: result.merged.synSemMapping ?? {
+                [semantic.syntacticOrigin]: [semantic.semId]
+              },
+            };
+          }
+          return result.merged;
+        }),
+        catchError(() => of(result.merged))
+      );
+    }));
+  }
+
+  private sentenceAnalysisFor(solution: GswbSolution): SentenceAnalysis | undefined {
+    if (solution.sentenceAnalysis) {
+      return solution.sentenceAnalysis;
+    }
+    const proof = this.proofInputs.find(input => input.solutionKey === solution.solutionKey);
+    return proof?.sentenceAnalysis
+      ?? proof?.sequenceAnalysis?.sentences?.[0];
+  }
+
   private updateSequenceAnalyses(solutions: GswbSolution[]): void {
     const sequenceByKey = new Map(
       this.proofInputs
@@ -312,7 +375,8 @@ export class GswbVisComponent implements AfterViewInit {
     );
     const analyses = solutions
       .map(solution => {
-        const template = sequenceByKey.get(solution.solutionKey)
+        const template = solution.sequenceAnalysis
+          ?? sequenceByKey.get(solution.solutionKey)
           ?? this.proofInputs.find(input => !!input.sequenceAnalysis)?.sequenceAnalysis;
         if (!template) {
           return null;
