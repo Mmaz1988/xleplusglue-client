@@ -128,7 +128,10 @@ the graph inspector and later discourse processing.
 The semantic graph is the canonical semantic payload for sequence merging.
 An API may transport it directly as an ordered graph list, or wrap it in
 sequence parts when sentence IDs, proof IDs, and other provenance need to be
-carried alongside each graph. The wrapper does not replace graph merging.
+carried alongside each graph. The semantic merge wrapper carries semantic
+identity and provenance only; it does not carry the LiGER syntax structure.
+Syntax structures are sent separately to LiGER for the coordinated syntax
+merge. The wrapper does not replace graph merging.
 
 ## Coordinated Element Merge
 
@@ -157,6 +160,10 @@ Sentence
   SYNTAX: List<SyntacticAnalysis>
   SEMANTICS: List<SemanticAnalysis>
   SYNSEM_MAPPING: Map<String, List<String>>
+  DISCRIMINANTS: List<GswbDiscriminant>
+  SELECTED_SEMANTIC_IDS: List<String>
+  SELECTED_SCOPE_IDS: List<String>
+  SELECTED_MC_IDS: List<String>
 ```
 
 `SYNSEM_MAPPING` maps each syntactic analysis to all semantic analyses that
@@ -191,6 +198,12 @@ meaning constructors are recovered from `SENTENCES`, not duplicated into the
 merged sequence syntax. Each semantic
 analysis retains a semantic graph that is compatible with, and can be merged
 into, the corresponding LiGER syntax structure.
+
+`SEMANTICS` retains all calculated alternatives. Sentence analyses additionally
+record discriminants and the active semantic IDs without destroying unselected
+alternatives. Sequence construction must use only the selected semantic IDs
+from sentence parents; sequence alternatives themselves do not currently have
+discriminant selections.
 
 The sequence mapping has the same shape as the sentence mapping, but its
 keys and values encode the parent analyses used to construct the merged

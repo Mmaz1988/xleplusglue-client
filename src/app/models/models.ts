@@ -44,6 +44,10 @@ export interface SentenceAnalysis {
   syntax: SyntacticAnalysis[];
   semantics: SemanticAnalysis[];
   synSemMapping: SynSemMapping;
+  discriminants?: GswbDiscriminant[];
+  selectedSemanticIds?: string[];
+  selectedScopeIds?: string[];
+  selectedMcIds?: string[];
 }
 
 export interface SequenceAnalysis {
@@ -288,7 +292,7 @@ export interface GswbCollapseAnaphoraRequest {
 }
 
 export interface GswbSequenceMergeRequest {
-  parts?: GswbSequencePart[];
+  parts?: GswbSemanticMergePart[];
   semantics?: string[];
   graphs?: LigerStructure[];
   parentSolutionId?: string;
@@ -297,16 +301,15 @@ export interface GswbSequenceMergeRequest {
   resolveDrs?: boolean;
 }
 
-export interface GswbSequencePart {
+export interface GswbSemanticMergePart {
   id?: string;
   sentenceId?: string;
   solutionId?: string;
   proofId?: string;
-  solutionKey?: string;
+  syntacticOrigin?: string;
   mcSetId?: string;
   semantic: string;
   graph?: LigerStructure;
-  syntax?: LigerStructure;
   provenance?: Record<string, any>;
 }
 
@@ -342,6 +345,8 @@ export interface GswbReasoningCheckAstsRequest {
 
 export interface GswbOutput {
   solutions: GswbSolution[];
+  semanticAnalyses?: SemanticAnalysis[];
+  synSemMapping?: SynSemMapping;
   log: string;
   derivation: any;
   discriminants: GswbDiscriminant[];

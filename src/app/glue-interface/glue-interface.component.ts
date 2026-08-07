@@ -8,6 +8,7 @@ import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationR
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
+import { validateAnalysisDocument } from '../analysis-model';
 
 interface PostProcessingResult {
   semanticSolution: GswbSolution;
@@ -55,7 +56,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   private sequenceAnalyses: SequenceAnalysis[] = [];
   previousSentenceAnalyses: SentenceAnalysis[] = [];
   previousSequenceAnalyses: SequenceAnalysis[] = [];
-  private readonly analysisDocumentSessionKey = 'active';
+  private readonly analysisDocumentSessionKey = this.newAnalysisSessionKey();
   private analysisDocument: XlePlusGlueDocument = this.newAnalysisDocument();
   private pendingDocumentSave: XlePlusGlueDocument | null = null;
   private documentSaveInProgress = false;
@@ -106,9 +107,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         });
       });
       this.glue.sequenceAnalysisChange.subscribe((analyses: SequenceAnalysis[]) => {
-        this.sequenceAnalyses = analyses;
-        analyses[0] && this.liger.displaySequenceAnalysis(analyses[0]);
-        analyses.forEach(analysis => {
+        const snapshots = analyses.map(analysis => this.snapshotSequenceAnalysis(analysis));
+        this.sequenceAnalyses = snapshots;
+        snapshots[0] && this.liger.displaySequenceAnalysis(snapshots[0]);
+        snapshots.forEach(analysis => {
           this.upsertSentenceAnalyses(analysis.sentences, false);
           this.analysisDocument.elements = this.analysisDocument.elements
             .filter(element => element.id !== analysis.id)
@@ -118,7 +120,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.persistAnalysisDocument();
         console.info('[Analysis] canonical sequence analyses updated', {
           count: analyses.length,
-          analyses: analyses.map(analysis => ({
+          analyses: snapshots.map(analysis => ({
             id: analysis.id,
             sentenceCount: analysis.sentences.length,
             syntaxCount: analysis.syntax.length,
@@ -142,10 +144,42 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   private newAnalysisDocument(): XlePlusGlueDocument {
     return {
-      id: 'analysis-active',
+      id: this.analysisDocumentSessionKey,
       semanticType: 'lfgxdrt',
       sentences: [],
       elements: [],
+    };
+  }
+
+  private newAnalysisSessionKey(): string {
+    const random = Math.random().toString(36).slice(2, 10);
+    return `analysis-${Date.now()}-${random}`;
+  }
+
+  private snapshotSequenceAnalysis(analysis: SequenceAnalysis): SequenceAnalysis {
+    return {
+      ...analysis,
+      sentences: analysis.sentences.map(sentence => ({
+        ...sentence,
+        syntax: [...sentence.syntax],
+        semantics: [...sentence.semantics],
+        synSemMapping: Object.fromEntries(
+          Object.entries(sentence.synSemMapping).map(([syntaxId, semanticIds]) => [syntaxId, [...semanticIds]])
+        ),
+        discriminants: sentence.discriminants?.map(discriminant => ({
+          ...discriminant,
+          associatedSolutions: [...(discriminant.associatedSolutions ?? [])],
+          instantiations: [...(discriminant.instantiations ?? [])],
+        })),
+        selectedSemanticIds: sentence.selectedSemanticIds ? [...sentence.selectedSemanticIds] : undefined,
+        selectedScopeIds: sentence.selectedScopeIds ? [...sentence.selectedScopeIds] : undefined,
+        selectedMcIds: sentence.selectedMcIds ? [...sentence.selectedMcIds] : undefined,
+      })),
+      syntax: [...analysis.syntax],
+      semantics: [...analysis.semantics],
+      synSemMapping: Object.fromEntries(
+        Object.entries(analysis.synSemMapping).map(([syntaxId, semanticIds]) => [syntaxId, [...semanticIds]])
+      ),
     };
   }
 
@@ -158,6 +192,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           syntax: [...incoming.syntax],
           semantics: [...incoming.semantics],
           synSemMapping: { ...incoming.synSemMapping },
+          discriminants: [...(incoming.discriminants ?? [])],
+          selectedSemanticIds: [...(incoming.selectedSemanticIds ?? incoming.semantics.map(semantic => semantic.semId))],
+          selectedScopeIds: [...(incoming.selectedScopeIds ?? [])],
+          selectedMcIds: [...(incoming.selectedMcIds ?? [])],
         });
         this.analysisDocument.elements = this.analysisDocument.elements
           .filter(element => element.id !== incoming.id)
@@ -168,6 +206,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
       existing.syntax = this.mergeById(existing.syntax, incoming.syntax, item => item.synId);
       existing.semantics = this.mergeById(existing.semantics, incoming.semantics, item => item.semId);
+      existing.discriminants = [...(incoming.discriminants ?? existing.discriminants ?? [])];
+      existing.selectedSemanticIds = [...(incoming.selectedSemanticIds ?? existing.selectedSemanticIds ?? [])];
+      existing.selectedScopeIds = [...(incoming.selectedScopeIds ?? existing.selectedScopeIds ?? [])];
+      existing.selectedMcIds = [...(incoming.selectedMcIds ?? existing.selectedMcIds ?? [])];
       Object.entries(incoming.synSemMapping).forEach(([syntaxId, semanticIds]) => {
         existing.synSemMapping[syntaxId] = Array.from(new Set([
           ...(existing.synSemMapping[syntaxId] ?? []),
@@ -189,6 +231,11 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   private persistAnalysisDocument(): void {
+    try {
+      validateAnalysisDocument(this.analysisDocument);
+    } catch (error) {
+      console.warn('[Analysis] document invariant failed before persistence', error);
+    }
     this.pendingDocumentSave = JSON.parse(JSON.stringify(this.analysisDocument));
     if (this.documentSaveInProgress) return;
     this.saveNextAnalysisDocument();

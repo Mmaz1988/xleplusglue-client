@@ -5,11 +5,12 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbProofInput, GswbRequest,GswbPreferences, GswbSequencePart, GswbSolution, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
+import {GswbDiscriminant, GswbProofInput, GswbRequest,GswbPreferences, GswbSemanticMergePart, GswbSolution, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
 import { APP_DEFAULTS } from "../app-defaults";
+import { selectedSentenceSemantics } from '../analysis-model';
 import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
 
 
@@ -41,6 +42,13 @@ export class GswbVisComponent implements AfterViewInit {
   meaningConstructors = '';
   proofInputs: GswbProofInput[] = [];
   selectedProofInputIndex = 0;
+  private allSemanticSolutions: GswbSolution[] = [];
+  private semanticDiscriminants: GswbDiscriminant[] = [];
+  private selectedSemanticIds: string[] = [];
+  private selectedScopeIds: string[] = [];
+  private selectedMcIds: string[] = [];
+  private loadingSemanticState = false;
+  private updatingMergedSolutions = false;
   private hasSemanticSolutions = false;
   semanticSolutionReady = false;
   postProcessingMode: 'inline' | 'standalone' = 'inline';
@@ -97,24 +105,30 @@ export class GswbVisComponent implements AfterViewInit {
         });
         // Handle the data here...
         // Depending on the structure of the data you might need to modify the below code.
-        if (data.hasOwnProperty('solutions')) {
+         if (data.hasOwnProperty('solutions')) {
           // log each element in data.solutions individually
 
 
           //Check if data.solutions is not null and not empty
            if (data.solutions.some(solution =>
              typeof solution?.solution === 'string' && solution.solution.trim().length > 0)) {
+              this.allSemanticSolutions = [...data.solutions];
+              this.semanticDiscriminants = [...(data.discriminants ?? [])];
+              this.selectedSemanticIds = this.allSemanticSolutions.map(solution => solution.id);
+              this.selectedScopeIds = [];
+              this.selectedMcIds = [];
               this.hasSemanticSolutions = true;
               // For a sequence, the raw current-sentence readings are not
               // ready for the next append until their sequence merge finishes.
               this.semanticSolutionReady = this.previousSentenceAnalyses.length === 0
                 && this.previousSequenceAnalyses.length === 0;
+            this.loadingSemanticState = true;
             this.semvis.clearMc();
             this.semvis.clearScope();
             this.semvis.applyFiltersAndResetIndex();
-
-             this.semvis.setItems(data.solutions);
-             this.semvis.setDiscriminants(data.discriminants);
+            this.semvis.setItems(data.solutions);
+            this.semvis.setDiscriminants(data.discriminants);
+            this.loadingSemanticState = false;
              this.mergeCurrentSolutions(data.solutions);
           } else {
             //create error message with request time stamp
@@ -222,20 +236,42 @@ export class GswbVisComponent implements AfterViewInit {
     this.editor1?.updateContent(this.meaningConstructors);
   }
 
-  onSemanticSelectionChange(selection: { items: any[] }): void {
+  onSemanticSelectionChange(selection: {
+    items: GswbSolution[];
+    selectedScopeIds?: string[];
+    selectedMcIds?: string[];
+  }): void {
+    if (this.loadingSemanticState || !this.allSemanticSolutions.length) {
+      return;
+    }
+    if (this.updatingMergedSolutions) {
+      return;
+    }
+    this.selectedSemanticIds = selection.items.map(solution => solution.id);
+    this.selectedScopeIds = [...(selection.selectedScopeIds ?? [])];
+    this.selectedMcIds = [...(selection.selectedMcIds ?? [])];
     this.semanticSolutionReady = this.hasSemanticSolutions
       && Array.isArray(selection?.items)
       && selection.items.some(solution =>
         typeof solution?.solution === 'string' && solution.solution.trim().length > 0);
+
+    this.updateSentenceAnalyses(this.allSemanticSolutions);
+    if (this.previousSentenceAnalyses.length || this.previousSequenceAnalyses.length) {
+      this.mergeCurrentSolutions(selection.items);
+    }
   }
 
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
     const previousElements: Array<SentenceAnalysis | SequenceAnalysis> = this.previousSequenceAnalyses.length
       ? this.previousSequenceAnalyses
       : this.previousSentenceAnalyses;
-    const canonicalPrevious = previousElements
-      .flatMap(analysis => analysis.semantics)
-      .filter(semantic => !!semantic.semString?.trim());
+    const previousContexts = previousElements.flatMap(element =>
+      ('sentences' in element ? element.semantics : selectedSentenceSemantics(element))
+        .map(semantic => ({ semantic, element }))
+    );
+    const canonicalPrevious = previousContexts
+      .map(context => context.semantic)
+      .filter(semantic => !!semantic.graph);
     if (!canonicalPrevious.length) {
       this.updateSentenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
@@ -244,8 +280,7 @@ export class GswbVisComponent implements AfterViewInit {
       return;
     }
 
-    const current = solutions.filter(solution =>
-      !!(solution?.semantic || solution?.solution)?.trim());
+    const current = solutions.filter(solution => !!solution?.graph);
     if (!current.length) {
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
@@ -269,8 +304,8 @@ export class GswbVisComponent implements AfterViewInit {
       canonicalPrevious.map((_previousSemantic, index) =>
         this.dataService.gswbMergeSequenceSemantics({
         parts: [
-          this.semanticPart(canonicalPrevious[index], previousElements[index]),
-          this.semanticPart(this.semanticAnalysisFor(solution), this.sentenceAnalysisFor(solution)),
+          this.semanticPart(canonicalPrevious[index]),
+          this.semanticPart(this.semanticAnalysisFor(solution)),
         ],
         parentSolutionId: solution.id,
         solutionKey: solution.solutionKey,
@@ -279,7 +314,7 @@ export class GswbVisComponent implements AfterViewInit {
         }).pipe(
           map(merged => ({
             merged,
-            previousElement: previousElements[index],
+            previousElement: previousContexts[index].element,
             currentElement: this.sentenceAnalysisFor(solution),
           }))
         )
@@ -300,8 +335,13 @@ export class GswbVisComponent implements AfterViewInit {
           graphAnnotations: solution.graph?.annotations?.length ?? 0,
         })),
       });
-      this.semvis.setItems(mergedSolutions);
-      this.semvis.setDiscriminants([]);
+      this.updatingMergedSolutions = true;
+      try {
+        this.semvis.setItems(mergedSolutions);
+        this.semvis.setDiscriminants([]);
+      } finally {
+        this.updatingMergedSolutions = false;
+      }
       this.hasSemanticSolutions = mergedSolutions.length > 0;
       this.semanticSolutionReady = this.hasSemanticSolutions;
     }, () => {
@@ -380,28 +420,39 @@ export class GswbVisComponent implements AfterViewInit {
         .filter(input => !!input.sequenceAnalysis)
         .map(input => [input.solutionKey, input.sequenceAnalysis] as const)
     );
-    const analyses = solutions
-      .map(solution => {
-        const template = solution.sequenceAnalysis
-          ?? sequenceByKey.get(solution.solutionKey)
-          ?? this.proofInputs.find(input => !!input.sequenceAnalysis)?.sequenceAnalysis;
-        if (!template) {
-          return null;
-        }
-        const semantic = this.semanticAnalysisFor(solution);
-        const mapping = solution.synSemMapping ?? {
-          [semantic.syntacticOrigin]: [semantic.semId]
-        };
-        const analysis = {
-          ...template,
-          id: solution.id || template.id,
-          semantics: [semantic],
-          synSemMapping: mapping,
-        } as SequenceAnalysis;
-        solution.sequenceAnalysis = analysis;
-        return analysis;
-      })
-      .filter((analysis): analysis is SequenceAnalysis => !!analysis);
+    const analysesBySyntax = new Map<string, SequenceAnalysis>();
+    solutions.forEach(solution => {
+      const template = solution.sequenceAnalysis
+        ?? sequenceByKey.get(solution.solutionKey)
+        ?? this.proofInputs.find(input => !!input.sequenceAnalysis)?.sequenceAnalysis;
+      if (!template) {
+        return;
+      }
+
+      const syntaxId = template.syntax[0]?.synId || solution.solutionKey || solution.id;
+      const existing = analysesBySyntax.get(syntaxId);
+      const semantic = {
+        ...this.semanticAnalysisFor(solution),
+        syntacticOrigin: syntaxId,
+      };
+      const analysis = existing ?? {
+        ...template,
+        id: syntaxId,
+        semantics: [],
+        synSemMapping: {},
+      } as SequenceAnalysis;
+
+      if (!analysis.semantics.some(item => item.semId === semantic.semId)) {
+        analysis.semantics = [...analysis.semantics, semantic];
+      }
+      analysis.synSemMapping[syntaxId] = Array.from(new Set([
+        ...(analysis.synSemMapping[syntaxId] ?? []),
+        semantic.semId,
+      ]));
+      analysesBySyntax.set(syntaxId, analysis);
+      solution.sequenceAnalysis = analysis;
+    });
+    const analyses = Array.from(analysesBySyntax.values());
     this.sequenceAnalysisChange.emit(analyses);
   }
 
@@ -418,11 +469,23 @@ export class GswbVisComponent implements AfterViewInit {
             ?.sequenceAnalysis?.sentences[0];
         if (!template) return null;
         const semantic = this.semanticAnalysisFor(solution);
+        const syntacticOrigin = template.syntax.find(syntax => syntax.synId === semantic.syntacticOrigin)?.synId
+          ?? template.syntax[0]?.synId
+          ?? semantic.syntacticOrigin;
+        const sentenceSemantic = { ...semantic, syntacticOrigin };
         const analysis = {
           ...template,
-          semantics: [semantic],
-          synSemMapping: solution.synSemMapping ?? {
-            [semantic.syntacticOrigin]: [semantic.semId]
+          semantics: [sentenceSemantic],
+          discriminants: this.semanticDiscriminants.map(discriminant => ({
+            ...discriminant,
+            associatedSolutions: [...(discriminant.associatedSolutions ?? [])],
+            instantiations: [...(discriminant.instantiations ?? [])],
+          })),
+          selectedSemanticIds: [...this.selectedSemanticIds],
+          selectedScopeIds: [...this.selectedScopeIds],
+          selectedMcIds: [...this.selectedMcIds],
+          synSemMapping: {
+            [sentenceSemantic.syntacticOrigin]: [sentenceSemantic.semId],
           },
         } as SentenceAnalysis;
         solution.sentenceAnalysis = analysis;
@@ -446,21 +509,14 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private semanticPart(
-    semantic: SemanticAnalysis,
-    element?: SentenceAnalysis | SequenceAnalysis
-  ): GswbSequencePart {
-    const syntax = element?.syntax.find(item => item.synId === semantic.syntacticOrigin)
-      ?? element?.syntax[0];
-    const sequence = element && 'sentences' in element ? element : undefined;
-    const sentence = element && !('sentences' in element) ? element : undefined;
+    semantic: SemanticAnalysis
+  ): GswbSemanticMergePart {
     return {
       id: semantic.semId,
-      sentenceId: sequence?.sentences[0]?.id ?? sentence?.id,
       solutionId: semantic.semId,
-      solutionKey: semantic.syntacticOrigin,
+      syntacticOrigin: semantic.syntacticOrigin,
       semantic: semantic.semString,
       graph: semantic.graph,
-      syntax: syntax?.structure,
       provenance: {
         syntacticOrigin: semantic.syntacticOrigin,
         semanticId: semantic.semId,
