@@ -32,11 +32,16 @@ SyntacticAnalysis
   SYN_ID: String
   STRUCTURE: LinguisticStructure (JSON)
   GRAPH: LigerWebGraph (JSON)
+  MEANING_CONSTRUCTORS: String
+  NUMBER_OF_MC_SETS: Integer
 ```
 
 `SYN_ID` identifies one syntactic parse or one merged syntactic analysis.
 `STRUCTURE` is the LiGER linguistic structure used for rule application and
 sequence construction. `GRAPH` is its visual/graph representation.
+`MEANING_CONSTRUCTORS` are generated from this syntactic analysis and are the
+input to GSWB semantic deduction. They belong to the syntactic analysis
+because different syntax variants can produce different constructor sets.
 
 ### SemanticAnalysis
 
