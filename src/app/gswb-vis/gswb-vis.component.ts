@@ -317,12 +317,14 @@ export class GswbVisComponent implements AfterViewInit {
         const mapping = solution.synSemMapping ?? {
           [semantic.syntacticOrigin]: [semantic.semId]
         };
-        return {
+        const analysis = {
           ...template,
           id: solution.id || template.id,
           semantics: [semantic],
           synSemMapping: mapping,
         } as SequenceAnalysis;
+        solution.sequenceAnalysis = analysis;
+        return analysis;
       })
       .filter((analysis): analysis is SequenceAnalysis => !!analysis);
     this.sequenceAnalysisChange.emit(analyses);

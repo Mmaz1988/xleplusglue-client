@@ -77,9 +77,15 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             : (semvis.allItems ?? semvis.items);
           const eligible = (Array.isArray(solutions) ? solutions : [])
             .filter(solution => !!solution?.graph);
-          this.previousSemanticGraphs = eligible.map(solution => solution.graph as LigerStructure);
-          this.previousSemanticStrings = eligible
-            .map(solution => solution.semantic ?? '');
+          const canonicalPrevious = this.previousSequenceAnalyses
+            .flatMap(analysis => analysis.semantics)
+            .filter(semantic => !!semantic.graph);
+          this.previousSemanticGraphs = canonicalPrevious.length
+            ? canonicalPrevious.map(semantic => semantic.graph as LigerStructure)
+            : eligible.map(solution => solution.graph as LigerStructure);
+          this.previousSemanticStrings = canonicalPrevious.length
+            ? canonicalPrevious.map(semantic => semantic.semString)
+            : eligible.map(solution => solution.semantic ?? '');
           console.info('[Analysis] captured previous semantic context before sequence append', {
             previousSequenceLength: this.lastSequenceLength,
             newSequenceLength: sequenceLength,
@@ -210,7 +216,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   private syntaxForSolution(solution: GswbSolution): LigerStructure | null {
-    return (solution.solutionKey ? this.syntaxBySolutionKey[solution.solutionKey] : undefined)
+    return solution.sequenceAnalysis?.syntax?.[0]?.structure
+      ?? (solution.solutionKey ? this.syntaxBySolutionKey[solution.solutionKey] : undefined)
       ?? this.liger?.structureJson
       ?? null;
   }
