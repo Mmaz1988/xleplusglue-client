@@ -125,6 +125,11 @@ They are nevertheless intentionally compatible graph layers. The frontend
 uses LiGER's structure/graph merge operation to produce a combined graph for
 the graph inspector and later discourse processing.
 
+The semantic graph is the canonical semantic payload for sequence merging.
+An API may transport it directly as an ordered graph list, or wrap it in
+sequence parts when sentence IDs, proof IDs, and other provenance need to be
+carried alongside each graph. The wrapper does not replace graph merging.
+
 ### Sentence
 
 ```text
