@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SequenceAnalysis } from '../models/models';
+import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SentenceAnalysis, SequenceAnalysis } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -54,7 +54,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   previousSemanticStrings: string[] = [];
   private lastSequenceLength = 0;
   private syntaxBySolutionKey: Record<string, LigerStructure> = {};
+  private sentenceAnalyses: SentenceAnalysis[] = [];
   private sequenceAnalyses: SequenceAnalysis[] = [];
+  previousSentenceAnalyses: SentenceAnalysis[] = [];
   previousSequenceAnalyses: SequenceAnalysis[] = [];
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
@@ -66,9 +68,11 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         if (sequenceLength <= 1) {
           this.previousSemanticGraphs = [];
           this.previousSemanticStrings = [];
+          this.previousSentenceAnalyses = [];
           this.previousSequenceAnalyses = [];
         } else if (sequenceLength !== this.lastSequenceLength) {
           this.previousSequenceAnalyses = this.sequenceAnalyses;
+          this.previousSentenceAnalyses = this.sentenceAnalyses;
           const semvis = this.glue.semvis;
           const hasDiscriminantSelection = (semvis.selectedScopeIds?.length ?? 0) > 0
             || (semvis.selectedMcIds?.length ?? 0) > 0;
@@ -77,7 +81,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             : (semvis.allItems ?? semvis.items);
           const eligible = (Array.isArray(solutions) ? solutions : [])
             .filter(solution => !!solution?.graph);
-          const canonicalPrevious = this.previousSequenceAnalyses
+          const canonicalPrevious = (this.previousSequenceAnalyses.length
+            ? this.previousSequenceAnalyses
+            : this.previousSentenceAnalyses)
             .flatMap(analysis => analysis.semantics)
             .filter(semantic => !!semantic.graph);
           this.previousSemanticGraphs = canonicalPrevious.length
@@ -134,6 +140,13 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             semanticCount: analysis.semantics.length,
             mapping: analysis.synSemMapping,
           })),
+        });
+      });
+      this.glue.sentenceAnalysisChange.subscribe((analyses: SentenceAnalysis[]) => {
+        this.sentenceAnalyses = analyses;
+        console.info('[Analysis] canonical sentence analyses updated', {
+          count: analyses.length,
+          analysisIds: analyses.map(analysis => analysis.id),
         });
       });
     }

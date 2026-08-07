@@ -253,6 +253,7 @@ export interface GswbSolution {
   mcSetId?: string;
   semanticAnalysis?: SemanticAnalysis;
   synSemMapping?: SynSemMapping;
+  sentenceAnalysis?: SentenceAnalysis;
   sequenceAnalysis?: SequenceAnalysis;
 }
 

@@ -5,7 +5,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure, SemanticAnalysis, SequenceAnalysis} from "../models/models";
+import {GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -26,8 +26,10 @@ export class GswbVisComponent implements AfterViewInit {
   @Input() postProcessingLoading = false;
   @Input() previousSemanticGraphs: LigerStructure[] = [];
   @Input() previousSemanticStrings: string[] = [];
+  @Input() previousSentenceAnalyses: SentenceAnalysis[] = [];
   @Input() previousSequenceAnalyses: SequenceAnalysis[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
+  @Output() sentenceAnalysisChange = new EventEmitter<SentenceAnalysis[]>();
   @Output() sequenceAnalysisChange = new EventEmitter<SequenceAnalysis[]>();
 
   @ViewChild('edit1') editor1: EditorComponent;
@@ -229,7 +231,9 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
-    const canonicalPrevious = this.previousSequenceAnalyses
+    const canonicalPrevious = (this.previousSequenceAnalyses.length
+      ? this.previousSequenceAnalyses
+      : this.previousSentenceAnalyses)
       .flatMap(analysis => analysis.semantics)
       .filter(semantic => !!semantic.graph);
     const previous = canonicalPrevious.length
@@ -239,7 +243,7 @@ export class GswbVisComponent implements AfterViewInit {
       ? canonicalPrevious.map(semantic => semantic.semString)
       : this.previousSemanticStrings;
     if (!previous.length) {
-      this.updateSequenceAnalyses(solutions);
+      this.updateSentenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
         currentSolutionCount: solutions.length,
       });
@@ -328,6 +332,33 @@ export class GswbVisComponent implements AfterViewInit {
       })
       .filter((analysis): analysis is SequenceAnalysis => !!analysis);
     this.sequenceAnalysisChange.emit(analyses);
+  }
+
+  private updateSentenceAnalyses(solutions: GswbSolution[]): void {
+    const sentenceByKey = new Map(
+      this.proofInputs
+        .filter(input => !!input.sequenceAnalysis?.sentences?.[0])
+        .map(input => [input.solutionKey, input.sequenceAnalysis?.sentences[0]] as const)
+    );
+    const analyses = solutions
+      .map(solution => {
+        const template = sentenceByKey.get(solution.solutionKey)
+          ?? this.proofInputs.find(input => !!input.sequenceAnalysis?.sentences?.[0])
+            ?.sequenceAnalysis?.sentences[0];
+        if (!template) return null;
+        const semantic = this.semanticAnalysisFor(solution);
+        const analysis = {
+          ...template,
+          semantics: [semantic],
+          synSemMapping: solution.synSemMapping ?? {
+            [semantic.syntacticOrigin]: [semantic.semId]
+          },
+        } as SentenceAnalysis;
+        solution.sentenceAnalysis = analysis;
+        return analysis;
+      })
+      .filter((analysis): analysis is SentenceAnalysis => !!analysis);
+    this.sentenceAnalysisChange.emit(analyses);
   }
 
   private semanticAnalysisFor(solution: GswbSolution): SemanticAnalysis {
