@@ -321,18 +321,23 @@ export class GswbVisComponent implements AfterViewInit {
     previousElement?: SentenceAnalysis | SequenceAnalysis;
     currentElement?: SentenceAnalysis;
   }>): import('rxjs').Observable<GswbSolution[]> {
-    return forkJoin(results.map(result => {
-      if (!result.previousElement) {
-        return of(result.merged);
+    const groups = new Map<string, typeof results>();
+    results.forEach(result => {
+      const key = `${this.syntaxIds(result.previousElement)}=>${this.syntaxIds(result.currentElement)}`;
+      const group = groups.get(key) ?? [];
+      group.push(result);
+      groups.set(key, group);
+    });
+
+    return forkJoin(Array.from(groups.values()).map(group => {
+      const first = group[0];
+      if (!first.previousElement || !first.currentElement) {
+        return of(group.map(result => result.merged));
       }
-      const previousSentences = 'sentences' in result.previousElement
-        ? result.previousElement.sentences
-        : [result.previousElement];
-      const current = result.currentElement;
-      if (!current) {
-        return of(result.merged);
-      }
-      const sentences = [...previousSentences, current];
+      const previousSentences = 'sentences' in first.previousElement
+        ? first.previousElement.sentences
+        : [first.previousElement];
+      const sentences = [...previousSentences, first.currentElement];
       return this.dataService.ligerSequence({
         sentences: sentences.map(sentence => sentence.text),
         sentenceIds: sentences.map(sentence => sentence.id),
@@ -340,22 +345,30 @@ export class GswbVisComponent implements AfterViewInit {
       }).pipe(
         map(sequence => {
           const syntax = sequence?.solutions?.[0]?.sequenceAnalysis;
-          if (syntax) {
-            const semantic = this.semanticAnalysisFor(result.merged);
-            result.merged.sequenceAnalysis = {
-              ...syntax,
-              id: result.merged.id || syntax.id,
-              semantics: [semantic],
-              synSemMapping: result.merged.synSemMapping ?? {
-                [semantic.syntacticOrigin]: [semantic.semId]
-              },
-            };
-          }
-          return result.merged;
+          return group.map(result => {
+            if (syntax) {
+              const semantic = this.semanticAnalysisFor(result.merged);
+              result.merged.sequenceAnalysis = {
+                ...syntax,
+                id: result.merged.id || syntax.id,
+                semantics: [semantic],
+                synSemMapping: result.merged.synSemMapping ?? {
+                  [semantic.syntacticOrigin]: [semantic.semId]
+                },
+              };
+            }
+            return result.merged;
+          });
         }),
-        catchError(() => of(result.merged))
+        catchError(() => of(group.map(result => result.merged)))
       );
-    }));
+    })).pipe(
+      map(groupResults => groupResults.flat())
+    );
+  }
+
+  private syntaxIds(element?: SentenceAnalysis | SequenceAnalysis): string {
+    return element?.syntax.map(syntax => syntax.synId).join('+') ?? 'unknown';
   }
 
   private sentenceAnalysisFor(solution: GswbSolution): SentenceAnalysis | undefined {
