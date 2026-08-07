@@ -235,9 +235,8 @@ export class GswbVisComponent implements AfterViewInit {
       : this.previousSentenceAnalyses;
     const canonicalPrevious = previousElements
       .flatMap(analysis => analysis.semantics)
-      .filter(semantic => !!semantic.graph);
-    const previous = canonicalPrevious.map(semantic => semantic.graph as LigerStructure);
-    if (!previous.length) {
+      .filter(semantic => !!semantic.semString?.trim());
+    if (!canonicalPrevious.length) {
       this.updateSentenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
         currentSolutionCount: solutions.length,
@@ -245,7 +244,8 @@ export class GswbVisComponent implements AfterViewInit {
       return;
     }
 
-    const current = solutions.filter(solution => !!solution?.graph);
+    const current = solutions.filter(solution =>
+      !!(solution?.semantic || solution?.solution)?.trim());
     if (!current.length) {
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
@@ -253,12 +253,9 @@ export class GswbVisComponent implements AfterViewInit {
     }
 
     console.info('[Analysis] preparing GSWB sequence semantic merges', {
-      previousGraphCount: previous.length,
+      previousSemanticCount: canonicalPrevious.length,
       currentSolutionCount: current.length,
-      previousGraphSizes: previous.map(graph => ({
-        constraints: graph.constraints?.length ?? 0,
-        annotations: graph.annotations?.length ?? 0,
-      })),
+      previousGraphCount: canonicalPrevious.filter(semantic => !!semantic.graph).length,
       currentSolutions: current.map(solution => ({
         id: solution.id,
         solutionKey: solution.solutionKey,
@@ -269,7 +266,7 @@ export class GswbVisComponent implements AfterViewInit {
     });
 
     const mergeRequests = current.flatMap(solution =>
-      previous.map((_previousGraph, index) =>
+      canonicalPrevious.map((_previousSemantic, index) =>
         this.dataService.gswbMergeSequenceSemantics({
         parts: [
           this.semanticPart(canonicalPrevious[index], previousElements[index]),
