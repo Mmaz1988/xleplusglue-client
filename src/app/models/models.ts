@@ -55,6 +55,15 @@ export interface SequenceAnalysis {
   synSemMapping: SynSemMapping;
 }
 
+export type XlePlusGlueElement = SentenceAnalysis | SequenceAnalysis;
+
+export interface XlePlusGlueDocument {
+  id: string;
+  semanticType: string;
+  sentences: SentenceAnalysis[];
+  elements: XlePlusGlueElement[];
+}
+
 export interface LigerRuleAnnotation {
   sentence?: string;
   graph: LigerWebGraph;

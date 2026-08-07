@@ -7,6 +7,27 @@ XLE, deriving Glue/LFGxDRT semantics, and merging sentence or sequence
 analyses. Discourse updates and final pragmatic reasoning are deliberately
 outside the core model described here.
 
+## Document Lifecycle
+
+The frontend owns a monotonically growing `XlePlusGlueDocument`:
+
+```text
+XlePlusGlueDocument
+  ID: String
+  SEMANTIC_TYPE: String
+  SENTENCES: List<Sentence>
+  ELEMENTS: List<Sentence | Sequence>
+```
+
+Parsing the first input creates the document and its first `Sentence`. Adding
+an input creates a new independent `Sentence`; it does not replace or rebuild
+the existing sentence objects. The new sentence is populated by LiGER and
+then GSWB before it is merged with the previous document element.
+
+The merge creates a new `Sequence` element while retaining all source
+sentences and prior elements. A sequence is therefore a derived result, not
+the mutable replacement for the sentence objects from which it was built.
+
 ## Scope
 
 A `LigerDocument` contains one or more sentences. A sentence may have:
@@ -158,7 +179,7 @@ lists always produce the same ID.
 
 ## Sentence Analysis Workflow
 
-For a sentence:
+For a sentence, including a sentence added to an existing document:
 
 ```text
 text
@@ -191,6 +212,11 @@ Before merging, the frontend must verify:
 - sentence order is known;
 - each syntactic and semantic reference is internally valid; and
 - both elements satisfy the current sequencing configuration.
+
+The semantic merge occurs only after both input elements have complete
+sentence/sequence semantic analyses. Syntax and semantics are separate merge
+inputs, but both retain the same source IDs. Pragmatic annotations are not
+copied from either input; they are recalculated for the new sequence.
 
 For elements `S1` and `S2`:
 
