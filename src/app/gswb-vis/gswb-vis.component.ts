@@ -26,6 +26,7 @@ export class GswbVisComponent implements AfterViewInit {
   @Input() postProcessingLoading = false;
   @Input() previousSemanticGraphs: LigerStructure[] = [];
   @Input() previousSemanticStrings: string[] = [];
+  @Input() previousSequenceAnalyses: SequenceAnalysis[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
   @Output() sequenceAnalysisChange = new EventEmitter<SequenceAnalysis[]>();
 
@@ -228,7 +229,15 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
-    const previous = this.previousSemanticGraphs.filter(graph => !!graph);
+    const canonicalPrevious = this.previousSequenceAnalyses
+      .flatMap(analysis => analysis.semantics)
+      .filter(semantic => !!semantic.graph);
+    const previous = canonicalPrevious.length
+      ? canonicalPrevious.map(semantic => semantic.graph as LigerStructure)
+      : this.previousSemanticGraphs.filter(graph => !!graph);
+    const previousSemantics = canonicalPrevious.length
+      ? canonicalPrevious.map(semantic => semantic.semString)
+      : this.previousSemanticStrings;
     if (!previous.length) {
       this.updateSequenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
@@ -262,7 +271,7 @@ export class GswbVisComponent implements AfterViewInit {
 
     const mergeRequests = current.flatMap(solution => previous.map((previousGraph, index) =>
       this.dataService.gswbMergeSequenceSemantics({
-        semantics: [this.previousSemanticStrings[index] || '', solution.semantic || ''],
+        semantics: [previousSemantics[index] || '', solution.semantic || ''],
         graphs: [previousGraph, solution.graph as LigerStructure],
         parentSolutionId: solution.id,
         solutionKey: solution.solutionKey,

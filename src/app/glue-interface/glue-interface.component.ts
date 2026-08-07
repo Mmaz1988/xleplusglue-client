@@ -55,7 +55,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   private lastSequenceLength = 0;
   private syntaxBySolutionKey: Record<string, LigerStructure> = {};
   private sequenceAnalyses: SequenceAnalysis[] = [];
-  private previousSequenceAnalyses: SequenceAnalysis[] = [];
+  previousSequenceAnalyses: SequenceAnalysis[] = [];
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
@@ -66,6 +66,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         if (sequenceLength <= 1) {
           this.previousSemanticGraphs = [];
           this.previousSemanticStrings = [];
+          this.previousSequenceAnalyses = [];
         } else if (sequenceLength !== this.lastSequenceLength) {
           this.previousSequenceAnalyses = this.sequenceAnalyses;
           const semvis = this.glue.semvis;
