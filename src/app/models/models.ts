@@ -28,6 +28,17 @@ export interface LigerRuleAnnotation {
   highlightedNodeIds?: string[];
   highlightedNodeIdsByRule?: Record<string, string[]>;
   addedAnnotationsByRule?: Record<string, LigerRuleAnnotationFact[] | Record<string, LigerRuleAnnotationFact>>;
+  sequenceParts?: LigerSequencePart[];
+}
+
+export interface LigerSequencePart {
+  sourceIndex: number;
+  sentenceId: string;
+  syntaxVariantId?: string;
+  solutionKey?: string;
+  meaningConstructors: string;
+  sourceIndexOffset: number;
+  rootId?: string;
 }
 
 export interface LigerRuleAnnotationResponse {
@@ -55,6 +66,7 @@ export interface LigerSolutionAnnotation {
   meaningConstructors: string;
   numberOfMCsets: number;
   axioms?: string[];
+  sequenceParts?: LigerSequencePart[];
 }
 
 export interface LigerSolutionAnnotationResponse {
@@ -70,6 +82,8 @@ export interface LigerSequenceRequest {
   sentences: string[];
   ruleString?: string;
   logicType?: string;
+  parsedLastSentence?: LigerStructure[];
+  parsedSentences?: LigerStructure[][];
 }
 
 export interface LigerStructureUploadRequest {
@@ -240,14 +254,27 @@ export interface GswbReasoningChecksRequest {
 }
 
 export interface GswbReasoningCheck {
-  semantic: string;
-  graph: LigerStructure;
-  semanticSvg: string;
   tptp: string;
 }
 
 export interface GswbReasoningChecksOutput {
   checks: Record<string, GswbReasoningCheck>;
+  contextTptp?: string;
+}
+
+export interface GswbReasoningCheckAst {
+  semantic: string;
+  ast: LigerStructure;
+}
+
+export interface GswbReasoningCheckAstsOutput {
+  checks: Record<string, GswbReasoningCheckAst>;
+}
+
+export interface GswbReasoningCheckAstsRequest {
+  premiseAsts: LigerStructure[];
+  hypothesisAsts: LigerStructure[];
+  typed: boolean;
 }
 
 export interface GswbOutput {
@@ -683,13 +710,14 @@ export interface PathString {
 }
 
 export interface vampireRequest {
-  text : string;
-  context: context[];
-  axioms: string;
-  hypothesis: string;
-  pruning: boolean;
-  active_indices: number[];
+  text: string;
+  context?: context[];
+  axioms?: string;
+  hypothesis?: string;
+  pruning?: boolean;
+  active_indices?: number[];
   vampire_preferences?: VampirePreferences;
+  tptp_checks?: GswbReasoningChecksOutput[];
 }
 
 /*
@@ -717,6 +745,10 @@ export interface nliItem {
   axioms: string;
   premise_groups?: string[][];
   hypothesis_groups?: string[][];
+  premise_ast_groups?: LigerStructure[][];
+  hypothesis_ast_groups?: LigerStructure[][];
+  premise_sentence_ids?: string[];
+  hypothesis_sentence_ids?: string[];
   tptp_checks?: GswbReasoningChecksOutput[];
 }
 
@@ -749,16 +781,20 @@ export interface context {
   prolog_fol: string;
   tptp: string;
   box: string;
+  semantic?: string;
+  semanticGraph?: LigerStructure;
+  syntax?: LigerStructure;
 }
 
 
- export interface ChatMessage {
+export interface ChatMessage {
   text: string;
   sender: 'User' | 'Bot';
   //optional glyph
   glyph?: string;
    showGlyph?: false
    detailText?: string;        // for chat analysis
+   semanticText?: string;
    showDetail?: boolean;
 
    glyphs?: string[];        // raw svg strings (optional to keep)

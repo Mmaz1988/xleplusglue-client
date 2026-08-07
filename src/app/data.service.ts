@@ -29,6 +29,8 @@ import {
   GswbSolution,
   GswbReasoningChecksRequest,
   GswbReasoningChecksOutput,
+  GswbReasoningCheckAstsOutput,
+  GswbReasoningCheckAstsRequest,
   LigerSolutionAnnotationResponse,
   LigerSequenceRequest,
   vampireMultipleRequest, vampireMultipleResponse,
@@ -71,6 +73,14 @@ export class DataService {
 
   gswbReasoningChecks(request: GswbReasoningChecksRequest): Observable<GswbReasoningChecksOutput> {
     return this.http.post<GswbReasoningChecksOutput>(`${this.gswbpage}/reasoning_checks`, request);
+  }
+
+  gswbReasoningCheckAsts(request: GswbReasoningCheckAstsRequest): Observable<GswbReasoningCheckAstsOutput> {
+    return this.http.post<GswbReasoningCheckAstsOutput>(`${this.gswbpage}/reasoning_check_asts`, request);
+  }
+
+  gswbSemanticToTptp(request: { semantic: string; typed: boolean }): Observable<{ tptp: string }> {
+    return this.http.post<{ tptp: string }>(`${this.gswbpage}/semantic_to_tptp`, request);
   }
 
   getLastGswbSession(sessionKey: string = this.defaultRedisSessionKey): Observable<GswbBatchOutput> {

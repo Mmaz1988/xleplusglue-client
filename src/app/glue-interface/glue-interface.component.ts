@@ -76,6 +76,17 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           this.previousSemanticGraphs = eligible.map(solution => solution.graph as LigerStructure);
           this.previousSemanticStrings = eligible
             .map(solution => solution.semantic ?? '');
+          console.info('[Analysis] captured previous semantic context before sequence append', {
+            previousSequenceLength: this.lastSequenceLength,
+            newSequenceLength: sequenceLength,
+            previousSolutionCount: eligible.length,
+            previousSolutionIds: eligible.map(solution => solution.id),
+            previousGraphSizes: this.previousSemanticGraphs.map(graph => ({
+              constraints: graph.constraints?.length ?? 0,
+              annotations: graph.annotations?.length ?? 0,
+            })),
+            previousSemanticLengths: this.previousSemanticStrings.map(semantic => semantic.length),
+          });
         }
         this.lastSequenceLength = sequenceLength;
         // Update glue's variable here
@@ -90,6 +101,17 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           }
         });
         this.glue.setProofInputs(proofInputs);
+        console.info('[Analysis] updated GSWB proof inputs from LiGER', {
+          proofCount: proofInputs.length,
+          proofInputs: proofInputs.map(input => ({
+            proofId: input.proofId,
+            solutionKey: input.solutionKey,
+            mcSetId: input.mcSetId,
+            meaningConstructorsLength: input.meaningConstructors?.length ?? 0,
+            structureConstraints: input.structure?.constraints?.length ?? 0,
+            structureAnnotations: input.structure?.annotations?.length ?? 0,
+          })),
+        });
       });
     }
 
@@ -110,10 +132,26 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.inlineGraphInspector?.resetForNewStructure();
     this.postProcessingResultsReady = false;
     this.postProcessingLoading = true;
+    console.info('[Analysis] starting post-processing for semantic solutions', {
+      mode,
+      solutionCount: semanticSolutions.length,
+      solutionIds: semanticSolutions.map(solution => solution.id),
+      solutionKeys: semanticSolutions.map(solution => solution.solutionKey),
+    });
     forkJoin(semanticSolutions.map(semanticSolution => this.dataService.ligerMergeStructure({
       syntax: this.syntaxForSolution(semanticSolution),
       drs: semanticSolution.graph as LigerStructure,
     }))).subscribe(responses => {
+      console.info('[Analysis] LiGER merged semantic solutions with syntax', {
+        responseCount: responses.length,
+        structures: responses.map(response => ({
+          constraints: Array.isArray(response?.structureJson?.['constraints'])
+            ? response.structureJson['constraints'].length : 0,
+          annotations: Array.isArray(response?.structureJson?.['annotations'])
+            ? response.structureJson['annotations'].length : 0,
+          graphElements: response?.graph?.graphElements?.length ?? 0,
+        })),
+      });
       this.postProcessingResults = responses.map((response, index) => ({
         semanticSolution: semanticSolutions[index],
         structureContent: typeof response?.structureJson === 'string'
@@ -241,6 +279,15 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       });
     });
 
+    console.info('[Analysis] applying post-processing rules', {
+      resultCount: requests.length,
+      ruleStringLength: ruleString.length,
+      structureSizes: this.postProcessingResults.map(result => ({
+        contentLength: result.structureContent.length,
+        rulesAlreadyApplied: result.rulesApplied,
+      })),
+    });
+
     forkJoin(requests).subscribe(responses => {
       responses.forEach((result, index) => {
         const target = this.postProcessingResults[index];
@@ -254,6 +301,11 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         if (firstAnnotation?.graph?.graphElements) {
           target.annotatedGraphElements = firstAnnotation.graph.graphElements;
         }
+      });
+      console.info('[Analysis] post-processing rules completed', {
+        resultCount: responses.length,
+        annotationCounts: responses.map(result => result?.annotations?.length ?? 0),
+        appliedRuleCounts: responses.map(result => result?.annotations?.[0]?.appliedRules?.length ?? 0),
       });
       this.rulesApplicationLoading = false;
       if (typeof this.inlineGraphInspector?.displayMessage === 'function') {
@@ -307,6 +359,16 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     }
 
     this.pcdrsLoading = true;
+    console.info('[Analysis] generating PCDRS from annotated structures', {
+      candidateCount: candidates.length,
+      candidates: candidates.map(candidate => ({
+        solutionId: candidate.result.semanticSolution.id,
+        graphIndex: candidate.graphIndex,
+        annotationIndex: candidate.annotationIndex,
+        constraints: candidate.annotation.structureJson?.constraints?.length ?? 0,
+        annotations: candidate.annotation.structureJson?.annotations?.length ?? 0,
+      })),
+    });
     forkJoin(candidates.map(candidate => this.dataService.gswbGeneratePcdrs({
       semantic: candidate.result.semanticSolution.semantic ?? '',
       parentSolutionId: this.postProcessingResults.length
@@ -315,6 +377,11 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       mergedStructure: candidate.annotation.structureJson as LigerStructure,
     }))).subscribe(responses => {
       this.pcdrsLoading = false;
+      console.info('[Analysis] PCDRS generation completed', {
+        responseCount: responses.length,
+        solutionCounts: responses.map(response => response?.solutions?.length ?? 0),
+        solutionIds: responses.flatMap(response => (response?.solutions ?? []).map(solution => solution.id)),
+      });
       this.pcdrsSolutions = responses.flatMap(response => response?.solutions ?? []);
       this.collapsedPcdrsById = {};
       this.showCollapsedAnaphora = false;

@@ -10,6 +10,7 @@ import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
 import { APP_DEFAULTS } from "../app-defaults";
+import { forkJoin } from 'rxjs';
 
 
 @Component({
@@ -102,15 +103,16 @@ export class GswbVisComponent implements AfterViewInit {
            if (data.solutions.some(solution =>
              typeof solution?.solution === 'string' && solution.solution.trim().length > 0)) {
               this.hasSemanticSolutions = true;
-              // LiGER's sequence endpoint already assembles the complete
-              // sequence, so these readings are ready for GSWB directly.
-              this.semanticSolutionReady = true;
+              // For a sequence, the raw current-sentence readings are not
+              // ready for the next append until their sequence merge finishes.
+              this.semanticSolutionReady = this.previousSemanticGraphs.length === 0;
             this.semvis.clearMc();
             this.semvis.clearScope();
             this.semvis.applyFiltersAndResetIndex();
 
              this.semvis.setItems(data.solutions);
              this.semvis.setDiscriminants(data.discriminants);
+             this.mergeCurrentSolutions(data.solutions);
           } else {
             //create error message with request time stamp
             //create gswb solution with no solutions found and create list to treat as semvis
@@ -222,6 +224,68 @@ export class GswbVisComponent implements AfterViewInit {
       && Array.isArray(selection?.items)
       && selection.items.some(solution =>
         typeof solution?.solution === 'string' && solution.solution.trim().length > 0);
+  }
+
+  private mergeCurrentSolutions(solutions: GswbSolution[]): void {
+    const previous = this.previousSemanticGraphs.filter(graph => !!graph);
+    if (!previous.length) {
+      console.info('[Analysis] no previous semantic context; skipping sequence merge', {
+        currentSolutionCount: solutions.length,
+      });
+      return;
+    }
+
+    const current = solutions.filter(solution => !!solution?.graph);
+    if (!current.length) {
+      this.hasSemanticSolutions = false;
+      this.semanticSolutionReady = false;
+      return;
+    }
+
+    console.info('[Analysis] preparing GSWB sequence semantic merges', {
+      previousGraphCount: previous.length,
+      currentSolutionCount: current.length,
+      previousGraphSizes: previous.map(graph => ({
+        constraints: graph.constraints?.length ?? 0,
+        annotations: graph.annotations?.length ?? 0,
+      })),
+      currentSolutions: current.map(solution => ({
+        id: solution.id,
+        solutionKey: solution.solutionKey,
+        semanticLength: solution.semantic?.length ?? 0,
+        graphConstraints: solution.graph?.constraints?.length ?? 0,
+        graphAnnotations: solution.graph?.annotations?.length ?? 0,
+      })),
+    });
+
+    const mergeRequests = current.flatMap(solution => previous.map((previousGraph, index) =>
+      this.dataService.gswbMergeSequenceSemantics({
+        semantics: [this.previousSemanticStrings[index] || '', solution.semantic || ''],
+        graphs: [previousGraph, solution.graph as LigerStructure],
+        parentSolutionId: solution.id,
+        solutionKey: solution.solutionKey,
+        mcSetId: solution.mcSetId,
+      })));
+
+    forkJoin(mergeRequests).subscribe(mergedSolutions => {
+      console.info('[Analysis] GSWB sequence semantic merges completed', {
+        mergeCount: mergedSolutions.length,
+        mergedSolutions: mergedSolutions.map(solution => ({
+          id: solution.id,
+          solutionKey: solution.solutionKey,
+          semanticLength: solution.semantic?.length ?? 0,
+          graphConstraints: solution.graph?.constraints?.length ?? 0,
+          graphAnnotations: solution.graph?.annotations?.length ?? 0,
+        })),
+      });
+      this.semvis.setItems(mergedSolutions);
+      this.semvis.setDiscriminants([]);
+      this.hasSemanticSolutions = mergedSolutions.length > 0;
+      this.semanticSolutionReady = this.hasSemanticSolutions;
+    }, () => {
+      this.hasSemanticSolutions = false;
+      this.semanticSolutionReady = false;
+    });
   }
 
   captureState(): GswbWorkspaceState | null {

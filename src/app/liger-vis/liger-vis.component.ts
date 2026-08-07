@@ -110,10 +110,30 @@ export class LigerVisComponent implements AfterViewInit {
     this.loading = true;
     this.errorhandle.nativeElement.innerHTML = "";
 
+    console.info('[Analysis] appending sentence through LiGER', {
+      sentenceIndex: sentences.length,
+      sentence,
+      sequenceLength: sentences.length,
+      reparsingSentences: sentences,
+      hasRuleString: !!ruleString?.trim(),
+    });
+
     this.dataService.ligerSequence({ sentences, ruleString }).subscribe(
       data => {
         this.loading = false;
         const solutions = Array.isArray(data.solutions) ? data.solutions : [];
+        console.info('[Analysis] LiGER sequence append completed', {
+          success: data.success !== false,
+          solutionCount: solutions.length,
+          sequenceLength: sentences.length,
+          solutionKeys: solutions.map(solution => solution.solutionKey),
+          sequenceParts: solutions.map(solution => (solution.sequenceParts ?? []).map(part => ({
+            sourceIndex: part.sourceIndex,
+            sourceIndexOffset: part.sourceIndexOffset,
+            solutionKey: part.solutionKey,
+            meaningConstructorsLength: part.meaningConstructors?.length ?? 0,
+          }))),
+        });
         const graphAvailable = solutions.some(solution =>
           Array.isArray(solution?.graph?.graphElements) && solution.graph.graphElements.length > 0);
         if (data.success === false || !solutions.length || !graphAvailable) {
@@ -130,6 +150,12 @@ export class LigerVisComponent implements AfterViewInit {
         this.selectedSolutionIndex = 0;
         if (this.solutions.length > 0) {
           this.sequenceSentences = sentences;
+          console.info('[Analysis] accepted LiGER sequence append', {
+            sequenceSentences: this.sequenceSentences,
+            selectedSolutionKey: this.solutions[0].solutionKey,
+            selectedStructureConstraints: this.solutions[0].structureJson?.constraints?.length ?? 0,
+            selectedStructureAnnotations: this.solutions[0].structureJson?.annotations?.length ?? 0,
+          });
           this.renderSelectedSolution(0);
           this.displayMessage(`Sentence appended... ${this.solutions.length} sequence variant(s) found`, "green");
         } else {
