@@ -5,7 +5,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
+import {GswbProofInput, GswbRequest,GswbPreferences, GswbSequencePart, GswbSolution, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -237,9 +237,6 @@ export class GswbVisComponent implements AfterViewInit {
       .flatMap(analysis => analysis.semantics)
       .filter(semantic => !!semantic.graph);
     const previous = canonicalPrevious.map(semantic => semantic.graph as LigerStructure);
-    const previousSemantics = canonicalPrevious.length
-      ? canonicalPrevious.map(semantic => semantic.semString)
-      : [];
     if (!previous.length) {
       this.updateSentenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
@@ -272,10 +269,12 @@ export class GswbVisComponent implements AfterViewInit {
     });
 
     const mergeRequests = current.flatMap(solution =>
-      previous.map((previousGraph, index) =>
+      previous.map((_previousGraph, index) =>
         this.dataService.gswbMergeSequenceSemantics({
-        semantics: [previousSemantics[index] || '', solution.semantic || ''],
-        graphs: [previousGraph, solution.graph as LigerStructure],
+        parts: [
+          this.semanticPart(canonicalPrevious[index], previousElements[index]),
+          this.semanticPart(this.semanticAnalysisFor(solution), this.sentenceAnalysisFor(solution)),
+        ],
         parentSolutionId: solution.id,
         solutionKey: solution.solutionKey,
         mcSetId: solution.mcSetId,
@@ -445,6 +444,29 @@ export class GswbVisComponent implements AfterViewInit {
       semString: solution.semantic || solution.solution || '',
       graph: solution.graph,
       semType: 'lfgxdrt',
+    };
+  }
+
+  private semanticPart(
+    semantic: SemanticAnalysis,
+    element?: SentenceAnalysis | SequenceAnalysis
+  ): GswbSequencePart {
+    const syntax = element?.syntax.find(item => item.synId === semantic.syntacticOrigin)
+      ?? element?.syntax[0];
+    const sequence = element && 'sentences' in element ? element : undefined;
+    const sentence = element && !('sentences' in element) ? element : undefined;
+    return {
+      id: semantic.semId,
+      sentenceId: sequence?.sentences[0]?.id ?? sentence?.id,
+      solutionId: semantic.semId,
+      solutionKey: semantic.syntacticOrigin,
+      semantic: semantic.semString,
+      graph: semantic.graph,
+      syntax: syntax?.structure,
+      provenance: {
+        syntacticOrigin: semantic.syntacticOrigin,
+        semanticId: semantic.semId,
+      },
     };
   }
 
