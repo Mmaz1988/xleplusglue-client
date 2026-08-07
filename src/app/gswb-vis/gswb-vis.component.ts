@@ -278,6 +278,7 @@ export class GswbVisComponent implements AfterViewInit {
         parentSolutionId: solution.id,
         solutionKey: solution.solutionKey,
         mcSetId: solution.mcSetId,
+        resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
         }).pipe(
           map(merged => ({
             merged,

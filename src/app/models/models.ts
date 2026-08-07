@@ -294,6 +294,7 @@ export interface GswbSequenceMergeRequest {
   parentSolutionId?: string;
   solutionKey?: string;
   mcSetId?: string;
+  resolveDrs?: boolean;
 }
 
 export interface GswbSequencePart {
