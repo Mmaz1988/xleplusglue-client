@@ -107,6 +107,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       });
       this.glue.sequenceAnalysisChange.subscribe((analyses: SequenceAnalysis[]) => {
         this.sequenceAnalyses = analyses;
+        analyses[0] && this.liger.displaySequenceAnalysis(analyses[0]);
         analyses.forEach(analysis => {
           this.upsertSentenceAnalyses(analysis.sentences, false);
           this.analysisDocument.elements = this.analysisDocument.elements

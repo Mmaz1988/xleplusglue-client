@@ -4,7 +4,7 @@ import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import {GrammarLoaderComponent} from "../utilities/grammar-loader/grammar-loader.component";
 import { DataService } from '../data.service';
-import { GswbProofInput, LigerSolutionAnnotation, LigerStructure } from '../models/models';
+import { GswbProofInput, LigerSolutionAnnotation, LigerStructure, SequenceAnalysis } from '../models/models';
 import { AnalysisWorkspaceStateService, LigerWorkspaceState } from '../analysis-workspace-state.service';
 import { APP_DEFAULTS } from "../app-defaults";
 
@@ -312,6 +312,21 @@ export class LigerVisComponent implements AfterViewInit {
   nextSolution(): void {
     if (!this.solutions.length) return;
     this.selectSolution((this.selectedSolutionIndex + 1) % this.solutions.length);
+  }
+
+  displaySequenceAnalysis(sequence: SequenceAnalysis): void {
+    const syntax = sequence?.syntax?.[0];
+    if (!syntax) {
+      return;
+    }
+    this.structureJson = syntax.structure;
+    this.graphElements = syntax.graph?.graphElements ?? [];
+    this.cy1.renderGraph(this.graphElements);
+    console.info('[Analysis] displaying merged sequence syntax', {
+      sequenceId: sequence.id,
+      sentenceCount: sequence.sentences.length,
+      graphElements: this.graphElements.length,
+    });
   }
 
   collectAllMeaningConstructors(): void {
