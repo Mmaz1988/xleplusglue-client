@@ -50,10 +50,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   pcdrsSolutions: GswbSolution[] = [];
   pcdrsDisplaySolutions: GswbSolution[] = [];
   collapsedPcdrsById: Record<string, GswbSolution> = {};
-  previousSemanticGraphs: LigerStructure[] = [];
-  previousSemanticStrings: string[] = [];
   private lastSequenceLength = 0;
-  private syntaxBySolutionKey: Record<string, LigerStructure> = {};
   private sentenceAnalyses: SentenceAnalysis[] = [];
   private sequenceAnalyses: SequenceAnalysis[] = [];
   previousSentenceAnalyses: SentenceAnalysis[] = [];
@@ -74,42 +71,16 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.liger.changeDetector.subscribe(newValue => {
         const sequenceLength = this.liger.sequenceSentences.length;
         if (sequenceLength <= 1) {
-          this.previousSemanticGraphs = [];
-          this.previousSemanticStrings = [];
           this.previousSentenceAnalyses = [];
           this.previousSequenceAnalyses = [];
         } else if (sequenceLength !== this.lastSequenceLength) {
           this.previousSequenceAnalyses = this.sequenceAnalyses;
           this.previousSentenceAnalyses = this.sentenceAnalyses;
-          const semvis = this.glue.semvis;
-          const hasDiscriminantSelection = (semvis.selectedScopeIds?.length ?? 0) > 0
-            || (semvis.selectedMcIds?.length ?? 0) > 0;
-          const solutions = hasDiscriminantSelection
-            ? semvis.items
-            : (semvis.allItems ?? semvis.items);
-          const eligible = (Array.isArray(solutions) ? solutions : [])
-            .filter(solution => !!solution?.graph);
-          const canonicalPrevious = (this.previousSequenceAnalyses.length
-            ? this.previousSequenceAnalyses
-            : this.previousSentenceAnalyses)
-            .flatMap(analysis => analysis.semantics)
-            .filter(semantic => !!semantic.graph);
-          this.previousSemanticGraphs = canonicalPrevious.length
-            ? canonicalPrevious.map(semantic => semantic.graph as LigerStructure)
-            : eligible.map(solution => solution.graph as LigerStructure);
-          this.previousSemanticStrings = canonicalPrevious.length
-            ? canonicalPrevious.map(semantic => semantic.semString)
-            : eligible.map(solution => solution.semantic ?? '');
           console.info('[Analysis] captured previous semantic context before sequence append', {
             previousSequenceLength: this.lastSequenceLength,
             newSequenceLength: sequenceLength,
-            previousSolutionCount: eligible.length,
-            previousSolutionIds: eligible.map(solution => solution.id),
-            previousGraphSizes: this.previousSemanticGraphs.map(graph => ({
-              constraints: graph.constraints?.length ?? 0,
-              annotations: graph.annotations?.length ?? 0,
-            })),
-            previousSemanticLengths: this.previousSemanticStrings.map(semantic => semantic.length),
+            previousSentenceCount: this.previousSentenceAnalyses.length,
+            previousSequenceCount: this.previousSequenceAnalyses.length,
           });
         }
         this.lastSequenceLength = sequenceLength;
@@ -118,12 +89,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.glue.semanticSolutionReady = false;
       });
       this.liger.proofInputChange.subscribe((proofInputs: GswbProofInput[]) => {
-        this.syntaxBySolutionKey = {};
-        proofInputs.forEach(input => {
-          if (input.solutionKey && input.structure) {
-            this.syntaxBySolutionKey[input.solutionKey] = input.structure;
-          }
-        });
         this.glue.setProofInputs(proofInputs);
         this.upsertSentenceAnalyses(
           proofInputs.map(input => input.sentenceAnalysis).filter((analysis): analysis is SentenceAnalysis => !!analysis)
@@ -327,7 +292,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   private syntaxForSolution(solution: GswbSolution): LigerStructure | null {
     return solution.sequenceAnalysis?.syntax?.[0]?.structure
-      ?? (solution.solutionKey ? this.syntaxBySolutionKey[solution.solutionKey] : undefined)
+      ?? solution.sentenceAnalysis?.syntax?.[0]?.structure
       ?? this.liger?.structureJson
       ?? null;
   }

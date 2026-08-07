@@ -24,8 +24,6 @@ export class GswbVisComponent implements AfterViewInit {
   @Input() structureJson: LigerStructure | null = null;
   @Input() canPostProcess = false;
   @Input() postProcessingLoading = false;
-  @Input() previousSemanticGraphs: LigerStructure[] = [];
-  @Input() previousSemanticStrings: string[] = [];
   @Input() previousSentenceAnalyses: SentenceAnalysis[] = [];
   @Input() previousSequenceAnalyses: SequenceAnalysis[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
@@ -109,7 +107,8 @@ export class GswbVisComponent implements AfterViewInit {
               this.hasSemanticSolutions = true;
               // For a sequence, the raw current-sentence readings are not
               // ready for the next append until their sequence merge finishes.
-              this.semanticSolutionReady = this.previousSemanticGraphs.length === 0;
+              this.semanticSolutionReady = this.previousSentenceAnalyses.length === 0
+                && this.previousSequenceAnalyses.length === 0;
             this.semvis.clearMc();
             this.semvis.clearScope();
             this.semvis.applyFiltersAndResetIndex();
@@ -237,12 +236,10 @@ export class GswbVisComponent implements AfterViewInit {
     const canonicalPrevious = previousElements
       .flatMap(analysis => analysis.semantics)
       .filter(semantic => !!semantic.graph);
-    const previous = canonicalPrevious.length
-      ? canonicalPrevious.map(semantic => semantic.graph as LigerStructure)
-      : this.previousSemanticGraphs.filter(graph => !!graph);
+    const previous = canonicalPrevious.map(semantic => semantic.graph as LigerStructure);
     const previousSemantics = canonicalPrevious.length
       ? canonicalPrevious.map(semantic => semantic.semString)
-      : this.previousSemanticStrings;
+      : [];
     if (!previous.length) {
       this.updateSentenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
