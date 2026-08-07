@@ -28,6 +28,38 @@ The merge creates a new `Sequence` element while retaining all source
 sentences and prior elements. A sequence is therefore a derived result, not
 the mutable replacement for the sentence objects from which it was built.
 
+## Analysis Document Lifetime
+
+An analysis document is an exploratory working object, not a persistent user
+document. It must not use the Redis endpoints or keys belonging to regression
+testing.
+
+The analysis workflow should use a separate volatile Redis namespace, for
+example:
+
+```text
+analysis_document:<analysis-session-id>
+```
+
+Lifecycle rules:
+
+- The first parse in a new analysis view creates a new document.
+- Each successful sentence or sequence merge may save a new document
+  revision.
+- Starting a new analysis session clears the current analysis document before
+  creating another one.
+- The analysis view does not hydrate a document from Redis after a browser
+  reload. A new interaction starts a new document.
+- Redis entries should have a short expiration as protection against abandoned
+  sessions.
+- Clearing a document removes the complete document and its derived revisions;
+  it must not affect regression-testing sessions.
+
+Redis is therefore a short-lived coordination/cache layer for the active
+analysis workflow, not the long-term source of user documents. The canonical
+object remains the in-memory `XlePlusGlueDocument`; Redis protects it from
+accidental frontend state replacement during the current analysis session.
+
 ## Scope
 
 A `LigerDocument` contains one or more sentences. A sentence may have:
