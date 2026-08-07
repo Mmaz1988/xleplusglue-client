@@ -336,9 +336,10 @@ export class LigerVisComponent implements AfterViewInit {
         proofId: solution.solutionKey || `solution-${index}`,
         solutionKey: solution.solutionKey,
         mcSetId: solution.solutionKey || `solution-${index}`,
-        meaningConstructors: solution.meaningConstructors ?? '',
-        structure: solution.structureJson,
-      }))
+         meaningConstructors: solution.meaningConstructors ?? '',
+         structure: solution.structureJson,
+         sequenceAnalysis: solution.sequenceAnalysis,
+       }))
       .filter(input => input.meaningConstructors.trim().length > 0);
   }
 

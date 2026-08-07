@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure } from '../models/models';
+import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SequenceAnalysis } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -54,6 +54,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   previousSemanticStrings: string[] = [];
   private lastSequenceLength = 0;
   private syntaxBySolutionKey: Record<string, LigerStructure> = {};
+  private sequenceAnalyses: SequenceAnalysis[] = [];
+  private previousSequenceAnalyses: SequenceAnalysis[] = [];
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
@@ -65,6 +67,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           this.previousSemanticGraphs = [];
           this.previousSemanticStrings = [];
         } else if (sequenceLength !== this.lastSequenceLength) {
+          this.previousSequenceAnalyses = this.sequenceAnalyses;
           const semvis = this.glue.semvis;
           const hasDiscriminantSelection = (semvis.selectedScopeIds?.length ?? 0) > 0
             || (semvis.selectedMcIds?.length ?? 0) > 0;
@@ -100,7 +103,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             this.syntaxBySolutionKey[input.solutionKey] = input.structure;
           }
         });
-        this.glue.setProofInputs(proofInputs);
+      this.glue.setProofInputs(proofInputs);
         console.info('[Analysis] updated GSWB proof inputs from LiGER', {
           proofCount: proofInputs.length,
           proofInputs: proofInputs.map(input => ({
@@ -110,6 +113,19 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             meaningConstructorsLength: input.meaningConstructors?.length ?? 0,
             structureConstraints: input.structure?.constraints?.length ?? 0,
             structureAnnotations: input.structure?.annotations?.length ?? 0,
+          })),
+        });
+      });
+      this.glue.sequenceAnalysisChange.subscribe((analyses: SequenceAnalysis[]) => {
+        this.sequenceAnalyses = analyses;
+        console.info('[Analysis] canonical sequence analyses updated', {
+          count: analyses.length,
+          analyses: analyses.map(analysis => ({
+            id: analysis.id,
+            sentenceCount: analysis.sentences.length,
+            syntaxCount: analysis.syntax.length,
+            semanticCount: analysis.semantics.length,
+            mapping: analysis.synSemMapping,
           })),
         });
       });

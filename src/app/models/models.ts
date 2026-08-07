@@ -30,7 +30,7 @@ export interface SemanticAnalysis {
   semId: string;
   semString: string;
   structure?: LigerStructure;
-  graph?: LigerWebGraph;
+  graph?: LigerStructure;
   semType: string;
   svg?: string;
   prologRender?: string;
@@ -221,6 +221,7 @@ export interface GswbProofInput {
   mcSetId?: string;
   meaningConstructors: string;
   structure?: LigerStructure;
+  sequenceAnalysis?: SequenceAnalysis;
 }
 
 export interface GswbMultipleRequest {

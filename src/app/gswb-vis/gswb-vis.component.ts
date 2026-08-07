@@ -5,7 +5,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure} from "../models/models";
+import {GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure, SemanticAnalysis, SequenceAnalysis} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -27,6 +27,7 @@ export class GswbVisComponent implements AfterViewInit {
   @Input() previousSemanticGraphs: LigerStructure[] = [];
   @Input() previousSemanticStrings: string[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
+  @Output() sequenceAnalysisChange = new EventEmitter<SequenceAnalysis[]>();
 
   @ViewChild('edit1') editor1: EditorComponent;
   @ViewChild('derivation') derivationContainer: DerivationContainerComponent;
@@ -229,6 +230,7 @@ export class GswbVisComponent implements AfterViewInit {
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
     const previous = this.previousSemanticGraphs.filter(graph => !!graph);
     if (!previous.length) {
+      this.updateSequenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
         currentSolutionCount: solutions.length,
       });
@@ -268,6 +270,7 @@ export class GswbVisComponent implements AfterViewInit {
       })));
 
     forkJoin(mergeRequests).subscribe(mergedSolutions => {
+      this.updateSequenceAnalyses(mergedSolutions);
       console.info('[Analysis] GSWB sequence semantic merges completed', {
         mergeCount: mergedSolutions.length,
         mergedSolutions: mergedSolutions.map(solution => ({
@@ -286,6 +289,47 @@ export class GswbVisComponent implements AfterViewInit {
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
     });
+  }
+
+  private updateSequenceAnalyses(solutions: GswbSolution[]): void {
+    const sequenceByKey = new Map(
+      this.proofInputs
+        .filter(input => !!input.sequenceAnalysis)
+        .map(input => [input.solutionKey, input.sequenceAnalysis] as const)
+    );
+    const analyses = solutions
+      .map(solution => {
+        const template = sequenceByKey.get(solution.solutionKey)
+          ?? this.proofInputs.find(input => !!input.sequenceAnalysis)?.sequenceAnalysis;
+        if (!template) {
+          return null;
+        }
+        const semantic = this.semanticAnalysisFor(solution);
+        const mapping = solution.synSemMapping ?? {
+          [semantic.syntacticOrigin]: [semantic.semId]
+        };
+        return {
+          ...template,
+          id: solution.id || template.id,
+          semantics: [semantic],
+          synSemMapping: mapping,
+        } as SequenceAnalysis;
+      })
+      .filter((analysis): analysis is SequenceAnalysis => !!analysis);
+    this.sequenceAnalysisChange.emit(analyses);
+  }
+
+  private semanticAnalysisFor(solution: GswbSolution): SemanticAnalysis {
+    if (solution.semanticAnalysis) {
+      return solution.semanticAnalysis;
+    }
+    return {
+      syntacticOrigin: solution.solutionKey || solution.proofId || 'syntax',
+      semId: solution.id,
+      semString: solution.semantic || solution.solution || '',
+      graph: solution.graph,
+      semType: 'lfgxdrt',
+    };
   }
 
   captureState(): GswbWorkspaceState | null {
