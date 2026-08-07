@@ -27,6 +27,7 @@ export class LigerVisComponent implements AfterViewInit {
   defaultValue: string = APP_DEFAULTS.liger.sentence;
   sequenceSentences: string[] = [];
   sequenceSentenceIds: string[] = [];
+  parsedSentenceStructures: LigerStructure[][] = [];
   loadedGrammarPath = '';
   meaningConstructors: string;
   structureJson: LigerStructure | null = null;
@@ -66,6 +67,7 @@ export class LigerVisComponent implements AfterViewInit {
         this.loading = false;
         this.errorhandle.nativeElement.innerHTML = "";
         this.solutions = Array.isArray(data.solutions) ? data.solutions : [];
+        this.cacheParsedSentenceStructures(this.solutions);
         console.info('[LiGER] parse succeeded', { solutionCount: this.solutions.length });
         if (this.solutions.length > 0) {
           this.sequenceSentences = [sentence];
@@ -110,6 +112,10 @@ export class LigerVisComponent implements AfterViewInit {
 
     const sentences = [...this.sequenceSentences, sentence];
     const sentenceIds = [...this.sequenceSentenceIds, `sentence-${sentences.length}`];
+    const parsedSentences = this.parsedSentenceStructures.length === this.sequenceSentences.length
+      && this.parsedSentenceStructures.every(structures => structures.length > 0)
+      ? this.parsedSentenceStructures
+      : undefined;
     this.loading = true;
     this.errorhandle.nativeElement.innerHTML = "";
 
@@ -119,9 +125,10 @@ export class LigerVisComponent implements AfterViewInit {
       sequenceLength: sentences.length,
       reparsingSentences: sentences,
       hasRuleString: !!ruleString?.trim(),
+      reusingParsedSentences: !!parsedSentences,
     });
 
-    this.dataService.ligerSequence({ sentences, sentenceIds, ruleString }).subscribe(
+    this.dataService.ligerSequence({ sentences, sentenceIds, ruleString, parsedSentences }).subscribe(
       data => {
         this.loading = false;
         const solutions = Array.isArray(data.solutions) ? data.solutions : [];
@@ -150,6 +157,7 @@ export class LigerVisComponent implements AfterViewInit {
         }
 
         this.solutions = solutions;
+        this.cacheParsedSentenceStructures(this.solutions);
         this.selectedSolutionIndex = 0;
         if (this.solutions.length > 0) {
           this.sequenceSentences = sentences;
@@ -388,6 +396,7 @@ export class LigerVisComponent implements AfterViewInit {
       sentence: this.textarea.nativeElement.value ?? this.defaultValue,
       sequenceSentences: [...this.sequenceSentences],
       sequenceSentenceIds: [...this.sequenceSentenceIds],
+      parsedSentenceStructures: this.parsedSentenceStructures,
       rulesText: this.ligerRules.getContent(),
       grammarLoadedPath: this.loadedGrammarPath ?? '',
       grammarSelectedPath: this.grammarLoader?.selectedPath ?? this.loadedGrammarPath ?? '',
@@ -425,6 +434,9 @@ export class LigerVisComponent implements AfterViewInit {
       && state.sequenceSentenceIds.length === this.sequenceSentences.length
       ? [...state.sequenceSentenceIds]
       : this.sequenceSentences.map((_, index) => `sentence-${index + 1}`);
+    this.parsedSentenceStructures = Array.isArray(state.parsedSentenceStructures)
+      ? state.parsedSentenceStructures as LigerStructure[][]
+      : [];
     this.textarea.nativeElement.value = this.defaultValue;
     this.ligerRules.updateContent(state.rulesText || '');
     this.loadedGrammarPath = state.grammarLoadedPath || state.grammarSelectedPath || this.loadedGrammarPath;
@@ -445,6 +457,23 @@ export class LigerVisComponent implements AfterViewInit {
 
     this.cy1.renderGraph(this.graphElements);
     this.pendingState = null;
+  }
+
+  private cacheParsedSentenceStructures(solutions: LigerSolutionAnnotation[]): void {
+    const sentenceMaps: Array<Map<string, LigerStructure>> = [];
+    solutions.forEach(solution => {
+      solution.sequenceAnalysis?.sentences.forEach((sentence, index) => {
+        const sentenceMap = sentenceMaps[index] ?? new Map<string, LigerStructure>();
+        sentenceMaps[index] = sentenceMap;
+        sentence.syntax.forEach(syntax => {
+          if (syntax.structure) {
+            sentenceMap.set(syntax.synId, syntax.structure);
+          }
+        });
+      });
+    });
+    this.parsedSentenceStructures = sentenceMaps.map(sentenceMap =>
+      Array.from(sentenceMap.values()));
   }
 
 }

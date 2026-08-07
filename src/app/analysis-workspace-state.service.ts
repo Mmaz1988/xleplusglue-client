@@ -4,6 +4,7 @@ export interface LigerWorkspaceState {
   sentence: string;
   sequenceSentences?: string[];
   sequenceSentenceIds?: string[];
+  parsedSentenceStructures?: any[][];
   rulesText: string;
   grammarLoadedPath: string;
   grammarSelectedPath: string;
