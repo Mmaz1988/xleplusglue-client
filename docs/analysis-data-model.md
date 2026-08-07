@@ -32,16 +32,19 @@ SyntacticAnalysis
   SYN_ID: String
   STRUCTURE: LinguisticStructure (JSON)
   GRAPH: LigerWebGraph (JSON)
-  MEANING_CONSTRUCTORS: String
-  NUMBER_OF_MC_SETS: Integer
+  MEANING_CONSTRUCTORS: String (sentence syntax only)
+  NUMBER_OF_MC_SETS: Integer (sentence syntax only)
 ```
 
 `SYN_ID` identifies one syntactic parse or one merged syntactic analysis.
 `STRUCTURE` is the LiGER linguistic structure used for rule application and
 sequence construction. `GRAPH` is its visual/graph representation.
-`MEANING_CONSTRUCTORS` are generated from this syntactic analysis and are the
-input to GSWB semantic deduction. They belong to the syntactic analysis
-because different syntax variants can produce different constructor sets.
+`MEANING_CONSTRUCTORS` are generated from a sentence-level syntactic analysis
+and are the input to GSWB semantic deduction. They belong to the sentence
+syntax analysis because different syntax variants can produce different
+constructor sets. A merged sequence syntax analysis does not require meaning
+constructors: its source `Sentence` objects retain the sentence-level
+constructors if they need to be recovered.
 
 ### SemanticAnalysis
 
@@ -107,7 +110,9 @@ Sequence
 
 `SENTENCES` contains the source sentence objects. `SYNTAX` contains merged
 syntactic analyses for the sequence. `SEMANTICS` contains merged semantic
-analyses associated with those merged syntactic analyses. Each semantic
+analyses associated with those merged syntactic analyses. Sentence-level
+meaning constructors are recovered from `SENTENCES`, not duplicated into the
+merged sequence syntax. Each semantic
 analysis retains a semantic graph that is compatible with, and can be merged
 into, the corresponding LiGER syntax structure.
 

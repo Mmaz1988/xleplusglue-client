@@ -21,7 +21,7 @@ export interface SyntacticAnalysis {
   synId: string;
   structure: LigerStructure;
   graph: LigerWebGraph;
-  meaningConstructors: string;
+  meaningConstructors?: string;
   numberOfMCsets?: number;
 }
 
