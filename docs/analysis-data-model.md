@@ -3,9 +3,11 @@
 Status: reference model for the sentence and sequence analysis implementation.
 
 This document defines the data model for parsing one or more sentences with
-XLE, deriving Glue/LFGxDRT semantics, and merging sentence or sequence
-analyses. Discourse updates and final pragmatic reasoning are deliberately
-outside the core model described here.
+XLE, deriving Glue/LFGxDRT semantics, merging sentence or sequence analyses,
+and resolving anaphora over a merged sequence (`DiscourseUpdate`, see
+"Pragmatic and Discourse Results"). Final pragmatic/NLI reasoning
+(consistency, informativity, and Vampire-based checks) is deliberately
+outside the model described here.
 
 ## Document Lifecycle
 
@@ -345,15 +347,66 @@ sequence construction because the complete linguistic structure is required
 to determine possible antecedents.
 
 They are therefore not part of the base `Sentence` or `Sequence`
-syntax/semantics mapping. A later result may be represented as:
+syntax/semantics mapping. Instead, a `DiscourseUpdate` stacks on a completed
+`Sentence` or `Sequence` the same way a `Sequence` stacks on its source
+`Sentence`s: as a parallel, id-referenced structure, not as new fields on
+`SentenceAnalysis`/`SequenceAnalysis` themselves.
 
 ```text
 DiscourseUpdate
-  CONTEXT: Sentence | Sequence
-  UPDATE: Sentence
-  ANAPHORA_MAPPING: String
-  NLI_CHECKS: String
+  ID: String
+  SOURCE_ELEMENT_ID: String (Sentence.ID or Sequence.ID)
+  SOURCE_ELEMENT_KIND: "sentence" | "sequence"
+  RULE_STRING: String (the pronoun-binding rules applied)
+  STRUCTURES: Map<StructureId, LinguisticStructure (JSON)>
+  MERGED_GRAPHS: Map<StructureId, LigerWebGraph (JSON)>
+  DISCOURSE: List<DiscourseAnalysis>
+  SEM_DISCOURSE_MAPPING: Map<SemId, List<DiscourseId>>
 ```
+
+```text
+DiscourseAnalysis
+  ID: String
+  SEMANTIC_ORIGIN: String (SemanticAnalysis.SEM_ID this branch enriches)
+  DRS_STRING: String (enriched DRS text)
+  DRS_GRAPH: LigerStructure (JSON, semantic side; carries SYN-ID/SRC provenance)
+  STRUCTURE_ID: String (key into DiscourseUpdate.STRUCTURES)
+  SVG: String
+  ANAPHORA_MAPPING: AnaphoraMapping
+  COLLAPSED: Boolean
+
+AnaphoraMapping
+  RELATIONS: List<AnaphoraRelation>
+
+AnaphoraRelation
+  PRONOUN_REFERENT_ID: String
+  PRONOUN_DISPLAY: String
+  ANTECEDENT: String
+  STATE_LABEL: String
+```
+
+`SOURCE_ELEMENT_ID` references a `Sentence`/`Sequence` `ID` rather than embedding a
+copy, mirroring how `SemanticAnalysis.SYNTACTIC_ORIGIN` and composite IDs already
+decouple identity from object identity elsewhere in this model. `SEM_DISCOURSE_MAPPING`
+mirrors `SYNSEM_MAPPING` one level up: each semantic analysis maps one-to-many onto
+enriched-DRS branches, the same way each syntactic analysis maps one-to-many onto
+semantic analyses.
+
+`ANAPHORA_MAPPING` mirrors LFGxDRT's own `AnaphoraMapping`/`AnaphoraRelation` classes
+(`LFGxDRT/src/main/java/de/ukon/lfgxdrt/drs_elements/`) rather than the opaque
+rendered string GSWB previously exposed on `GswbSolution.anaphoraMapping`.
+`AnaphoraRelation` is one resolved (or candidate) pronoun-to-antecedent binding.
+`PresuppositionMapping`/`PresuppositionRelation` exist in LFGxDRT in the same shape
+and are the natural next addition once presupposition resolution is implemented, but
+are not modeled here yet -- this layer currently covers anaphora resolution only.
+
+A single semantic origin can fan out into several rule-annotation variants, and each
+variant can fan out into several anaphora-mapping candidates that all share the same
+`LinguisticStructure`. `STRUCTURES`/`MERGED_GRAPHS` store each distinct structure once,
+keyed by a `StructureId` such as `${SemId}` (before rules are applied) or
+`${SemId}-rule-${AnnotationIndex}` (once they are), and each `DiscourseAnalysis`
+references it by `STRUCTURE_ID` instead of embedding a copy -- avoiding duplicating
+multi-KB structures across candidates when persisted.
 
 This layer consumes completed sequence semantic alternatives and must not
 change the underlying `SYNSEM_MAPPING`.
@@ -368,3 +421,7 @@ change the underlying `SYNSEM_MAPPING`.
   semantic provenance through composite IDs.
 - Pragmatic annotations are recalculated after sequence merging.
 - Sequence operations are enabled only for `lfgxdrt` analyses.
+- Every `DiscourseUpdate.SOURCE_ELEMENT_ID` resolves to an element in the document.
+- Every `DiscourseAnalysis.STRUCTURE_ID` resolves to an entry in the owning
+  `DiscourseUpdate.STRUCTURES`.
+- `DiscourseUpdate` never modifies `SYNSEM_MAPPING` on its source element.
