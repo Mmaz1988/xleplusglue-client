@@ -129,7 +129,14 @@ export class GswbVisComponent implements AfterViewInit {
             this.semvis.setItems(data.solutions);
             this.semvis.setDiscriminants(data.discriminants);
             this.loadingSemanticState = false;
-             this.mergeCurrentSolutions(data.solutions);
+             // A fresh parse always starts a new sentence/sequence; only an
+             // add-sentence continuation (previous context present) merges.
+             // Mirrors the same gate onSemanticSelectionChange() already uses.
+             if (this.previousSentenceAnalyses.length || this.previousSequenceAnalyses.length) {
+               this.mergeCurrentSolutions(data.solutions);
+             } else {
+               this.updateSentenceAnalyses(data.solutions);
+             }
           } else {
             //create error message with request time stamp
             //create gswb solution with no solutions found and create list to treat as semvis
