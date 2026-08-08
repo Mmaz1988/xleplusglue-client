@@ -1,8 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { EventEmitter, NO_ERRORS_SCHEMA } from '@angular/core';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { DataService } from '../data.service';
+import { SentenceAnalysis, SequenceAnalysis } from '../models/models';
 
 import { GlueInterfaceComponent } from './glue-interface.component';
 
@@ -10,7 +11,14 @@ describe('GlueInterfaceComponent', () => {
   let component: GlueInterfaceComponent;
   let fixture: ComponentFixture<GlueInterfaceComponent>;
   let routerMock: { navigate: jasmine.Spy };
-  let dataServiceMock: { ligerMergeStructure: jasmine.Spy; ligerApplyRulesToStructure: jasmine.Spy; gswbGeneratePcdrs: jasmine.Spy; gswbCollapseAnaphora: jasmine.Spy };
+  let dataServiceMock: {
+    ligerMergeStructure: jasmine.Spy;
+    ligerApplyRulesToStructure: jasmine.Spy;
+    gswbGeneratePcdrs: jasmine.Spy;
+    gswbCollapseAnaphora: jasmine.Spy;
+    clearAnalysisDocument: jasmine.Spy;
+    saveAnalysisDocument: jasmine.Spy;
+  };
 
   beforeEach(() => {
     routerMock = {
@@ -27,7 +35,12 @@ describe('GlueInterfaceComponent', () => {
       })),
       gswbCollapseAnaphora: jasmine.createSpy('gswbCollapseAnaphora').and.callFake((request: any) => of({
         id: `${request.parentSolutionId}-collapsed`, solution: '<svg></svg>'
-      }))
+      })),
+      clearAnalysisDocument: jasmine.createSpy('clearAnalysisDocument').and.returnValue(of({})),
+      saveAnalysisDocument: jasmine.createSpy('saveAnalysisDocument').and.callFake((sessionKey: string, document: any) => of({
+        status: 'ok',
+        document: { ...document, revision: 1, createdAt: 'now', updatedAt: 'now' },
+      })),
     };
 
     TestBed.configureTestingModule({
@@ -416,5 +429,110 @@ describe('GlueInterfaceComponent', () => {
 
     expect(component.showCollapsedAnaphora).toBeFalse();
     expect(component.pcdrsDisplaySolutions[0].id).toBe('s1-pcdrs-1');
+  });
+
+  describe('canonical document assembly', () => {
+    const structure = { constraints: [], annotations: [], choiceSpace: {} };
+
+    const sentenceAnalysis = (id: string, text: string): SentenceAnalysis => ({
+      id,
+      text,
+      syntax: [{ synId: `syn-${id}`, structure, graph: { graphElements: [] } }],
+      semantics: [{ syntacticOrigin: `syn-${id}`, semId: `sem-${id}`, semString: 'P', semType: 'lfgxdrt' }],
+      synSemMapping: { [`syn-${id}`]: [`sem-${id}`] },
+    });
+
+    const sequenceAnalysisOf = (id: string, sentenceIds: string[]): SequenceAnalysis => ({
+      id,
+      text: 'merged text',
+      sentenceIds,
+      syntax: [{ synId: `syn-${id}`, structure, graph: { graphElements: [] } }],
+      semantics: [{ syntacticOrigin: `syn-${id}`, semId: `sem-${id}`, semString: 'P & Q', semType: 'lfgxdrt' }],
+      synSemMapping: { [`syn-${id}`]: [`sem-${id}`] },
+    });
+
+    let sentenceAnalysisChange: EventEmitter<SentenceAnalysis[]>;
+    let sequenceAnalysisChange: EventEmitter<SequenceAnalysis[]>;
+
+    beforeEach(() => {
+      sentenceAnalysisChange = new EventEmitter<SentenceAnalysis[]>();
+      sequenceAnalysisChange = new EventEmitter<SequenceAnalysis[]>();
+      component.liger = {
+        changeDetector: new Subject<string>(),
+        sequenceSentences: [],
+        proofInputChange: new EventEmitter(),
+        displaySequenceAnalysis: jasmine.createSpy('displaySequenceAnalysis'),
+      } as any;
+      component.glue = {
+        editor1: { updateContent: jasmine.createSpy('updateContent') },
+        semanticSolutionReady: false,
+        setProofInputs: jasmine.createSpy('setProofInputs'),
+        sequenceAnalysisChange,
+        sentenceAnalysisChange,
+      } as any;
+      // The subscriptions this feature relies on are only wired up inside ngAfterViewInit,
+      // which already ran once during the outer beforeEach's fixture.detectChanges() (before
+      // component.liger/component.glue existed, so it was a no-op) -- re-run it now that the
+      // doubles are in place so the real sentenceAnalysisChange/sequenceAnalysisChange
+      // subscriptions attach to them.
+      (component as any).ngAfterViewInit();
+    });
+
+    it('registers the very first sentence on its first emission (chicken-and-egg regression)', () => {
+      sentenceAnalysisChange.emit([sentenceAnalysis('s1', 'First sentence.')]);
+
+      const doc = (component as any).analysisDocument;
+      expect(doc.sentences.length).toBe(1);
+      expect(doc.sentences[0].id).toBe('s1');
+      expect(doc.elements).toEqual([{ kind: 'sentence', id: 's1' }]);
+
+      const updated = sentenceAnalysis('s1', 'First sentence.');
+      updated.semantics = [
+        ...updated.semantics,
+        { syntacticOrigin: 'syn-s1', semId: 'sem-s1-b', semString: 'Q', semType: 'lfgxdrt' },
+      ];
+      sentenceAnalysisChange.emit([updated]);
+
+      expect(doc.sentences.length).toBe(1);
+      expect(doc.elements.length).toBe(1);
+    });
+
+    it('upserts a sequence into a separate registry and references it by id without embedding it', () => {
+      sentenceAnalysisChange.emit([sentenceAnalysis('s1', 'First.'), sentenceAnalysis('s2', 'Second.')]);
+      sequenceAnalysisChange.emit([sequenceAnalysisOf('seq-1', ['s1', 's2'])]);
+
+      const doc = (component as any).analysisDocument;
+      expect(doc.sequences.length).toBe(1);
+      expect(doc.sequences[0].id).toBe('seq-1');
+      expect(doc.elements).toEqual([
+        { kind: 'sentence', id: 's1' },
+        { kind: 'sentence', id: 's2' },
+        { kind: 'sequence', id: 'seq-1' },
+      ]);
+      doc.elements.forEach((ref: any) => {
+        expect(Object.keys(ref).sort()).toEqual(['id', 'kind']);
+      });
+    });
+
+    it('does not duplicate sentence payload when the document is persisted', () => {
+      sentenceAnalysisChange.emit([sentenceAnalysis('s1', 'needle-text-marker')]);
+      sequenceAnalysisChange.emit([sequenceAnalysisOf('seq-1', ['s1'])]);
+
+      const doc = (component as any).analysisDocument;
+      const json = JSON.stringify(doc);
+      expect((json.match(/needle-text-marker/g) || []).length).toBe(1);
+    });
+
+    it('rejects a document with a dangling elements ref', () => {
+      sentenceAnalysisChange.emit([sentenceAnalysis('s1', 'First.')]);
+      const doc = (component as any).analysisDocument;
+      doc.elements.push({ kind: 'sentence', id: 'ghost' });
+
+      const warnSpy = spyOn(console, 'warn');
+      (component as any).persistAnalysisDocument();
+
+      expect(warnSpy).toHaveBeenCalled();
+      expect(warnSpy.calls.mostRecent().args[0]).toContain('document invariant failed');
+    });
   });
 });

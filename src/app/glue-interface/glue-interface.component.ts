@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument, XlePlusGlueElementRef } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -63,6 +63,12 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
 
+  /** Canonical, always-fully-enriched sentence registry, passed to <app-gswb-vis> so it
+   *  can resolve a SequenceAnalysis's sentenceIds without embedding stale copies. */
+  get knownSentences(): SentenceAnalysis[] {
+    return this.analysisDocument.sentences;
+  }
+
   ngAfterViewInit() {
     this.dataService.clearAnalysisDocument(this.analysisDocumentSessionKey).subscribe({
       next: () => console.info('[Analysis] cleared volatile Redis document for new session'),
@@ -113,20 +119,14 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         const snapshots = analyses.map(analysis => this.snapshotSequenceAnalysis(analysis));
         this.sequenceAnalyses = snapshots;
         snapshots[0] && this.liger.displaySequenceAnalysis(snapshots[0]);
-        snapshots.forEach(analysis => {
-          this.upsertSentenceAnalyses(analysis.sentences, false);
-          this.analysisDocument.elements = this.analysisDocument.elements
-            .filter(element => element.id !== analysis.id)
-            .concat(analysis);
-          this.analysisDocument.activeElementId = analysis.id;
-        });
+        this.upsertSequenceAnalyses(snapshots);
         this.persistAnalysisDocument();
         console.info('[Analysis] canonical sequence analyses updated', {
           count: analyses.length,
           analyses: snapshots.map(analysis => ({
             id: analysis.id,
             text: analysis.text,
-            sentenceCount: analysis.sentences.length,
+            sentenceCount: analysis.sentenceIds.length,
             syntaxCount: analysis.syntax.length,
             semanticCount: analysis.semantics.length,
             mapping: analysis.synSemMapping,
@@ -151,6 +151,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       id: this.analysisDocumentSessionKey,
       semanticType: 'lfgxdrt',
       sentences: [],
+      sequences: [],
       elements: [],
     };
   }
@@ -163,22 +164,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   private snapshotSequenceAnalysis(analysis: SequenceAnalysis): SequenceAnalysis {
     return {
       ...analysis,
-      sentences: analysis.sentences.map(sentence => ({
-        ...sentence,
-        syntax: [...sentence.syntax],
-        semantics: [...sentence.semantics],
-        synSemMapping: Object.fromEntries(
-          Object.entries(sentence.synSemMapping).map(([syntaxId, semanticIds]) => [syntaxId, [...semanticIds]])
-        ),
-        discriminants: sentence.discriminants?.map(discriminant => ({
-          ...discriminant,
-          associatedSolutions: [...(discriminant.associatedSolutions ?? [])],
-          instantiations: [...(discriminant.instantiations ?? [])],
-        })),
-        selectedSemanticIds: sentence.selectedSemanticIds ? [...sentence.selectedSemanticIds] : undefined,
-        selectedScopeIds: sentence.selectedScopeIds ? [...sentence.selectedScopeIds] : undefined,
-        selectedMcIds: sentence.selectedMcIds ? [...sentence.selectedMcIds] : undefined,
-      })),
+      sentenceIds: [...analysis.sentenceIds],
       syntax: [...analysis.syntax],
       semantics: [...analysis.semantics],
       synSemMapping: Object.fromEntries(
@@ -201,9 +187,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           selectedScopeIds: [...(incoming.selectedScopeIds ?? [])],
           selectedMcIds: [...(incoming.selectedMcIds ?? [])],
         });
-        this.analysisDocument.elements = this.analysisDocument.elements
-          .filter(element => element.id !== incoming.id)
-          .concat(this.analysisDocument.sentences[this.analysisDocument.sentences.length - 1]);
+        this.upsertElementRef({ kind: 'sentence', id: incoming.id });
         this.analysisDocument.activeElementId = incoming.id;
         return;
       }
@@ -220,11 +204,36 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           ...semanticIds,
         ]));
       });
-      this.analysisDocument.elements = this.analysisDocument.elements
-        .map(element => element.id === existing.id ? existing : element);
+      // No `elements` write needed: the ref for `existing.id` already occupies the right
+      // position and never changes -- only the registry entry's own fields are mutated.
     });
     if (persist) {
       this.persistAnalysisDocument();
+    }
+  }
+
+  /** Upserts sequences into the canonical `sequences` registry by id, preserving each
+   *  sequence's position on update (matching sentence-upsert semantics) rather than
+   *  moving it to the end of the timeline. */
+  private upsertSequenceAnalyses(analyses: SequenceAnalysis[]): void {
+    analyses.forEach(incoming => {
+      const index = this.analysisDocument.sequences.findIndex(sequence => sequence.id === incoming.id);
+      if (index === -1) {
+        this.analysisDocument.sequences.push(incoming);
+      } else {
+        this.analysisDocument.sequences[index] = incoming;
+      }
+      this.upsertElementRef({ kind: 'sequence', id: incoming.id });
+      this.analysisDocument.activeElementId = incoming.id;
+    });
+  }
+
+  /** Appends a ref if this id isn't already registered in `elements`; a no-op otherwise,
+   *  so callers can call it unconditionally on every upsert without disturbing the
+   *  existing position of an already-registered sentence/sequence. */
+  private upsertElementRef(ref: XlePlusGlueElementRef): void {
+    if (!this.analysisDocument.elements.some(existingRef => existingRef.id === ref.id)) {
+      this.analysisDocument.elements = [...this.analysisDocument.elements, ref];
     }
   }
 
@@ -377,7 +386,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.upsertDiscourseUpdate({
           id: `du-${sourceElement.id}`,
           sourceElementId: sourceElement.id,
-          sourceElementKind: 'sentences' in sourceElement ? 'sequence' : 'sentence',
+          sourceElementKind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence',
           ruleString: existingUpdate?.ruleString,
           structures,
           mergedGraphs,
@@ -550,7 +559,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.upsertDiscourseUpdate({
           id: `du-${sourceElement.id}`,
           sourceElementId: sourceElement.id,
-          sourceElementKind: 'sentences' in sourceElement ? 'sequence' : 'sentence',
+          sourceElementKind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence',
           ruleString,
           structures,
           mergedGraphs,
@@ -681,7 +690,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.upsertDiscourseUpdate({
           id: `du-${sourceElement.id}`,
           sourceElementId: sourceElement.id,
-          sourceElementKind: 'sentences' in sourceElement ? 'sequence' : 'sentence',
+          sourceElementKind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence',
           ruleString: existingUpdate?.ruleString,
           structures,
           mergedGraphs: existingUpdate?.mergedGraphs ?? {},

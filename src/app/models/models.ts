@@ -50,7 +50,11 @@ export interface SentenceAnalysis {
   selectedMcIds?: string[];
 }
 
-export interface SequenceAnalysis {
+/** LiGER's wire shape for a sequence solution. The embedded `sentences` copies are
+ *  populated syntax-only by LiGER's sequenceSyntaxAnalysis and never refreshed with
+ *  semantics -- do not use this for anything beyond immediate wire handling; the
+ *  canonical app model is `SequenceAnalysis` below. */
+export interface LigerSequenceAnalysis {
   id: string;
   text: string;
   sentences: SentenceAnalysis[];
@@ -59,13 +63,32 @@ export interface SequenceAnalysis {
   synSemMapping: SynSemMapping;
 }
 
+export interface SequenceAnalysis {
+  id: string;
+  text: string;
+  sentenceIds: string[];   // resolve against XlePlusGlueDocument.sentences
+  syntax: SyntacticAnalysis[];
+  semantics: SemanticAnalysis[];
+  synSemMapping: SynSemMapping;
+}
+
 export type XlePlusGlueElement = SentenceAnalysis | SequenceAnalysis;
+
+/** A thin, ordered reference into `sentences`/`sequences` -- records only which element
+ *  occupies a given position in the document's timeline and which registry to resolve it
+ *  against. Carries no payload of its own, so it cannot duplicate or go stale relative to
+ *  the canonical `sentences`/`sequences` entries it points at. Resolve via
+ *  `resolveElement`/`findElementById` in analysis-model.ts. */
+export type XlePlusGlueElementRef =
+  | { kind: 'sentence'; id: string }
+  | { kind: 'sequence'; id: string };
 
 export interface XlePlusGlueDocument {
   id: string;
   semanticType: string;
   sentences: SentenceAnalysis[];
-  elements: XlePlusGlueElement[];
+  sequences: SequenceAnalysis[];      // canonical sequence registry, mirrors `sentences`
+  elements: XlePlusGlueElementRef[];  // ordered {kind,id} refs, not embedded objects
   discourseUpdates?: DiscourseUpdate[];
   activeElementId?: string;
   revision?: number;
@@ -178,7 +201,7 @@ export interface LigerSolutionAnnotation {
   axioms?: string[];
   sequenceParts?: LigerSequencePart[];
   sentenceAnalysis?: SentenceAnalysis;
-  sequenceAnalysis?: SequenceAnalysis;
+  sequenceAnalysis?: LigerSequenceAnalysis;
 }
 
 export interface LigerSolutionAnnotationResponse {
@@ -231,7 +254,6 @@ export interface LigerQuerySolution {
 
 export interface LigerWebGraph {
   graphElements: LigerGraphComponent[];
-  semantics: string;
 }
 
 export interface LigerStructureConstraint {
@@ -287,12 +309,13 @@ export interface GswbRequest {
 
 export interface GswbProofInput {
   proofId: string;
+  sentenceId?: string;
   solutionKey?: string;
   mcSetId?: string;
   meaningConstructors: string;
   structure?: LigerStructure;
   sentenceAnalysis?: SentenceAnalysis;
-  sequenceAnalysis?: SequenceAnalysis;
+  sequenceAnalysis?: LigerSequenceAnalysis;
 }
 
 export interface GswbMultipleRequest {

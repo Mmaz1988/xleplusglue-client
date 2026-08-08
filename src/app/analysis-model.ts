@@ -5,7 +5,33 @@ import {
   SequenceAnalysis,
   SynSemMapping,
   XlePlusGlueDocument,
+  XlePlusGlueElement,
+  XlePlusGlueElementRef,
 } from './models/models';
+
+/** Resolves a thin element ref against the document's canonical sentences/sequences
+ *  registries. Both SentenceAnalysis and SequenceAnalysis share the syntax/semantics/
+ *  synSemMapping shape, so callers that only need that shared shape (post-processing,
+ *  validation) can treat the result uniformly without either being coerced into the
+ *  other's type. */
+export function resolveElement(
+  document: XlePlusGlueDocument,
+  ref: XlePlusGlueElementRef,
+): XlePlusGlueElement | undefined {
+  return ref.kind === 'sentence'
+    ? document.sentences.find(sentence => sentence.id === ref.id)
+    : document.sequences.find(sequence => sequence.id === ref.id);
+}
+
+/** Resolves by id alone (sentence and sequence ids are drawn from the same id space and
+ *  never collide) -- used where only an id is available, e.g. DiscourseUpdate.sourceElementId. */
+export function findElementById(
+  document: XlePlusGlueDocument,
+  id: string,
+): XlePlusGlueElement | undefined {
+  return document.sentences.find(sentence => sentence.id === id)
+    ?? document.sequences.find(sequence => sequence.id === id);
+}
 
 /** Builds a stable ordered parent ID. Array position must not be used as identity. */
 export function compositeAnalysisId(parts: string[]): string {
@@ -45,7 +71,7 @@ export function validateSentenceAnalysis(sentence: SentenceAnalysis): void {
   }
 }
 
-export function validateSequenceAnalysis(sequence: SequenceAnalysis): void {
+export function validateSequenceAnalysis(document: XlePlusGlueDocument, sequence: SequenceAnalysis): void {
   const syntaxIds = new Set(sequence.syntax.map(syntax => syntax.synId));
   const semanticIds = new Set(sequence.semantics.map(semantic => semantic.semId));
   validateMapping(sequence.synSemMapping, syntaxIds, semanticIds);
@@ -54,16 +80,20 @@ export function validateSequenceAnalysis(sequence: SequenceAnalysis): void {
       throw new Error(`Semantic ${semantic.semId} has unknown sequence syntax origin ${semantic.syntacticOrigin}.`);
     }
   });
-  sequence.sentences.forEach(validateSentenceAnalysis);
+  const knownSentenceIds = new Set(document.sentences.map(sentence => sentence.id));
+  sequence.sentenceIds.forEach(sentenceId => {
+    if (!knownSentenceIds.has(sentenceId)) {
+      throw new Error(`Sequence ${sequence.id} references unknown sentence ${sentenceId}.`);
+    }
+  });
 }
 
 export function validateAnalysisDocument(document: XlePlusGlueDocument): void {
   document.sentences.forEach(validateSentenceAnalysis);
-  document.elements.forEach(element => {
-    if ('sentences' in element) {
-      validateSequenceAnalysis(element);
-    } else {
-      validateSentenceAnalysis(element);
+  (document.sequences ?? []).forEach(sequence => validateSequenceAnalysis(document, sequence));
+  document.elements.forEach(ref => {
+    if (!resolveElement(document, ref)) {
+      throw new Error(`Element ${ref.kind} ${ref.id} is not registered in sentences/sequences.`);
     }
   });
   (document.discourseUpdates ?? []).forEach(update => validateDiscourseUpdate(document, update));
@@ -73,7 +103,7 @@ export function validateAnalysisDocument(document: XlePlusGlueDocument): void {
  *  embedding into it, so validation here checks the reference resolves and that
  *  semDiscourseMapping stays internally consistent -- it does not touch synSemMapping. */
 export function validateDiscourseUpdate(document: XlePlusGlueDocument, update: DiscourseUpdate): void {
-  const element = document.elements.find(candidate => candidate.id === update.sourceElementId);
+  const element = findElementById(document, update.sourceElementId);
   if (!element) {
     throw new Error(`Discourse update ${update.id} references unknown element ${update.sourceElementId}.`);
   }

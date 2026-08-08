@@ -349,7 +349,7 @@ export class LigerVisComponent implements AfterViewInit {
     this.cy1.renderGraph(this.graphElements);
     console.info('[Analysis] displaying merged sequence syntax', {
       sequenceId: sequence.id,
-      sentenceCount: sequence.sentences.length,
+      sentenceCount: sequence.sentenceIds.length,
       graphElements: this.graphElements.length,
     });
   }
@@ -377,6 +377,7 @@ export class LigerVisComponent implements AfterViewInit {
     return solutions
       .map((solution, index) => ({
         proofId: solution.solutionKey || `solution-${index}`,
+        sentenceId: solution.sentenceAnalysis?.id,
         solutionKey: solution.solutionKey,
         mcSetId: solution.solutionKey || `solution-${index}`,
          meaningConstructors: solution.meaningConstructors ?? '',
@@ -402,6 +403,7 @@ export class LigerVisComponent implements AfterViewInit {
         const part = solution.sequenceParts?.find(candidate => candidate.sourceIndex === sentenceIndex);
         return {
           proofId: part?.solutionKey || solution.solutionKey || `solution-${index}`,
+          sentenceId: solution.sequenceAnalysis?.sentences?.[sentenceIndex]?.id,
           solutionKey: solution.solutionKey,
           mcSetId: part?.solutionKey || solution.solutionKey || `solution-${index}`,
           meaningConstructors: part?.meaningConstructors ?? '',

@@ -46,8 +46,7 @@ describe('GraphInspectorComponent', () => {
           {
             sentence: 'branch 1',
             graph: {
-              graphElements: [{ data: { id: 'branch-1-node' } }],
-              semantics: ''
+              graphElements: [{ data: { id: 'branch-1-node' } }]
             },
             structureJson: { id: 'branch-1', constraints: [], annotations: [], choiceSpace: {} },
             appliedRules: [],
@@ -59,8 +58,7 @@ describe('GraphInspectorComponent', () => {
           {
             sentence: 'branch 2',
             graph: {
-              graphElements: [{ data: { id: 'branch-2-node' } }],
-              semantics: ''
+              graphElements: [{ data: { id: 'branch-2-node' } }]
             },
             structureJson: { id: 'branch-2', constraints: [], annotations: [], choiceSpace: {} },
             appliedRules: [],
@@ -317,8 +315,7 @@ describe('GraphInspectorComponent', () => {
           graphElements: [
             { data: { id: '1', query_selector: 'query-match' } },
             { data: { id: '2', query_selector: 'query-match' } }
-          ],
-          semantics: ''
+          ]
         },
         appliedRules: [],
         meaningConstructors: '',
@@ -346,8 +343,7 @@ describe('GraphInspectorComponent', () => {
           graphElements: [
             { data: { id: '1', query_selector: 'query-match' } },
             { data: { id: '2', query_selector: 'query-match' } }
-          ],
-          semantics: ''
+          ]
         },
         appliedRules: [{ rule: '#a POTENTIAL-ANT #b =-> 0.', index: 6, lineNumber: 6 }],
         meaningConstructors: '',
@@ -370,7 +366,7 @@ describe('GraphInspectorComponent', () => {
     component.activeResultKind = 'rules';
     component['ruleAnnotations'] = [{
       sentence: 'annotated graph',
-      graph: { graphElements: [], semantics: '' },
+      graph: { graphElements: [] },
       appliedRules: [{ rule: '#a ant #a ==> #a SEM event', index: 0, lineNumber: 1 }],
       addedAnnotationsByRule: {
         0: [{ fsNode: 'd2', relationLabel: 'ant', fsValue: 'd2' }]
@@ -386,7 +382,7 @@ describe('GraphInspectorComponent', () => {
   it('renders object-shaped added-fact groups from JSON responses', () => {
     component.activeResultKind = 'rules';
     component['ruleAnnotations'] = [{
-      graph: { graphElements: [], semantics: '' },
+      graph: { graphElements: [] },
       appliedRules: [{ rule: '#a ant #a ==> #a SEM event', index: 2, lineNumber: 3 }],
       addedAnnotationsByRule: {
         2: { fact1: { fsNode: 'd3', relationLabel: 'SEM', fsValue: 'event' } }

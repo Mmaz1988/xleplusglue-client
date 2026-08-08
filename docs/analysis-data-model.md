@@ -18,7 +18,8 @@ XlePlusGlueDocument
   ID: String
   SEMANTIC_TYPE: String
   SENTENCES: List<Sentence>
-  ELEMENTS: List<Sentence | Sequence>
+  SEQUENCES: List<Sequence>
+  ELEMENTS: List<ElementRef>     // ElementRef = { KIND: "sentence" | "sequence", ID: String }
 ```
 
 Parsing the first input creates the document and its first `Sentence`. Adding
@@ -26,9 +27,38 @@ an input creates a new independent `Sentence`; it does not replace or rebuild
 the existing sentence objects. The new sentence is populated by LiGER and
 then GSWB before it is merged with the previous document element.
 
-The merge creates a new `Sequence` element while retaining all source
-sentences and prior elements. A sequence is therefore a derived result, not
-the mutable replacement for the sentence objects from which it was built.
+The merge creates a new `Sequence` while retaining all source sentences and
+prior elements. A sequence is therefore a derived result, not the mutable
+replacement for the sentence objects from which it was built.
+
+`SENTENCES`, `SEQUENCES`, and `ELEMENTS` serve three different purposes and
+all three are required. `SENTENCES` and `SEQUENCES` are canonical,
+enriched-by-id registries that mirror each other: every `Sentence`/`Sequence`
+that has ever been analyzed, kept current as its syntax/semantics/selection
+state changes, addressable by `ID`. `ELEMENTS` is the ordered timeline the
+user actually built and sees: a thin, ordered list of `{KIND, ID}` references
+into those two registries, carrying no payload of its own, so it cannot
+duplicate or drift from the registry entries it points at -- resolve a
+reference via `resolveElement`/`findElementById` (`analysis-model.ts`) to get
+the actual `Sentence`/`Sequence` object. Both share the same
+`SYNTAX`/`SEMANTICS`/`SYNSEM_MAPPING` shape, so consumers like post-processing
+that only need that shared shape can resolve either kind and treat it
+uniformly, without `Sentence` needing to be coerced into a (needless)
+single-element `Sequence` to get uniform handling.
+
+A `Sequence` does not embed its own copy of each source sentence; it
+references them by ID via `SENTENCE_IDS` and the reader resolves those IDs
+against `SENTENCES` (see `Sequence` below). Earlier revisions of this model
+had `Sequence` embed full `Sentence` copies alongside its own merged
+syntax/semantics; those copies were populated syntax-only by the LiGER wire
+response and never refreshed with semantics after the fact, so they silently
+went stale. Later, `ELEMENTS` itself embedded full `Sentence`/`Sequence`
+objects rather than references -- harmless in memory (the embedded object was
+the same reference as the one in `SENTENCES`), but the whole document is
+JSON-serialized for Redis persistence, which breaks that aliasing and
+duplicates the payload in the persisted blob, with the same staleness risk on
+reload. The `{KIND, ID}` reference form removes both kinds of duplication
+entirely instead of trying to keep copies in sync.
 
 ## Analysis Document Lifetime
 
@@ -187,19 +217,27 @@ semantic analysis must have a `SYNTACTIC_ORIGIN` that occurs in `SYNTAX`.
 Sequence
   ID: String
   TEXT: String
-  SENTENCES: List<Sentence>
+  SENTENCE_IDS: List<String>
   SYNTAX: List<SyntacticAnalysis>
   SEMANTICS: List<SemanticAnalysis>
   SYNSEM_MAPPING: Map<String, List<String>>
 ```
 
-`SENTENCES` contains the source sentence objects. `SYNTAX` contains merged
-syntactic analyses for the sequence. `SEMANTICS` contains merged semantic
-analyses associated with those merged syntactic analyses. Sentence-level
-meaning constructors are recovered from `SENTENCES`, not duplicated into the
-merged sequence syntax. Each semantic
-analysis retains a semantic graph that is compatible with, and can be merged
-into, the corresponding LiGER syntax structure.
+`SENTENCE_IDS` references the source sentences by `Sentence.ID`; resolve
+against `XlePlusGlueDocument.SENTENCES` to get the full, currently-enriched
+`Sentence` objects. This is a plain id reference rather than an embedded
+copy: the sequence-specific rebased view of a sentence's syntax/semantics
+(the SYN-ID/SRC offsetting applied when a sentence is appended to a
+sequence) lives entirely in the sequence's own top-level `SYNTAX`/`SEMANTICS`
+below, not in anything per-sentence, so an embedded per-sentence copy would
+have nothing rebased to hold and would only duplicate `SENTENCES` -- id
+reference loses nothing. `SYNTAX` contains merged syntactic analyses for the
+sequence. `SEMANTICS` contains merged semantic analyses associated with
+those merged syntactic analyses. Sentence-level meaning constructors are
+recovered from the resolved sentences, not duplicated into the merged
+sequence syntax. Each semantic analysis retains a semantic graph that is
+compatible with, and can be merged into, the corresponding LiGER syntax
+structure.
 
 `SEMANTICS` retains all calculated alternatives. Sentence analyses additionally
 record discriminants and the active semantic IDs without destroying unselected
@@ -408,6 +446,13 @@ keyed by a `StructureId` such as `${SemId}` (before rules are applied) or
 references it by `STRUCTURE_ID` instead of embedding a copy -- avoiding duplicating
 multi-KB structures across candidates when persisted.
 
+`STRUCTURES`/`MERGED_GRAPHS` are not redundant with the source `Sentence`/`Sequence`'s
+own `SYNTAX`/`SEMANTICS`: each entry is the *output* of two further LiGER round-trips
+(merging a specific semantic solution's DRS graph with the base syntax, then a
+rule-annotation pass over that merged structure) -- genuinely new server-computed
+content that cannot be reconstructed from the base element's syntax and semantics
+without recomputation.
+
 This layer consumes completed sequence semantic alternatives and must not
 change the underlying `SYNSEM_MAPPING`.
 
@@ -421,6 +466,7 @@ change the underlying `SYNSEM_MAPPING`.
   semantic provenance through composite IDs.
 - Pragmatic annotations are recalculated after sequence merging.
 - Sequence operations are enabled only for `lfgxdrt` analyses.
+- Every `ELEMENTS` entry resolves against `SENTENCES`/`SEQUENCES` by `ID`.
 - Every `DiscourseUpdate.SOURCE_ELEMENT_ID` resolves to an element in the document.
 - Every `DiscourseAnalysis.STRUCTURE_ID` resolves to an entry in the owning
   `DiscourseUpdate.STRUCTURES`.

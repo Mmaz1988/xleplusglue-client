@@ -5,7 +5,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbDiscriminant, GswbProofInput, GswbRequest,GswbPreferences, GswbSemanticMergePart, GswbSolution, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
+import {GswbDiscriminant, GswbProofInput, GswbRequest,GswbPreferences, GswbSemanticMergePart, GswbSolution, LigerSequenceAnalysis, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -27,6 +27,11 @@ export class GswbVisComponent implements AfterViewInit {
   @Input() postProcessingLoading = false;
   @Input() previousSentenceAnalyses: SentenceAnalysis[] = [];
   @Input() previousSequenceAnalyses: SequenceAnalysis[] = [];
+  /** Canonical, always-fully-enriched sentence registry (glue-interface's
+   *  analysisDocument.sentences) -- resolve SequenceAnalysis.sentenceIds against
+   *  this, distinct from previousSentenceAnalyses which is only a "was there a
+   *  previous element to continue" gating signal. */
+  @Input() knownSentences: SentenceAnalysis[] = [];
   @Output() postProcessing = new EventEmitter<'inline' | 'standalone'>();
   @Output() sentenceAnalysisChange = new EventEmitter<SentenceAnalysis[]>();
   @Output() sequenceAnalysisChange = new EventEmitter<SequenceAnalysis[]>();
@@ -273,13 +278,11 @@ export class GswbVisComponent implements AfterViewInit {
       ? this.previousSequenceAnalyses
       : this.previousSentenceAnalyses;
     const previousContexts = previousElements.flatMap(element =>
-      ('sentences' in element ? element.semantics : selectedSentenceSemantics(element))
+      ('sentenceIds' in element ? element.semantics : selectedSentenceSemantics(element))
         .map(semantic => ({ semantic, element }))
     );
-    const canonicalPrevious = previousContexts
-      .map(context => context.semantic)
-      .filter(semantic => !!semantic.graph);
-    if (!canonicalPrevious.length) {
+    const canonicalPreviousContexts = previousContexts.filter(context => !!context.semantic.graph);
+    if (!canonicalPreviousContexts.length) {
       this.updateSentenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
         currentSentences: solutions.map(solution => this.sentenceAnalysisFor(solution)?.text),
@@ -298,9 +301,8 @@ export class GswbVisComponent implements AfterViewInit {
     console.info('[Analysis] preparing GSWB sequence semantic merges', {
       previousSentences: previousElements.map(element => element.text),
       currentSentences: current.map(solution => this.sentenceAnalysisFor(solution)?.text),
-      previousSemanticCount: canonicalPrevious.length,
+      previousSemanticCount: canonicalPreviousContexts.length,
       currentSolutionCount: current.length,
-      previousGraphCount: canonicalPrevious.filter(semantic => !!semantic.graph).length,
       currentSolutions: current.map(solution => ({
         id: solution.id,
         solutionKey: solution.solutionKey,
@@ -311,11 +313,11 @@ export class GswbVisComponent implements AfterViewInit {
     });
 
     const mergeRequests = current.flatMap(solution =>
-      canonicalPrevious.map((_previousSemantic, index) =>
+      canonicalPreviousContexts.map(({ semantic: previousSemantic, element: previousElement }) =>
         this.dataService.gswbMergeSequenceSemantics({
         parts: [
-          this.semanticPart(canonicalPrevious[index]),
-          this.semanticPart(this.semanticAnalysisFor(solution)),
+          this.semanticPart(previousSemantic, previousElement.id),
+          this.semanticPart(this.semanticAnalysisFor(solution), this.sentenceAnalysisFor(solution)?.id),
         ],
         parentSolutionId: solution.id,
         solutionKey: solution.solutionKey,
@@ -324,7 +326,7 @@ export class GswbVisComponent implements AfterViewInit {
         }).pipe(
           map(merged => ({
             merged,
-            previousElement: previousContexts[index].element,
+            previousElement,
             currentElement: this.sentenceAnalysisFor(solution),
           }))
         )
@@ -379,9 +381,25 @@ export class GswbVisComponent implements AfterViewInit {
       if (!first.previousElement || !first.currentElement) {
         return of(group.map(result => result.merged));
       }
-      const previousSentences = 'sentences' in first.previousElement
-        ? first.previousElement.sentences
-        : [first.previousElement];
+      let previousSentences: SentenceAnalysis[];
+      if ('sentenceIds' in first.previousElement) {
+        const missingSentenceIds: string[] = [];
+        previousSentences = first.previousElement.sentenceIds.map(id => {
+          const sentence = this.knownSentences.find(candidate => candidate.id === id);
+          if (!sentence) missingSentenceIds.push(id);
+          return sentence as SentenceAnalysis;
+        });
+        if (missingSentenceIds.length) {
+          console.error('[Analysis] cannot resolve previous sequence sentences for syntax merge; skipping syntax merge for this group', {
+            previousSequenceId: first.previousElement.id,
+            missingSentenceIds,
+            knownSentenceIds: this.knownSentences.map(sentence => sentence.id),
+          });
+          return of(group.map(result => result.merged));
+        }
+      } else {
+        previousSentences = [first.previousElement];
+      }
       const sentences = [...previousSentences, first.currentElement];
       return this.dataService.ligerSequence({
         sentences: sentences.map(sentence => sentence.text),
@@ -394,8 +412,10 @@ export class GswbVisComponent implements AfterViewInit {
             if (syntax) {
               const semantic = this.semanticAnalysisFor(result.merged);
               result.merged.sequenceAnalysis = {
-                ...syntax,
                 id: result.merged.id || syntax.id,
+                text: syntax.text,
+                sentenceIds: syntax.sentences.map(sentence => sentence.id),
+                syntax: syntax.syntax,
                 semantics: [semantic],
                 synSemMapping: result.merged.synSemMapping ?? {
                   [semantic.syntacticOrigin]: [semantic.semId]
@@ -421,8 +441,13 @@ export class GswbVisComponent implements AfterViewInit {
       return solution.sentenceAnalysis;
     }
     const proof = this.proofInputs.find(input => input.solutionKey === solution.solutionKey);
-    return proof?.sentenceAnalysis
-      ?? proof?.sequenceAnalysis?.sentences?.[0];
+    const embedded = proof?.sequenceAnalysis?.sentences?.[0];
+    // Prefer the canonical, fully-enriched entry when it's already registered, but a
+    // sentence's very first deduction runs before document.sentences has an entry for
+    // it at all (chicken-and-egg) -- fall back to the embedded (syntax-only) copy from
+    // LiGER's own response rather than returning nothing.
+    const known = embedded && this.knownSentences.find(sentence => sentence.id === embedded.id);
+    return proof?.sentenceAnalysis ?? known ?? embedded;
   }
 
   private updateSequenceAnalyses(solutions: GswbSolution[]): void {
@@ -433,7 +458,7 @@ export class GswbVisComponent implements AfterViewInit {
     );
     const analysesBySyntax = new Map<string, SequenceAnalysis>();
     solutions.forEach(solution => {
-      const template = solution.sequenceAnalysis
+      const template: SequenceAnalysis | LigerSequenceAnalysis | undefined = solution.sequenceAnalysis
         ?? sequenceByKey.get(solution.solutionKey)
         ?? this.proofInputs.find(input => !!input.sequenceAnalysis)?.sequenceAnalysis;
       if (!template) {
@@ -446,9 +471,14 @@ export class GswbVisComponent implements AfterViewInit {
         ...this.semanticAnalysisFor(solution),
         syntacticOrigin: syntaxId,
       };
+      const templateSentenceIds = 'sentenceIds' in template
+        ? template.sentenceIds
+        : template.sentences.map(sentence => sentence.id);
       const analysis = existing ?? {
-        ...template,
         id: syntaxId,
+        text: template.text,
+        sentenceIds: templateSentenceIds,
+        syntax: template.syntax,
         semantics: [],
         synSemMapping: {},
       } as SequenceAnalysis;
@@ -474,7 +504,9 @@ export class GswbVisComponent implements AfterViewInit {
     // i.e. the first sentence's analyzeSentence() call). Mirrors sentenceAnalysisFor()'s
     // priority so both stay in sync.
     const fallbackInput = this.proofInputs.find(input => !!input.sentenceAnalysis || !!input.sequenceAnalysis?.sentences?.[0]);
-    const fallbackTemplate = fallbackInput?.sentenceAnalysis ?? fallbackInput?.sequenceAnalysis?.sentences?.[0];
+    const fallbackEmbedded = fallbackInput?.sequenceAnalysis?.sentences?.[0];
+    const fallbackKnown = fallbackEmbedded && this.knownSentences.find(sentence => sentence.id === fallbackEmbedded.id);
+    const fallbackTemplate = fallbackInput?.sentenceAnalysis ?? fallbackKnown ?? fallbackEmbedded;
     const analyses = solutions
       .map(solution => {
         const template = this.sentenceAnalysisFor(solution) ?? fallbackTemplate;
@@ -520,10 +552,12 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private semanticPart(
-    semantic: SemanticAnalysis
+    semantic: SemanticAnalysis,
+    sentenceId?: string
   ): GswbSemanticMergePart {
     return {
       id: semantic.semId,
+      sentenceId,
       solutionId: semantic.semId,
       syntacticOrigin: semantic.syntacticOrigin,
       semantic: semantic.semString,

@@ -2,7 +2,7 @@ import { GraphVisComponent } from './graph-vis.component';
 
 describe('GraphVisComponent', () => {
   it('keeps parallel same-direction edges distinct when normalizing ids', () => {
-    const component = new GraphVisComponent();
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
     const normalized = (component as any).normalizeGraphElements([
       { data: { id: 'edge-1', source: 'a', target: 'b', label: 'A' } },
       { data: { id: 'edge-1', source: 'a', target: 'b', label: 'B' } },
@@ -17,7 +17,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('generates fallback ids for elements without ids', () => {
-    const component = new GraphVisComponent();
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
     const normalized = (component as any).normalizeGraphElements([
       { data: { source: 'a', target: 'b', label: 'A' } },
       { data: { source: 'a', target: 'b', label: 'A' } },
@@ -28,7 +28,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('classifies canonical f and d structure node types', () => {
-    const component = new GraphVisComponent();
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
 
     expect((component as any).structureType({ data: { node_type: 'input' } })).toBe('f');
     expect((component as any).structureType({ data: { node_type: 'dnode' } })).toBe('d');
@@ -36,7 +36,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('only exposes categories present in the graph', () => {
-    const component = new GraphVisComponent();
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
 
     (component as any).updateAvailableStructureFilters([
       { data: { id: 'c1', node_type: 'cnode' } },
@@ -47,7 +47,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('filters hidden structure nodes and their connected edges', () => {
-    const component = new GraphVisComponent();
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
     (component as any).structureVisibility.f = false;
 
     const visible = (component as any).visibleGraphElements([
