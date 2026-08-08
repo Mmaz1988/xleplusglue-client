@@ -282,6 +282,7 @@ export class GswbVisComponent implements AfterViewInit {
     if (!canonicalPrevious.length) {
       this.updateSentenceAnalyses(solutions);
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
+        currentSentences: solutions.map(solution => this.sentenceAnalysisFor(solution)?.text),
         currentSolutionCount: solutions.length,
       });
       return;
@@ -295,6 +296,8 @@ export class GswbVisComponent implements AfterViewInit {
     }
 
     console.info('[Analysis] preparing GSWB sequence semantic merges', {
+      previousSentences: previousElements.map(element => element.text),
+      currentSentences: current.map(solution => this.sentenceAnalysisFor(solution)?.text),
       previousSemanticCount: canonicalPrevious.length,
       currentSolutionCount: current.length,
       previousGraphCount: canonicalPrevious.filter(semantic => !!semantic.graph).length,
@@ -337,6 +340,7 @@ export class GswbVisComponent implements AfterViewInit {
         mergedSolutions: mergedSolutions.map(solution => ({
           id: solution.id,
           solutionKey: solution.solutionKey,
+          sentences: solution.sequenceAnalysis?.text,
           semanticLength: solution.semantic?.length ?? 0,
           graphConstraints: solution.graph?.constraints?.length ?? 0,
           graphAnnotations: solution.graph?.annotations?.length ?? 0,

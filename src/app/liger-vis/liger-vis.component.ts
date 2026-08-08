@@ -129,6 +129,7 @@ export class LigerVisComponent implements AfterViewInit {
         this.loading = false;
         const solutions = Array.isArray(data.solutions) ? data.solutions : [];
         console.info('[Analysis] LiGER sequence append completed', {
+          sentence,
           success: data.success !== false,
           solutionCount: solutions.length,
           sequenceLength: sentences.length,

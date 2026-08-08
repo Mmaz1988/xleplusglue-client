@@ -82,6 +82,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             newSequenceLength: sequenceLength,
             previousSentenceCount: this.previousSentenceAnalyses.length,
             previousSequenceCount: this.previousSequenceAnalyses.length,
+            previousSentences: this.previousSentenceAnalyses.map(analysis => analysis.text),
+            previousSequenceSentences: this.previousSequenceAnalyses.map(analysis => analysis.text),
           });
         }
         this.lastSequenceLength = sequenceLength;
@@ -100,6 +102,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             proofId: input.proofId,
             solutionKey: input.solutionKey,
             mcSetId: input.mcSetId,
+            sentence: input.sentenceAnalysis?.text ?? input.sequenceAnalysis?.text,
             meaningConstructorsLength: input.meaningConstructors?.length ?? 0,
             structureConstraints: input.structure?.constraints?.length ?? 0,
             structureAnnotations: input.structure?.annotations?.length ?? 0,
@@ -122,6 +125,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           count: analyses.length,
           analyses: snapshots.map(analysis => ({
             id: analysis.id,
+            text: analysis.text,
             sentenceCount: analysis.sentences.length,
             syntaxCount: analysis.syntax.length,
             semanticCount: analysis.semantics.length,
@@ -134,7 +138,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.upsertSentenceAnalyses(analyses);
         console.info('[Analysis] canonical sentence analyses updated', {
           count: analyses.length,
-          analysisIds: analyses.map(analysis => analysis.id),
+          analyses: analyses.map(analysis => ({ id: analysis.id, text: analysis.text })),
         });
       });
     }
