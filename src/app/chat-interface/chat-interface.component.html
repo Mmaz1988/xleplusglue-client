@@ -19,13 +19,14 @@
 <mat-tab-group *ngIf="tabsInitialized" (selectedIndexChange)="onTabChange($event)">
   <mat-tab label="Chat">
     <div class="tab-content">
-      <!-- Placeholder for chat component -->
+      <button type="button" (click)="startNewConversation()">New conversation</button>
       <app-chat [ruleString]="ruleFile"
                 [axioms]="axioms"
                 [gswbPreferences]="gswbPrefs"
                 [vampirePreferences]="vampirePrefs"
                 [history]="history" (historyChange)="updateHistory($event)"
                 [activeIndices]="selectedElements"
+                [chatDocument]="chatDocument" (chatDocumentChange)="updateChatDocument($event)"
                 (clearSelection)="onClearSelection()"
                 (axiomsChanged)="updateAxioms($event)">
         ></app-chat>

@@ -212,6 +212,15 @@ callVampire(vampireRequest: vampireRequest){
     return this.http.delete(`${this.redispage}/analysis_document/${sessionKey}`);
   }
 
+  saveChatDocument(sessionKey: string, document: XlePlusGlueDocument): Observable<{ status: string; document: XlePlusGlueDocument }> {
+    return this.http.put<{ status: string; document: XlePlusGlueDocument }>(
+      `${this.redispage}/chat_document/${sessionKey}`, document);
+  }
+
+  clearChatDocument(sessionKey: string): Observable<any> {
+    return this.http.delete(`${this.redispage}/chat_document/${sessionKey}`);
+  }
+
 
 
 

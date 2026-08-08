@@ -931,6 +931,9 @@ export interface context {
   syntax?: LigerStructure;
   semanticAnalysis?: SemanticAnalysis;
   synSemMapping?: SynSemMapping;
+  /** Sentence.id/Sequence.id in the chat's XlePlusGlueDocument this context entry
+   *  corresponds to -- lets the next turn build a composite Sequence id from it. */
+  elementId?: string;
 }
 
 

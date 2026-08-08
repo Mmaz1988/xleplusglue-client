@@ -1,19 +1,20 @@
-import {Component, ViewChild, OnInit, AfterViewInit} from '@angular/core';
+import {Component, ViewChild, OnInit, AfterViewInit, OnDestroy} from '@angular/core';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
-import {context, GswbPreferences} from "../models/models";
+import {context, GswbPreferences, XlePlusGlueDocument} from "../models/models";
 import {ChatComponent} from "./chat/chat.component";
 import {HistoryComponent} from "./history/history.component";
 import {EditorComponent} from "../editor/editor.component";
 import {ChangeDetectorRef} from "@angular/core";
 import {InferenceSettingsComponent} from "../inference-interface/inference-settings/inference-settings.component";
 import { APP_DEFAULTS } from '../app-defaults';
+import { DataService } from '../data.service';
 
 @Component({
   selector: 'app-inference-vis',
   templateUrl: './chat-interface.component.html',
   styleUrls: ['./chat-interface.component.css']
 })
-export class ChatInterfaceComponent implements AfterViewInit {
+export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
 
   ruleFile: string = '';
   history: context[][] = [];
@@ -30,7 +31,12 @@ export class ChatInterfaceComponent implements AfterViewInit {
 
   tabsInitialized = false;
 
-  constructor(private cdRef: ChangeDetectorRef) {}
+  private chatDocumentSessionKey = this.newChatSessionKey();
+  chatDocument: XlePlusGlueDocument = this.newChatDocument();
+  private pendingChatDocumentSave: XlePlusGlueDocument | null = null;
+  private chatDocumentSaveInProgress = false;
+
+  constructor(private cdRef: ChangeDetectorRef, private dataService: DataService) {}
 
   ngAfterViewInit() {
 
@@ -94,6 +100,67 @@ export class ChatInterfaceComponent implements AfterViewInit {
       this.editor.updateContent(value);
       this.editor.codeMirrorInstance.refresh();
     }
+  }
+
+  private newChatSessionKey(): string {
+    const random = Math.random().toString(36).slice(2, 10);
+    return `chat-${Date.now()}-${random}`;
+  }
+
+  private newChatDocument(): XlePlusGlueDocument {
+    return { id: this.chatDocumentSessionKey, semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [] };
+  }
+
+  updateChatDocument(document: XlePlusGlueDocument): void {
+    this.chatDocument = document;
+    this.persistChatDocument();
+  }
+
+  /** Resets the whole chat session: clears the old volatile Redis document, mints a fresh
+   *  session key/document, and resets the chat component's in-memory conversation state. */
+  startNewConversation(): void {
+    this.dataService.clearChatDocument(this.chatDocumentSessionKey).subscribe({
+      error: error => console.warn('[Chat] could not clear volatile chat document', error),
+    });
+    this.chatDocumentSessionKey = this.newChatSessionKey();
+    this.chatDocument = this.newChatDocument();
+    this.history = [];
+    this.chatComponent?.resetConversationState();
+  }
+
+  private persistChatDocument(): void {
+    this.pendingChatDocumentSave = JSON.parse(JSON.stringify(this.chatDocument));
+    if (this.chatDocumentSaveInProgress) return;
+    this.saveNextChatDocument();
+  }
+
+  private saveNextChatDocument(): void {
+    if (!this.pendingChatDocumentSave) return;
+    const document = this.pendingChatDocumentSave;
+    this.pendingChatDocumentSave = null;
+    this.chatDocumentSaveInProgress = true;
+    this.dataService.saveChatDocument(this.chatDocumentSessionKey, document).subscribe({
+      next: response => {
+        this.chatDocument.revision = response.document.revision;
+        this.chatDocument.createdAt = response.document.createdAt;
+        this.chatDocument.updatedAt = response.document.updatedAt;
+      },
+      error: error => {
+        console.warn('[Chat] could not persist volatile chat document', error);
+        this.chatDocumentSaveInProgress = false;
+        if (this.pendingChatDocumentSave) this.saveNextChatDocument();
+      },
+      complete: () => {
+        this.chatDocumentSaveInProgress = false;
+        if (this.pendingChatDocumentSave) this.saveNextChatDocument();
+      },
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.dataService.clearChatDocument(this.chatDocumentSessionKey).subscribe({
+      error: error => console.warn('[Chat] could not clear volatile chat document on destroy', error),
+    });
   }
 
 }

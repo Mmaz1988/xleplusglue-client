@@ -1,5 +1,12 @@
 import { GswbPreferences } from './models/models';
 
+/** GSWB's outputstyle flag value that selects LFGxDRT semantic rendering (vs. prolog-drt). */
+export const LFGXDRT_OUTPUT_STYLE = 5;
+
+export function isLfgxdrtPreferences(prefs: GswbPreferences): boolean {
+  return Number(prefs?.outputstyle) === LFGXDRT_OUTPUT_STYLE;
+}
+
 export const APP_DEFAULTS = {
   grammar: {
     ligerPath: './grammars/dev/glue-basic-drt.lfg.glue',

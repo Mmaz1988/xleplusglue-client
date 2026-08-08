@@ -1,11 +1,26 @@
 import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@angular/core';
 import { DataService } from '../../data.service';
-import { ChatMessage, context, GswbRequest, vampireRequest } from '../../models/models';
+import {
+  AnaphoraMappingModel,
+  ChatMessage,
+  context,
+  DiscourseAnalysis,
+  DiscourseUpdate,
+  GswbRequest,
+  GswbSemanticMergePart,
+  LigerStructure,
+  SemanticAnalysis,
+  SequenceAnalysis,
+  SyntacticAnalysis,
+  vampireRequest,
+  XlePlusGlueDocument
+} from '../../models/models';
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
 import { catchError, forkJoin, from, map, mergeMap, of, switchMap } from 'rxjs';
-import { APP_DEFAULTS } from '../../app-defaults';
+import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
+import { compositeAnalysisId, validateAnalysisDocument } from '../../analysis-model';
 
 
 @Component({
@@ -36,6 +51,9 @@ export class ChatComponent {
   @Input() activeIndices: number[] = [];
   @Output() clearSelection: EventEmitter<void> = new EventEmitter<void>();  // Event to clear selection
 
+  @Input() chatDocument: XlePlusGlueDocument = ChatComponent.emptyChatDocument();
+  @Output() chatDocumentChange = new EventEmitter<XlePlusGlueDocument>();
+
   chatHistory: ChatMessage[] = []; // Stores chat messages
   userInput: string = ''; // Stores user input
   meaningConstructors: string = '';
@@ -46,21 +64,26 @@ export class ChatComponent {
 
   // needs to be updated as chat goes on
   context: context[] = [];
-  semanticContext: string[] = [];
-  semanticContextGraphs: any[] = [];
 
   loading: boolean = false; // Tracks whether the bot is responding
+
+  static emptyChatDocument(): XlePlusGlueDocument {
+    return { id: '', semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [] };
+  }
+
+  /** Resets in-flight conversation state for a fresh session. The chatDocument itself is
+   *  reset/replaced by the parent (it owns the session key/persistence lifecycle). */
+  resetConversationState(): void {
+    this.context = [];
+    this.chatHistory = [];
+    this.userInput = '';
+  }
 
   sendMessage() {
     if (!this.userInput.trim()) return;
 
-    console.log("Gswb preferences: ", this.gswbPreferences.gswbPreferences);
-    console.log("Vampire preferences: ", this.vampirePreferences.vampirePreferences);
-
     this.loading = true; // Show loading indicator
     const userMessage = this.userInput;
-    let glyphs: string[] = [];
-    let tptp = '';
 
     // Add user message to history
     this.chatHistory.push({ text: userMessage, sender: 'User' });
@@ -70,14 +93,11 @@ export class ChatComponent {
 
     const ligerRequest = { sentence: userMessage, ruleString: this.ruleString, logicType: logicType };
 
-    console.log("Liger request: ", ligerRequest);
-
     this.dataService.ligerAnnotate(ligerRequest).subscribe({
       next: data => {
-        console.log('Liger response: ', data);
-         const selectedSolution = data.solutions?.find((solution: any) =>
-           Array.isArray(solution?.graph?.graphElements) && solution.graph.graphElements.length > 0)
-           ?? data.solutions?.[0];
+        const selectedSolution = data.solutions?.find((solution: any) =>
+          Array.isArray(solution?.graph?.graphElements) && solution.graph.graphElements.length > 0)
+          ?? data.solutions?.[0];
 
         if (!selectedSolution || !selectedSolution.graph?.graphElements?.length) {
           this.chatHistory.push({ text: 'Syntactic analysis failed for this input!', sender: 'Bot' });
@@ -85,20 +105,18 @@ export class ChatComponent {
           return;
         }
 
-         const proofInputs = (data.solutions ?? [])
-           .filter((solution: any) => typeof solution?.meaningConstructors === 'string'
-             && solution.meaningConstructors.trim().length > 0)
-           .map((solution: any, index: number) => ({
-             proofId: solution.solutionKey || `sentence-${index + 1}`,
-             solutionKey: solution.solutionKey,
-             meaningConstructors: solution.meaningConstructors,
-             structure: solution.structureJson
-           }));
-         this.meaningConstructors = proofInputs.map(input => input.meaningConstructors).join('\n');
+        const proofInputs = (data.solutions ?? [])
+          .filter((solution: any) => typeof solution?.meaningConstructors === 'string'
+            && solution.meaningConstructors.trim().length > 0)
+          .map((solution: any, index: number) => ({
+            proofId: solution.solutionKey || `sentence-${index + 1}`,
+            solutionKey: solution.solutionKey,
+            meaningConstructors: solution.meaningConstructors,
+            structure: solution.structureJson
+          }));
+        this.meaningConstructors = proofInputs.map(input => input.meaningConstructors).join('\n');
 
         if (Array.isArray(selectedSolution.axioms) && selectedSolution.axioms.length > 0) {
-          console.log('Axioms: ', selectedSolution.axioms);
-
           let extractedAxioms = '';
           for (const axiom of selectedSolution.axioms) {
             if (axiom.trim() !== '' && !this.axioms.includes(axiom.trim())) {
@@ -122,8 +140,6 @@ export class ChatComponent {
           proofs: proofInputs.length ? proofInputs : undefined
         };
 
-        console.log('Gswb request: ', gswbRequest);
-
         this.dataService.gswbDeduce(gswbRequest).subscribe({
           next: gswbData => {
             if (!Array.isArray(gswbData.solutions) || gswbData.solutions.length === 0 || gswbData.solutions[0] === '') {
@@ -132,26 +148,24 @@ export class ChatComponent {
               return;
             }
 
-            console.log('Gswb output:', gswbData.solutions);
-            const useLfgxDrt = Number(this.gswbPreferences.gswbPreferences.outputstyle) === 5;
+            const useLfgxDrt = isLfgxdrtPreferences(this.gswbPreferences.gswbPreferences);
             const userSem = gswbData.solutions
               .map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution)
               .join('\n');
-             const pruneContext = this.contextPruning.nativeElement.checked;
-             const parsedCurrentSentence = data.solutions
-               .map((solution: any) => solution.structureJson)
-               .filter(Boolean);
-             if (useLfgxDrt && this.context.length === 0) {
-               this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
-                 gswbData.solutions, pruneContext, parsedCurrentSentence);
-               return;
-             }
-             if (useLfgxDrt
-               && this.context.length > 0 && this.semanticContext.length === this.context.length) {
-               this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
-                 gswbData.solutions, pruneContext, parsedCurrentSentence);
+            const pruneContext = this.contextPruning.nativeElement.checked;
+            const parsedCurrentSentence = data.solutions
+              .map((solution: any) => solution.structureJson)
+              .filter(Boolean);
+
+            // The document's semantic type is fixed once, at document creation -- a
+            // conversation cannot silently switch semantic type mid-thread, since
+            // sequencing (and this whole reasoning path) is lfgxdrt-only.
+            if (useLfgxDrt) {
+              this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
+                gswbData.solutions, pruneContext, parsedCurrentSentence);
               return;
             }
+
             const vampRequest: vampireRequest = {
               text: userMessage,
               context: this.context,
@@ -162,29 +176,22 @@ export class ChatComponent {
               vampire_preferences: this.vampirePreferences.vampirePreferences
             };
 
-            console.log('Vampire request: ', vampRequest);
-
             this.dataService.callVampire(vampRequest).subscribe({
               next: vampData => {
-                console.log('Vampire response: ', vampData);
                 this.clearSelected();
 
                 if (vampData.hasOwnProperty('context')) {
                   const newContext = vampData.context;
                   this.history.push(newContext);
-                  const wasEmpty = this.context.length === 0;
                   this.context = newContext;
-                  this.semanticContext = newContext.map(item =>
-                    wasEmpty && Number(this.gswbPreferences.gswbPreferences.outputstyle) === 5
-                      ? userSem
-                      : (item.semantic || item.prolog_drs || ''));
                   this.historyChange.emit(this.history);
                   this.changeDetector.detectChanges();
 
-                  let message = 'Okay ...';
                   let consistent: boolean | null = null;
                   let info: boolean | null = null;
                   let relevant: boolean | null = null;
+                  let glyphs: string[] = [];
+                  let tptp = '';
 
                   const mappings = Array.isArray(vampData.context_checks_mapping)
                     ? vampData.context_checks_mapping
@@ -195,14 +202,9 @@ export class ChatComponent {
                       .map(m => m?.glyph)
                       .filter((g): g is string => typeof g === 'string' && g.trim().length > 0);
 
-                    const majorityFalseOnTie = (vals: boolean[]) => {
-                      const trueCount = vals.reduce((acc, v) => acc + (v ? 1 : 0), 0);
-                      return trueCount > vals.length - trueCount;
-                    };
-
-                    info = majorityFalseOnTie(mappings.map(m => !!m?.informative));
-                    consistent = majorityFalseOnTie(mappings.map(m => !!m?.consistent));
-                    relevant = majorityFalseOnTie(mappings.map(m => !!m?.relevant));
+                    info = this.majorityVote(mappings.map(m => !!m?.informative));
+                    consistent = this.majorityVote(mappings.map(m => !!m?.consistent));
+                    relevant = this.majorityVote(mappings.map(m => !!m?.relevant));
                   }
 
                   if (Array.isArray(vampData.context) && vampData.context.length > 0) {
@@ -213,18 +215,7 @@ export class ChatComponent {
                     }
                   }
 
-                  if (consistent === null) {
-                    message = 'Okay ...';
-                  } else if (!consistent) {
-                    message = 'Your input does not make sense.';
-                  } else if (!info) {
-                    message = 'Your input is not informative.';
-                  } else if (relevant) {
-                    message = 'I may not fully understand your input. I assume it is informative and consistent';
-                  } else {
-                    message = 'Your input is informative and consistent.';
-                  }
-
+                  const message = this.verdictMessage(consistent, info, relevant);
                   const glyphGridSize = Math.max(1, Math.ceil(Math.sqrt(glyphs.length)));
                   const safeGlyphs = glyphs.map(g => this.sanitizer.bypassSecurityTrustHtml(g));
 
@@ -241,27 +232,39 @@ export class ChatComponent {
                 this.loading = false;
               },
               error: () => {
-                console.log('An error occurred during the call to Vampire');
                 this.chatHistory.push({ text: 'An error occurred during the inference process', sender: 'Bot' });
                 this.loading = false;
               }
             });
           },
-          error: error => {
-            console.log('ERROR: ', error);
+          error: () => {
             this.chatHistory.push({ text: 'An error occurred during the semantic analysis', sender: 'Bot' });
             this.loading = false;
           }
         });
       },
-      error: error => {
+      error: () => {
         this.chatHistory.push({ text: 'An unknown error occurred.', sender: 'Bot' });
-        console.log('ERROR: ', error);
         this.loading = false;
       }
     });
 
     this.userInput = ''; // Clear input
+  }
+
+  private verdictMessage(consistent: boolean | null, info: boolean | null, relevant: boolean | null): string {
+    if (consistent === null) return 'Okay ...';
+    if (!consistent) return 'Your input does not make sense.';
+    if (!info) return 'Your input is not informative.';
+    if (relevant) return 'I may not fully understand your input. I assume it is informative and consistent';
+    return 'Your input is informative and consistent.';
+  }
+
+  /** Strict-majority vote, ties resolve false. With a single value (the pruned,
+   *  reason-over-one-candidate case) this reduces to just that value. */
+  private majorityVote(values: boolean[]): boolean {
+    const trueCount = values.reduce((acc, v) => acc + (v ? 1 : 0), 0);
+    return trueCount > values.length - trueCount;
   }
 
   private prepareLfgxdrtSolutions(
@@ -285,21 +288,19 @@ export class ChatComponent {
     if (this.context.length === 0) {
       this.acceptInitialLfgxdrtContext(
         userMessage,
-        candidates.map(candidate => ({ ...candidate.solution, syntax: candidate.syntax })));
+        candidates.map(candidate => ({ ...candidate.solution, syntax: candidate.syntax })),
+        ligerSolutions);
       return;
     }
 
-    // For an update, keep the raw GSWB readings until they are paired with
-    // the stored context. Pronoun rules and PCDRS belong to the merged PxQ.
     this.finishLfgxdrtPreparation(
       userMessage,
       candidates.map(candidate => ({ ...candidate.solution, syntax: candidate.syntax })),
       pruneContext,
       ligerSolution.structureJson,
-      parsedCurrentSentence
+      parsedCurrentSentence,
+      ligerSolutions
     );
-    return;
-
   }
 
   private finishLfgxdrtPreparation(
@@ -307,7 +308,8 @@ export class ChatComponent {
     solutions: any[],
     pruneContext: boolean,
     syntax: any,
-    parsedCurrentSentence: any[] = []
+    parsedCurrentSentence: any[] = [],
+    ligerSolutions: any[] = []
   ): void {
     const semanticSolutions = solutions.filter(solution =>
       typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
@@ -316,66 +318,81 @@ export class ChatComponent {
       this.loading = false;
       return;
     }
-    if (this.context.length === 0) {
-      this.acceptInitialLfgxdrtContext(userMessage, semanticSolutions, syntax);
-      return;
-    }
 
     const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
     const bundles: any[] = [];
 
-    const contextIndices = this.activeIndices.length
+    let contextIndices = this.activeIndices.length
       ? this.activeIndices.filter(index => index >= 0 && index < this.context.length)
       : this.context.map((_, index) => index);
+    let candidateSolutions = semanticSolutions;
+
+    // Pruning = pick one solution and only reason over it. The reduction happens here,
+    // before any LiGER/GSWB/Vampire work is done, not after computing everything and
+    // discarding the rest -- picking "first" is provisional, refine later.
+    if (pruneContext) {
+      contextIndices = contextIndices.slice(0, 1);
+      candidateSolutions = candidateSolutions.slice(0, 1);
+    }
+
+    const newSentenceId = this.registerSentence(userMessage, candidateSolutions, ligerSolutions);
+
     contextIndices.forEach(contextIndex => {
-       const contextSyntax = this.context[contextIndex]?.syntax;
-       if (!contextSyntax) {
-         throw new Error('Accepted context syntax is required for sequence merging.');
-       }
-       semanticSolutions.forEach((solution, hypothesisIndex) => {
-         const premise = this.semanticContext[contextIndex];
-         const pairId = `pxq-${contextIndex + 1}-${solution.id || hypothesisIndex + 1}`;
-         const currentSyntax = solution.syntax ?? parsedCurrentSentence[0] ?? syntax;
-         if (!currentSyntax) {
-           throw new Error('Current sentence syntax is required for sequence merging.');
-         }
-          const sequence$ = this.dataService.ligerSequence({
-            sentences: [this.context[contextIndex].original, userMessage],
-            ruleString: this.ruleString,
-            logicType: typed ? 'tff' : 'fof',
-            parsedSentences: [[contextSyntax], [currentSyntax]]
-          });
-          bundles.push(sequence$.pipe(
-            switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
-              map(currentSolutions => ({
-                currentSolutions,
-                syntax: sequence?.solutions?.[0]?.structureJson ?? syntax
-              }))
-            )),
-            mergeMap(({ currentSolutions, syntax: mergedSyntax }) => from(currentSolutions).pipe(
-              switchMap(currentSolution => this.dataService.gswbMergeSequenceSemantics({
-                graphs: [this.semanticContextGraphs[contextIndex], currentSolution.graph],
-                semantics: [premise, currentSolution.semantic],
-                parentSolutionId: pairId,
-                solutionKey: currentSolution.solutionKey,
-                mcSetId: currentSolution.mcSetId
-              }).pipe(map(merged => ({ merged, currentSolution })))),
-              switchMap(({ merged, currentSolution }) => this.postProcessReasoningCheckAsts(
-                merged,
-                mergedSyntax,
-                this.semanticContextGraphs[contextIndex],
-                currentSolution.graph,
-                typed,
-                pairId
-              ).pipe(map(checks => ({
-                contextIndex,
-                pairId,
-                checks,
-                merged,
-                syntax: mergedSyntax
-              }))))
-            ))
-          ));
+      const premiseContext = this.context[contextIndex];
+      const contextSyntax = premiseContext?.syntax;
+      const priorElementId = premiseContext?.elementId;
+      if (!contextSyntax || !priorElementId) {
+        throw new Error('Accepted context syntax and document element id are required for sequence merging.');
+      }
+      candidateSolutions.forEach((solution, hypothesisIndex) => {
+        const pairId = `pxq-${contextIndex + 1}-${solution.id || hypothesisIndex + 1}`;
+        const currentSyntax = solution.syntax ?? parsedCurrentSentence[0] ?? syntax;
+        if (!currentSyntax) {
+          throw new Error('Current sentence syntax is required for sequence merging.');
+        }
+        const sequence$ = this.dataService.ligerSequence({
+          sentences: [premiseContext.original, userMessage],
+          ruleString: this.ruleString,
+          logicType: typed ? 'tff' : 'fof',
+          parsedSentences: [[contextSyntax], [currentSyntax]]
+        });
+        bundles.push(sequence$.pipe(
+          switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
+            map(currentSolutions => ({
+              currentSolutions,
+              syntax: sequence?.solutions?.[0]?.structureJson ?? syntax
+            }))
+          )),
+          mergeMap(({ currentSolutions, syntax: mergedSyntax }) => from(currentSolutions).pipe(
+            switchMap(currentSolution => this.dataService.gswbMergeSequenceSemantics({
+              parts: [
+                this.semanticPart(premiseContext.semanticAnalysis, premiseContext.semantic, priorElementId),
+                this.semanticPart(currentSolution.semanticAnalysis ?? solution.semanticAnalysis,
+                  currentSolution.semantic, newSentenceId)
+              ],
+              parentSolutionId: pairId,
+              solutionKey: currentSolution.solutionKey,
+              mcSetId: currentSolution.mcSetId
+            }).pipe(map(merged => ({ merged, currentSolution })))),
+            switchMap(({ merged, currentSolution }) => this.postProcessReasoningCheckAsts(
+              merged,
+              mergedSyntax,
+              premiseContext.semanticGraph,
+              currentSolution.graph,
+              typed,
+              pairId,
+              pruneContext
+            ).pipe(map(checks => ({
+              contextIndex,
+              priorElementId,
+              newSentenceId,
+              pairId,
+              checks,
+              merged,
+              syntax: mergedSyntax
+            }))))
+          ))
+        ));
       });
     });
 
@@ -384,6 +401,11 @@ export class ChatComponent {
         const expanded = prepared.flatMap((item: any) =>
           (item.checks ?? []).map((checks: any) => ({ ...item, checks }))
         );
+        if (!expanded.length) {
+          this.chatHistory.push({ text: 'No consistent continuation could be reasoned over.', sender: 'Bot' });
+          this.loading = false;
+          return;
+        }
         const request: vampireRequest = {
           text: userMessage,
           axioms: this.axioms,
@@ -409,6 +431,18 @@ export class ChatComponent {
         this.loading = false;
       }
     });
+  }
+
+  private semanticPart(semanticAnalysis: SemanticAnalysis | undefined, fallbackSemantic: string,
+                        sentenceId: string): GswbSemanticMergePart {
+    return {
+      id: semanticAnalysis?.semId,
+      sentenceId,
+      solutionId: semanticAnalysis?.semId,
+      syntacticOrigin: semanticAnalysis?.syntacticOrigin,
+      semantic: semanticAnalysis?.semString || fallbackSemantic || '',
+      graph: semanticAnalysis?.graph,
+    };
   }
 
   private calculateSequencePartSemantics(sequence: any): import('rxjs').Observable<any[]> {
@@ -449,8 +483,8 @@ export class ChatComponent {
     );
   }
 
-  private acceptInitialLfgxdrtContext(userMessage: string, solutions: any[], syntax: any = undefined): void {
-     const contexts = solutions
+  private acceptInitialLfgxdrtContext(userMessage: string, solutions: any[], ligerSolutions: any[] = []): void {
+    const contexts = solutions
       .map(solution => {
         const semantic = solution.semantic || solution.solution;
         return {
@@ -459,17 +493,25 @@ export class ChatComponent {
           prolog_fol: '',
           tptp: '',
           box: solution.solution || '',
-           semantic,
-           semanticGraph: solution.graph,
-           syntax: solution.syntax ?? syntax,
-           semanticAnalysis: solution.semanticAnalysis,
-           synSemMapping: solution.synSemMapping
+          semantic,
+          semanticGraph: solution.graph,
+          syntax: solution.syntax,
+          semanticAnalysis: solution.semanticAnalysis,
+          synSemMapping: solution.synSemMapping,
         } as context;
       })
       .filter(item => item.semantic?.trim());
+
+    if (!contexts.length) {
+      this.chatHistory.push({ text: 'No post-processed semantic analyses found.', sender: 'Bot' });
+      this.loading = false;
+      return;
+    }
+
+    const sentenceId = this.registerSentence(userMessage, solutions, ligerSolutions);
+    contexts.forEach(entry => entry.elementId = sentenceId);
+
     this.context = contexts;
-    this.semanticContext = contexts.map(item => item.semantic || '');
-     this.semanticContextGraphs = contexts.map(item => item.semanticGraph);
     this.history.push(contexts);
     this.historyChange.emit(this.history);
     this.clearSelected();
@@ -489,28 +531,21 @@ export class ChatComponent {
     pruneContext = false
   ): void {
     this.clearSelected();
-    const glyphs = (Object.values(vampData.context_checks_mapping ?? {}) as any[])
+    const mappings = Object.values(vampData.context_checks_mapping ?? {}) as any[];
+    const glyphs = mappings
       .map(item => item?.glyph)
       .filter((glyph): glyph is string => typeof glyph === 'string' && glyph.trim().length > 0);
-    const mappings = Object.values(vampData.context_checks_mapping ?? {}) as any[];
-    const majority = (values: boolean[]) => values.filter(Boolean).length > values.length / 2;
-    const consistent = mappings.length ? majority(mappings.map(item => !!item.consistent)) : null;
-    const informative = mappings.length ? majority(mappings.map(item => !!item.informative)) : null;
-    const relevant = mappings.length ? majority(mappings.map(item => !!item.relevant)) : null;
+    const consistent = mappings.length ? this.majorityVote(mappings.map(item => !!item.consistent)) : null;
+    const informative = mappings.length ? this.majorityVote(mappings.map(item => !!item.informative)) : null;
+    const relevant = mappings.length ? this.majorityVote(mappings.map(item => !!item.relevant)) : null;
     const newContext = prepared.length
       ? this.contextFromLfgxdrtChecks(prepared, mappings, userMessage, pruneContext)
       : (vampData.context ?? []);
     this.context = newContext;
-    this.semanticContext = newContext.map((item: context) => item.semantic || item.prolog_drs || '');
-    this.semanticContextGraphs = newContext.map((item: any) => item.semanticGraph);
     this.history.push(newContext);
     this.historyChange.emit(this.history);
     this.changeDetector.detectChanges();
-    let message = 'Okay ...';
-    if (consistent === false) message = 'Your input does not make sense.';
-    else if (informative === false) message = 'Your input is not informative.';
-    else if (relevant) message = 'I may not fully understand your input. I assume it is informative and consistent';
-    else if (consistent !== null) message = 'Your input is informative and consistent.';
+    const message = this.verdictMessage(consistent, informative, relevant);
     const safeGlyphs = glyphs.map(glyph => this.sanitizer.bypassSecurityTrustHtml(glyph));
     const tptp = newContext.map((item: context) => item.tptp).filter(Boolean).join('\n');
     const semantic = newContext.map((item: context) => item.semantic || item.prolog_drs).filter(Boolean).join('\n');
@@ -534,10 +569,23 @@ export class ChatComponent {
   ): context[] {
     const previous = this.context;
     const next: context[] = [];
+    interface DiscourseGroup {
+      semId: string;
+      structures: Record<string, LigerStructure>;
+      discourse: DiscourseAnalysis[];
+    }
+    const groups = new Map<string, DiscourseGroup>();
 
     prepared.forEach((item, index) => {
       const check = checks[index];
       if (!check?.consistent || !check?.informative || !item.merged?.semantic) return;
+
+      const priorElementId = item.priorElementId ?? previous[item.contextIndex]?.elementId;
+      if (!priorElementId || !item.newSentenceId) return;
+
+      const sequenceId = compositeAnalysisId([priorElementId, item.newSentenceId]);
+      const semId = item.merged.id || sequenceId;
+
       next.push({
         original: `${previous[item.contextIndex]?.original ?? ''} ${userMessage}`.trim(),
         prolog_drs: item.merged.semantic,
@@ -545,11 +593,51 @@ export class ChatComponent {
         tptp: item.checks?.contextTptp ?? '',
         box: item.merged.solution ?? '',
         semantic: item.merged.semantic,
-         semanticGraph: item.merged.graph,
-         syntax: item.syntax,
-         semanticAnalysis: item.merged.semanticAnalysis,
-         synSemMapping: item.merged.synSemMapping
+        semanticGraph: item.merged.graph,
+        syntax: item.syntax,
+        semanticAnalysis: item.merged.semanticAnalysis,
+        synSemMapping: item.merged.synSemMapping,
+        elementId: sequenceId,
       } as context);
+
+      if (!groups.has(sequenceId)) {
+        groups.set(sequenceId, { semId, structures: {}, discourse: [] });
+      }
+      const group = groups.get(sequenceId)!;
+
+      const structureId = item.checks?.mappingId ?? `${sequenceId}-pcdrs-${index}`;
+      if (item.checks?.mergedStructure) {
+        group.structures[structureId] = item.checks.mergedStructure;
+      }
+      const mapping = item.checks?.mapping;
+      group.discourse.push({
+        id: `${semId}-pcdrs-${structureId}`,
+        semanticOrigin: semId,
+        drsString: mapping?.semantic ?? item.merged.semantic,
+        drsGraph: mapping?.graph,
+        structureId,
+        anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
+        collapsed: true,
+      });
+    });
+
+    const bySequence = new Map<string, context[]>();
+    next.forEach(entry => {
+      const list = bySequence.get(entry.elementId!) ?? [];
+      list.push(entry);
+      bySequence.set(entry.elementId!, list);
+    });
+    bySequence.forEach((entries, sequenceId) => this.upsertSequenceFromContexts(sequenceId, entries));
+    groups.forEach((group, sequenceId) => {
+      if (!group.discourse.length) return;
+      this.upsertDiscourseUpdate({
+        id: `du-${sequenceId}`,
+        sourceElementId: sequenceId,
+        sourceElementKind: 'sequence',
+        structures: group.structures,
+        discourse: group.discourse,
+        semDiscourseMapping: { [group.semId]: group.discourse.map(entry => entry.id) },
+      });
     });
 
     return pruneContext ? next.slice(0, 1) : next;
@@ -561,7 +649,8 @@ export class ChatComponent {
     premiseAst: any,
     hypothesisAst: any,
     typed: boolean,
-    pairId: string
+    pairId: string,
+    pruneContext: boolean
   ): import('rxjs').Observable<any[]> {
     if (!syntax) {
       throw new Error('NLI checks require the sequence provenance structure.');
@@ -576,16 +665,23 @@ export class ChatComponent {
       switchMap(mergedStructures => forkJoin(mergedStructures.map((mergedStructure, index) =>
         this.dataService.gswbGeneratePcdrs({
           semantic: merged.semantic,
-           parentSolutionId: `${pairId}-rule-${index + 1}`,
+          parentSolutionId: `${pairId}-rule-${index + 1}`,
           mergedStructure: mergedStructure as any
-        })
+        }).pipe(map(result => ({ result, mergedStructure })))
       ))),
-      switchMap(pcdrs => {
-        const mappings = pcdrs.flatMap(result => result?.solutions ?? []);
-        if (!mappings.length) {
+      switchMap(pcdrsResults => {
+        let mappingsWithStructure = pcdrsResults.flatMap(({ result, mergedStructure }) =>
+          (result?.solutions ?? []).map(mapping => ({ mapping, mergedStructure }))
+        );
+        if (!mappingsWithStructure.length) {
           throw new Error('No post-processed sequence interpretations were generated.');
         }
-        return forkJoin(mappings.map(mapping => {
+        // Pruning picks the first candidate and reasons over it alone -- the reduction
+        // happens here, before the expensive collapse/TPTP/Vampire steps below.
+        if (pruneContext) {
+          mappingsWithStructure = mappingsWithStructure.slice(0, 1);
+        }
+        return forkJoin(mappingsWithStructure.map(({ mapping, mergedStructure }) => {
           const mappingSuffix = mapping.anaphoraMapping ? `,${mapping.anaphoraMapping}` : '';
           const reasoningChecks = this.dataService.gswbReasoningCheckAsts({
             premiseAsts: [premiseAst],
@@ -627,12 +723,14 @@ export class ChatComponent {
             )
           }).pipe(
             map(result => {
-               const valid = result.checks.filter((item): item is { name: string; tptp: string } => !!item?.tptp);
-               if (valid.length !== 4) return null;
-               return {
-                 pairId,
-                 mappingId: mapping.id,
-                 checks: Object.fromEntries(valid.map(item => [item.name, { tptp: item.tptp }])),
+              const valid = result.checks.filter((item): item is { name: string; tptp: string } => !!item?.tptp);
+              if (valid.length !== 4) return null;
+              return {
+                pairId,
+                mappingId: mapping.id,
+                mapping,
+                mergedStructure,
+                checks: Object.fromEntries(valid.map(item => [item.name, { tptp: item.tptp }])),
                 contextTptp: result.contextTptp
               };
             })
@@ -659,18 +757,108 @@ export class ChatComponent {
     );
   }
 
+  /** Registers the just-parsed message as a new Sentence in the chat's document (box Q's
+   *  source), independent of whether any downstream NLI check accepts it -- a Sentence
+   *  exists as soon as it's parsed, regardless of the eventual reasoning verdict. */
+  private registerSentence(userMessage: string, solutions: any[], ligerSolutions: any[]): string {
+    const id = `sentence-${this.chatDocument.sentences.length + 1}`;
+    const syntaxByKey = new Map<string, SyntacticAnalysis>();
+    const semantics: SemanticAnalysis[] = [];
+    const synSemMapping: Record<string, string[]> = {};
+
+    solutions.forEach(solution => {
+      const synId = solution.solutionKey || solution.proofId || `${id}-syn`;
+      if (!syntaxByKey.has(synId)) {
+        const ligerMatch = ligerSolutions.find(item => item.solutionKey === synId);
+        syntaxByKey.set(synId, {
+          synId,
+          structure: solution.syntax ?? ligerMatch?.structureJson,
+          graph: ligerMatch?.graph ?? solution.syntax,
+          meaningConstructors: ligerMatch?.meaningConstructors,
+        });
+      }
+      const semanticAnalysis: SemanticAnalysis = solution.semanticAnalysis ?? {
+        syntacticOrigin: synId,
+        semId: solution.id || `${id}-sem`,
+        semString: solution.semantic || solution.solution || '',
+        graph: solution.graph,
+        semType: 'lfgxdrt',
+      };
+      semantics.push(semanticAnalysis);
+      synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semanticAnalysis.semId]));
+    });
+
+    this.chatDocument.sentences = [...this.chatDocument.sentences, {
+      id,
+      text: userMessage,
+      syntax: Array.from(syntaxByKey.values()),
+      semantics,
+      synSemMapping,
+    }];
+    this.chatDocument.elements = [...this.chatDocument.elements, { kind: 'sentence', id }];
+    this.emitChatDocument();
+    return id;
+  }
+
+  private upsertSequenceFromContexts(sequenceId: string, entries: context[]): void {
+    const representative = entries[0];
+    const sentenceIds = sequenceId.split('+');
+    const syntax: SyntacticAnalysis[] = representative.syntax
+      ? [{
+          synId: representative.semanticAnalysis?.syntacticOrigin ?? `${sequenceId}-syn`,
+          structure: representative.syntax,
+          graph: representative.syntax,
+        } as unknown as SyntacticAnalysis]
+      : [];
+    const semantics: SemanticAnalysis[] = representative.semanticAnalysis ? [representative.semanticAnalysis] : [];
+    const synSemMapping: Record<string, string[]> = {};
+    if (syntax[0] && semantics[0]) {
+      synSemMapping[syntax[0].synId] = [semantics[0].semId];
+    }
+
+    const sequence: SequenceAnalysis = {
+      id: sequenceId,
+      text: representative.original,
+      sentenceIds,
+      syntax,
+      semantics,
+      synSemMapping,
+    };
+
+    const index = this.chatDocument.sequences.findIndex(seq => seq.id === sequenceId);
+    this.chatDocument.sequences = index === -1
+      ? [...this.chatDocument.sequences, sequence]
+      : this.chatDocument.sequences.map((seq, i) => i === index ? sequence : seq);
+    if (!this.chatDocument.elements.some(ref => ref.id === sequenceId)) {
+      this.chatDocument.elements = [...this.chatDocument.elements, { kind: 'sequence', id: sequenceId }];
+    }
+    this.emitChatDocument();
+  }
+
+  private upsertDiscourseUpdate(update: DiscourseUpdate): void {
+    this.chatDocument.discourseUpdates = [
+      ...(this.chatDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
+      update,
+    ];
+    this.emitChatDocument();
+  }
+
+  private emitChatDocument(): void {
+    try {
+      validateAnalysisDocument(this.chatDocument);
+    } catch (error) {
+      console.warn('[Chat] document invariant failed before persistence', error);
+    }
+    this.chatDocumentChange.emit(this.chatDocument);
+  }
 
   clearSelected(): void {
     this.clearSelection.emit();
-    console.log('Selection cleared in chat component');
   }
-
-
 
   updateAxioms(value: string): void {
     this.axioms = value;
     this.axiomsChanged.emit(this.axioms);
-    console.log('Axioms updated in chat component:', this.axioms);
   }
 
 }
