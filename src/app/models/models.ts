@@ -66,8 +66,61 @@ export interface XlePlusGlueDocument {
   semanticType: string;
   sentences: SentenceAnalysis[];
   elements: XlePlusGlueElement[];
+  discourseUpdates?: DiscourseUpdate[];
   activeElementId?: string;
   revision?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Discourse layer (anaphora resolution over a merged Sentence/Sequence). Stacks on the
+// core Sentence/Sequence model the same way SequenceAnalysis stacks on SentenceAnalysis --
+// as a parallel, id-referenced structure, not new fields on SentenceAnalysis/SequenceAnalysis
+// themselves. Mirrors LFGxDRT's own AnaphoraMapping/AnaphoraRelation shape (see
+// LFGxDRT/src/main/java/de/ukon/lfgxdrt/drs_elements/AnaphoraRelation.java) rather than the
+// opaque mapping.toString() GSWB previously put on GswbSolution.anaphoraMapping.
+
+export interface AnaphoraRelation {
+  pronounReferentId: string;   // DiscourseReferent.id/name of the pronoun, from LFGxDRT
+  pronounDisplay?: string;     // rendered display form, e.g. "x2" -- for UI, not identity
+  antecedent: string;          // antecedent referent label (AnaphoraRelation.antecedent)
+  stateLabel?: string;         // DRS sub-state scope, if any (AnaphoraRelation.stateLabel)
+}
+
+export interface AnaphoraMappingModel {
+  relations: AnaphoraRelation[];
+}
+
+export interface DiscourseAnalysis {
+  id: string;                        // discourseId, e.g. `${semId}-pcdrs-${n}` (reuse GSWB's existing id scheme)
+  semanticOrigin: string;            // the SemanticAnalysis.semId this branch enriches
+  drsString: string;                 // enriched DRS text
+  drsGraph?: LigerStructure;         // enriched DRS graph (semantic side; carries the ANT edges + SRC provenance)
+  structureId: string;               // key into DiscourseUpdate.structures -- see note there. NOT the
+                                      // same thing as drsGraph: this is the LinguisticStructure side,
+                                      // needed for further LiGER querying/rule application
+                                      // (QueryParser/RuleParser).
+  svg?: string;
+  anaphoraMapping: AnaphoraMappingModel;  // structured, mirrors LFGxDRT's AnaphoraMapping
+  collapsed: boolean;                // true once /collapse_anaphora has resolved this branch
+}
+
+export type SemDiscourseMapping = Record<string, string[]>;  // semId -> discourseId[], mirrors SynSemMapping
+
+export interface DiscourseUpdate {
+  id: string;                        // `du-${sourceElementId}`
+  sourceElementId: string;           // Sentence.id or Sequence.id (XlePlusGlueElement.id) -- not a duplicated copy
+  sourceElementKind: 'sentence' | 'sequence';
+  ruleString?: string;               // the pronoun-binding rule text applied, for reproducibility
+  // Deduplicated LinguisticStructures, keyed by structureId. A single semantic origin can fan out
+  // into several rule-annotation variants, and each variant can fan out into several PCDRS/anaphora
+  // candidates that all share the SAME LinguisticStructure -- storing structures here once and
+  // having DiscourseAnalysis.structureId reference them avoids duplicating multi-KB structures per
+  // candidate when persisted.
+  structures: Record<string, LigerStructure>;
+  mergedGraphs?: Record<string, LigerWebGraph>;  // keyed the same way as `structures` -- rendering companion
+  discourse: DiscourseAnalysis[];    // candidate branches, referencing `structures`/`mergedGraphs` by structureId
+  semDiscourseMapping: SemDiscourseMapping;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -266,6 +319,7 @@ export interface GswbSolution {
   graph?: LigerStructure;
   semantic?: string;
   anaphoraMapping?: string;
+  anaphoraRelations?: AnaphoraRelation[];
   proofId?: string;
   solutionKey?: string;
   mcSetId?: string;

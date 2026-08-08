@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -230,6 +230,23 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     return Array.from(merged.values());
   }
 
+  private discourseUpdateFor(sourceElementId: string): DiscourseUpdate | undefined {
+    return this.analysisDocument.discourseUpdates?.find(update => update.sourceElementId === sourceElementId);
+  }
+
+  private discourseUpdateContaining(discourseId: string): DiscourseUpdate | undefined {
+    return this.analysisDocument.discourseUpdates?.find(update =>
+      update.discourse.some(discourse => discourse.id === discourseId));
+  }
+
+  private upsertDiscourseUpdate(update: DiscourseUpdate): void {
+    this.analysisDocument.discourseUpdates = [
+      ...(this.analysisDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
+      update,
+    ];
+    this.persistAnalysisDocument();
+  }
+
   private persistAnalysisDocument(): void {
     try {
       validateAnalysisDocument(this.analysisDocument);
@@ -307,6 +324,35 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         ruleAnnotations: [],
         rulesApplied: false,
       }));
+
+      const sourceElement = semanticSolutions
+        .map(solution => solution.sequenceAnalysis ?? solution.sentenceAnalysis)
+        .find((analysis): analysis is SentenceAnalysis | SequenceAnalysis => !!analysis);
+      if (sourceElement) {
+        const existingUpdate = this.discourseUpdateFor(sourceElement.id);
+        const structures = { ...(existingUpdate?.structures ?? {}) };
+        const mergedGraphs = { ...(existingUpdate?.mergedGraphs ?? {}) };
+        responses.forEach((response, index) => {
+          const semanticSolutionId = semanticSolutions[index].id;
+          if (response?.structureJson) {
+            structures[semanticSolutionId] = response.structureJson as unknown as LigerStructure;
+          }
+          if (response?.graph) {
+            mergedGraphs[semanticSolutionId] = response.graph;
+          }
+        });
+        this.upsertDiscourseUpdate({
+          id: `du-${sourceElement.id}`,
+          sourceElementId: sourceElement.id,
+          sourceElementKind: 'sentences' in sourceElement ? 'sequence' : 'sentence',
+          ruleString: existingUpdate?.ruleString,
+          structures,
+          mergedGraphs,
+          discourse: existingUpdate?.discourse ?? [],
+          semDiscourseMapping: existingUpdate?.semDiscourseMapping ?? {},
+        });
+      }
+
       this.selectedPostProcessingIndex = 0;
       this.postProcessingResultsReady = true;
       this.postProcessingLoading = false;
@@ -449,6 +495,37 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           target.annotatedGraphElements = firstAnnotation.graph.graphElements;
         }
       });
+
+      const sourceElement = this.postProcessingResults
+        .map(result => result.semanticSolution.sequenceAnalysis ?? result.semanticSolution.sentenceAnalysis)
+        .find((analysis): analysis is SentenceAnalysis | SequenceAnalysis => !!analysis);
+      if (sourceElement) {
+        const existingUpdate = this.discourseUpdateFor(sourceElement.id);
+        const structures = { ...(existingUpdate?.structures ?? {}) };
+        const mergedGraphs = { ...(existingUpdate?.mergedGraphs ?? {}) };
+        this.postProcessingResults.forEach(result => {
+          const semanticSolutionId = result.semanticSolution.id;
+          result.ruleAnnotations.forEach((annotation, annotationIndex) => {
+            if (annotation?.structureJson) {
+              structures[`${semanticSolutionId}-rule-${annotationIndex}`] = annotation.structureJson;
+            }
+            if (annotation?.graph) {
+              mergedGraphs[`${semanticSolutionId}-rule-${annotationIndex}`] = annotation.graph;
+            }
+          });
+        });
+        this.upsertDiscourseUpdate({
+          id: `du-${sourceElement.id}`,
+          sourceElementId: sourceElement.id,
+          sourceElementKind: 'sentences' in sourceElement ? 'sequence' : 'sentence',
+          ruleString,
+          structures,
+          mergedGraphs,
+          discourse: existingUpdate?.discourse ?? [],
+          semDiscourseMapping: existingUpdate?.semDiscourseMapping ?? {},
+        });
+      }
+
       console.info('[Analysis] post-processing rules completed', {
         resultCount: responses.length,
         annotationCounts: responses.map(result => result?.annotations?.length ?? 0),
@@ -532,6 +609,54 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.pcdrsSolutions = responses.flatMap(response => response?.solutions ?? []);
       this.collapsedPcdrsById = {};
       this.showCollapsedAnaphora = false;
+
+      const sourceElement = candidates
+        .map(candidate => candidate.result.semanticSolution.sequenceAnalysis ?? candidate.result.semanticSolution.sentenceAnalysis)
+        .find((analysis): analysis is SentenceAnalysis | SequenceAnalysis => !!analysis);
+      if (sourceElement) {
+        const existingUpdate = this.discourseUpdateFor(sourceElement.id);
+        const structures = { ...(existingUpdate?.structures ?? {}) };
+        const semDiscourseMapping: SemDiscourseMapping = {};
+        const discourse: DiscourseAnalysis[] = [];
+        candidates.forEach((candidate, candidateIndex) => {
+          const semanticSolutionId = candidate.result.semanticSolution.id;
+          // Rule-applied candidates were already stored by onRulesApplied under this key;
+          // the no-rules fallback candidate reuses the base merged structure from handlePostProcessing.
+          const structureId = candidate.result.rulesApplied
+            ? `${semanticSolutionId}-rule-${candidate.annotationIndex}`
+            : semanticSolutionId;
+          if (!structures[structureId] && candidate.annotation.structureJson) {
+            structures[structureId] = candidate.annotation.structureJson;
+          }
+          (responses[candidateIndex]?.solutions ?? []).forEach(solution => {
+            discourse.push({
+              id: solution.id,
+              semanticOrigin: semanticSolutionId,
+              drsString: solution.semantic ?? solution.solution,
+              drsGraph: solution.graph,
+              structureId,
+              svg: solution.solution,
+              anaphoraMapping: { relations: solution.anaphoraRelations ?? [] },
+              collapsed: false,
+            });
+            semDiscourseMapping[semanticSolutionId] = [
+              ...(semDiscourseMapping[semanticSolutionId] ?? []),
+              solution.id,
+            ];
+          });
+        });
+        this.upsertDiscourseUpdate({
+          id: `du-${sourceElement.id}`,
+          sourceElementId: sourceElement.id,
+          sourceElementKind: 'sentences' in sourceElement ? 'sequence' : 'sentence',
+          ruleString: existingUpdate?.ruleString,
+          structures,
+          mergedGraphs: existingUpdate?.mergedGraphs ?? {},
+          discourse,
+          semDiscourseMapping,
+        });
+      }
+
       this.refreshPcdrsDisplay();
       this.focusPcdrsResults();
     }, () => {
@@ -580,6 +705,28 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           this.collapsedPcdrsById[candidates[index].id] = response;
         }
       });
+
+      const updatesById = new Map<string, DiscourseUpdate>();
+      responses.forEach((response, index) => {
+        if (!response) return;
+        const discourseId = candidates[index].id;
+        const update = updatesById.get(this.discourseUpdateContaining(discourseId)?.id ?? '')
+          ?? this.discourseUpdateContaining(discourseId);
+        if (!update) return;
+        const discourse = update.discourse.map(entry => entry.id === discourseId
+          ? {
+              ...entry,
+              drsString: response.semantic ?? entry.drsString,
+              drsGraph: response.graph ?? entry.drsGraph,
+              svg: response.solution ?? entry.svg,
+              anaphoraMapping: { relations: response.anaphoraRelations ?? entry.anaphoraMapping.relations },
+              collapsed: true,
+            }
+          : entry);
+        updatesById.set(update.id, { ...update, discourse });
+      });
+      updatesById.forEach(update => this.upsertDiscourseUpdate(update));
+
       if (responses.length) {
         this.showCollapsedAnaphora = true;
       }

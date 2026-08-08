@@ -1,4 +1,5 @@
 import {
+  DiscourseUpdate,
   SemanticAnalysis,
   SentenceAnalysis,
   SequenceAnalysis,
@@ -64,6 +65,37 @@ export function validateAnalysisDocument(document: XlePlusGlueDocument): void {
     } else {
       validateSentenceAnalysis(element);
     }
+  });
+  (document.discourseUpdates ?? []).forEach(update => validateDiscourseUpdate(document, update));
+}
+
+/** The discourse layer stacks on Sentence/Sequence by id reference rather than
+ *  embedding into it, so validation here checks the reference resolves and that
+ *  semDiscourseMapping stays internally consistent -- it does not touch synSemMapping. */
+export function validateDiscourseUpdate(document: XlePlusGlueDocument, update: DiscourseUpdate): void {
+  const element = document.elements.find(candidate => candidate.id === update.sourceElementId);
+  if (!element) {
+    throw new Error(`Discourse update ${update.id} references unknown element ${update.sourceElementId}.`);
+  }
+
+  const semanticIds = new Set(element.semantics.map(semantic => semantic.semId));
+  const discourseIds = new Set(update.discourse.map(discourse => discourse.id));
+
+  update.discourse.forEach(discourse => {
+    if (!semanticIds.has(discourse.semanticOrigin)) {
+      throw new Error(`Discourse analysis ${discourse.id} has unknown semantic origin ${discourse.semanticOrigin}.`);
+    }
+  });
+
+  Object.entries(update.semDiscourseMapping).forEach(([semId, mappedDiscourseIds]) => {
+    if (!semanticIds.has(semId)) {
+      throw new Error(`Discourse mapping references unknown semantic ${semId}.`);
+    }
+    mappedDiscourseIds.forEach(discourseId => {
+      if (!discourseIds.has(discourseId)) {
+        throw new Error(`Discourse mapping references unknown discourse analysis ${discourseId}.`);
+      }
+    });
   });
 }
 
