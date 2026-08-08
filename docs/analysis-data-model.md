@@ -180,8 +180,9 @@ Element 1 + Element 2
 Both services receive the same ordered parent identities. LiGER produces the
 merged syntactic analysis, while GSWB produces the merged semantic analysis
 and its syntax-semantic mapping. The frontend coordinator combines those
-results into one new `Sequence` object and stores that object as the next
-document element. Neither service result alone is the complete sequence.
+results into one new `Sequence` object, registers it in `SEQUENCES`, and
+appends an `ElementRef` for it to `ELEMENTS` (see below). Neither service
+result alone is the complete sequence.
 
 ### Sentence
 
@@ -249,6 +250,35 @@ The sequence mapping has the same shape as the sentence mapping, but its
 keys and values encode the parent analyses used to construct the merged
 analysis.
 
+### ElementRef
+
+```text
+ElementRef
+  KIND: "sentence" | "sequence"
+  ID: String
+```
+
+An `ElementRef` is one `ELEMENTS` entry: a thin, ordered pointer into
+`SENTENCES` (when `KIND` is `"sentence"`) or `SEQUENCES` (when `KIND` is
+`"sequence"`), carrying no other data of its own. Resolve it with
+`resolveElement(document, ref)`, or `findElementById(document, id)` when only
+an id is available -- e.g. `DiscourseUpdate` stores `SOURCE_ELEMENT_ID` and
+`SOURCE_ELEMENT_KIND` as separate top-level fields rather than a nested
+`ElementRef`, so `findElementById` (which tries both registries by id alone)
+is the natural lookup there. Both helpers live in `analysis-model.ts`. See
+"Document Lifecycle" above for why `ELEMENTS` holds refs rather than
+embedded `Sentence`/`Sequence` objects.
+
+`SENTENCES` and `SEQUENCES` are not updated the same way. A `Sentence`
+already in `SENTENCES` is updated incrementally: its `SYNTAX`/`SEMANTICS`
+arrays are merged by id with newly-arrived entries, so alternatives computed
+on an earlier pass are preserved. A `Sequence` already in `SEQUENCES` is
+replaced wholesale, because a sequence merge always recomputes the full
+merged object from its parents' *current* state rather than incrementally
+extending a prior sequence result. Either way, an `ElementRef` is appended to
+`ELEMENTS` only the first time an id is seen; a later update to an existing
+`Sentence`/`Sequence` never moves or duplicates its ref.
+
 ## Composite IDs and Provenance
 
 Parentage is encoded in canonical composite IDs. For example:
@@ -303,6 +333,11 @@ text
 Sentence-level pragmatic alternatives are not merged into
 `SYNSEM_MAPPING`. They are derived later from a completed sentence or
 sequence structure.
+
+Once a sentence's syntax/semantics are available, it is upserted into
+`SENTENCES` by `ID` (merging into an existing entry if one already exists,
+per "ElementRef" above) and, the first time that `ID` is seen, an
+`ElementRef` is appended to `ELEMENTS`.
 
 ## Sequence Merge Workflow
 
