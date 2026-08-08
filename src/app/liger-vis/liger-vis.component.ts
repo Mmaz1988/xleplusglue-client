@@ -112,6 +112,19 @@ export class LigerVisComponent implements AfterViewInit {
 
     const sentences = [...this.sequenceSentences, sentence];
     const sentenceIds = [...this.sequenceSentenceIds, `sentence-${sentences.length}`];
+    const newSentenceIndex = sentences.length - 1;
+    // Reuse the already-accepted sentences' parsed structures so only the new
+    // sentence is re-parsed/rule-applied, while LiGER's sequence assembler
+    // still computes the SYN-ID offset the new sentence needs to occupy once
+    // merged into the sequence -- this is what keeps SRC ids in the new
+    // sentence's meaning constructors consistent with the merged syntactic
+    // tree's SYN-IDs (see plan.md "LiGER SYN-ID assignment" / "the minimal
+    // required change is to offset the second structure's SYN-ID values by
+    // the maximum SYN-ID in the first structure").
+    const parsedSentences = this.parsedSentenceStructures.length === this.sequenceSentences.length
+      && this.parsedSentenceStructures.every(structures => structures.length > 0)
+      ? this.parsedSentenceStructures
+      : undefined;
     this.loading = true;
     this.errorhandle.nativeElement.innerHTML = "";
 
@@ -121,10 +134,10 @@ export class LigerVisComponent implements AfterViewInit {
       sequenceLength: sentences.length,
       reparsingSentences: sentences,
       hasRuleString: !!ruleString?.trim(),
-      analyzingNewSentenceOnly: true,
+      reusingParsedSentences: !!parsedSentences,
     });
 
-    this.dataService.ligerAnnotate({ sentence, ruleString }).subscribe(
+    this.dataService.ligerSequence({ sentences, sentenceIds, ruleString, parsedSentences }).subscribe(
       data => {
         this.loading = false;
         const solutions = Array.isArray(data.solutions) ? data.solutions : [];
@@ -154,6 +167,7 @@ export class LigerVisComponent implements AfterViewInit {
         }
 
         this.solutions = solutions;
+        this.cacheParsedSentenceStructures(this.solutions);
         this.selectedSolutionIndex = 0;
         if (this.solutions.length > 0) {
           this.sequenceSentences = sentences;
@@ -165,6 +179,16 @@ export class LigerVisComponent implements AfterViewInit {
             selectedStructureAnnotations: this.solutions[0].structureJson?.annotations?.length ?? 0,
           });
           this.renderSelectedSolution(0);
+          // renderSelectedSolution() emits proof inputs built from the whole
+          // merged sequence's meaning constructors (correct for the initial
+          // parse, where the "sequence" is just sentence 1). For an appended
+          // sentence we still want to prove the new sentence's semantics on
+          // its own -- so re-emit proof inputs scoped to just this sentence's
+          // part, using its already source-index-shifted meaning constructors
+          // paired with the full (SRC-consistent) merged structure.
+          const solutionsForProof = this.useAllResults ? this.solutions : [this.solutions[0]];
+          const proofInputs = this.proofInputsForSequencePart(solutionsForProof, newSentenceIndex);
+          this.proofInputChange.emit(proofInputs);
           this.displayMessage(`Sentence appended... ${this.solutions.length} sequence variant(s) found`, "green");
         } else {
           this.displayMessage("No sequence parse was found...", "red");
@@ -360,6 +384,32 @@ export class LigerVisComponent implements AfterViewInit {
          sentenceAnalysis: solution.sentenceAnalysis,
          sequenceAnalysis: solution.sequenceAnalysis,
        }))
+      .filter(input => input.meaningConstructors.trim().length > 0);
+  }
+
+  /**
+   * Proof inputs for one sentence's own part within a merged sequence
+   * response, keyed by sequenceParts[sentenceIndex] rather than the
+   * solution's whole-sequence meaningConstructors. sequenceParts entries are
+   * already shifted into the sequence-global SYN-ID range by LiGER's
+   * SequenceGraphAssembler, so SRC ids in the returned meaning constructors
+   * line up with the SYN-IDs of the same sentence's nodes in structureJson
+   * (the full merged structure).
+   */
+  private proofInputsForSequencePart(solutions: LigerSolutionAnnotation[], sentenceIndex: number): GswbProofInput[] {
+    return solutions
+      .map((solution, index) => {
+        const part = solution.sequenceParts?.find(candidate => candidate.sourceIndex === sentenceIndex);
+        return {
+          proofId: part?.solutionKey || solution.solutionKey || `solution-${index}`,
+          solutionKey: solution.solutionKey,
+          mcSetId: part?.solutionKey || solution.solutionKey || `solution-${index}`,
+          meaningConstructors: part?.meaningConstructors ?? '',
+          structure: solution.structureJson,
+          sentenceAnalysis: solution.sequenceAnalysis?.sentences?.[sentenceIndex],
+          sequenceAnalysis: solution.sequenceAnalysis,
+        };
+      })
       .filter(input => input.meaningConstructors.trim().length > 0);
   }
 
