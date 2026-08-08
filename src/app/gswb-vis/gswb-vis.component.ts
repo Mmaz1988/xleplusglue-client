@@ -457,16 +457,16 @@ export class GswbVisComponent implements AfterViewInit {
   }
 
   private updateSentenceAnalyses(solutions: GswbSolution[]): void {
-    const sentenceByKey = new Map(
-      this.proofInputs
-        .filter(input => !!input.sequenceAnalysis?.sentences?.[0])
-        .map(input => [input.solutionKey, input.sequenceAnalysis?.sentences[0]] as const)
-    );
+    // Prefer proofInput.sentenceAnalysis (set for every LiGER solution, including the
+    // single-sentence /apply_rules_xle path addSentence() uses) over
+    // proofInput.sequenceAnalysis.sentences[0] (only set by /apply_rules_xle_sequence,
+    // i.e. the first sentence's analyzeSentence() call). Mirrors sentenceAnalysisFor()'s
+    // priority so both stay in sync.
+    const fallbackInput = this.proofInputs.find(input => !!input.sentenceAnalysis || !!input.sequenceAnalysis?.sentences?.[0]);
+    const fallbackTemplate = fallbackInput?.sentenceAnalysis ?? fallbackInput?.sequenceAnalysis?.sentences?.[0];
     const analyses = solutions
       .map(solution => {
-        const template = sentenceByKey.get(solution.solutionKey)
-          ?? this.proofInputs.find(input => !!input.sequenceAnalysis?.sentences?.[0])
-            ?.sequenceAnalysis?.sentences[0];
+        const template = this.sentenceAnalysisFor(solution) ?? fallbackTemplate;
         if (!template) return null;
         const semantic = this.semanticAnalysisFor(solution);
         const syntacticOrigin = template.syntax.find(syntax => syntax.synId === semantic.syntacticOrigin)?.synId
