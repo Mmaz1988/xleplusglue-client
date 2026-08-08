@@ -262,6 +262,35 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.saveNextAnalysisDocument();
   }
 
+  /**
+   * Dumps the current XlePlusGlueDocument (sentences, elements,
+   * discourseUpdates) as a downloaded JSON file, alongside its current
+   * validateAnalysisDocument() status -- for inspecting how the data model
+   * evolves at each analysis step, independent of the Redis persistence path.
+   */
+  downloadDataModelSnapshot(): void {
+    let validationError: string | null = null;
+    try {
+      validateAnalysisDocument(this.analysisDocument);
+    } catch (error) {
+      validationError = error instanceof Error ? error.message : String(error);
+    }
+    const snapshot = {
+      capturedAt: new Date().toISOString(),
+      sessionKey: this.analysisDocumentSessionKey,
+      valid: validationError === null,
+      validationError,
+      document: this.analysisDocument,
+    };
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `analysis-document-${Date.now()}.json`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+  }
+
   private saveNextAnalysisDocument(): void {
     if (!this.pendingDocumentSave) return;
     const document = this.pendingDocumentSave;

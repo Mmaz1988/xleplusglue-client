@@ -100,3 +100,16 @@
       (solutionToggle)="toggleCollapsedAnaphora()"></app-sem-vis>
   </div>
 </section>
+
+<div class="data-model-sidebar">
+  <div class="data-model-sidebar-handle">Data model</div>
+  <div class="data-model-sidebar-panel">
+    <h3>Data model snapshot</h3>
+    <p class="data-model-sidebar-hint">
+      Downloads the current XlePlusGlueDocument (sentences, elements, discourseUpdates)
+      as JSON, with its validateAnalysisDocument() status, so you can inspect how the
+      data model evolves at each analysis step.
+    </p>
+    <button type="button" (click)="downloadDataModelSnapshot()">Download JSON snapshot</button>
+  </div>
+</div>
