@@ -1,4 +1,5 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { context } from "../../models/models";
 
 @Component({
@@ -12,7 +13,11 @@ export class HistoryComponent {
 
   selectedIndices: number[] = []; // Stores selected box indices
 
-  constructor() {}
+  constructor(private sanitizer: DomSanitizer) {}
+
+  safeBox(box: string): SafeHtml {
+    return this.sanitizer.bypassSecurityTrustHtml(box || '');
+  }
 
   addHistoryEntry(entry: context[]): void {
     this.history.push(entry);

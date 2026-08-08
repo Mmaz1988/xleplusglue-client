@@ -4,6 +4,7 @@ import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.compon
 import { ActivatedRoute } from '@angular/router';
 import {
   LigerRuleAnnotation,
+  LigerStructure,
   GswbMultipleRequest,
   GswbBatchOutput,
   GswbOutput,
@@ -22,7 +23,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, forkJoin, finalize, timeout, map } from "rxjs";
+import { catchError, EMPTY, Observable, forkJoin, finalize, timeout, map, of, switchMap } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -1455,12 +1456,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
       const premise_strings: string[] = [];
       const premise_groups: string[][] = [];
+      const premise_ast_groups: LigerStructure[][] = [];
       for (let premise of item.premises) {
         if (gswbOutputs[premise] && gswbOutputs[premise].solutions.length > 0) {
           const sols = this.getSolutionsText(premise, gswbOutputs, useDisambiguated);
           if (sols.length > 0) {
             premise_strings.push(sols.join('\n'));
             premise_groups.push(sols);
+            premise_ast_groups.push(this.selectedSolutionGraphs(premise, gswbOutputs, useDisambiguated));
           }
 
           const liger_data = annotations[premise];
@@ -1480,12 +1483,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
       const conclusion_strings: string[] = [];
       const hypothesis_groups: string[][] = [];
+      const hypothesis_ast_groups: LigerStructure[][] = [];
       for (let conclusion of item.conclusion) {
         if (gswbOutputs[conclusion] && gswbOutputs[conclusion].solutions.length > 0) {
           const sols = this.getSolutionsText(conclusion, gswbOutputs, useDisambiguated);
           if (sols.length > 0) {
             conclusion_strings.push(sols.join('\n'));
             hypothesis_groups.push(sols);
+            hypothesis_ast_groups.push(this.selectedSolutionGraphs(conclusion, gswbOutputs, useDisambiguated));
           }
 
           const liger_data = annotations[conclusion];
@@ -1509,7 +1514,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           hypothesis: conclusion_strings,
           axioms: axioms,
           premise_groups,
-          hypothesis_groups
+          hypothesis_groups,
+          premise_ast_groups,
+          hypothesis_ast_groups,
+          premise_sentence_ids: item.premises,
+          hypothesis_sentence_ids: item.conclusion
         };
         if (previousVampireResults[item.id] && previousVampireResults[item.id].length > 0) {
           this.vampireReprocessingItemCount++;
@@ -1525,19 +1534,69 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
+    if (Number(this.session.gswbPreferences.outputstyle) !== 5) {
+      this.submitVampireRequest(
+        inference_items,
+        this.contextPruning.nativeElement.checked,
+        vampireStartedAt,
+        vampireRunToken,
+        false
+      );
+      return;
+    }
+
     this.displayMessage("Building TPTP reasoning checks ...", "blue");
     const typed = logicType === 'tff';
-    const preparationRequests: Observable<{ id: string; checks: any }> [] = [];
+    const preparationRequests: Observable<{ id: string; checks: any[] }> [] = [];
     for (const [id, item] of Object.entries(inference_items)) {
       const premiseAssignments = this.semanticAssignments(item.premise_groups ?? []);
       const hypothesisAssignments = this.semanticAssignments(item.hypothesis_groups ?? []);
-      for (const premiseParts of premiseAssignments) {
-        for (const hypothesisParts of hypothesisAssignments) {
-          preparationRequests.push(this.dataService.gswbReasoningChecks({
-            premiseParts,
-            hypothesisParts,
-            typed
-          }).pipe(map(output => ({ id, checks: output }))));
+      const premiseAstAssignments = this.graphAssignments(item.premise_ast_groups ?? []);
+      const hypothesisAstAssignments = this.graphAssignments(item.hypothesis_ast_groups ?? []);
+      for (let premiseIndex = 0; premiseIndex < premiseAssignments.length; premiseIndex++) {
+        for (let hypothesisIndex = 0; hypothesisIndex < hypothesisAssignments.length; hypothesisIndex++) {
+          const premiseAsts = premiseAstAssignments[premiseIndex] ?? [];
+          const hypothesisAsts = hypothesisAstAssignments[hypothesisIndex] ?? [];
+          const pairId = `pxq-${id}-${premiseIndex + 1}-${hypothesisIndex + 1}`;
+          preparationRequests.push(
+            this.dataService.ligerSequence({
+              sentences: [...(item.premise_sentence_ids ?? []), ...(item.hypothesis_sentence_ids ?? [])]
+                .map(sentenceId => this.sentenceMap[sentenceId]),
+              ruleString: this.session.rulesText,
+              logicType
+            }).pipe(
+              switchMap(sequence => {
+                const syntax = sequence?.structureJson
+                  ?? sequence?.solutions?.[0]?.structureJson;
+                return forkJoin({
+                  checks: this.dataService.gswbReasoningCheckAsts({ premiseAsts, hypothesisAsts, typed }),
+                  merged: this.dataService.gswbMergeSequenceSemantics({
+                    parts: [
+                      ...premiseAssignments[premiseIndex].map((semantic, index) => ({
+                        semantic,
+                        graph: premiseAsts[index]
+                      })),
+                      ...hypothesisAssignments[hypothesisIndex].map((semantic, index) => ({
+                        semantic,
+                        graph: hypothesisAsts[index]
+                      }))
+                    ]
+                  })
+                }).pipe(
+                  switchMap(result => this.postProcessNliChecks(
+                    result.merged,
+                    result.checks,
+                     syntax as LigerStructure,
+                     premiseAsts,
+                     hypothesisAsts,
+                     typed,
+                     pairId
+                  )),
+                  map(checks => ({ id, checks }))
+                );
+              })
+            )
+          );
         }
       }
     }
@@ -1546,13 +1605,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       next: prepared => {
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
         for (const preparedItem of prepared) {
-          inference_items[preparedItem.id].tptp_checks!.push(preparedItem.checks);
+          inference_items[preparedItem.id].tptp_checks!.push(...preparedItem.checks);
         }
         this.submitVampireRequest(
           inference_items,
           this.contextPruning.nativeElement.checked,
           vampireStartedAt,
-          vampireRunToken
+          vampireRunToken,
+          true
         );
       },
       error: () => {
@@ -1560,6 +1620,88 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.loading = false;
       }
     });
+  }
+
+  private postProcessNliChecks(
+    merged: any,
+    checks: any,
+    syntax: LigerStructure,
+    premiseAsts: LigerStructure[],
+    hypothesisAsts: LigerStructure[],
+    typed: boolean,
+    pairId: string
+  ): Observable<any[]> {
+    const entries = Object.entries(checks?.checks ?? {});
+    if (!syntax || !entries.length) {
+      throw new Error('NLI sequence provenance or check ASTs are missing.');
+    }
+    const nliRules = APP_DEFAULTS.graphInspector.rulesText;
+
+    if (!merged?.graph || !premiseAsts.length || !hypothesisAsts.length) {
+      throw new Error('NLI sequence semantic graphs are missing.');
+    }
+    return this.dataService.ligerApplyRulesToStructure({
+      content: JSON.stringify(merged.graph),
+      format: 'json',
+      ruleString: nliRules,
+      id: 'nli-sequence-post-processing'
+    }).pipe(
+      switchMap(response => {
+        const structures = (response.annotations ?? [])
+          .map(annotation => annotation.structureJson)
+          .filter(Boolean);
+        const branches = structures.length ? structures : [merged.graph];
+        return forkJoin(branches.map((structure, index) => this.dataService.gswbGeneratePcdrs({
+          semantic: merged.semantic,
+           parentSolutionId: `${pairId}-rule-${index + 1}`,
+          mergedStructure: structure as any
+        })));
+      }),
+      switchMap(pcdrs => {
+        const mappings = pcdrs.flatMap(result => result?.solutions ?? []);
+        return forkJoin(mappings.map(mapping => {
+          const suffix = mapping.anaphoraMapping ? `,${mapping.anaphoraMapping}` : '';
+          const contextTptp = this.dataService.gswbCollapseAnaphora({
+            semantic: mapping.semantic || '',
+            parentSolutionId: `${mapping.id}-context`
+          }).pipe(
+            switchMap(collapsed => collapsed?.semantic
+              ? this.dataService.gswbSemanticToTptp({ semantic: collapsed.semantic, typed })
+                  .pipe(map(tptp => tptp.tptp))
+              : of('')),
+            catchError(() => of(''))
+          );
+          return forkJoin({
+            contextTptp,
+            checks: forkJoin(entries.map(([name, check]: [string, any]) =>
+            this.dataService.gswbCollapseAnaphora({
+              semantic: `${check.semantic}${suffix}`,
+              parentSolutionId: `${mapping.id}-${name}`
+            }).pipe(
+              switchMap(collapsed => collapsed?.semantic
+                ? this.dataService.gswbSemanticToTptp({ semantic: collapsed.semantic, typed })
+                    .pipe(map(tptp => ({ name, tptp: tptp.tptp })))
+                : of(null)),
+              catchError(() => of(null))
+            )
+            ))
+          }).pipe(
+            map(result => {
+              const valid = result.checks.filter((item): item is { name: string; tptp: string } => !!item?.tptp);
+              return valid.length === entries.length
+                 ? {
+                     pairId,
+                     mappingId: mapping.id,
+                     checks: Object.fromEntries(valid.map(item => [item.name, { tptp: item.tptp }])),
+                    contextTptp: result.contextTptp
+                  }
+                : null;
+            })
+          );
+        }));
+      }),
+      map(results => results.filter(Boolean))
+    );
   }
 
   private semanticAssignments(groups: string[][]): string[][] {
@@ -1570,18 +1712,40 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     );
   }
 
+  private graphAssignments(groups: LigerStructure[][]): LigerStructure[][] {
+    return groups.reduce<LigerStructure[][]>(
+      (assignments, alternatives) => assignments.flatMap(prefix =>
+        alternatives.map(alternative => [...prefix, alternative])),
+      [[]]
+    );
+  }
+
+  private selectedSolutionGraphs(
+    sentenceId: string,
+    gswbOutputs: Record<string, GswbOutput>,
+    useDisambiguated: boolean
+  ): LigerStructure[] {
+    const solutions = gswbOutputs[sentenceId]?.solutions ?? [];
+    const selectedIds = this.session.selectedSolutionIdsBySentence[sentenceId];
+    return solutions
+      .filter(solution => !useDisambiguated || !selectedIds?.length || selectedIds.includes(solution.id))
+      .map(solution => solution.graph)
+      .filter((graph): graph is LigerStructure => !!graph);
+  }
+
   private submitVampireRequest(
     inference_items: Record<string, nliItem>,
     pruning: boolean,
     vampireStartedAt: number,
-    vampireRunToken: number
+    vampireRunToken: number,
+    tptpMode: boolean
   ): void {
     const tptpItems: Record<string, nliItem> = Object.fromEntries(
       Object.entries(inference_items).map(([id, item]) => [id, {
-        premises: [],
-        hypothesis: [],
+        premises: tptpMode ? [] : item.premises,
+        hypothesis: tptpMode ? [] : item.hypothesis,
         axioms: item.axioms,
-        tptp_checks: item.tptp_checks ?? []
+        ...(tptpMode ? { tptp_checks: item.tptp_checks ?? [] } : {})
       }])
     );
     const vampireRequest: vampireMultipleRequest = {
@@ -1637,7 +1801,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   ): string[] {
     const sols = gswbOutputs[sentenceId]?.solutions ?? [];
 
-    if (!useDisambiguated) return sols.map(x => x.solution);
+    const useLfgxDrt = Number(this.session.gswbPreferences?.outputstyle) === 5;
+    if (!useDisambiguated) return sols.map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution);
 
     const selectedIds = this.session.selectedSolutionIdsBySentence[sentenceId];
 
@@ -1645,7 +1810,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (!selectedIds || selectedIds.length === 0) return [];
 
     const sel = new Set(selectedIds);
-    return sols.filter(x => sel.has(x.id)).map(x => x.solution);
+    return sols.filter(x => sel.has(x.id)).map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution);
   }
 
   private startVampireSummaryPolling(vampireStartedAt: number, runToken: number): void {

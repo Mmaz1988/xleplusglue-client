@@ -89,6 +89,29 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(result).toEqual(['second']);
   });
 
+  it('uses the LFGxDRT semantic field when preparing reasoning input', () => {
+    component.session.gswbPreferences.outputstyle = 5;
+
+    const result = (component as any).getSolutionsText(
+      'S1',
+      {
+        S1: {
+          solutions: [{
+            id: 'sol-1',
+            solution: '<svg>rendered</svg>',
+            semantic: '([x],[dog(x)])'
+          }],
+          log: '',
+          derivation: null,
+          discriminants: [],
+        }
+      },
+      false
+    );
+
+    expect(result).toEqual(['([x],[dog(x)])']);
+  });
+
   it('does not fall back to all solutions in disambiguated mode when no selection exists', () => {
     component.session.selectedSolutionIdsBySentence = {};
 

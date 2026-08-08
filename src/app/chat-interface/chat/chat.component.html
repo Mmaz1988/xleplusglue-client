@@ -26,6 +26,15 @@
 
           <!-- Text pill -->
           <app-pill
+            *ngIf="message.semanticText"
+            badge="DRS"
+            variant="text"
+            [text]="message.semanticText"
+            [minimizedColor]="'#6a1b9a'"
+            [closeOnly]="true">
+          </app-pill>
+
+          <app-pill
             *ngIf="message.detailText"
             badge="TPTP"
             variant="text"
