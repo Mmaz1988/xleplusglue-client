@@ -748,7 +748,18 @@ export class ChatComponent {
       throw new Error('NLI sequence semantic graphs are missing.');
     }
 
-    return this.dataService.ligerMergeStructure({ syntax, drs: merged.graph }).pipe(
+    // premiseAst/hypothesisAst/typed are fixed for this (contextIndex, candidateSolution) pair
+    // and never vary across the PCDRS mappings below, so the four reasoning-check ASTs are
+    // fetched exactly once here and reused by every mapping -- and since this call needs none
+    // of the PCDRS pipeline's output, it runs concurrently with that pipeline below instead of
+    // waiting for PCDRS generation to finish first.
+    const reasoningChecks$ = this.dataService.gswbReasoningCheckAsts({
+      premiseAsts: [premiseAst],
+      hypothesisAsts: [hypothesisAst],
+      typed
+    });
+
+    const mappingsWithStructure$ = this.dataService.ligerMergeStructure({ syntax, drs: merged.graph }).pipe(
       switchMap(mergedStructure => this.applyNliRules(mergedStructure.structureJson)),
       switchMap(mergedStructures => forkJoin(mergedStructures.map((mergedStructure, index) =>
         this.dataService.gswbGeneratePcdrs({
@@ -757,7 +768,7 @@ export class ChatComponent {
           mergedStructure: mergedStructure as any
         }).pipe(map(result => ({ result, mergedStructure })))
       ))),
-      switchMap(pcdrsResults => {
+      map(pcdrsResults => {
         let mappingsWithStructure = pcdrsResults.flatMap(({ result, mergedStructure }) =>
           (result?.solutions ?? []).map(mapping => ({ mapping, mergedStructure }))
         );
@@ -776,6 +787,18 @@ export class ChatComponent {
         if (pruneContext) {
           mappingsWithStructure = mappingsWithStructure.slice(0, 1);
         }
+        return mappingsWithStructure;
+      })
+    );
+
+    return forkJoin({
+      reasoningChecksResponse: reasoningChecks$,
+      mappingsWithStructure: mappingsWithStructure$
+    }).pipe(
+      switchMap(({ reasoningChecksResponse, mappingsWithStructure }) => {
+        // Shared across every mapping below -- each mapping only varies in which
+        // anaphoraRelations it uses to collapse these same four (already-fetched) check ASTs.
+        const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
         return forkJoin(mappingsWithStructure.map(({ mapping, mergedStructure }) => {
           // The mapping is computed once here (by generate_pcdrs above) and reused as-is
           // across the context collapse and all four checks below -- gswbCollapseAnaphora
@@ -783,11 +806,6 @@ export class ChatComponent {
           // so the structured anaphoraRelations must be passed explicitly on every call
           // rather than re-derived, or spliced into the semantic text as a string.
           const anaphoraRelations = mapping.anaphoraRelations ?? [];
-          const reasoningChecks = this.dataService.gswbReasoningCheckAsts({
-            premiseAsts: [premiseAst],
-            hypothesisAsts: [hypothesisAst],
-            typed
-          });
           const contextTptp = this.dataService.gswbCollapseAnaphora({
             semantic: mapping.semantic || '',
             anaphoraRelations,
@@ -799,31 +817,23 @@ export class ChatComponent {
               : of('')),
             catchError(() => of(''))
           );
-          return forkJoin({
-            contextTptp,
-            checks: reasoningChecks.pipe(
-              switchMap(checkResponse => {
-                const entries = Object.entries(checkResponse?.checks ?? {});
-                if (!entries.length) return of([]);
-                return forkJoin(entries.map(([name, check]: [string, any]) =>
-                  this.dataService.gswbCollapseAnaphora({
-                    semantic: check.semantic,
-                    anaphoraRelations,
-                    parentSolutionId: `${mapping.id}-${name}`
-                  }).pipe(
-                    switchMap(collapsed => {
-                      if (!collapsed?.semantic) return of(null);
-                      return this.dataService.gswbSemanticToTptp({
-                        semantic: collapsed.semantic,
-                        typed
-                      }).pipe(map(tptp => ({ name, tptp: tptp.tptp })));
-                    }),
-                    catchError(() => of(null))
-                  )
-                ));
-              })
+          const checks$ = forkJoin(checkEntries.map(([name, check]: [string, any]) =>
+            this.dataService.gswbCollapseAnaphora({
+              semantic: check.semantic,
+              anaphoraRelations,
+              parentSolutionId: `${mapping.id}-${name}`
+            }).pipe(
+              switchMap(collapsed => {
+                if (!collapsed?.semantic) return of(null);
+                return this.dataService.gswbSemanticToTptp({
+                  semantic: collapsed.semantic,
+                  typed
+                }).pipe(map(tptp => ({ name, tptp: tptp.tptp })));
+              }),
+              catchError(() => of(null))
             )
-          }).pipe(
+          ));
+          return forkJoin({ contextTptp, checks: checks$ }).pipe(
             map(result => {
               const valid = result.checks.filter((item): item is { name: string; tptp: string } => !!item?.tptp);
               if (valid.length !== 4) return null;
