@@ -372,6 +372,33 @@ export interface GswbCollapseAnaphoraRequest {
   anaphoraRelations?: AnaphoraRelation[];
 }
 
+export interface GswbTptpBatchItem {
+  name: string;
+  semantic: string;
+}
+
+export interface GswbTptpBatchResult {
+  tptp: string;
+  semantic?: string;
+}
+
+export interface GswbCollapseAndTptpBatchRequest {
+  parentSolutionId?: string;
+  /** Same mapping semantics as GswbCollapseAnaphoraRequest.anaphoraRelations, applied
+   *  identically to every item below. */
+  anaphoraRelations?: AnaphoraRelation[];
+  items: GswbTptpBatchItem[];
+  typed: boolean;
+}
+
+export interface GswbCollapseAndTptpBatchOutput {
+  parentSolutionId?: string;
+  anaphoraMapping?: string;
+  anaphoraRelations?: AnaphoraRelation[];
+  /** Keyed by the requesting GswbTptpBatchItem.name, one entry per item. */
+  results: Record<string, GswbTptpBatchResult>;
+}
+
 export interface GswbSequenceMergeRequest {
   parts?: GswbSemanticMergePart[];
   semantics?: string[];

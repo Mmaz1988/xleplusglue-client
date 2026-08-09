@@ -18,7 +18,7 @@ import {
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
-import { catchError, forkJoin, from, map, mergeMap, of, switchMap } from 'rxjs';
+import { catchError, concatMap, forkJoin, from, map, mergeMap, of, switchMap, toArray } from 'rxjs';
 import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
 import { compositeAnalysisId, validateAnalysisDocument } from '../../analysis-model';
 
@@ -366,7 +366,6 @@ export class ChatComponent {
     }
 
     const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
-    const bundles: any[] = [];
 
     let contextIndices = this.activeIndices.length
       ? this.activeIndices.filter(index => index >= 0 && index < this.context.length)
@@ -390,6 +389,28 @@ export class ChatComponent {
       pruneContext,
     });
 
+    // Every (contextIndex, candidateSolution) pair used to be processed as an independently
+    // subscribed, fully concurrent "bundle" (pushed into an array and joined with
+    // forkJoin(bundles)). With more than one accepted context reading (e.g. an ambiguous
+    // premise like "a man saw a man"), that ran two /apply_rules_xle_sequence calls (and
+    // everything downstream) at the same time. In testing, one of the two concurrent
+    // sequence$ HTTP calls would reliably get a real 200 response at the network level
+    // (confirmed via the Performance API) but its Angular HttpClient Observable would never
+    // emit next/error/complete to its subscriber -- forkJoin(bundles) then waits forever on
+    // that pair, the loading spinner never clears, and Vampire is never called. This
+    // reproduced with a live-verified, isolated case and is not specific to request volume.
+    // Processing pairs sequentially via concatMap avoids ever having two of these chains
+    // in flight at once, sidestepping the issue entirely.
+    interface PairSpec {
+      contextIndex: number;
+      premiseContext: context;
+      priorElementId: string;
+      contextSyntax: any;
+      solution: any;
+      hypothesisIndex: number;
+      pairId: string;
+    }
+    const pairSpecs: PairSpec[] = [];
     contextIndices.forEach(contextIndex => {
       const premiseContext = this.context[contextIndex];
       const contextSyntax = premiseContext?.syntax;
@@ -399,69 +420,76 @@ export class ChatComponent {
       }
       candidateSolutions.forEach((solution, hypothesisIndex) => {
         const pairId = `pxq-${contextIndex + 1}-${solution.id || hypothesisIndex + 1}`;
-        // Only the premise gets a pre-parsed structure -- the new sentence must be freshly
-        // parsed by LiGER as part of this sequence call, not reused from its own independent
-        // /apply_rules_xle parse (sendMessage()'s shared initial call). Reusing it here was the
-        // actual root cause of chat's silent anaphora-resolution failures: LiGER assigns a
-        // fresh solution key (S0, S1, ...) to a sentence it parses itself as part of a growing
-        // sequence, but preserves whatever key an already-parsed structure came in with -- so a
-        // reused independent parse keeps its standalone "S0", colliding with the premise's own
-        // "S0" instead of becoming "S1". Confirmed by diffing a chat vs. analysis-workflow
-        // document snapshot for the identical two-sentence input: every syntax constraint and
-        // semantic DRS was byte-for-byte identical between the two, except this one
-        // SOLUTION-KEY/SYNTAX-VARIANT-ID annotation pair, which is what the pronoun-binding
-        // rules use to tell the premise's and the new sentence's nodes apart. Mirrors
-        // LigerVisComponent.addSentence(), which only reuses parsedSentences for
-        // already-accepted sentences and always lets LiGER parse the newly-added one itself.
-        const sequence$ = this.dataService.ligerSequence({
-          sentences: [premiseContext.original, userMessage],
-          sentenceIds: ['sentence-1', 'sentence-2'],
-          ruleString: this.ruleString,
-          logicType: typed ? 'tff' : 'fof',
-          parsedSentences: [[contextSyntax]]
-        });
-        bundles.push(sequence$.pipe(
-          switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
-            map(currentSolutions => ({
-              currentSolutions,
-              syntax: sequence?.solutions?.[0]?.structureJson ?? syntax
-            }))
-          )),
-          mergeMap(({ currentSolutions, syntax: mergedSyntax }) => from(currentSolutions).pipe(
-            switchMap(currentSolution => this.dataService.gswbMergeSequenceSemantics({
-              parts: [
-                this.semanticPart(premiseContext.semanticAnalysis, premiseContext.semantic, priorElementId),
-                this.semanticPart(currentSolution.semanticAnalysis ?? solution.semanticAnalysis,
-                  currentSolution.semantic, newSentenceId)
-              ],
-              parentSolutionId: pairId,
-              solutionKey: currentSolution.solutionKey,
-              mcSetId: currentSolution.mcSetId,
-              resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs
-            }).pipe(map(merged => ({ merged, currentSolution })))),
-            switchMap(({ merged, currentSolution }) => this.postProcessReasoningCheckAsts(
-              merged,
-              mergedSyntax,
-              premiseContext.semanticGraph,
-              currentSolution.graph,
-              typed,
-              pairId,
-              pruneContext
-            ).pipe(map(checks => ({
-              contextIndex,
-              priorElementId,
-              newSentenceId,
-              pairId,
-              checks,
-              merged,
-              syntax: mergedSyntax
-            }))))
-          ))
-        ));
+        pairSpecs.push({ contextIndex, premiseContext, priorElementId, contextSyntax, solution, hypothesisIndex, pairId });
       });
     });
 
-    forkJoin(bundles).subscribe({
+    const processPair = ({ contextIndex, premiseContext, priorElementId, contextSyntax, solution, pairId }: PairSpec) => {
+      // Only the premise gets a pre-parsed structure -- the new sentence must be freshly
+      // parsed by LiGER as part of this sequence call, not reused from its own independent
+      // /apply_rules_xle parse (sendMessage()'s shared initial call). Reusing it here was the
+      // actual root cause of chat's silent anaphora-resolution failures: LiGER assigns a
+      // fresh solution key (S0, S1, ...) to a sentence it parses itself as part of a growing
+      // sequence, but preserves whatever key an already-parsed structure came in with -- so a
+      // reused independent parse keeps its standalone "S0", colliding with the premise's own
+      // "S0" instead of becoming "S1". Confirmed by diffing a chat vs. analysis-workflow
+      // document snapshot for the identical two-sentence input: every syntax constraint and
+      // semantic DRS was byte-for-byte identical between the two, except this one
+      // SOLUTION-KEY/SYNTAX-VARIANT-ID annotation pair, which is what the pronoun-binding
+      // rules use to tell the premise's and the new sentence's nodes apart. Mirrors
+      // LigerVisComponent.addSentence(), which only reuses parsedSentences for
+      // already-accepted sentences and always lets LiGER parse the newly-added one itself.
+      const sequence$ = this.dataService.ligerSequence({
+        sentences: [premiseContext.original, userMessage],
+        sentenceIds: [`${pairId}-sentence-1`, `${pairId}-sentence-2`],
+        ruleString: this.ruleString,
+        logicType: typed ? 'tff' : 'fof',
+        parsedSentences: [[contextSyntax]]
+      });
+      return sequence$.pipe(
+        switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
+          map(currentSolutions => ({
+            currentSolutions,
+            syntax: sequence?.solutions?.[0]?.structureJson ?? syntax
+          }))
+        )),
+        mergeMap(({ currentSolutions, syntax: mergedSyntax }) => from(currentSolutions).pipe(
+          switchMap(currentSolution => this.dataService.gswbMergeSequenceSemantics({
+            parts: [
+              this.semanticPart(premiseContext.semanticAnalysis, premiseContext.semantic, priorElementId),
+              this.semanticPart(currentSolution.semanticAnalysis ?? solution.semanticAnalysis,
+                currentSolution.semantic, newSentenceId)
+            ],
+            parentSolutionId: pairId,
+            solutionKey: currentSolution.solutionKey,
+            mcSetId: currentSolution.mcSetId,
+            resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs
+          }).pipe(map(merged => ({ merged, currentSolution })))),
+          switchMap(({ merged, currentSolution }) => this.postProcessReasoningCheckAsts(
+            merged,
+            mergedSyntax,
+            premiseContext.semanticGraph,
+            currentSolution.graph,
+            typed,
+            pairId,
+            pruneContext
+          ).pipe(map(checks => ({
+            contextIndex,
+            priorElementId,
+            newSentenceId,
+            pairId,
+            checks,
+            merged,
+            syntax: mergedSyntax
+          }))))
+        ))
+      );
+    };
+
+    from(pairSpecs).pipe(
+      concatMap(spec => processPair(spec)),
+      toArray()
+    ).subscribe({
       next: prepared => {
         const expanded = prepared.flatMap((item: any) =>
           (item.checks ?? []).map((checks: any) => ({ ...item, checks }))
@@ -801,41 +829,29 @@ export class ChatComponent {
         const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
         return forkJoin(mappingsWithStructure.map(({ mapping, mergedStructure }) => {
           // The mapping is computed once here (by generate_pcdrs above) and reused as-is
-          // across the context collapse and all four checks below -- gswbCollapseAnaphora
-          // re-parses `semantic` from scratch server-side and carries no mapping of its own,
-          // so the structured anaphoraRelations must be passed explicitly on every call
-          // rather than re-derived, or spliced into the semantic text as a string.
+          // across the context collapse and all four checks below -- gswbCollapseAndTptpBatch
+          // re-parses each item's semantic from scratch server-side and carries no mapping of
+          // its own, so the structured anaphoraRelations must be passed explicitly rather than
+          // re-derived, or spliced into the semantic text as a string. Folding the context plus
+          // all four checks into one batched request (instead of 5 separate collapse+translate
+          // round trips) keeps a discourse with many candidate mappings from firing enough
+          // concurrent requests to overwhelm GSWB's single embedded server.
           const anaphoraRelations = mapping.anaphoraRelations ?? [];
-          const contextTptp = this.dataService.gswbCollapseAnaphora({
-            semantic: mapping.semantic || '',
+          const items = [
+            { name: 'context', semantic: mapping.semantic || '' },
+            ...checkEntries.map(([name, check]: [string, any]) => ({ name, semantic: check.semantic }))
+          ].filter(item => !!item.semantic);
+          return this.dataService.gswbCollapseAndTptpBatch({
             anaphoraRelations,
-            parentSolutionId: `${mapping.id}-context`
+            items,
+            typed,
+            parentSolutionId: mapping.id
           }).pipe(
-            switchMap(collapsed => collapsed?.semantic
-              ? this.dataService.gswbSemanticToTptp({ semantic: collapsed.semantic, typed })
-                  .pipe(map(tptp => tptp.tptp))
-              : of('')),
-            catchError(() => of(''))
-          );
-          const checks$ = forkJoin(checkEntries.map(([name, check]: [string, any]) =>
-            this.dataService.gswbCollapseAnaphora({
-              semantic: check.semantic,
-              anaphoraRelations,
-              parentSolutionId: `${mapping.id}-${name}`
-            }).pipe(
-              switchMap(collapsed => {
-                if (!collapsed?.semantic) return of(null);
-                return this.dataService.gswbSemanticToTptp({
-                  semantic: collapsed.semantic,
-                  typed
-                }).pipe(map(tptp => ({ name, tptp: tptp.tptp })));
-              }),
-              catchError(() => of(null))
-            )
-          ));
-          return forkJoin({ contextTptp, checks: checks$ }).pipe(
             map(result => {
-              const valid = result.checks.filter((item): item is { name: string; tptp: string } => !!item?.tptp);
+              const contextTptp = result.results?.['context']?.tptp ?? '';
+              const valid = checkEntries
+                .map(([name]) => ({ name, tptp: result.results?.[name]?.tptp }))
+                .filter((item): item is { name: string; tptp: string } => !!item.tptp);
               if (valid.length !== 4) return null;
               return {
                 pairId,
@@ -843,9 +859,10 @@ export class ChatComponent {
                 mapping,
                 mergedStructure,
                 checks: Object.fromEntries(valid.map(item => [item.name, { tptp: item.tptp }])),
-                contextTptp: result.contextTptp
+                contextTptp
               };
-            })
+            }),
+            catchError(() => of(null))
           );
         }));
       }),

@@ -25,6 +25,8 @@ import {
   GswbPcdrsOutput,
   GswbPcdrsRequest,
   GswbCollapseAnaphoraRequest,
+  GswbCollapseAndTptpBatchRequest,
+  GswbCollapseAndTptpBatchOutput,
   GswbSequenceMergeRequest,
   GswbSolution,
   GswbReasoningChecksRequest,
@@ -71,6 +73,10 @@ export class DataService {
 
   gswbMergeSequenceSemantics(request: GswbSequenceMergeRequest): Observable<GswbSolution> {
     return this.http.post<GswbSolution>(`${this.gswbpage}/merge_sequence_semantics`, request);
+  }
+
+  gswbCollapseAndTptpBatch(request: GswbCollapseAndTptpBatchRequest): Observable<GswbCollapseAndTptpBatchOutput> {
+    return this.http.post<GswbCollapseAndTptpBatchOutput>(`${this.gswbpage}/collapse_and_tptp_batch`, request);
   }
 
   gswbReasoningChecks(request: GswbReasoningChecksRequest): Observable<GswbReasoningChecksOutput> {
