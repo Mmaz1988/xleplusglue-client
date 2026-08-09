@@ -166,16 +166,13 @@ export class ChatComponent {
               .map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution)
               .join('\n');
             const pruneContext = this.contextPruning.nativeElement.checked;
-            const parsedCurrentSentence = data.solutions
-              .map((solution: any) => solution.structureJson)
-              .filter(Boolean);
 
             // The document's semantic type is fixed once, at document creation -- a
             // conversation cannot silently switch semantic type mid-thread, since
             // sequencing (and this whole reasoning path) is lfgxdrt-only.
             if (useLfgxDrt) {
               this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
-                gswbData.solutions, pruneContext, parsedCurrentSentence);
+                gswbData.solutions, pruneContext);
               return;
             }
 
@@ -288,8 +285,7 @@ export class ChatComponent {
     ligerSolution: any,
     ligerSolutions: any[],
     solutions: any[],
-    pruneContext: boolean,
-    parsedCurrentSentence: any[] = []
+    pruneContext: boolean
   ): void {
     const candidates = solutions.filter(solution =>
       typeof (solution.semantic || solution.solution) === 'string'
@@ -306,13 +302,11 @@ export class ChatComponent {
       // matching the analysis workflow's LigerVisComponent.analyzeSentence() -- which always
       // parses through /apply_rules_xle_sequence, never /apply_rules_xle, even for the very
       // first sentence -- rather than the independent /apply_rules_xle parse
-      // (candidates/syntax above are built from). NOTE: this alone does not explain the
-      // "single-referent pronoun not resolved in chat" bug (verified live: both chat and the
-      // working analysis case end up with colliding "S0-s0" merge-part ids either way, and a
-      // multi-referent case resolves fine through the same code path) -- keep this change for
-      // parity/consistency with the established pattern, but the real root cause of that bug
-      // is still open. See the [Chat] console logging below and the "Download JSON snapshot"
-      // button (chat-interface.component.ts) for inspecting a failing turn.
+      // (candidates/syntax above are built from). This keeps LiGER's own solution-key
+      // numbering ("S0", "S1", ...) consistent across the whole conversation -- see the longer
+      // explanation in finishLfgxdrtPreparation() below, where reusing an independently-parsed
+      // structure for a later turn's new sentence was the actual root cause of chat's silent
+      // anaphora-resolution failures.
       const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
       this.dataService.ligerSequence({
         sentences: [userMessage],
@@ -352,7 +346,6 @@ export class ChatComponent {
       candidates.map(candidate => ({ ...candidate.solution, syntax: candidate.syntax })),
       pruneContext,
       ligerSolution.structureJson,
-      parsedCurrentSentence,
       ligerSolutions
     );
   }
@@ -362,7 +355,6 @@ export class ChatComponent {
     solutions: any[],
     pruneContext: boolean,
     syntax: any,
-    parsedCurrentSentence: any[] = [],
     ligerSolutions: any[] = []
   ): void {
     const semanticSolutions = solutions.filter(solution =>
@@ -407,16 +399,26 @@ export class ChatComponent {
       }
       candidateSolutions.forEach((solution, hypothesisIndex) => {
         const pairId = `pxq-${contextIndex + 1}-${solution.id || hypothesisIndex + 1}`;
-        const currentSyntax = solution.syntax ?? parsedCurrentSentence[0] ?? syntax;
-        if (!currentSyntax) {
-          throw new Error('Current sentence syntax is required for sequence merging.');
-        }
+        // Only the premise gets a pre-parsed structure -- the new sentence must be freshly
+        // parsed by LiGER as part of this sequence call, not reused from its own independent
+        // /apply_rules_xle parse (sendMessage()'s shared initial call). Reusing it here was the
+        // actual root cause of chat's silent anaphora-resolution failures: LiGER assigns a
+        // fresh solution key (S0, S1, ...) to a sentence it parses itself as part of a growing
+        // sequence, but preserves whatever key an already-parsed structure came in with -- so a
+        // reused independent parse keeps its standalone "S0", colliding with the premise's own
+        // "S0" instead of becoming "S1". Confirmed by diffing a chat vs. analysis-workflow
+        // document snapshot for the identical two-sentence input: every syntax constraint and
+        // semantic DRS was byte-for-byte identical between the two, except this one
+        // SOLUTION-KEY/SYNTAX-VARIANT-ID annotation pair, which is what the pronoun-binding
+        // rules use to tell the premise's and the new sentence's nodes apart. Mirrors
+        // LigerVisComponent.addSentence(), which only reuses parsedSentences for
+        // already-accepted sentences and always lets LiGER parse the newly-added one itself.
         const sequence$ = this.dataService.ligerSequence({
           sentences: [premiseContext.original, userMessage],
           sentenceIds: ['sentence-1', 'sentence-2'],
           ruleString: this.ruleString,
           logicType: typed ? 'tff' : 'fof',
-          parsedSentences: [[contextSyntax], [currentSyntax]]
+          parsedSentences: [[contextSyntax]]
         });
         bundles.push(sequence$.pipe(
           switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
