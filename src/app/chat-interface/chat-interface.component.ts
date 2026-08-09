@@ -8,6 +8,7 @@ import {ChangeDetectorRef} from "@angular/core";
 import {InferenceSettingsComponent} from "../inference-interface/inference-settings/inference-settings.component";
 import { APP_DEFAULTS } from '../app-defaults';
 import { DataService } from '../data.service';
+import { validateAnalysisDocument } from '../analysis-model';
 
 @Component({
   selector: 'app-inference-vis',
@@ -126,6 +127,36 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
     this.chatDocument = this.newChatDocument();
     this.history = [];
     this.chatComponent?.resetConversationState();
+  }
+
+  /**
+   * Dumps the current chat XlePlusGlueDocument (sentences, sequences, elements,
+   * discourseUpdates) as a downloaded JSON file, alongside its current
+   * validateAnalysisDocument() status -- mirrors GlueInterfaceComponent's
+   * downloadDataModelSnapshot() so the chat document can be inspected the same way,
+   * independent of the Redis persistence path.
+   */
+  downloadChatDocumentSnapshot(): void {
+    let validationError: string | null = null;
+    try {
+      validateAnalysisDocument(this.chatDocument);
+    } catch (error) {
+      validationError = error instanceof Error ? error.message : String(error);
+    }
+    const snapshot = {
+      capturedAt: new Date().toISOString(),
+      sessionKey: this.chatDocumentSessionKey,
+      valid: validationError === null,
+      validationError,
+      document: this.chatDocument,
+    };
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `chat-document-${Date.now()}.json`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
   }
 
   private persistChatDocument(): void {

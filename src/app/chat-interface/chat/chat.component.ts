@@ -100,10 +100,16 @@ export class ChatComponent {
           ?? data.solutions?.[0];
 
         if (!selectedSolution || !selectedSolution.graph?.graphElements?.length) {
+          console.info('[Chat] LiGER parse failed', { sentence: userMessage });
           this.chatHistory.push({ text: 'Syntactic analysis failed for this input!', sender: 'Bot' });
           this.loading = false;
           return;
         }
+        console.info('[Chat] LiGER parse succeeded', {
+          sentence: userMessage,
+          solutionCount: data.solutions?.length ?? 0,
+          selectedSolutionKey: selectedSolution.solutionKey,
+        });
 
         const proofInputs = (data.solutions ?? [])
           .filter((solution: any) => typeof solution?.meaningConstructors === 'string'
@@ -143,12 +149,19 @@ export class ChatComponent {
         this.dataService.gswbDeduce(gswbRequest).subscribe({
           next: gswbData => {
             if (!Array.isArray(gswbData.solutions) || gswbData.solutions.length === 0 || gswbData.solutions[0] === '') {
+              console.info('[Chat] GSWB deduce found no semantic analyses', { sentence: userMessage });
               this.chatHistory.push({ text: 'No semantic analyses found for this input!', sender: 'Bot' });
               this.loading = false;
               return;
             }
 
             const useLfgxDrt = isLfgxdrtPreferences(this.gswbPreferences.gswbPreferences);
+            console.info('[Chat] GSWB deduce succeeded', {
+              sentence: userMessage,
+              solutionCount: gswbData.solutions.length,
+              useLfgxDrt,
+              turn: this.context.length === 0 ? 1 : this.context.length + 1,
+            });
             const userSem = gswbData.solutions
               .map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution)
               .join('\n');
@@ -216,6 +229,9 @@ export class ChatComponent {
                   }
 
                   const message = this.verdictMessage(consistent, info, relevant);
+                  console.info('[Chat] Vampire verdict (prolog-drt)', {
+                    consistent, informative: info, relevant, mappingCount: mappings.length,
+                  });
                   const glyphGridSize = Math.max(1, Math.ceil(Math.sqrt(glyphs.length)));
                   const safeGlyphs = glyphs.map(g => this.sanitizer.bypassSecurityTrustHtml(g));
 
@@ -286,10 +302,48 @@ export class ChatComponent {
     // The first sentence follows the analysis workflow. There is no PxQ yet,
     // so do not run NLI rules, PCDRS generation, or anaphora collapse.
     if (this.context.length === 0) {
-      this.acceptInitialLfgxdrtContext(
-        userMessage,
-        candidates.map(candidate => ({ ...candidate.solution, syntax: candidate.syntax })),
-        ligerSolutions);
+      // Turn 1's syntax/semantics are sourced via ligerSequence (a one-sentence sequence),
+      // matching the analysis workflow's LigerVisComponent.analyzeSentence() -- which always
+      // parses through /apply_rules_xle_sequence, never /apply_rules_xle, even for the very
+      // first sentence -- rather than the independent /apply_rules_xle parse
+      // (candidates/syntax above are built from). NOTE: this alone does not explain the
+      // "single-referent pronoun not resolved in chat" bug (verified live: both chat and the
+      // working analysis case end up with colliding "S0-s0" merge-part ids either way, and a
+      // multi-referent case resolves fine through the same code path) -- keep this change for
+      // parity/consistency with the established pattern, but the real root cause of that bug
+      // is still open. See the [Chat] console logging below and the "Download JSON snapshot"
+      // button (chat-interface.component.ts) for inspecting a failing turn.
+      const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
+      this.dataService.ligerSequence({
+        sentences: [userMessage],
+        sentenceIds: ['sentence-1'],
+        ruleString: this.ruleString,
+        logicType: typed ? 'tff' : 'fof'
+      }).pipe(
+        switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
+          map(currentSolutions => ({
+            currentSolutions,
+            syntax: sequence?.solutions?.[0]?.structureJson
+          }))
+        ))
+      ).subscribe({
+        next: ({ currentSolutions, syntax }) => {
+          console.info('[Chat] Turn 1 sequence-sourced semantics ready', {
+            sentence: userMessage,
+            solutionCount: currentSolutions.length,
+            solutionKeys: currentSolutions.map((solution: any) => solution.solutionKey),
+          });
+          this.acceptInitialLfgxdrtContext(
+            userMessage,
+            currentSolutions.map(solution => ({ ...solution, syntax })),
+            ligerSolutions);
+        },
+        error: error => {
+          console.warn('[Chat] Turn 1 sequence-sourced semantics failed', { sentence: userMessage, error });
+          this.chatHistory.push({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
+          this.loading = false;
+        }
+      });
       return;
     }
 
@@ -336,6 +390,13 @@ export class ChatComponent {
     }
 
     const newSentenceId = this.registerSentence(userMessage, candidateSolutions, ligerSolutions);
+    console.info('[Chat] Preparing NLI reasoning', {
+      sentence: userMessage,
+      newSentenceId,
+      contextIndices,
+      candidateCount: candidateSolutions.length,
+      pruneContext,
+    });
 
     contextIndices.forEach(contextIndex => {
       const premiseContext = this.context[contextIndex];
@@ -352,6 +413,7 @@ export class ChatComponent {
         }
         const sequence$ = this.dataService.ligerSequence({
           sentences: [premiseContext.original, userMessage],
+          sentenceIds: ['sentence-1', 'sentence-2'],
           ruleString: this.ruleString,
           logicType: typed ? 'tff' : 'fof',
           parsedSentences: [[contextSyntax], [currentSyntax]]
@@ -372,7 +434,8 @@ export class ChatComponent {
               ],
               parentSolutionId: pairId,
               solutionKey: currentSolution.solutionKey,
-              mcSetId: currentSolution.mcSetId
+              mcSetId: currentSolution.mcSetId,
+              resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs
             }).pipe(map(merged => ({ merged, currentSolution })))),
             switchMap(({ merged, currentSolution }) => this.postProcessReasoningCheckAsts(
               merged,
@@ -401,6 +464,11 @@ export class ChatComponent {
         const expanded = prepared.flatMap((item: any) =>
           (item.checks ?? []).map((checks: any) => ({ ...item, checks }))
         );
+        console.info('[Chat] NLI reasoning bundles prepared', {
+          sentence: userMessage,
+          bundleCount: prepared.length,
+          acceptedCheckCount: expanded.length,
+        });
         if (!expanded.length) {
           this.chatHistory.push({ text: 'No consistent continuation could be reasoned over.', sender: 'Bot' });
           this.loading = false;
@@ -420,13 +488,15 @@ export class ChatComponent {
             expanded,
             pruneContext
           ),
-          error: () => {
+          error: error => {
+            console.warn('[Chat] Vampire request failed', { sentence: userMessage, error });
             this.chatHistory.push({ text: 'An error occurred during the inference process', sender: 'Bot' });
             this.loading = false;
           }
         });
       },
-      error: () => {
+      error: error => {
+        console.warn('[Chat] NLI reasoning preparation failed', { sentence: userMessage, error });
         this.chatHistory.push({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
         this.loading = false;
       }
@@ -496,7 +566,17 @@ export class ChatComponent {
           semantic,
           semanticGraph: solution.graph,
           syntax: solution.syntax,
-          semanticAnalysis: solution.semanticAnalysis,
+          // Same fallback registerSentence() and gswb-vis.component.ts's
+          // semanticAnalysisFor() use: don't trust the backend to always populate
+          // .semanticAnalysis, since semanticPart() silently drops the DRS graph when it's
+          // absent, and this is the one context every later turn's merge builds on.
+          semanticAnalysis: solution.semanticAnalysis ?? {
+            syntacticOrigin: solution.solutionKey || solution.proofId || 'syntax',
+            semId: solution.id,
+            semString: semantic,
+            graph: solution.graph,
+            semType: 'lfgxdrt',
+          },
           synSemMapping: solution.synSemMapping,
         } as context;
       })
@@ -541,6 +621,12 @@ export class ChatComponent {
     const newContext = prepared.length
       ? this.contextFromLfgxdrtChecks(prepared, mappings, userMessage, pruneContext)
       : (vampData.context ?? []);
+    console.info('[Chat] Vampire verdict (lfgxdrt)', {
+      sentence: userMessage,
+      consistent, informative, relevant,
+      mappingCount: mappings.length,
+      survivingContextCount: newContext.length,
+    });
     this.context = newContext;
     this.history.push(newContext);
     this.historyChange.emit(this.history);
@@ -676,6 +762,13 @@ export class ChatComponent {
         if (!mappingsWithStructure.length) {
           throw new Error('No post-processed sequence interpretations were generated.');
         }
+        console.info('[Chat] PCDRS candidates generated', {
+          pairId,
+          ruleBranchCount: pcdrsResults.length,
+          mappingCount: mappingsWithStructure.length,
+          anaphoraResolvedCount: mappingsWithStructure.filter(({ mapping }) =>
+            (mapping.anaphoraRelations ?? []).length > 0).length,
+        });
         // Pruning picks the first candidate and reasons over it alone -- the reduction
         // happens here, before the expensive collapse/TPTP/Vampire steps below.
         if (pruneContext) {

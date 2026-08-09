@@ -20,6 +20,7 @@
   <mat-tab label="Chat">
     <div class="tab-content">
       <button type="button" (click)="startNewConversation()">New conversation</button>
+      <button type="button" (click)="downloadChatDocumentSnapshot()">Download JSON snapshot</button>
       <app-chat #chat [ruleString]="ruleFile"
                 [axioms]="axioms"
                 [gswbPreferences]="gswbPrefs"
