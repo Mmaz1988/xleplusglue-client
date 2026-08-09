@@ -20,7 +20,7 @@
   <mat-tab label="Chat">
     <div class="tab-content">
       <button type="button" (click)="startNewConversation()">New conversation</button>
-      <app-chat [ruleString]="ruleFile"
+      <app-chat #chat [ruleString]="ruleFile"
                 [axioms]="axioms"
                 [gswbPreferences]="gswbPrefs"
                 [vampirePreferences]="vampirePrefs"

@@ -366,6 +366,10 @@ export interface GswbPcdrsOutput {
 export interface GswbCollapseAnaphoraRequest {
   semantic: string;
   parentSolutionId?: string;
+  /** The structured mapping computed once by generate_pcdrs, reused across every check/branch
+   *  that collapses against it -- `semantic` alone carries no mapping (it's re-parsed from
+   *  scratch server-side), so this must be supplied explicitly. */
+  anaphoraRelations?: AnaphoraRelation[];
 }
 
 export interface GswbSequenceMergeRequest {

@@ -617,7 +617,7 @@ export class ChatComponent {
         drsGraph: mapping?.graph,
         structureId,
         anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
-        collapsed: true,
+        collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
       });
     });
 
@@ -682,7 +682,12 @@ export class ChatComponent {
           mappingsWithStructure = mappingsWithStructure.slice(0, 1);
         }
         return forkJoin(mappingsWithStructure.map(({ mapping, mergedStructure }) => {
-          const mappingSuffix = mapping.anaphoraMapping ? `,${mapping.anaphoraMapping}` : '';
+          // The mapping is computed once here (by generate_pcdrs above) and reused as-is
+          // across the context collapse and all four checks below -- gswbCollapseAnaphora
+          // re-parses `semantic` from scratch server-side and carries no mapping of its own,
+          // so the structured anaphoraRelations must be passed explicitly on every call
+          // rather than re-derived, or spliced into the semantic text as a string.
+          const anaphoraRelations = mapping.anaphoraRelations ?? [];
           const reasoningChecks = this.dataService.gswbReasoningCheckAsts({
             premiseAsts: [premiseAst],
             hypothesisAsts: [hypothesisAst],
@@ -690,6 +695,7 @@ export class ChatComponent {
           });
           const contextTptp = this.dataService.gswbCollapseAnaphora({
             semantic: mapping.semantic || '',
+            anaphoraRelations,
             parentSolutionId: `${mapping.id}-context`
           }).pipe(
             switchMap(collapsed => collapsed?.semantic
@@ -706,7 +712,8 @@ export class ChatComponent {
                 if (!entries.length) return of([]);
                 return forkJoin(entries.map(([name, check]: [string, any]) =>
                   this.dataService.gswbCollapseAnaphora({
-                    semantic: `${check.semantic}${mappingSuffix}`,
+                    semantic: check.semantic,
+                    anaphoraRelations,
                     parentSolutionId: `${mapping.id}-${name}`
                   }).pipe(
                     switchMap(collapsed => {
