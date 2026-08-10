@@ -4,10 +4,16 @@ Status: reference model for the sentence and sequence analysis implementation.
 
 This document defines the data model for parsing one or more sentences with
 XLE, deriving Glue/LFGxDRT semantics, merging sentence or sequence analyses,
-and resolving anaphora over a merged sequence (`DiscourseUpdate`, see
-"Pragmatic and Discourse Results"). Final pragmatic/NLI reasoning
-(consistency, informativity, and Vampire-based checks) is deliberately
-outside the model described here.
+resolving anaphora over a merged sequence (`DiscourseUpdate`, see "Pragmatic
+and Discourse Results"), and recording the final pragmatic/NLI reasoning
+checks computed over a premise/conclusion pair (`ReasoningUpdate`, see
+"Reasoning Results").
+
+Reasoning was previously declared out of scope here, which left the four
+discourse checks and their Vampire verdicts with nowhere to live: they existed
+only as transient values in the chat component and were discarded once used as
+an accept/reject filter. `ReasoningUpdate` closes that gap and is the layer the
+regression-testing interface persists against.
 
 ## Document Lifecycle
 
@@ -491,6 +497,98 @@ without recomputation.
 This layer consumes completed sequence semantic alternatives and must not
 change the underlying `SYNSEM_MAPPING`.
 
+## Reasoning Results
+
+The four discourse checks (`info_pos_check`, `info_neg_check`,
+`cons_pos_check`, `cons_neg_check`) are computed over a *pair* of document
+elements -- a premise side and a conclusion side -- and are the last stage of
+the pipeline. A `ReasoningUpdate` stacks on those elements the same way a
+`DiscourseUpdate` stacks on one: as a parallel, id-referenced structure.
+
+```text
+ReasoningUpdate
+  ID: String                                 // `ru-${ItemId}` or `ru-${PremiseIds}=>${HypothesisIds}`
+  PREMISE_ELEMENT_IDS: List<String>          // Sentence.ID | Sequence.ID, ordered
+  HYPOTHESIS_ELEMENT_IDS: List<String>
+  SOURCE_ELEMENT_ID: String                  // the merged Sequence, when one is registered
+  SOURCE_ELEMENT_KIND: "sentence" | "sequence"
+  ITEM_ID: String                            // regression's NLI item id; absent in chat
+  LOGIC_TYPE: "fof" | "tff"
+  RULE_STRING: String
+  PRUNED: Boolean
+  ASSIGNMENTS: List<ReasoningAssignment>
+  VERDICT: ReasoningItemVerdict              // majority vote across assignments
+
+ReasoningAssignment
+  ID: String                                 // see "Reasoning IDs" below
+  PREMISE_SEMANTIC_IDS: List<String>         // positionally aligned with PREMISE_ELEMENT_IDS
+  HYPOTHESIS_SEMANTIC_IDS: List<String>
+  RULE_BRANCH_INDEX: Integer
+  DISCOURSE_UPDATE_ID: String                // pointer into DISCOURSE_UPDATES
+  DISCOURSE_ID: String                       // the DiscourseAnalysis whose mapping was used
+  CONTEXT_TPTP: String
+  CONTEXT_SEMANTIC_ID: String
+  CHECKS: Map<CheckName, ReasoningCheck>     // exactly the four names, never fewer
+  VERDICT: ReasoningVerdict                  // absent until Vampire has run
+  FAILURE: String                            // set instead of usable CHECKS
+
+ReasoningCheck
+  TPTP: String
+  CANONICAL_SEMANTIC: String
+
+ReasoningVerdict
+  CONSISTENT / INFORMATIVE / RELEVANT: Boolean
+  GLYPH: String                              // Vampire's diagnostic SVG, not a semantic SVG
+  PROOF_FILES: List<String>
+```
+
+Three modelling decisions are load-bearing.
+
+**A reasoning check is scoped to lists of element IDs, not to one element and
+not to two.** A regression NLI item has N premises and M conclusions and the
+ordered groups must survive; chat is the degenerate 1+1 case of the same shape.
+`PREMISE_SEMANTIC_IDS` is positionally aligned with `PREMISE_ELEMENT_IDS`: the
+i-th semantic ID is a reading of the i-th element. This is the only place in
+the model where array position carries meaning, so it is validated explicitly.
+
+**The verdict belongs to the assignment, not to the individual check.** Vampire
+runs all four checks for one assignment and folds them into a single
+consistent/informative/relevant triple with one set of proof files. A per-check
+verdict does not exist and cannot be reconstructed, so the model does not
+pretend otherwise.
+
+**A reasoning result references the anaphora mapping it used; it never copies
+it.** The mapping is computed exactly once by GSWB's `/generate_pcdrs` and
+threaded through to the collapse step. Re-deriving it against a duplicated
+premise context makes the mapping ambiguous between the outer copy and the copy
+embedded in the check's antecedent. `DISCOURSE_UPDATE_ID` + `DISCOURSE_ID`
+therefore point at the `DiscourseAnalysis` branch that supplied the relations,
+and both must resolve or neither may be set.
+
+Consequently a `ReasoningUpdate` stores no structures of its own: the merged
+structures a check was computed over already live in the `DiscourseUpdate`.
+
+### Reasoning IDs
+
+```text
+ReasoningUpdate.ID     = `ru-${ItemId}`
+                       | `ru-${PremiseElementIds}=>${HypothesisElementIds}`
+ReasoningAssignment.ID = `${UpdateId}/P[${PremiseSemIds}]/H[${HypothesisSemIds}]`
+                         + `/r${RuleBranchIndex}/m${AnaphoraBranchId}`
+```
+
+The assignment ID covers item, assignment, side, rule branch and anaphora
+branch, as the caching/stable-ID requirements demand, and every component is
+recoverable by parsing it -- array position is never identity. `AnaphoraBranchId`
+is GSWB's PCDRS mapping ID, which is also the ID the corresponding
+`DiscourseAnalysis` carries, so `DISCOURSE_ID` can be checked against the
+assignment's own ID rather than trusted blindly.
+
+A branch that cannot be prepared (collapse failed, or fewer than four checks
+returned) is recorded as an assignment with `FAILURE` set rather than being
+dropped. It is excluded from the Vampire payload but remains in the document as
+evidence of what was attempted.
+
 ## Invariants
 
 - IDs are unique within their containing document or sequence.
@@ -506,3 +604,14 @@ change the underlying `SYNSEM_MAPPING`.
 - Every `DiscourseAnalysis.STRUCTURE_ID` resolves to an entry in the owning
   `DiscourseUpdate.STRUCTURES`.
 - `DiscourseUpdate` never modifies `SYNSEM_MAPPING` on its source element.
+- Every `ReasoningUpdate` premise/hypothesis element ID resolves to an element
+  in the document.
+- Every `ReasoningAssignment.ID` parses back to its owning `ReasoningUpdate.ID`,
+  and is unique within that update.
+- `PREMISE_SEMANTIC_IDS`/`HYPOTHESIS_SEMANTIC_IDS` have the same length as their
+  element ID lists, and each entry is a reading of the element at its position.
+- Every assignment carries exactly the four check names, unless `FAILURE` is set.
+- `DISCOURSE_UPDATE_ID` and `DISCOURSE_ID` are either both set and both
+  resolvable, or both absent.
+- `ReasoningUpdate` never modifies `SYNSEM_MAPPING` or the discourse layer it
+  points at.

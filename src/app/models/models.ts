@@ -23,6 +23,8 @@ export interface SyntacticAnalysis {
   graph: LigerWebGraph;
   meaningConstructors?: string;
   numberOfMCsets?: number;
+  appliedRules?: LigerRule[];   // from LigerRuleAnnotation.appliedRules -- per syntax variant
+  axioms?: string[];            // from LigerRuleAnnotation.axioms -- per syntax variant
 }
 
 export interface SemanticAnalysis {
@@ -90,6 +92,7 @@ export interface XlePlusGlueDocument {
   sequences: SequenceAnalysis[];      // canonical sequence registry, mirrors `sentences`
   elements: XlePlusGlueElementRef[];  // ordered {kind,id} refs, not embedded objects
   discourseUpdates?: DiscourseUpdate[];
+  reasoningUpdates?: ReasoningUpdate[];   // sibling of discourseUpdates -- see the reasoning layer below
   activeElementId?: string;
   revision?: number;
   createdAt?: string;
@@ -144,6 +147,105 @@ export interface DiscourseUpdate {
   mergedGraphs?: Record<string, LigerWebGraph>;  // keyed the same way as `structures` -- rendering companion
   discourse: DiscourseAnalysis[];    // candidate branches, referencing `structures`/`mergedGraphs` by structureId
   semDiscourseMapping: SemDiscourseMapping;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Reasoning layer (consistency/informativity NLI checks over a premise/conclusion pair).
+// Stacks on Sentence/Sequence exactly the way DiscourseUpdate does -- a parallel,
+// id-referenced structure, never new fields on SentenceAnalysis/SequenceAnalysis.
+//
+// Deliberately stores NO structures of its own: the merged structures a check was
+// computed over live in the DiscourseUpdate, and an assignment points at the branch it
+// used via discourseUpdateId/discourseId. The anaphora mapping is computed exactly once
+// by GSWB /generate_pcdrs and threaded through; re-deriving it against a duplicated
+// premise context makes the mapping ambiguous (see docs/plans/LFGXDRT_NLI_CHECK_COMPOSITION_PLAN.md).
+
+/** The four discourse checks. Fixed by LFGXDRT_NLI_CHECK_COMPOSITION_PLAN.md -- never
+ *  renamed, never reduced. Enforced by validateReasoningUpdate. */
+export const REASONING_CHECK_NAMES = [
+  'info_pos_check', 'info_neg_check', 'cons_pos_check', 'cons_neg_check',
+] as const;
+export type ReasoningCheckName = typeof REASONING_CHECK_NAMES[number];
+
+/** Predicted/gold NLI label: entailment / neutral / contradiction. */
+export type NliLabel = '1' | '0' | '-1';
+
+/** One check's artefacts. `tptp` is the only field Vampire consumes; `graph` and
+ *  `semanticSvg` are modelled because the composition plan asks for them, but are left
+ *  unset in practice -- a regression session persists one assignment per
+ *  reading x rule-branch x anaphora-branch, and embedding graphs there is what makes
+ *  the autosave payload unmanageable. */
+export interface ReasoningCheck {
+  tptp: string;
+  canonicalSemantic?: string;
+  graph?: LigerStructure;
+  semanticSvg?: string;
+}
+
+export type ReasoningCheckSet = Record<ReasoningCheckName, ReasoningCheck>;
+
+/** Vampire's verdict for ONE assignment -- i.e. one tptp_checks bundle. The four checks
+ *  are folded into this single triple server-side by discourse_checks(), with one
+ *  proof_files list per bundle, so there is no per-check verdict to model.
+ *  `glyph` is Vampire's diagnostic SVG, NOT the semantic SVG (kept separate per
+ *  LFGXDRT_REASONING_PLAN.md section 6: do not overload Check.glyph). */
+export interface ReasoningVerdict {
+  consistent: boolean;
+  informative: boolean;
+  relevant: boolean;
+  glyph?: string;
+  proofFiles?: string[];
+  computedAt?: string;
+}
+
+/** One reading-assignment x rule-branch x anaphora-branch. */
+export interface ReasoningAssignment {
+  /** `${updateId}/P[...]/H[...]/r${ruleBranchIndex}/m${anaphoraBranchId}` --
+   *  see reasoningAssignmentId/parseReasoningAssignmentId in analysis-model.ts. */
+  id: string;
+  premiseSemanticIds: string[];      // one per premise element, ordered, positionally aligned
+  hypothesisSemanticIds: string[];   // one per hypothesis element, ordered, positionally aligned
+  ruleBranchIndex: number;           // which NLI post-processing rule annotation this came from
+  discourseUpdateId?: string;        // pointer into document.discourseUpdates -- never a copy
+  discourseId?: string;              // the DiscourseAnalysis branch whose mapping was used
+  contextTptp: string;               // premise context, reattached as a separate TPTP conjunct
+  contextSemanticId?: string;        // semId of the merged premise+hypothesis reading
+  checks: ReasoningCheckSet;
+  verdict?: ReasoningVerdict;        // absent until Vampire has run
+  /** Set when this branch could not be prepared (collapse failed, fewer than four
+   *  checks came back). Recorded rather than silently dropped, which is what both
+   *  call sites did before. An assignment with `failure` set is excluded from the
+   *  Vampire payload but stays in the document as evidence. */
+  failure?: string;
+}
+
+/** Aggregated verdict across a reasoning update's assignments, plus the derived NLI label. */
+export interface ReasoningItemVerdict {
+  label: NliLabel;
+  consistent: boolean;
+  informative: boolean;
+  relevant: boolean;
+  assignmentIds: string[];
+  glyphs?: string[];
+}
+
+/** A reasoning check over a premise/conclusion pair. Scoped to lists of element ids
+ *  rather than two ids: a regression NLI item has N premises and M conclusions, and the
+ *  ordered groups must be preserved. Chat is the degenerate 1+1 case. */
+export interface ReasoningUpdate {
+  id: string;                        // `ru-${itemId}` or `ru-${premiseIds}=>${hypothesisIds}`
+  premiseElementIds: string[];       // Sentence.id | Sequence.id, ordered
+  hypothesisElementIds: string[];
+  sourceElementId?: string;          // the merged Sequence, when one is registered
+  sourceElementKind?: 'sentence' | 'sequence';
+  itemId?: string;                   // regression's n<k>; absent in chat
+  logicType: 'fof' | 'tff';
+  ruleString?: string;               // NLI post-processing rules applied, for reproducibility
+  pruned?: boolean;                  // true when only the first candidate was reasoned over
+  assignments: ReasoningAssignment[];
+  verdict?: ReasoningItemVerdict;    // majority vote across assignments
+  failure?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -949,6 +1051,10 @@ export interface check {
   consistent: boolean;
   relevant: boolean;
   proof_files?: string[];
+  /** Echoed back by the Vampire adapter from the submitted tptp_checks bundle, so a
+   *  verdict can be matched to its ReasoningAssignment by id instead of by array
+   *  position. Snake_case to match the rest of this wire type. */
+  assignment_id?: string;
 }
 
 export interface context {
