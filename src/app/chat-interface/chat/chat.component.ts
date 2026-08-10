@@ -22,13 +22,7 @@ import { InferenceSettingsComponent } from '../../inference-interface/inference-
 import { catchError, concatMap, forkJoin, from, map, mergeMap, of, switchMap, toArray } from 'rxjs';
 import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
 import { compositeAnalysisId, discourseStructureId, validateAnalysisDocument } from '../../analysis-model';
-
-/** One post-processing rule branch: the interconnected (tier B) structure the rules
- *  produced, plus the graph LiGER rendered for it. */
-interface RuleBranch {
-  structure: LigerStructure;
-  graph?: LigerWebGraph;
-}
+import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 
 
 @Component({
@@ -41,7 +35,8 @@ export class ChatComponent {
   constructor(
     private dataService: DataService,
     private changeDetector: ChangeDetectorRef,
-    private sanitizer: DomSanitizer
+    private sanitizer: DomSanitizer,
+    private reasoningPipeline: ReasoningPipelineService
   ) {}
 
   @ViewChild('contextPruning') contextPruning!: ElementRef;
@@ -67,8 +62,6 @@ export class ChatComponent {
   meaningConstructors: string = '';
 
   axiomCounter = 0;
-
-  private readonly nliPostProcessingRules = APP_DEFAULTS.graphInspector.rulesText;
 
   // needs to be updated as chat goes on
   context: context[] = [];
@@ -473,20 +466,20 @@ export class ChatComponent {
             mcSetId: currentSolution.mcSetId,
             resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs
           }).pipe(map(merged => ({ merged, currentSolution })))),
-          switchMap(({ merged, currentSolution }) => this.postProcessReasoningCheckAsts(
+          switchMap(({ merged, currentSolution }) => this.reasoningPipeline.prepareReasoningChecks({
+            scopeId: pairId,
             merged,
-            mergedSyntax,
-            premiseContext.semanticGraph,
-            currentSolution.graph,
+            sequenceStructure: mergedSyntax,
+            premiseAsts: [premiseContext.semanticGraph],
+            hypothesisAsts: [currentSolution.graph],
             typed,
-            pairId,
-            pruneContext
-          ).pipe(map(checks => ({
+            prune: pruneContext
+          }).pipe(map(pair => ({
             contextIndex,
             priorElementId,
             newSentenceId,
             pairId,
-            checks,
+            checks: pair.assignments,
             merged,
             syntax: mergedSyntax
           }))))
@@ -789,154 +782,6 @@ export class ChatComponent {
     });
 
     return pruneContext ? next.slice(0, 1) : next;
-  }
-
-  private postProcessReasoningCheckAsts(
-    merged: any,
-    syntax: any,
-    premiseAst: any,
-    hypothesisAst: any,
-    typed: boolean,
-    pairId: string,
-    pruneContext: boolean
-  ): import('rxjs').Observable<any[]> {
-    if (!syntax) {
-      throw new Error('NLI checks require the sequence provenance structure.');
-    }
-
-    if (!premiseAst || !hypothesisAst || !merged?.graph) {
-      throw new Error('NLI sequence semantic graphs are missing.');
-    }
-
-    // premiseAst/hypothesisAst/typed are fixed for this (contextIndex, candidateSolution) pair
-    // and never vary across the PCDRS mappings below, so the four reasoning-check ASTs are
-    // fetched exactly once here and reused by every mapping -- and since this call needs none
-    // of the PCDRS pipeline's output, it runs concurrently with that pipeline below instead of
-    // waiting for PCDRS generation to finish first.
-    const reasoningChecks$ = this.dataService.gswbReasoningCheckAsts({
-      premiseAsts: [premiseAst],
-      hypothesisAsts: [hypothesisAst],
-      typed
-    });
-
-    // /merge_uploaded_structures only UNIONS the merged syntax with the merged semantics --
-    // both sides end up in one graph but with no edges between them. The post-processing
-    // rules below are what interconnect them. Tier A (this union) is kept alongside the
-    // tier-B branches so the discourse layer records both, as the analysis view does.
-    const mappingsWithStructure$ = this.dataService.ligerMergeStructure({ syntax, drs: merged.graph }).pipe(
-      switchMap(base => this.applyNliRules(base.structureJson, base.graph).pipe(
-        map(branches => ({ base, branches }))
-      )),
-      switchMap(({ base, branches }) => forkJoin(branches.map((branch, index) =>
-        this.dataService.gswbGeneratePcdrs({
-          semantic: merged.semantic,
-          parentSolutionId: `${pairId}-rule-${index + 1}`,
-          mergedStructure: branch.structure as any
-        }).pipe(map(result => ({ result, branch, ruleBranchIndex: index + 1 })))
-      )).pipe(map(pcdrsResults => ({ base, pcdrsResults })))),
-      map(({ base, pcdrsResults }) => {
-        let mappingsWithStructure = pcdrsResults.flatMap(({ result, branch, ruleBranchIndex }) =>
-          (result?.solutions ?? []).map(mapping => ({ mapping, branch, ruleBranchIndex, base }))
-        );
-        if (!mappingsWithStructure.length) {
-          throw new Error('No post-processed sequence interpretations were generated.');
-        }
-        console.info('[Chat] PCDRS candidates generated', {
-          pairId,
-          ruleBranchCount: pcdrsResults.length,
-          mappingCount: mappingsWithStructure.length,
-          anaphoraResolvedCount: mappingsWithStructure.filter(({ mapping }) =>
-            (mapping.anaphoraRelations ?? []).length > 0).length,
-        });
-        // Pruning picks the first candidate and reasons over it alone -- the reduction
-        // happens here, before the expensive collapse/TPTP/Vampire steps below.
-        if (pruneContext) {
-          mappingsWithStructure = mappingsWithStructure.slice(0, 1);
-        }
-        return mappingsWithStructure;
-      })
-    );
-
-    return forkJoin({
-      reasoningChecksResponse: reasoningChecks$,
-      mappingsWithStructure: mappingsWithStructure$
-    }).pipe(
-      switchMap(({ reasoningChecksResponse, mappingsWithStructure }) => {
-        // Shared across every mapping below -- each mapping only varies in which
-        // anaphoraRelations it uses to collapse these same four (already-fetched) check ASTs.
-        const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
-        return forkJoin(mappingsWithStructure.map(({ mapping, branch, ruleBranchIndex, base }) => {
-          // The mapping is computed once here (by generate_pcdrs above) and reused as-is
-          // across the context collapse and all four checks below -- gswbCollapseAndTptpBatch
-          // re-parses each item's semantic from scratch server-side and carries no mapping of
-          // its own, so the structured anaphoraRelations must be passed explicitly rather than
-          // re-derived, or spliced into the semantic text as a string. Folding the context plus
-          // all four checks into one batched request (instead of 5 separate collapse+translate
-          // round trips) keeps a discourse with many candidate mappings from firing enough
-          // concurrent requests to overwhelm GSWB's single embedded server.
-          const anaphoraRelations = mapping.anaphoraRelations ?? [];
-          const items = [
-            { name: 'context', semantic: mapping.semantic || '' },
-            ...checkEntries.map(([name, check]: [string, any]) => ({ name, semantic: check.semantic }))
-          ].filter(item => !!item.semantic);
-          return this.dataService.gswbCollapseAndTptpBatch({
-            anaphoraRelations,
-            items,
-            typed,
-            parentSolutionId: mapping.id
-          }).pipe(
-            map(result => {
-              const contextTptp = result.results?.['context']?.tptp ?? '';
-              const valid = checkEntries
-                .map(([name]) => ({ name, tptp: result.results?.[name]?.tptp }))
-                .filter((item): item is { name: string; tptp: string } => !!item.tptp);
-              if (valid.length !== 4) return null;
-              return {
-                pairId,
-                mappingId: mapping.id,
-                mapping,
-                // Tier A (the unlinked union) and tier B (the interconnected structure this
-                // mapping was derived from) are both carried so the discourse layer can store
-                // each exactly once, keyed by semId. ruleBranchIndex is 1-based, matching the
-                // parentSolutionId sent to GSWB above.
-                baseStructure: base.structureJson,
-                baseGraph: base.graph,
-                ruleBranchIndex,
-                mergedStructure: branch.structure,
-                mergedGraph: branch.graph,
-                checks: Object.fromEntries(valid.map(item => [item.name, { tptp: item.tptp }])),
-                contextTptp
-              };
-            }),
-            catchError(() => of(null))
-          );
-        }));
-      }),
-      map(bundles => bundles.filter(Boolean))
-    );
-  }
-
-  /** Runs the post-processing rules over the tier-A union, producing one tier-B
-   *  interconnected structure per rule branch. The rendered graph is kept alongside each
-   *  branch so DiscourseUpdate.mergedGraphs can be populated -- LiGER already computed it,
-   *  and it cannot be reconstructed client-side.
-   *
-   *  When no rule fires there is no tier B, so the branch falls back to tier A itself
-   *  (structure and graph together, which is also what the analysis view does). */
-  private applyNliRules(structure: any, graph?: LigerWebGraph): import('rxjs').Observable<RuleBranch[]> {
-    return this.dataService.ligerApplyRulesToStructure({
-      content: JSON.stringify(structure),
-      format: 'json',
-      ruleString: this.nliPostProcessingRules,
-      id: 'nli-post-processing'
-    }).pipe(
-      map(response => {
-        const branches = (response.annotations ?? [])
-          .filter(annotation => !!annotation.structureJson)
-          .map(annotation => ({ structure: annotation.structureJson, graph: annotation.graph }));
-        return branches.length ? branches : [{ structure, graph }];
-      })
-    );
   }
 
   /** Registers the just-parsed message as a new Sentence in the chat's document (box Q's
