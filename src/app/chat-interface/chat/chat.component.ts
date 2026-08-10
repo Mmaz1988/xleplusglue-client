@@ -407,6 +407,7 @@ export class ChatComponent {
       premiseContext: context;
       priorElementId: string;
       contextSyntax: any;
+      hypothesisSyntax: any;
       solution: any;
       hypothesisIndex: number;
       pairId: string;
@@ -421,31 +422,43 @@ export class ChatComponent {
       }
       candidateSolutions.forEach((solution, hypothesisIndex) => {
         const pairId = `pxq-${contextIndex + 1}-${solution.id || hypothesisIndex + 1}`;
-        pairSpecs.push({ contextIndex, premiseContext, priorElementId, contextSyntax, solution, hypothesisIndex, pairId });
+        // The new sentence's own parsed structure, paired to this semantic reading by
+        // solutionKey -- supplied to the sequence call as the second operand.
+        const hypothesisSyntax = ligerSolutions
+          .find(item => item.solutionKey === solution.solutionKey)?.structureJson ?? syntax;
+        pairSpecs.push({
+          contextIndex, premiseContext, priorElementId, contextSyntax,
+          hypothesisSyntax, solution, hypothesisIndex, pairId,
+        });
       });
     });
 
-    const processPair = ({ contextIndex, premiseContext, priorElementId, contextSyntax, solution, pairId }: PairSpec) => {
-      // Only the premise gets a pre-parsed structure -- the new sentence must be freshly
-      // parsed by LiGER as part of this sequence call, not reused from its own independent
-      // /apply_rules_xle parse (sendMessage()'s shared initial call). Reusing it here was the
-      // actual root cause of chat's silent anaphora-resolution failures: LiGER assigns a
-      // fresh solution key (S0, S1, ...) to a sentence it parses itself as part of a growing
-      // sequence, but preserves whatever key an already-parsed structure came in with -- so a
-      // reused independent parse keeps its standalone "S0", colliding with the premise's own
-      // "S0" instead of becoming "S1". Confirmed by diffing a chat vs. analysis-workflow
-      // document snapshot for the identical two-sentence input: every syntax constraint and
-      // semantic DRS was byte-for-byte identical between the two, except this one
-      // SOLUTION-KEY/SYNTAX-VARIANT-ID annotation pair, which is what the pronoun-binding
-      // rules use to tell the premise's and the new sentence's nodes apart. Mirrors
-      // LigerVisComponent.addSentence(), which only reuses parsedSentences for
-      // already-accepted sentences and always lets LiGER parse the newly-added one itself.
+    const processPair = ({ contextIndex, premiseContext, priorElementId, contextSyntax,
+                           hypothesisSyntax, solution, pairId }: PairSpec) => {
+      // Sequence + sentence: both operands are supplied as already-parsed structures, so
+      // LiGER skips XLE entirely and SequenceGraphAssembler merges them directly, rebasing
+      // the new sentence's SYN-ID/SRC ids onto the sequence's numbering.
+      //
+      // This must supply a structure for BOTH slots. The endpoint only takes the
+      // supplied-structures path when parsedSentences.size() == sentences.size(); passing
+      // just the premise's structure silently fell through to re-parsing, and since the
+      // premise text is the whole accumulated discourse ("a man saw a man he saw him"),
+      // XLE could not parse it as one sentence and contributed nothing -- turn 3's syntax
+      // was only the new sentence, leaving earlier pronouns with no anchor to be
+      // re-resolved against.
+      //
+      // Reusing the new sentence's own parse here is safe now that the assembler numbers
+      // part provenance positionally. It previously kept whatever SOLUTION-KEY a supplied
+      // structure arrived with -- always S0 for an independent parse -- so it collided
+      // with the premise's own S0 and the pronoun-binding rules could not tell the parts
+      // apart. Verified equivalent to merging all sentences at once: same constraint
+      // count, same SYN-ID count, same [S0, S1, S2] keys.
       const sequence$ = this.dataService.ligerSequence({
         sentences: [premiseContext.original, userMessage],
         sentenceIds: [`${pairId}-sentence-1`, `${pairId}-sentence-2`],
         ruleString: this.ruleString,
         logicType: typed ? 'tff' : 'fof',
-        parsedSentences: [[contextSyntax]]
+        parsedSentences: [[contextSyntax], [hypothesisSyntax]]
       });
       return sequence$.pipe(
         switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
