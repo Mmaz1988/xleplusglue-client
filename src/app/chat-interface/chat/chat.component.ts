@@ -9,6 +9,7 @@ import {
   GswbRequest,
   GswbSemanticMergePart,
   LigerStructure,
+  LigerWebGraph,
   SemanticAnalysis,
   SequenceAnalysis,
   SyntacticAnalysis,
@@ -20,7 +21,14 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
 import { catchError, concatMap, forkJoin, from, map, mergeMap, of, switchMap, toArray } from 'rxjs';
 import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
-import { compositeAnalysisId, validateAnalysisDocument } from '../../analysis-model';
+import { compositeAnalysisId, discourseStructureId, validateAnalysisDocument } from '../../analysis-model';
+
+/** One post-processing rule branch: the interconnected (tier B) structure the rules
+ *  produced, plus the graph LiGER rendered for it. */
+interface RuleBranch {
+  structure: LigerStructure;
+  graph?: LigerWebGraph;
+}
 
 
 @Component({
@@ -688,6 +696,7 @@ export class ChatComponent {
     interface DiscourseGroup {
       semId: string;
       structures: Record<string, LigerStructure>;
+      mergedGraphs: Record<string, LigerWebGraph>;
       discourse: DiscourseAnalysis[];
     }
     const groups = new Map<string, DiscourseGroup>();
@@ -717,17 +726,39 @@ export class ChatComponent {
       } as context);
 
       if (!groups.has(sequenceId)) {
-        groups.set(sequenceId, { semId, structures: {}, discourse: [] });
+        groups.set(sequenceId, { semId, structures: {}, mergedGraphs: {}, discourse: [] });
       }
       const group = groups.get(sequenceId)!;
 
-      const structureId = item.checks?.mappingId ?? `${sequenceId}-pcdrs-${index}`;
+      // Structures are keyed by semId + rule branch, NOT by the PCDRS mapping id: every
+      // mapping produced from one rule branch shares that branch's structure, so keying by
+      // mapping would store one copy per mapping and defeat the deduplication these maps
+      // exist for. Minted here rather than in the pipeline because semId is only known once
+      // the sequence has been identified.
+      const baseStructureId = discourseStructureId(semId);
+      const structureId = item.checks?.ruleBranchIndex === undefined
+        ? baseStructureId
+        : discourseStructureId(semId, item.checks.ruleBranchIndex);
+
+      if (item.checks?.baseStructure) {
+        group.structures[baseStructureId] = item.checks.baseStructure;
+        if (item.checks.baseGraph) {
+          group.mergedGraphs[baseStructureId] = item.checks.baseGraph;
+        }
+      }
       if (item.checks?.mergedStructure) {
         group.structures[structureId] = item.checks.mergedStructure;
+        if (item.checks.mergedGraph) {
+          group.mergedGraphs[structureId] = item.checks.mergedGraph;
+        }
       }
+
       const mapping = item.checks?.mapping;
       group.discourse.push({
-        id: `${semId}-pcdrs-${structureId}`,
+        // GSWB's PCDRS solution id, matching the analysis view. It identifies the anaphora
+        // branch, which is exactly what a reasoning assignment needs to point at -- and
+        // unlike the structure id it is unique per mapping.
+        id: mapping?.id ?? `${semId}-pcdrs-${index}`,
         semanticOrigin: semId,
         drsString: mapping?.semantic ?? item.merged.semantic,
         drsGraph: mapping?.graph,
@@ -751,6 +782,7 @@ export class ChatComponent {
         sourceElementId: sequenceId,
         sourceElementKind: 'sequence',
         structures: group.structures,
+        mergedGraphs: group.mergedGraphs,
         discourse: group.discourse,
         semDiscourseMapping: { [group.semId]: group.discourse.map(entry => entry.id) },
       });
@@ -787,18 +819,24 @@ export class ChatComponent {
       typed
     });
 
+    // /merge_uploaded_structures only UNIONS the merged syntax with the merged semantics --
+    // both sides end up in one graph but with no edges between them. The post-processing
+    // rules below are what interconnect them. Tier A (this union) is kept alongside the
+    // tier-B branches so the discourse layer records both, as the analysis view does.
     const mappingsWithStructure$ = this.dataService.ligerMergeStructure({ syntax, drs: merged.graph }).pipe(
-      switchMap(mergedStructure => this.applyNliRules(mergedStructure.structureJson)),
-      switchMap(mergedStructures => forkJoin(mergedStructures.map((mergedStructure, index) =>
+      switchMap(base => this.applyNliRules(base.structureJson, base.graph).pipe(
+        map(branches => ({ base, branches }))
+      )),
+      switchMap(({ base, branches }) => forkJoin(branches.map((branch, index) =>
         this.dataService.gswbGeneratePcdrs({
           semantic: merged.semantic,
           parentSolutionId: `${pairId}-rule-${index + 1}`,
-          mergedStructure: mergedStructure as any
-        }).pipe(map(result => ({ result, mergedStructure })))
-      ))),
-      map(pcdrsResults => {
-        let mappingsWithStructure = pcdrsResults.flatMap(({ result, mergedStructure }) =>
-          (result?.solutions ?? []).map(mapping => ({ mapping, mergedStructure }))
+          mergedStructure: branch.structure as any
+        }).pipe(map(result => ({ result, branch, ruleBranchIndex: index + 1 })))
+      )).pipe(map(pcdrsResults => ({ base, pcdrsResults })))),
+      map(({ base, pcdrsResults }) => {
+        let mappingsWithStructure = pcdrsResults.flatMap(({ result, branch, ruleBranchIndex }) =>
+          (result?.solutions ?? []).map(mapping => ({ mapping, branch, ruleBranchIndex, base }))
         );
         if (!mappingsWithStructure.length) {
           throw new Error('No post-processed sequence interpretations were generated.');
@@ -827,7 +865,7 @@ export class ChatComponent {
         // Shared across every mapping below -- each mapping only varies in which
         // anaphoraRelations it uses to collapse these same four (already-fetched) check ASTs.
         const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
-        return forkJoin(mappingsWithStructure.map(({ mapping, mergedStructure }) => {
+        return forkJoin(mappingsWithStructure.map(({ mapping, branch, ruleBranchIndex, base }) => {
           // The mapping is computed once here (by generate_pcdrs above) and reused as-is
           // across the context collapse and all four checks below -- gswbCollapseAndTptpBatch
           // re-parses each item's semantic from scratch server-side and carries no mapping of
@@ -857,7 +895,15 @@ export class ChatComponent {
                 pairId,
                 mappingId: mapping.id,
                 mapping,
-                mergedStructure,
+                // Tier A (the unlinked union) and tier B (the interconnected structure this
+                // mapping was derived from) are both carried so the discourse layer can store
+                // each exactly once, keyed by semId. ruleBranchIndex is 1-based, matching the
+                // parentSolutionId sent to GSWB above.
+                baseStructure: base.structureJson,
+                baseGraph: base.graph,
+                ruleBranchIndex,
+                mergedStructure: branch.structure,
+                mergedGraph: branch.graph,
                 checks: Object.fromEntries(valid.map(item => [item.name, { tptp: item.tptp }])),
                 contextTptp
               };
@@ -870,7 +916,14 @@ export class ChatComponent {
     );
   }
 
-  private applyNliRules(structure: any): import('rxjs').Observable<any[]> {
+  /** Runs the post-processing rules over the tier-A union, producing one tier-B
+   *  interconnected structure per rule branch. The rendered graph is kept alongside each
+   *  branch so DiscourseUpdate.mergedGraphs can be populated -- LiGER already computed it,
+   *  and it cannot be reconstructed client-side.
+   *
+   *  When no rule fires there is no tier B, so the branch falls back to tier A itself
+   *  (structure and graph together, which is also what the analysis view does). */
+  private applyNliRules(structure: any, graph?: LigerWebGraph): import('rxjs').Observable<RuleBranch[]> {
     return this.dataService.ligerApplyRulesToStructure({
       content: JSON.stringify(structure),
       format: 'json',
@@ -878,10 +931,10 @@ export class ChatComponent {
       id: 'nli-post-processing'
     }).pipe(
       map(response => {
-        const structures = (response.annotations ?? [])
-          .map(annotation => annotation.structureJson)
-          .filter(Boolean);
-        return structures.length ? structures : [structure];
+        const branches = (response.annotations ?? [])
+          .filter(annotation => !!annotation.structureJson)
+          .map(annotation => ({ structure: annotation.structureJson, graph: annotation.graph }));
+        return branches.length ? branches : [{ structure, graph }];
       })
     );
   }

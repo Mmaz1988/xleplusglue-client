@@ -8,7 +8,7 @@ import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, Liger
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
-import { validateAnalysisDocument } from '../analysis-model';
+import { discourseStructureId, validateAnalysisDocument } from '../analysis-model';
 
 interface PostProcessingResult {
   semanticSolution: GswbSolution;
@@ -377,10 +377,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         responses.forEach((response, index) => {
           const semanticSolutionId = semanticSolutions[index].id;
           if (response?.structureJson) {
-            structures[semanticSolutionId] = response.structureJson as unknown as LigerStructure;
+            structures[discourseStructureId(semanticSolutionId)] = response.structureJson as unknown as LigerStructure;
           }
           if (response?.graph) {
-            mergedGraphs[semanticSolutionId] = response.graph;
+            mergedGraphs[discourseStructureId(semanticSolutionId)] = response.graph;
           }
         });
         this.upsertDiscourseUpdate({
@@ -548,11 +548,15 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         this.postProcessingResults.forEach(result => {
           const semanticSolutionId = result.semanticSolution.id;
           result.ruleAnnotations.forEach((annotation, annotationIndex) => {
+            // 1-based, matching the parentSolutionId sent to GSWB in generatePcdrs -- the two
+            // used to disagree (structures 0-based, parentSolutionId 1-based), which made the
+            // rule branch a given structure belonged to needlessly hard to read off.
+            const structureId = discourseStructureId(semanticSolutionId, annotationIndex + 1);
             if (annotation?.structureJson) {
-              structures[`${semanticSolutionId}-rule-${annotationIndex}`] = annotation.structureJson;
+              structures[structureId] = annotation.structureJson;
             }
             if (annotation?.graph) {
-              mergedGraphs[`${semanticSolutionId}-rule-${annotationIndex}`] = annotation.graph;
+              mergedGraphs[structureId] = annotation.graph;
             }
           });
         });
@@ -662,11 +666,12 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         const discourse: DiscourseAnalysis[] = [];
         candidates.forEach((candidate, candidateIndex) => {
           const semanticSolutionId = candidate.result.semanticSolution.id;
-          // Rule-applied candidates were already stored by onRulesApplied under this key;
-          // the no-rules fallback candidate reuses the base merged structure from handlePostProcessing.
+          // Rule-applied candidates were already stored by onRulesApplied under this key (tier B,
+          // the interconnected structure); the no-rules fallback candidate reuses the tier-A
+          // union stored by handlePostProcessing, since without rules there is no tier B.
           const structureId = candidate.result.rulesApplied
-            ? `${semanticSolutionId}-rule-${candidate.annotationIndex}`
-            : semanticSolutionId;
+            ? discourseStructureId(semanticSolutionId, candidate.annotationIndex + 1)
+            : discourseStructureId(semanticSolutionId);
           if (!structures[structureId] && candidate.annotation.structureJson) {
             structures[structureId] = candidate.annotation.structureJson;
           }

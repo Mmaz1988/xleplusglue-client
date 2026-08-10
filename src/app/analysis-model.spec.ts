@@ -1,5 +1,6 @@
 import {
   compositeAnalysisId,
+  discourseStructureId,
   findElementById,
   majorityVerdict,
   majorityVote,
@@ -139,6 +140,20 @@ describe('analysis model helpers', () => {
       const doc = document();
       doc.elements.push({ kind: 'sentence', id: 'ghost' });
       expect(() => validateAnalysisDocument(doc)).toThrow();
+    });
+  });
+
+  describe('discourseStructureId', () => {
+    it('keys tier A by the semantic id alone and tier B by semantic id + rule branch', () => {
+      expect(discourseStructureId('sem-1+sem-3')).toBe('sem-1+sem-3');
+      expect(discourseStructureId('sem-1+sem-3', 1)).toBe('sem-1+sem-3-rule-1');
+    });
+
+    it('separates rule branches so mappings sharing a branch collapse onto one key', () => {
+      // Two PCDRS mappings off rule branch 2 must produce the same structure key -- that is
+      // the deduplication DiscourseUpdate.structures exists for.
+      expect(discourseStructureId('sem-1', 2)).toBe(discourseStructureId('sem-1', 2));
+      expect(discourseStructureId('sem-1', 2)).not.toBe(discourseStructureId('sem-1', 3));
     });
   });
 

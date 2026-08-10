@@ -479,20 +479,50 @@ rendered string GSWB previously exposed on `GswbSolution.anaphoraMapping`.
 and are the natural next addition once presupposition resolution is implemented, but
 are not modeled here yet -- this layer currently covers anaphora resolution only.
 
-A single semantic origin can fan out into several rule-annotation variants, and each
-variant can fan out into several anaphora-mapping candidates that all share the same
-`LinguisticStructure`. `STRUCTURES`/`MERGED_GRAPHS` store each distinct structure once,
-keyed by a `StructureId` such as `${SemId}` (before rules are applied) or
-`${SemId}-rule-${AnnotationIndex}` (once they are), and each `DiscourseAnalysis`
-references it by `STRUCTURE_ID` instead of embedding a copy -- avoiding duplicating
-multi-KB structures across candidates when persisted.
+### The two structure tiers
+
+`STRUCTURES`/`MERGED_GRAPHS` hold two tiers that differ in *kind*, not merely in
+"before/after rules". Four distinct operations are involved in reaching them, and
+conflating them is a recurring source of bugs:
+
+| Operation | Producer | Produces |
+|---|---|---|
+| merge syntax1 + syntax2 | LiGER `/apply_rules_xle_sequence` | `Sequence.SYNTAX` |
+| merge semantics1 + semantics2 | GSWB `/merge_sequence_semantics` | `Sequence.SEMANTICS` |
+| **union** of the two merged sides | LiGER `/merge_uploaded_structures` | **tier A** -- both sides co-present in one graph, but *unlinked* |
+| **linking** | LiGER `/apply_rules_uploaded_structure` | **tier B** -- the *interconnected* syntax-to-semantics graph |
+
+The union genuinely is only a union: LiGER's `LinguisticStructureMerger.merge`
+deduplicates constraints and concatenates annotations, and creates no edges
+between the syntax and semantics sides. **The post-processing rules are what
+interconnect them**, which is the whole reason this layer stores merged graphs
+at all. A component that runs the rules over merged semantics alone cannot
+produce any syntax-to-semantics link, because there is no syntax in the input.
+
+The sequence workflow that leads here, in order: parse S1, derive its semantics,
+parse S2, merge the syntax of S1+S2, extract S2's meaning constructors *relative
+to that merged syntax*, derive S2's semantics, merge the semantics, then feed the
+independently-merged sides into post-processing.
+
+A single semantic origin can fan out into several rule-annotation variants (tier B),
+and each variant can fan out into several anaphora-mapping candidates that all share
+the same `LinguisticStructure`. `STRUCTURES`/`MERGED_GRAPHS` therefore store each
+distinct structure once, keyed by a `StructureId`:
+
+- `${SemId}` -- tier A, the union;
+- `${SemId}-rule-${RuleBranchIndex}` -- tier B, one per rule branch, **1-based** to
+  match the `parentSolutionId` sent to GSWB.
+
+Each `DiscourseAnalysis` references one by `STRUCTURE_ID` instead of embedding a copy.
+The key is deliberately *not* the anaphora-mapping id: every mapping produced from one
+rule branch shares that branch's structure, so keying by mapping would store one copy
+per mapping and defeat the deduplication these maps exist for. **Anaphora mappings
+derive from tier B**; tier A is referenced only when no rule fired.
 
 `STRUCTURES`/`MERGED_GRAPHS` are not redundant with the source `Sentence`/`Sequence`'s
-own `SYNTAX`/`SEMANTICS`: each entry is the *output* of two further LiGER round-trips
-(merging a specific semantic solution's DRS graph with the base syntax, then a
-rule-annotation pass over that merged structure) -- genuinely new server-computed
-content that cannot be reconstructed from the base element's syntax and semantics
-without recomputation.
+own `SYNTAX`/`SEMANTICS`: each entry is the *output* of a LiGER round-trip -- genuinely
+new server-computed content that cannot be reconstructed from the base element's syntax
+and semantics without recomputation.
 
 This layer consumes completed sequence semantic alternatives and must not
 change the underlying `SYNSEM_MAPPING`.

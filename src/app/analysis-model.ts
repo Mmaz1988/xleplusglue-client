@@ -47,6 +47,26 @@ export function compositeAnalysisId(parts: string[]): string {
   return ids.join('+');
 }
 
+/** Mints a key into `DiscourseUpdate.structures`/`mergedGraphs`. The two tiers stored
+ *  there differ in kind, not just in "before/after rules":
+ *
+ *  - tier A (`ruleBranchIndex` omitted) is the *union* produced by LiGER's
+ *    /merge_uploaded_structures -- merged syntax and merged semantics co-present in one
+ *    graph but entirely unlinked, since LinguisticStructureMerger.merge only unions
+ *    constraints and concatenates annotations;
+ *  - tier B is the *interconnected* structure produced by running the post-processing
+ *    rules over tier A. Those rules are what create the syntax-to-semantics links, and
+ *    anaphora mappings derive from tier B.
+ *
+ *  Neither tier is recoverable from the source element's own syntax/semantics -- both are
+ *  outputs of server-side LiGER round-trips. `ruleBranchIndex` is 1-based, matching the
+ *  `parentSolutionId` both views already send to GSWB. */
+export function discourseStructureId(semanticId: string, ruleBranchIndex?: number): string {
+  return ruleBranchIndex === undefined
+    ? semanticId
+    : `${semanticId}-rule-${ruleBranchIndex}`;
+}
+
 /** Builds a ReasoningUpdate id. Regression items have a stable item id of their own;
  *  chat has none, so the premise/conclusion element ids form the scope instead. */
 export function reasoningUpdateId(
