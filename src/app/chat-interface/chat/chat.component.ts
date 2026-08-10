@@ -687,7 +687,11 @@ export class ChatComponent {
     const previous = this.context;
     const next: context[] = [];
     interface DiscourseGroup {
-      semId: string;
+      /** semanticOrigin -> discourseId. Accumulated per branch rather than assumed to
+       *  be a single semantic: one sequence's contexts routinely span several merged
+       *  semantic ids, and keying the whole map off the first one silently hid the
+       *  branches belonging to the others. */
+      semDiscourseMapping: Record<string, string[]>;
       structures: Record<string, LigerStructure>;
       mergedGraphs: Record<string, LigerWebGraph>;
       discourse: DiscourseAnalysis[];
@@ -719,7 +723,7 @@ export class ChatComponent {
       } as context);
 
       if (!groups.has(sequenceId)) {
-        groups.set(sequenceId, { semId, structures: {}, mergedGraphs: {}, discourse: [] });
+        groups.set(sequenceId, { semDiscourseMapping: {}, structures: {}, mergedGraphs: {}, discourse: [] });
       }
       const group = groups.get(sequenceId)!;
 
@@ -746,11 +750,17 @@ export class ChatComponent {
       }
 
       const mapping = item.checks?.mapping;
+      const discourseId = mapping?.id ?? `${semId}-pcdrs-${index}`;
+      const mappedDiscourseIds = group.semDiscourseMapping[semId] ?? [];
+      if (!mappedDiscourseIds.includes(discourseId)) {
+        mappedDiscourseIds.push(discourseId);
+      }
+      group.semDiscourseMapping[semId] = mappedDiscourseIds;
       group.discourse.push({
         // GSWB's PCDRS solution id, matching the analysis view. It identifies the anaphora
         // branch, which is exactly what a reasoning assignment needs to point at -- and
         // unlike the structure id it is unique per mapping.
-        id: mapping?.id ?? `${semId}-pcdrs-${index}`,
+        id: discourseId,
         semanticOrigin: semId,
         drsString: mapping?.semantic ?? item.merged.semantic,
         drsGraph: mapping?.graph,
@@ -776,7 +786,7 @@ export class ChatComponent {
         structures: group.structures,
         mergedGraphs: group.mergedGraphs,
         discourse: group.discourse,
-        semDiscourseMapping: { [group.semId]: group.discourse.map(entry => entry.id) },
+        semDiscourseMapping: group.semDiscourseMapping,
       });
     });
 
@@ -826,21 +836,47 @@ export class ChatComponent {
     return id;
   }
 
+  /** Builds the Sequence from *every* surviving context, not just the first.
+   *
+   *  This used to keep entries[0] as a representative, which discarded every other
+   *  reading: a three-turn discourse produced 48 contexts spanning two distinct merged
+   *  semantic ids, of which one was stored. The discourse layer still referenced the
+   *  others, so the document failed its own invariant ("has unknown semantic origin")
+   *  and no reasoning result could reference a discarded reading either. The model is
+   *  explicit that no semantic alternative may be dropped. */
   private upsertSequenceFromContexts(sequenceId: string, entries: context[]): void {
     const representative = entries[0];
     const sentenceIds = sequenceId.split('+');
-    const syntax: SyntacticAnalysis[] = representative.syntax
-      ? [{
-          synId: representative.semanticAnalysis?.syntacticOrigin ?? `${sequenceId}-syn`,
-          structure: representative.syntax,
-          graph: representative.syntax,
-        } as unknown as SyntacticAnalysis]
-      : [];
-    const semantics: SemanticAnalysis[] = representative.semanticAnalysis ? [representative.semanticAnalysis] : [];
+    const syntaxById = new Map<string, SyntacticAnalysis>();
+    const semanticsById = new Map<string, SemanticAnalysis>();
     const synSemMapping: Record<string, string[]> = {};
-    if (syntax[0] && semantics[0]) {
-      synSemMapping[syntax[0].synId] = [semantics[0].semId];
-    }
+
+    entries.forEach(entry => {
+      const semantic = entry.semanticAnalysis;
+      const synId = semantic?.syntacticOrigin ?? `${sequenceId}-syn`;
+      if (entry.syntax && !syntaxById.has(synId)) {
+        syntaxById.set(synId, {
+          synId,
+          structure: entry.syntax,
+          graph: entry.syntax,
+        } as unknown as SyntacticAnalysis);
+      }
+      if (!semantic) {
+        return;
+      }
+      if (!semanticsById.has(semantic.semId)) {
+        semanticsById.set(semantic.semId, semantic);
+      }
+      // Cross-product: one syntax variant maps to every semantic derived from it.
+      const mapped = synSemMapping[synId] ?? [];
+      if (!mapped.includes(semantic.semId)) {
+        mapped.push(semantic.semId);
+      }
+      synSemMapping[synId] = mapped;
+    });
+
+    const syntax = [...syntaxById.values()];
+    const semantics = [...semanticsById.values()];
 
     const sequence: SequenceAnalysis = {
       id: sequenceId,
