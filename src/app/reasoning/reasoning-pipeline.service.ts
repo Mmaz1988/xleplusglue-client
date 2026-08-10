@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, forkJoin, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { APP_DEFAULTS } from '../app-defaults';
+import { discourseStructureId } from '../analysis-model';
 import {
   LigerStructure,
   LigerWebGraph,
@@ -46,9 +47,15 @@ export interface PreparedAssignment {
   /** 1-based, matching the parentSolutionId sent to GSWB. */
   ruleBranchIndex: number;
   /** Tier A -- the unlinked union of merged syntax and merged semantics. */
+  baseStructureId: string;
   baseStructure?: LigerStructure;
   baseGraph?: LigerWebGraph;
-  /** Tier B -- the interconnected structure this mapping was derived from. */
+  /** Tier B -- the interconnected structure this mapping was derived from.
+   *  Keyed on the pair scope, NOT on the merged semantic id: several pairs can share
+   *  one merged semantic id while having genuinely different structures (they come
+   *  from different premise contexts), so keying by semantic id makes them overwrite
+   *  one another. The scope id is the same value sent to GSWB as parentSolutionId. */
+  structureId: string;
   mergedStructure?: LigerStructure;
   mergedGraph?: LigerWebGraph;
   checks: Record<string, ReasoningCheck>;
@@ -211,8 +218,10 @@ export class ReasoningPipelineService {
                   mappingId: mapping.id,
                   mapping,
                   ruleBranchIndex,
+                  baseStructureId: discourseStructureId(scopeId),
                   baseStructure: base.structureJson as unknown as LigerStructure,
                   baseGraph: base.graph,
+                  structureId: discourseStructureId(scopeId, ruleBranchIndex),
                   mergedStructure: branch.structure,
                   mergedGraph: branch.graph,
                   checks,

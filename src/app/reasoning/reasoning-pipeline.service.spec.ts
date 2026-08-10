@@ -145,12 +145,29 @@ describe('ReasoningPipelineService', () => {
       expect(pair.assignments.map(a => a.ruleBranchIndex)).toEqual([1, 1, 2, 2]);
       expect(dataService.gswbGeneratePcdrs.calls.allArgs().map((args: any[]) => args[0].parentSolutionId))
         .toEqual(['pxq-1-1-rule-1', 'pxq-1-1-rule-2']);
-      // Mappings off one branch share that branch's structure identity.
+      // Mappings off one branch share that branch's structure identity and its key.
       expect((pair.assignments[0].mergedStructure as any).id).toBe('branch-1');
       expect((pair.assignments[1].mergedStructure as any).id).toBe('branch-1');
       expect((pair.assignments[2].mergedStructure as any).id).toBe('branch-2');
+      expect(pair.assignments[0].structureId).toBe(pair.assignments[1].structureId);
+      expect(pair.assignments[0].structureId).not.toBe(pair.assignments[2].structureId);
       done();
     });
+  });
+
+  it('scopes structure keys per pair so concurrent contexts cannot overwrite each other', done => {
+    // Several pairs routinely share one merged semantic id while having genuinely
+    // different structures, because each comes from a different premise context.
+    // Keying on the semantic id silently collapsed them onto one entry.
+    service.prepareReasoningChecksSequentially([request('pxq-1'), request('pxq-2')])
+      .subscribe(pairs => {
+        const [first, second] = pairs.map(p => p.assignments[0]);
+        expect(first.structureId).toBe('pxq-1-rule-1');
+        expect(second.structureId).toBe('pxq-2-rule-1');
+        expect(first.baseStructureId).toBe('pxq-1');
+        expect(second.baseStructureId).toBe('pxq-2');
+        done();
+      });
   });
 
   it('keeps tier A alongside tier B on every assignment', done => {

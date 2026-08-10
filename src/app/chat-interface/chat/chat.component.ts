@@ -723,15 +723,14 @@ export class ChatComponent {
       }
       const group = groups.get(sequenceId)!;
 
-      // Structures are keyed by semId + rule branch, NOT by the PCDRS mapping id: every
-      // mapping produced from one rule branch shares that branch's structure, so keying by
-      // mapping would store one copy per mapping and defeat the deduplication these maps
-      // exist for. Minted here rather than in the pipeline because semId is only known once
-      // the sequence has been identified.
-      const baseStructureId = discourseStructureId(semId);
-      const structureId = item.checks?.ruleBranchIndex === undefined
-        ? baseStructureId
-        : discourseStructureId(semId, item.checks.ruleBranchIndex);
+      // Keyed on the pair scope + rule branch, as minted by the pipeline. Not by the
+      // PCDRS mapping id -- every mapping off one rule branch shares that branch's
+      // structure, so that would store one copy per mapping and defeat the dedup these
+      // maps exist for. And not by the merged semantic id either: several pairs can
+      // share one semantic id while having different structures (different premise
+      // contexts), so that key makes them silently overwrite each other.
+      const baseStructureId = item.checks?.baseStructureId ?? discourseStructureId(semId);
+      const structureId = item.checks?.structureId ?? baseStructureId;
 
       if (item.checks?.baseStructure) {
         group.structures[baseStructureId] = item.checks.baseStructure;
