@@ -499,6 +499,20 @@ interconnect them**, which is the whole reason this layer stores merged graphs
 at all. A component that runs the rules over merged semantics alone cannot
 produce any syntax-to-semantics link, because there is no syntax in the input.
 
+When inspecting these structures, note that a `LinguisticStructure` carries two
+separate constraint lists: `constraints` (the base graph) and `annotations`
+(facts added by rule application). **Rule-added links land in `annotations`, not
+`constraints`.** Measured on `"Kim arrived" / "she smiled"`, tier A has 366
+constraints and 4 annotations with no `SYNSEM`; tier B has the same 366
+constraints and 12 annotations, the 8 new ones being exactly the `SYNSEM` links
+joining each DRS referent to its f-structure node. Counting only `constraints`
+makes it look as though the rules did nothing.
+
+The join those rules perform is keyed on provenance that both sides already
+carry: the semantic side contributes `SRC` and the syntax side `SYN-ID`, both
+resolving to the same `i<n>` identifiers, and `DR-GF-LINK` turns a matching pair
+into a `SYNSEM` edge. Every downstream anaphora rule is gated on `SYNSEM`.
+
 The sequence workflow that leads here, in order: parse S1, derive its semantics,
 parse S2, merge the syntax of S1+S2, extract S2's meaning constructors *relative
 to that merged syntax*, derive S2's semantics, merge the semantics, then feed the
