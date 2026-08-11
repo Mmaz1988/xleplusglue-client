@@ -493,6 +493,8 @@ export class ChatComponent {
             newSentenceId,
             pairId,
             checks: pair.assignments,
+            failures: pair.failures,
+            degradations: pair.degradations,
             merged,
             syntax: mergedSyntax
           }))))
@@ -513,6 +515,11 @@ export class ChatComponent {
           bundleCount: prepared.length,
           acceptedCheckCount: expanded.length,
         });
+        // A branch that lost its anaphora binding still produces a usable bundle, and a
+        // branch that could not be prepared at all just disappears from `expanded`. Neither
+        // is visible in the answer that follows, so both are reported here: a partially
+        // resolved discourse must never be presented as a cleanly resolved one.
+        this.reportUnresolvedBranches(userMessage, prepared);
         if (!expanded.length) {
           this.chatHistory.push({ text: 'No consistent continuation could be reasoned over.', sender: 'Bot' });
           this.loading = false;
@@ -544,6 +551,35 @@ export class ChatComponent {
         this.chatHistory.push({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
         this.loading = false;
       }
+    });
+  }
+
+  /** Names the branches that were dropped or only partially resolved, in the chat itself.
+   *  The reasons come from ReasoningPipelineService and name the mapping and the item that
+   *  failed, so a degraded answer can be traced back to the referent that did not bind. */
+  private reportUnresolvedBranches(userMessage: string, prepared: any[]): void {
+    const dropped: string[] = prepared.flatMap(item => item?.failures ?? []);
+    const degraded: string[] = prepared.flatMap(item => item?.degradations ?? []);
+    if (!dropped.length && !degraded.length) {
+      return;
+    }
+
+    console.warn('[Chat] some reasoning branches were not fully resolved',
+      { sentence: userMessage, dropped, degraded });
+
+    const parts: string[] = [];
+    if (degraded.length) {
+      parts.push(`${degraded.length} branch(es) were reasoned over without their anaphora binding`);
+    }
+    if (dropped.length) {
+      parts.push(`${dropped.length} branch(es) could not be prepared at all`);
+    }
+    const reasons = [...degraded, ...dropped];
+    const shown = reasons.slice(0, 3).join('; ');
+    const remainder = reasons.length > 3 ? ` (and ${reasons.length - 3} more)` : '';
+    this.chatHistory.push({
+      text: `Note: ${parts.join(' and ')}. ${shown}${remainder}`,
+      sender: 'Bot'
     });
   }
 

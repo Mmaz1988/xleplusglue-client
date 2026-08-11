@@ -106,6 +106,27 @@ describe('ReasoningPipelineService', () => {
     });
   });
 
+  it('reports a branch GSWB could only translate by dropping its anaphora mapping', done => {
+    // The item still comes back with usable TPTP, so nothing downstream would notice on its
+    // own -- a degraded bundle must not be indistinguishable from a resolved one.
+    const degradedBatch = tptpBatch();
+    (degradedBatch.results as any)['context'] = {
+      tptp: 'fof(context).',
+      degraded: 'anaphora mapping could not be applied: no referent x7'
+    };
+    dataService.gswbCollapseAndTptpBatch.and.returnValue(of(degradedBatch) as any);
+
+    service.prepareReasoningChecks(request()).subscribe(pair => {
+      expect(pair.assignments.length).toBe(1);
+      expect(pair.failures).toEqual([]);
+      expect(pair.degradations.length).toBe(1);
+      expect(pair.degradations[0]).toContain('x7');
+      expect(pair.degradations[0]).toContain('context');
+      expect(pair.assignments[0].degradations).toEqual(pair.degradations);
+      done();
+    });
+  });
+
   it('survives one mapping erroring and keeps the others', done => {
     dataService.gswbGeneratePcdrs.and.returnValue(of({
       solutions: [{ id: 'bad', semantic: 'a', anaphoraRelations: [] },

@@ -60,6 +60,11 @@ export interface PreparedAssignment {
   mergedGraph?: LigerWebGraph;
   checks: Record<string, ReasoningCheck>;
   contextTptp: string;
+  /** Items GSWB could translate only by dropping this branch's anaphora mapping, as
+   *  human-readable reasons. Non-empty means the bundle below is usable but NOT fully
+   *  resolved -- the pronoun it names bound to nothing. Must be shown to the user rather
+   *  than treated as a clean result. */
+  degradations: string[];
 }
 
 /** Either a usable assignment or the reason its branch could not be prepared. */
@@ -73,6 +78,10 @@ export interface PreparedReasoningPair {
   /** Branches that could not be prepared, as human-readable reasons. Kept rather than
    *  silently dropped -- a mapping whose collapse failed is evidence, not noise. */
   failures: string[];
+  /** Every degradation across this pair's assignments, flattened. A pair can have
+   *  assignments and degradations at the same time: the bundles are usable, but some of
+   *  them lost their anaphora binding on the way. */
+  degradations: string[];
 }
 
 /**
@@ -197,6 +206,12 @@ export class ReasoningPipelineService {
               const contextTptp = result.results?.['context']?.tptp ?? '';
               const checks: Record<string, ReasoningCheck> = {};
               const missing: string[] = [];
+              // An item GSWB could only translate by dropping the mapping still yields TPTP,
+              // so nothing downstream would notice on its own. Collect the notes here and
+              // carry them all the way out.
+              const degradations = Object.entries(result.results ?? {})
+                .filter(([, item]) => !!item?.degraded)
+                .map(([name, item]) => `${mapping.id} (${name}): ${item.degraded}`);
               for (const name of REASONING_CHECK_NAMES) {
                 const tptp = result.results?.[name]?.tptp;
                 if (tptp) {
@@ -226,6 +241,7 @@ export class ReasoningPipelineService {
                   mergedGraph: branch.graph,
                   checks,
                   contextTptp,
+                  degradations,
                 }
               };
             }),
@@ -242,10 +258,14 @@ export class ReasoningPipelineService {
         const failures = results
           .map(result => result.failure)
           .filter((value): value is string => !!value);
+        const degradations = assignments.flatMap(assignment => assignment.degradations);
         if (failures.length) {
           console.warn('[Reasoning] some branches could not be prepared', { scopeId, failures });
         }
-        return { scopeId, assignments, failures };
+        if (degradations.length) {
+          console.warn('[Reasoning] some branches lost their anaphora binding', { scopeId, degradations });
+        }
+        return { scopeId, assignments, failures, degradations };
       })
     );
   }

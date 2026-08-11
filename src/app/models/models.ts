@@ -482,6 +482,11 @@ export interface GswbTptpBatchItem {
 export interface GswbTptpBatchResult {
   tptp: string;
   semantic?: string;
+  /** Set when the item was translated, but not as requested: its anaphora mapping could not
+   *  be applied and was dropped so the item would translate at all. A degraded item still
+   *  carries usable TPTP, so it is indistinguishable from a resolved one unless this is
+   *  surfaced. */
+  degraded?: string;
 }
 
 export interface GswbCollapseAndTptpBatchRequest {
