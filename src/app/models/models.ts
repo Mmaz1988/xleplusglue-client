@@ -209,7 +209,10 @@ export interface ReasoningAssignment {
   ruleBranchIndex: number;           // which NLI post-processing rule annotation this came from
   discourseUpdateId?: string;        // pointer into document.discourseUpdates -- never a copy
   discourseId?: string;              // the DiscourseAnalysis branch whose mapping was used
-  contextTptp: string;               // premise context, reattached as a separate TPTP conjunct
+  /** The PRIOR alone (`Q`) in TPTP, reattached as a separate `fof(context, axiom, ...)`
+   *  conjunct. For premises A + B and conclusion C this is the merged A + B, never
+   *  A + B + C: the conclusion must not appear in the axiom the checks test against. */
+  contextTptp: string;
   contextSemanticId?: string;        // semId of the merged premise+hypothesis reading
   checks: ReasoningCheckSet;
   verdict?: ReasoningVerdict;        // absent until Vampire has run

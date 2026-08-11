@@ -22,6 +22,7 @@ describe('ReasoningPipelineService', () => {
   const tptpBatch = (omit: string[] = []) => ({
     results: Object.fromEntries([
       ['context', { tptp: 'fof(context).' }],
+      ['sequence', { tptp: 'fof(sequence).' }],
       ...REASONING_CHECK_NAMES
         .filter(name => !omit.includes(name))
         .map(name => [name, { tptp: `fof(${name}).` }])
@@ -31,6 +32,7 @@ describe('ReasoningPipelineService', () => {
   const request = (scopeId = 'pxq-1-1'): ReasoningPairRequest => ({
     scopeId,
     merged: { semantic: 'P & Q', graph, id: 'sem-1+sem-2' },
+    premiseSemantic: 'Q',
     sequenceStructure: structure,
     premiseAsts: [structure],
     hypothesisAsts: [structure],
@@ -63,6 +65,38 @@ describe('ReasoningPipelineService', () => {
         .toEqual([...REASONING_CHECK_NAMES].sort());
       expect(pair.assignments[0].contextTptp).toBe('fof(context).');
       expect(pair.failures).toEqual([]);
+      done();
+    });
+  });
+
+  it('conjoins the prior as the context and keeps the merged sequence separate', done => {
+    // The context axiom is Q, the prior -- A for A+B, A+B for A+B+C. Sending the merged
+    // premise+conclusion instead would put the conclusion into the axiom the four checks
+    // are meant to be tested against.
+    service.prepareReasoningChecks(request()).subscribe(pair => {
+      const sent = dataService.gswbCollapseAndTptpBatch.calls.mostRecent().args[0] as any;
+      const byName = Object.fromEntries(sent.items.map((item: any) => [item.name, item.semantic]));
+      expect(byName['context']).toBe('Q');
+      expect(byName['sequence']).toBe('P & Q');
+      expect(pair.assignments[0].contextTptp).toBe('fof(context).');
+      expect(pair.assignments[0].sequenceTptp).toBe('fof(sequence).');
+      done();
+    });
+  });
+
+  it('omits the context item entirely when the caller has no prior', done => {
+    // Echo only what was actually requested: the default stub answers every name
+    // unconditionally, which would hide exactly the omission under test.
+    dataService.gswbCollapseAndTptpBatch.and.callFake((payload: any) => of({
+      results: Object.fromEntries(
+        payload.items.map((item: any) => [item.name, { tptp: `fof(${item.name}).` }]))
+    }) as any);
+
+    service.prepareReasoningChecks({ ...request(), premiseSemantic: undefined }).subscribe(pair => {
+      const sent = dataService.gswbCollapseAndTptpBatch.calls.mostRecent().args[0] as any;
+      expect(sent.items.some((item: any) => item.name === 'context')).toBe(false);
+      // No prior means no axiom -- never the merged sequence standing in for one.
+      expect(pair.assignments[0].contextTptp).toBe('');
       done();
     });
   });

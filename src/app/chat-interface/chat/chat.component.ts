@@ -500,6 +500,10 @@ export class ChatComponent {
               scopeId: pairId,
               scope: { updateId, premiseSemanticIds, hypothesisSemanticIds },
               merged,
+              // The prior: this turn's accepted context entry, which for turn n>1 is
+              // already the merged semantics of every earlier turn. That is exactly the
+              // "A for A+B, A+B for A+B+C" reading of the context axiom.
+              premiseSemantic: premiseContext.semantic,
               sequenceStructure: mergedSyntax,
               premiseAsts: [premiseContext.semanticGraph],
               hypothesisAsts: [currentSolution.graph],
@@ -916,7 +920,9 @@ export class ChatComponent {
         original: `${previous[item.contextIndex]?.original ?? ''} ${userMessage}`.trim(),
         prolog_drs: item.merged.semantic,
         prolog_fol: '',
-        tptp: item.checks?.contextTptp ?? '',
+        // The whole merged sequence, not the branch's context axiom: this entry becomes
+        // the NEXT turn's prior, and `contextTptp` is now the prior of *this* turn.
+        tptp: item.checks?.sequenceTptp ?? '',
         box: item.merged.solution ?? '',
         semantic: item.merged.semantic,
         semanticGraph: item.merged.graph,

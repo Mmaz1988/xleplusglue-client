@@ -37,8 +37,19 @@ export interface ReasoningPairRequest {
   /** When set, every prepared assignment carries a `reasoningAssignmentId` so it can be
    *  written into the document and paired with its Vampire verdict by id. */
   scope?: ReasoningScope;
-  /** Output of GSWB /merge_sequence_semantics -- carries `semantic` and `graph`. */
+  /** Output of GSWB /merge_sequence_semantics over premises AND conclusion -- carries
+   *  `semantic` and `graph`. This is the whole sequence, not the context. */
   merged: any;
+  /** The PRIOR's semantics: everything the update builds on, without the conclusion.
+   *  For A + B that is A's semantic; for (A + B) + C it is the merged A + B. This, not
+   *  `merged`, is the `Q` reattached as the `fof(context, axiom, ...)` conjunct --
+   *  LFGXDRT_NLI_CHECK_COMPOSITION_PLAN.md's "Implementation Correction" drops the outer
+   *  `Q` from the check ASTs to keep anaphora mapping unambiguous and requires it back at
+   *  the TPTP level. Conjoining the merged premise+conclusion instead would put the
+   *  conclusion into the axiom the checks are supposed to be testing *against*.
+   *  Optional only so a caller that genuinely has no prior can omit it; when it is absent
+   *  no context axiom is emitted, which is the honest fallback. */
+  premiseSemantic?: string;
   /** The sequence provenance structure from LiGER (the merged *syntax* side). Required:
    *  the post-processing rules join semantics to syntax via SRC/SYN-ID, so without it
    *  no SYNSEM link -- and therefore no anaphora binding -- can be produced. */
@@ -78,7 +89,13 @@ export interface PreparedAssignment {
   mergedStructure?: LigerStructure;
   mergedGraph?: LigerWebGraph;
   checks: Record<string, ReasoningCheck>;
+  /** TPTP for the PRIOR alone (`Q`), collapsed against this branch's mapping. Sent to
+   *  Vampire as `contextTptp` and emitted there as `fof(context, axiom, ...)`. */
   contextTptp: string;
+  /** TPTP for the whole merged premise+conclusion sequence. NOT sent to Vampire -- it is
+   *  what the caller displays and carries forward as the next turn's prior, which is why
+   *  it stayed available when `contextTptp` narrowed to the prior alone. */
+  sequenceTptp: string;
   /** Items GSWB could translate only by dropping this branch's anaphora mapping, as
    *  human-readable reasons. Non-empty means the bundle below is usable but NOT fully
    *  resolved -- the pronoun it names bound to nothing. Must be shown to the user rather
@@ -141,6 +158,12 @@ export class ReasoningPipelineService {
     }
     if (!premiseAsts?.length || !hypothesisAsts?.length || !merged?.graph) {
       throw new Error('NLI sequence semantic graphs are missing.');
+    }
+    // Not fatal -- the four checks are complete without it -- but it silently removes the
+    // context axiom from every proof file in this pair, so it is said out loud.
+    if (!request.premiseSemantic) {
+      console.warn('[Reasoning] no prior semantics supplied; no context axiom will be emitted',
+        { scopeId });
     }
 
     const ruleString = request.ruleString ?? APP_DEFAULTS.graphInspector.rulesText;
@@ -210,9 +233,18 @@ export class ReasoningPipelineService {
           // than re-derived or spliced into the semantic text as a string. Folding the
           // context plus all four checks into one batched request (instead of five
           // separate collapse+translate round trips) keeps GSWB from being overwhelmed.
+          //
+          // Two non-check items, and they are not interchangeable:
+          //   context  -- the PRIOR alone (Q). Reattached as the TPTP context axiom.
+          //   sequence -- the merged premise+conclusion. Display/carry-forward only.
+          // Both are collapsed against the same mapping so the prior's referents keep the
+          // binding the sequence gave them. A relation whose pronoun lives only in the
+          // conclusion simply finds nothing to rewrite in the prior; one whose antecedent
+          // is unreachable there degrades that item alone, reported like any other.
           const anaphoraRelations = mapping.anaphoraRelations ?? [];
           const items = [
-            { name: 'context', semantic: mapping.semantic || '' },
+            { name: 'context', semantic: request.premiseSemantic || '' },
+            { name: 'sequence', semantic: mapping.semantic || '' },
             ...checkEntries.map(([name, check]: [string, any]) => ({ name, semantic: check.semantic }))
           ].filter(item => !!item.semantic);
           return this.dataService.gswbCollapseAndTptpBatch({
@@ -223,6 +255,7 @@ export class ReasoningPipelineService {
           }).pipe(
             map(result => {
               const contextTptp = result.results?.['context']?.tptp ?? '';
+              const sequenceTptp = result.results?.['sequence']?.tptp ?? '';
               const checks: Record<string, ReasoningCheck> = {};
               const missing: string[] = [];
               // An item GSWB could only translate by dropping the mapping still yields TPTP,
@@ -267,6 +300,7 @@ export class ReasoningPipelineService {
                   mergedGraph: branch.graph,
                   checks,
                   contextTptp,
+                  sequenceTptp,
                   degradations,
                 }
               };
