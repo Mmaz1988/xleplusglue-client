@@ -7,6 +7,7 @@ import {
   DiscourseAnalysis,
   DiscourseUpdate,
   GswbRequest,
+  GswbSolution,
   ReasoningUpdate,
   GswbSemanticMergePart,
   LigerStructure,
@@ -874,8 +875,14 @@ export class ChatComponent {
     this.changeDetector.detectChanges();
     const message = this.verdictMessage(consistent, informative, relevant);
     const safeGlyphs = glyphs.map(glyph => this.sanitizer.bypassSecurityTrustHtml(glyph));
-    const tptp = newContext.map((item: context) => item.tptp).filter(Boolean).join('\n');
-    const semantic = newContext.map((item: context) => item.semantic || item.prolog_drs).filter(Boolean).join('\n');
+    // The pills describe what THIS turn reasoned over -- every branch sent to Vampire,
+    // accepted or not -- so they are built from `prepared`, not from the carried-forward
+    // context. Those are different things: the context is one entry per surviving reading
+    // (2 here), which can never account for the 72 bundles that were actually checked.
+    const branches = prepared.length ? this.branchDetail(prepared, verdictFor) : null;
+    const semantic = branches
+      ? ''
+      : newContext.map((item: context) => item.semantic || item.prolog_drs).filter(Boolean).join('\n');
     this.chatHistory.push({
       text: message,
       sender: 'Bot',
@@ -883,9 +890,47 @@ export class ChatComponent {
       safeGlyphs,
       glyphGridSize: Math.max(1, Math.ceil(Math.sqrt(glyphs.length))),
       semanticText: semantic,
-      detailText: tptp
+      detailText: branches ? branches.tptp : newContext.map((item: context) => item.tptp).filter(Boolean).join('\n'),
+      branchSolutions: branches?.solutions,
+      branchLabels: branches?.labels,
     });
     this.loading = false;
+  }
+
+  /** The turn's branches, formatted for the TPTP and DRS pills.
+   *
+   *  Every branch appears, rejected ones included: they are the ones most worth inspecting,
+   *  and a pill whose entry count no longer matches the number of checks run is how a
+   *  fan-out bug hides. A branch that produced no TPTP says so rather than being filtered
+   *  out -- an empty translation is exactly the case that must stay visible. */
+  private branchDetail(
+    prepared: any[],
+    verdictFor: (item: any, index: number) => any
+  ): { tptp: string; solutions: GswbSolution[]; labels: string[] } {
+    const solutions: GswbSolution[] = [];
+    const labels: string[] = [];
+    const blocks: string[] = [];
+
+    prepared.forEach((item, index) => {
+      const verdict = verdictFor(item, index);
+      const marks = [
+        verdict?.consistent ? 'consistent' : 'inconsistent',
+        verdict?.informative ? 'informative' : 'uninformative',
+        verdict?.relevant ? 'relevant' : 'irrelevant',
+      ].join(', ');
+      const id = item.checks?.mappingId ?? item.checks?.assignmentId ?? `branch-${index + 1}`;
+      const label = `${id} — ${marks}`;
+
+      blocks.push(`% ${label}\n${item.checks?.sequenceTptp || '% (no TPTP produced for this branch)'}`);
+
+      const mapping = item.checks?.mapping;
+      if (mapping?.solution) {
+        solutions.push(mapping as GswbSolution);
+        labels.push(label);
+      }
+    });
+
+    return { tptp: blocks.join('\n\n'), solutions, labels };
   }
 
   private contextFromLfgxdrtChecks(
@@ -931,11 +976,17 @@ export class ChatComponent {
 
       acceptedAssignments++;
       // The same identity upsertSequenceFromContexts() dedupes on with its semanticsById
-      // map, so this list and the document's SequenceAnalysis.semantics agree by
+      // and syntaxById maps, so this list and the document's SequenceAnalysis agree by
       // construction instead of by coincidence. Every assignment of one pair carries the
       // identical `merged` (expanded is built as {...item, checks}), so the first one to
       // pass supplies the entry and the rest only add their branch to the groups below.
-      const readingKey = `${sequenceId}::${item.merged.semanticAnalysis?.semId ?? semId}`;
+      // Syntax is part of the key: two readings that agree semantically but come from
+      // different parses are two distinct discourse states, and the history shows both.
+      const readingKey = [
+        sequenceId,
+        item.merged.semanticAnalysis?.syntacticOrigin ?? '',
+        item.merged.semanticAnalysis?.semId ?? semId,
+      ].join('::');
       if (!readingKeys.has(readingKey)) {
         const entry = {
           original: `${previous[item.contextIndex]?.original ?? ''} ${userMessage}`.trim(),

@@ -1180,4 +1180,12 @@ export interface ChatMessage {
    safeGlyphs?: SafeHtml[];
    glyphGridSize?: number;
 
+   /** This turn's reasoning branches, one entry per bundle sent to Vampire -- accepted
+    *  and rejected alike. Distinct from the carried-forward context: that is one entry
+    *  per surviving reading, so it can never describe what was actually checked.
+    *  Paged one at a time by app-sem-vis rather than rendered as 72 SVGs at once. */
+   branchSolutions?: GswbSolution[];
+   /** Per-branch caption, index-aligned with branchSolutions: mapping id + verdict. */
+   branchLabels?: string[];
+
  }

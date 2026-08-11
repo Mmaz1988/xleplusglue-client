@@ -23,6 +23,7 @@
 
       <span class="status">
         {{ index + 1 }} / {{ items.length }} out of {{allItems.length}}
+        <span class="status-label" *ngIf="currentLabel">{{ currentLabel }}</span>
       </span>
 
       <button type="button" (click)="next()">Next ▶</button>

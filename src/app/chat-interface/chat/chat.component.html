@@ -24,9 +24,22 @@
             [minimizedColor]="'#2e7d32'">
           </app-pill>
 
+          <!-- DRS pill: one PCDRS per reasoning branch, paged rather than rendered at
+               once. Falls back to plain text on the prolog-drt path, which has no
+               per-branch mappings to page through. -->
+          <app-pill
+            *ngIf="message.branchSolutions?.length"
+            badge="DRS"
+            variant="sem-vis"
+            [items]="message.branchSolutions"
+            [itemLabels]="message.branchLabels"
+            [minimizedColor]="'#6a1b9a'"
+            [closeOnly]="true">
+          </app-pill>
+
           <!-- Text pill -->
           <app-pill
-            *ngIf="message.semanticText"
+            *ngIf="!message.branchSolutions?.length && message.semanticText"
             badge="DRS"
             variant="text"
             [text]="message.semanticText"

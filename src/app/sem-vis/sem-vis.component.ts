@@ -33,6 +33,21 @@ export class SemVisComponent implements AfterViewInit {
     this.rebuildDiscriminantViews();
   }
 
+  /** Optional caption per item, index-aligned with the array passed to `items`. Empty by
+   *  default, so callers that don't set it are unaffected. */
+  @Input() itemLabels: string[] = [];
+
+  /** Resolved by identity against the unfiltered input rather than by `index`: selecting
+   *  discriminants narrows `items` to a subset, and a positional lookup would then caption
+   *  a solution with another one's label. */
+  get currentLabel(): string {
+    if (!this.itemLabels?.length) return '';
+    const current = this.items[this.index];
+    if (!current) return '';
+    const position = this.allItems.indexOf(current);
+    return position >= 0 ? this.itemLabels[position] ?? '' : '';
+  }
+
   @Output() selectionChange = new EventEmitter<{
     items: GswbSolution[];
     selectedScopeIds: string[];

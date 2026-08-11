@@ -41,6 +41,13 @@
         </div>
       </div>
 
+      <!-- Lives inside the overlay template on purpose: it is only instantiated while the
+           pill is open, and app-sem-vis renders one solution at a time, so a long branch
+           list costs a single SVG render. -->
+      <div *ngSwitchCase="'sem-vis'" class="sem-vis-body">
+        <app-sem-vis [items]="items" [itemLabels]="itemLabels" [svgSolutions]="true"></app-sem-vis>
+      </div>
+
     </ng-container>
   </div>
 </ng-template>

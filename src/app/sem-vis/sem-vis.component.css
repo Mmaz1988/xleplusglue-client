@@ -152,3 +152,10 @@ button.chip.selected.current-hit{
   max-width: 100%;
   height: auto;
 }
+
+/* Optional per-item caption next to the counter (branch id + verdict in chat). */
+.status-label {
+  margin-left: 0.5rem;
+  color: #16445b;
+  font-size: 0.78rem;
+}

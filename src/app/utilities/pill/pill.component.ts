@@ -3,10 +3,11 @@ import { SafeHtml } from '@angular/platform-browser';
 import { OverlayModule } from '@angular/cdk/overlay';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 import {EditorComponent} from "../../editor/editor.component";
+import {GswbSolution} from "../../models/models";
 
 
 
-type PillVariant = 'glyph-grid' | 'text' | 'editor';
+type PillVariant = 'glyph-grid' | 'text' | 'editor' | 'sem-vis';
 
 @Component({
   selector: 'app-pill',
@@ -27,6 +28,12 @@ export class PillComponent {
 
   @Input() gridSize = 1;
   @Input() text = '';
+
+  /** `sem-vis` variant: paged one at a time by app-sem-vis, so a long list of solutions
+   *  costs one render rather than one per item. */
+  @Input() items: GswbSolution[] = [];
+  /** Caption per item, index-aligned with `items`. */
+  @Input() itemLabels: string[] = [];
 
   @Input() minimizedColor = '#2e7d32';
 

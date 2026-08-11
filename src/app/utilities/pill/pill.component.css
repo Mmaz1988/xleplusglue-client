@@ -92,6 +92,17 @@
   box-sizing: border-box;
 }
 
+/* A DRS is wider than it is tall and varies a lot in size, so this one scrolls in both
+   directions rather than fixing a height the way .detail-body does. */
+.sem-vis-body {
+  width: 820px;
+  max-width: min(80vw, 820px);
+  max-height: min(80vh, 560px);
+  overflow: auto;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
 .glyph-grid {
   width: 360px;
   height: 360px;
