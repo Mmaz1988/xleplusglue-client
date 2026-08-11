@@ -8,6 +8,7 @@ import {
   GswbMultipleRequest,
   GswbBatchOutput,
   GswbOutput,
+  GswbSolution,
   RegressionInferenceResult,
   RegressionParseResult,
   RegressionSessionSummary,
@@ -23,11 +24,37 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, forkJoin, finalize, timeout, map, of, switchMap } from "rxjs";
+import { catchError, EMPTY, Observable, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, toArray } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
 import { APP_DEFAULTS } from '../app-defaults';
+import { reasoningUpdateId } from '../analysis-model';
+import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
+
+/** One (premise reading x conclusion reading) pair of one NLI item, before any request
+ *  has been made for it. Holds solutions rather than semantic strings so the text, the
+ *  graph and the solution id that names the reading all come from the same object. */
+type NliPairSpec = {
+  itemId: string;
+  /** `ru-n3` -- shared by every pair of this item, since they are assignments of one
+   *  premise/conclusion pair, not separate pairs. */
+  updateId: string;
+  /** Scope id sent to GSWB as parentSolutionId; stable and unique per pair. */
+  pairId: string;
+  premiseSentenceIds: string[];
+  hypothesisSentenceIds: string[];
+  /** The readings the run selected, one per sentence -- the ids the document references. */
+  premiseSolutions: GswbSolution[];
+  hypothesisSolutions: GswbSolution[];
+  /** Each selected reading's position among ALL of that sentence's readings, ordered by
+   *  source index. This is how a selected reading is found again in the sequence-scoped
+   *  re-derivation, where ids differ and GSWB does not guarantee reading order. */
+  premiseReadingRanks: number[];
+  hypothesisReadingRanks: number[];
+};
+
+type PreparedNliPair = PreparedReasoningPair & { itemId: string };
 
 type ParsedRegressionRunSnapshot = {
   regressionTestItems: any[];
@@ -47,11 +74,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private readonly activeSessionStorageKey = 'regression-testing-active-session-key';
 
-  constructor(private dataService: DataService, private route: ActivatedRoute) {
+  constructor(
+    private dataService: DataService,
+    private route: ActivatedRoute,
+    private reasoningPipeline: ReasoningPipelineService,
+  ) {
     this.lastSavedSessionFingerprint = this.buildSessionFingerprint(regressionSessionToDocument(this.session));
   }
 
   session: RegressionTestingSession = this.createInitialSession();
+
+  /** Branches of the last NLI preparation that could not be prepared at all, and those
+   *  that were reasoned over only after dropping their anaphora binding. Run state, not
+   *  session state: they describe the last preparation, not the stored analysis. */
+  nliPreparationFailures: string[] = [];
+  nliPreparationDegradations: string[] = [];
 
   @ViewChild('arcy') cy1: GraphVisComponent;
   @ViewChild('ligerreport') ligerreport: ElementRef;
@@ -1456,14 +1493,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
       const premise_strings: string[] = [];
       const premise_groups: string[][] = [];
-      const premise_ast_groups: LigerStructure[][] = [];
+      const premise_solution_groups: GswbSolution[][] = [];
       for (let premise of item.premises) {
         if (gswbOutputs[premise] && gswbOutputs[premise].solutions.length > 0) {
-          const sols = this.getSolutionsText(premise, gswbOutputs, useDisambiguated);
+          // One selection, then text/graph/id read off the same solutions. They used to be
+          // selected twice, by two filters that could disagree -- a solution without a
+          // graph left the text list one longer than the graph list, and the two were then
+          // indexed against each other.
+          const solutions = this.selectedSolutions(premise, gswbOutputs, useDisambiguated);
+          const sols = solutions.map(solution => this.solutionText(solution));
           if (sols.length > 0) {
             premise_strings.push(sols.join('\n'));
             premise_groups.push(sols);
-            premise_ast_groups.push(this.selectedSolutionGraphs(premise, gswbOutputs, useDisambiguated));
+            premise_solution_groups.push(solutions);
           }
 
           const liger_data = annotations[premise];
@@ -1483,14 +1525,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
       const conclusion_strings: string[] = [];
       const hypothesis_groups: string[][] = [];
-      const hypothesis_ast_groups: LigerStructure[][] = [];
+      const hypothesis_solution_groups: GswbSolution[][] = [];
       for (let conclusion of item.conclusion) {
         if (gswbOutputs[conclusion] && gswbOutputs[conclusion].solutions.length > 0) {
-          const sols = this.getSolutionsText(conclusion, gswbOutputs, useDisambiguated);
+          const solutions = this.selectedSolutions(conclusion, gswbOutputs, useDisambiguated);
+          const sols = solutions.map(solution => this.solutionText(solution));
           if (sols.length > 0) {
             conclusion_strings.push(sols.join('\n'));
             hypothesis_groups.push(sols);
-            hypothesis_ast_groups.push(this.selectedSolutionGraphs(conclusion, gswbOutputs, useDisambiguated));
+            hypothesis_solution_groups.push(solutions);
           }
 
           const liger_data = annotations[conclusion];
@@ -1515,8 +1558,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           axioms: axioms,
           premise_groups,
           hypothesis_groups,
-          premise_ast_groups,
-          hypothesis_ast_groups,
+          premise_solution_groups,
+          hypothesis_solution_groups,
           premise_sentence_ids: item.premises,
           hypothesis_sentence_ids: item.conclusion
         };
@@ -1547,190 +1590,333 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.displayMessage("Building TPTP reasoning checks ...", "blue");
     const typed = logicType === 'tff';
-    const preparationRequests: Observable<{ id: string; checks: any[] }> [] = [];
+    const pruning = this.contextPruning.nativeElement.checked;
+    const pairSpecs: NliPairSpec[] = [];
     for (const [id, item] of Object.entries(inference_items)) {
-      const premiseAssignments = this.semanticAssignments(item.premise_groups ?? []);
-      const hypothesisAssignments = this.semanticAssignments(item.hypothesis_groups ?? []);
-      const premiseAstAssignments = this.graphAssignments(item.premise_ast_groups ?? []);
-      const hypothesisAstAssignments = this.graphAssignments(item.hypothesis_ast_groups ?? []);
+      const premiseAssignments = this.solutionAssignments(item.premise_solution_groups ?? []);
+      const hypothesisAssignments = this.solutionAssignments(item.hypothesis_solution_groups ?? []);
+      const premiseSentenceIds = item.premise_sentence_ids ?? [];
+      const hypothesisSentenceIds = item.hypothesis_sentence_ids ?? [];
+      // The regression item id IS the reasoning update id -- ru-n3, not the element-pair
+      // form chat gets. Every (premise reading x conclusion reading) pair below is another
+      // assignment of that one update.
+      const updateId = reasoningUpdateId(premiseSentenceIds, hypothesisSentenceIds, id);
       for (let premiseIndex = 0; premiseIndex < premiseAssignments.length; premiseIndex++) {
         for (let hypothesisIndex = 0; hypothesisIndex < hypothesisAssignments.length; hypothesisIndex++) {
-          const premiseAsts = premiseAstAssignments[premiseIndex] ?? [];
-          const hypothesisAsts = hypothesisAstAssignments[hypothesisIndex] ?? [];
-          const pairId = `pxq-${id}-${premiseIndex + 1}-${hypothesisIndex + 1}`;
-          preparationRequests.push(
-            this.dataService.ligerSequence({
-              sentences: [...(item.premise_sentence_ids ?? []), ...(item.hypothesis_sentence_ids ?? [])]
-                .map(sentenceId => this.sentenceMap[sentenceId]),
-              ruleString: this.session.rulesText,
-              logicType
-            }).pipe(
-              switchMap(sequence => {
-                const syntax = sequence?.structureJson
-                  ?? sequence?.solutions?.[0]?.structureJson;
-                return forkJoin({
-                  checks: this.dataService.gswbReasoningCheckAsts({ premiseAsts, hypothesisAsts, typed }),
-                  merged: this.dataService.gswbMergeSequenceSemantics({
-                    parts: [
-                      ...premiseAssignments[premiseIndex].map((semantic, index) => ({
-                        semantic,
-                        graph: premiseAsts[index]
-                      })),
-                      ...hypothesisAssignments[hypothesisIndex].map((semantic, index) => ({
-                        semantic,
-                        graph: hypothesisAsts[index]
-                      }))
-                    ]
-                  })
-                }).pipe(
-                  switchMap(result => this.postProcessNliChecks(
-                    result.merged,
-                    result.checks,
-                     syntax as LigerStructure,
-                     premiseAsts,
-                     hypothesisAsts,
-                     typed,
-                     pairId
-                  )),
-                  map(checks => ({ id, checks }))
-                );
-              })
-            )
-          );
+          pairSpecs.push({
+            itemId: id,
+            updateId,
+            pairId: `pxq-${id}-${premiseIndex + 1}-${hypothesisIndex + 1}`,
+            premiseSentenceIds,
+            hypothesisSentenceIds,
+            premiseSolutions: premiseAssignments[premiseIndex],
+            hypothesisSolutions: hypothesisAssignments[hypothesisIndex],
+            premiseReadingRanks: premiseAssignments[premiseIndex].map((solution, index) =>
+              this.readingRank(premiseSentenceIds[index], solution, gswbOutputs)),
+            hypothesisReadingRanks: hypothesisAssignments[hypothesisIndex].map((solution, index) =>
+              this.readingRank(hypothesisSentenceIds[index], solution, gswbOutputs)),
+          });
         }
       }
     }
 
-    forkJoin(preparationRequests).subscribe({
+    if (!pairSpecs.length) {
+      this.displayMessage("No reading assignments to build TPTP reasoning checks from.", "red");
+      this.loading = false;
+      return;
+    }
+
+    // Strictly one pair at a time. Two of these chains in flight at once has been observed
+    // to leave an HttpClient observable that never emits -- the reason
+    // ReasoningPipelineService exposes a sequential driver at all -- and this used to be a
+    // forkJoin over every pair of every item at once. concatMap over the whole per-pair
+    // chain also serializes the sequence/merge calls that precede the pipeline, which the
+    // service's own sequential driver cannot do because they happen before its input exists.
+    from(pairSpecs).pipe(
+      concatMap(spec => this.prepareNliPair(spec, typed, logicType, pruning)),
+      toArray()
+    ).subscribe({
       next: prepared => {
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
-        for (const preparedItem of prepared) {
-          inference_items[preparedItem.id].tptp_checks!.push(...preparedItem.checks);
+        const failures: string[] = [];
+        const degradations: string[] = [];
+        for (const preparedPair of prepared) {
+          failures.push(...preparedPair.failures);
+          degradations.push(...preparedPair.degradations);
+          inference_items[preparedPair.itemId].tptp_checks!.push(
+            ...preparedPair.assignments.map(assignment => ({
+              pairId: assignment.pairId,
+              assignmentId: assignment.assignmentId,
+              mappingId: assignment.mappingId,
+              checks: assignment.checks,
+              contextTptp: assignment.contextTptp,
+            } as any))
+          );
+        }
+        // Kept as run state so the results view can show what was NOT cleanly reasoned
+        // over. A branch that lost its anaphora binding still produces a usable bundle;
+        // presenting it as a clean result is the thing to avoid.
+        this.nliPreparationFailures = failures;
+        this.nliPreparationDegradations = degradations;
+        const bundleCount = prepared.reduce((sum, pair) => sum + pair.assignments.length, 0);
+        console.info('[Regression] NLI reasoning bundles prepared',
+          { pairCount: prepared.length, bundleCount, failures, degradations });
+        if (!bundleCount) {
+          this.displayMessage("Could not build TPTP reasoning checks for any reading.", "red");
+          this.loading = false;
+          return;
+        }
+        if (failures.length || degradations.length) {
+          this.displayMessage(
+            `Built ${bundleCount} reasoning bundle(s); ${failures.length} branch(es) failed, `
+            + `${degradations.length} lost their anaphora binding.`, "blue");
         }
         this.submitVampireRequest(
           inference_items,
-          this.contextPruning.nativeElement.checked,
+          pruning,
           vampireStartedAt,
           vampireRunToken,
           true
         );
       },
-      error: () => {
+      error: error => {
+        console.warn('[Regression] NLI reasoning preparation failed', error);
         this.displayMessage("Could not build TPTP reasoning checks.", "red");
         this.loading = false;
       }
     });
   }
 
-  private postProcessNliChecks(
-    merged: any,
-    checks: any,
-    syntax: LigerStructure,
-    premiseAsts: LigerStructure[],
-    hypothesisAsts: LigerStructure[],
+  /** One (premise reading x conclusion reading) pair, all the way to prepared bundles.
+   *
+   *  Everything specific to this component happens here -- assembling the sequence syntax
+   *  and the two semantic merges -- and the reasoning itself is the shared
+   *  ReasoningPipelineService, the same one chat uses. The older private copy this
+   *  replaced applied the post-processing rules to the merged *semantics* alone, so the
+   *  SRC/SYN-ID rules had no syntax to join to and could never emit SYNSEM: its anaphora
+   *  mappings came from a graph with no syntax in it. */
+  private prepareNliPair(
+    spec: NliPairSpec,
     typed: boolean,
-    pairId: string
-  ): Observable<any[]> {
-    const entries = Object.entries(checks?.checks ?? {});
-    if (!syntax || !entries.length) {
-      throw new Error('NLI sequence provenance or check ASTs are missing.');
-    }
-    const nliRules = APP_DEFAULTS.graphInspector.rulesText;
+    logicType: 'fof' | 'tff',
+    pruning: boolean
+  ): Observable<PreparedNliPair> {
+    const sentenceIds = [...spec.premiseSentenceIds, ...spec.hypothesisSentenceIds];
 
-    if (!merged?.graph || !premiseAsts.length || !hypothesisAsts.length) {
-      throw new Error('NLI sequence semantic graphs are missing.');
+    return this.sequenceSolution(sentenceIds, logicType).pipe(
+      switchMap(sequence => this.rebasedReadings(sequence, spec).pipe(
+        map(readings => ({ sequence, readings })))),
+      switchMap(({ sequence, readings }) => {
+      const sequenceStructure = sequence.structureJson as LigerStructure;
+      const premiseParts = readings.premise.map(solution => this.semanticMergePart(solution));
+      const hypothesisParts = readings.hypothesis.map(solution => this.semanticMergePart(solution));
+      return forkJoin({
+        merged: this.dataService.gswbMergeSequenceSemantics({
+          parts: [...premiseParts, ...hypothesisParts],
+          parentSolutionId: spec.pairId,
+          resolveDrs: this.session.gswbPreferences?.resolveDrs,
+        }),
+        // The prior on its own: for premises A + B and conclusion C, the context axiom is
+        // the merged A + B, never A + B + C. A single premise needs no merge call.
+        prior: premiseParts.length === 1
+          ? of({ semantic: premiseParts[0].semantic } as GswbSolution)
+          : this.dataService.gswbMergeSequenceSemantics({
+              parts: premiseParts,
+              parentSolutionId: `${spec.pairId}-prior`,
+              resolveDrs: this.session.gswbPreferences?.resolveDrs,
+            }),
+      }).pipe(
+        switchMap(({ merged, prior }) => this.reasoningPipeline.prepareReasoningChecks({
+          scopeId: spec.pairId,
+          scope: {
+            updateId: spec.updateId,
+            premiseSemanticIds: spec.premiseSolutions.map(solution => solution.id),
+            hypothesisSemanticIds: spec.hypothesisSolutions.map(solution => solution.id),
+          },
+          merged,
+          premiseSemantic: prior?.semantic,
+          sequenceStructure,
+          premiseAsts: readings.premise.map(solution => solution.graph as LigerStructure),
+          hypothesisAsts: readings.hypothesis.map(solution => solution.graph as LigerStructure),
+          typed,
+          prune: pruning,
+          ruleString: APP_DEFAULTS.graphInspector.rulesText,
+        }))
+      );
+      }),
+      map(pair => ({ itemId: spec.itemId, ...pair })),
+      // One item's failure used to abort the whole batch: every pair of every item lived
+      // in one forkJoin under a single error handler. A pair that cannot be prepared is
+      // now a reported failure of that pair alone.
+      catchError(error => {
+        const reason = `${spec.pairId}: ${error?.message ?? String(error)}`;
+        console.warn('[Regression] NLI pair could not be prepared', { pairId: spec.pairId, error });
+        return of({
+          itemId: spec.itemId, scopeId: spec.pairId,
+          assignments: [], failures: [reason], degradations: [],
+        } as PreparedNliPair);
+      })
+    );
+  }
+
+  /** The merged syntax for one NLI item, with each sentence's already-parsed structure
+   *  supplied so LiGER merges by offset instead of re-parsing.
+   *
+   *  Regression used to send sentence *text* only, which threw away the reading each
+   *  premise AST stands for -- LiGER re-parsed and picked its own. Supplying structures
+   *  is safe now that the assembler derives a meaning constructor's source index from its
+   *  SYN-ID rather than recounting it positionally. It is all-or-nothing: the endpoint
+   *  only takes the supplied-structures path when every sentence has one, and a partial
+   *  list silently falls back to re-parsing the whole sequence. */
+  private sequenceSolution(sentenceIds: string[], logicType: 'fof' | 'tff'): Observable<any> {
+    const annotations = this.session.lastAnnotations ?? {};
+    const structures = sentenceIds.map(sentenceId => annotations[sentenceId]?.structureJson);
+    const supplied = structures.every((structure): structure is LigerStructure => !!structure);
+    if (!supplied) {
+      console.warn('[Regression] not every sentence has a parsed structure; '
+        + 'LiGER will re-parse this sequence and the chosen readings will be discarded',
+        { sentenceIds });
     }
-    return this.dataService.ligerApplyRulesToStructure({
-      content: JSON.stringify(merged.graph),
-      format: 'json',
-      ruleString: nliRules,
-      id: 'nli-sequence-post-processing'
+    return this.dataService.ligerSequence({
+      sentences: sentenceIds.map(sentenceId => this.sentenceMap[sentenceId]),
+      sentenceIds,
+      ruleString: this.session.rulesText,
+      logicType,
+      ...(supplied ? { parsedSentences: structures.map(structure => [structure]) } : {})
     }).pipe(
-      switchMap(response => {
-        const structures = (response.annotations ?? [])
-          .map(annotation => annotation.structureJson)
-          .filter(Boolean);
-        const branches = structures.length ? structures : [merged.graph];
-        return forkJoin(branches.map((structure, index) => this.dataService.gswbGeneratePcdrs({
-          semantic: merged.semantic,
-           parentSolutionId: `${pairId}-rule-${index + 1}`,
-          mergedStructure: structure as any
-        })));
+      map(sequence => {
+        const solution = sequence?.solutions?.[0] ?? sequence;
+        if (!solution?.structureJson) {
+          throw new Error('LiGER returned no merged sequence syntax.');
+        }
+        return solution;
+      })
+    );
+  }
+
+  /** Every part's semantics re-derived *inside* the merged sequence, then matched back to
+   *  the readings this pair selected.
+   *
+   *  Regression fed each sentence's own semantics straight into the merge. Those carry
+   *  per-sentence source indices, which line up with the merged sequence's SYN-IDs only
+   *  for the first sentence -- so the SRC/SYN-ID join failed for every later sentence and
+   *  no pronoun in them could bind. Measured on `a man saw a man` / `he saw him` /
+   *  `he smiled`: per-sentence semantics give 4 rule branches and one candidate mapping
+   *  with ZERO anaphora relations; re-derived inside the sequence they give 12 branches
+   *  and three mappings binding x4, x5 and x7 -- the same result the chat path produces.
+   *
+   *  Matching is by position in source-index order, not by id or by array position: a
+   *  re-derived reading gets a new id, its source index is rebased by the sequence, and
+   *  GSWB does not guarantee the order it returns readings in (for the ambiguous premise
+   *  above the two readings come back in the opposite order). Relative source order within
+   *  one part does survive, so that is what the two lists are aligned on. */
+  private rebasedReadings(
+    sequence: any,
+    spec: NliPairSpec
+  ): Observable<{ premise: GswbSolution[]; hypothesis: GswbSolution[] }> {
+    const parts = Array.isArray(sequence?.sequenceParts) ? sequence.sequenceParts : [];
+    const expected = spec.premiseSolutions.length + spec.hypothesisSolutions.length;
+    if (parts.length !== expected) {
+      throw new Error(`The merged sequence has ${parts.length} part(s) for ${expected} sentence(s).`);
+    }
+
+    // Sequentially: several concurrent deduce calls per pair is the load the sequential
+    // driver in ReasoningPipelineService exists to avoid, and there is one of these per
+    // sentence of every pair.
+    return from(parts as any[]).pipe(
+      concatMap((part: any, index: number) => {
+        if (!part?.meaningConstructors?.trim()) {
+          throw new Error(`Sequence part ${index + 1} has no source-indexed meaning constructors.`);
+        }
+        return this.dataService.gswbDeduce({
+          premises: part.meaningConstructors,
+          gswbPreferences: this.session.gswbPreferences,
+          structure: sequence.structureJson,
+          proofs: [{
+            proofId: part.solutionKey || `sequence-part-${index + 1}`,
+            solutionKey: part.solutionKey,
+            meaningConstructors: part.meaningConstructors,
+            structure: sequence.structureJson
+          }]
+        } as any).pipe(map(result => (result?.solutions ?? []).filter((candidate: any) =>
+          typeof candidate?.semantic === 'string' && candidate.semantic.trim().length > 0
+          && candidate.graph)));
       }),
-      switchMap(pcdrs => {
-        const mappings = pcdrs.flatMap(result => result?.solutions ?? []);
-        return forkJoin(mappings.map(mapping => {
-          const suffix = mapping.anaphoraMapping ? `,${mapping.anaphoraMapping}` : '';
-          const contextTptp = this.dataService.gswbCollapseAnaphora({
-            semantic: mapping.semantic || '',
-            parentSolutionId: `${mapping.id}-context`
-          }).pipe(
-            switchMap(collapsed => collapsed?.semantic
-              ? this.dataService.gswbSemanticToTptp({ semantic: collapsed.semantic, typed })
-                  .pipe(map(tptp => tptp.tptp))
-              : of('')),
-            catchError(() => of(''))
-          );
-          return forkJoin({
-            contextTptp,
-            checks: forkJoin(entries.map(([name, check]: [string, any]) =>
-            this.dataService.gswbCollapseAnaphora({
-              semantic: `${check.semantic}${suffix}`,
-              parentSolutionId: `${mapping.id}-${name}`
-            }).pipe(
-              switchMap(collapsed => collapsed?.semantic
-                ? this.dataService.gswbSemanticToTptp({ semantic: collapsed.semantic, typed })
-                    .pipe(map(tptp => ({ name, tptp: tptp.tptp })))
-                : of(null)),
-              catchError(() => of(null))
-            )
-            ))
-          }).pipe(
-            map(result => {
-              const valid = result.checks.filter((item): item is { name: string; tptp: string } => !!item?.tptp);
-              return valid.length === entries.length
-                 ? {
-                     pairId,
-                     mappingId: mapping.id,
-                     checks: Object.fromEntries(valid.map(item => [item.name, { tptp: item.tptp }])),
-                    contextTptp: result.contextTptp
-                  }
-                : null;
-            })
-          );
-        }));
-      }),
-      map(results => results.filter(Boolean))
+      toArray(),
+      map(partSolutions => {
+        const selected = [...spec.premiseSolutions, ...spec.hypothesisSolutions];
+        const ranks = [...spec.premiseReadingRanks, ...spec.hypothesisReadingRanks];
+        const sentenceIds = [...spec.premiseSentenceIds, ...spec.hypothesisSentenceIds];
+        const rebased = partSolutions.map((solutions, index) =>
+          this.matchReading(solutions, selected[index], ranks[index], sentenceIds[index]));
+        return {
+          premise: rebased.slice(0, spec.premiseSolutions.length),
+          hypothesis: rebased.slice(spec.premiseSolutions.length),
+        };
+      })
     );
   }
 
-  private semanticAssignments(groups: string[][]): string[][] {
-    return groups.reduce<string[][]>(
-      (assignments, alternatives) => assignments.flatMap(prefix =>
-        alternatives.map(alternative => [...prefix, alternative])),
-      [[]]
-    );
+  /** The sequence-scoped counterpart of one selected reading. */
+  private matchReading(
+    solutions: GswbSolution[],
+    selected: GswbSolution,
+    rank: number,
+    sentenceId: string
+  ): GswbSolution {
+    if (!solutions.length) {
+      throw new Error(`No source-indexed semantic analysis for ${sentenceId} in the sequence.`);
+    }
+    if (solutions.length === 1) {
+      return solutions[0];
+    }
+    const ordered = [...solutions].sort((a, b) => (a.sourceIndex ?? 0) - (b.sourceIndex ?? 0));
+    const match = rank >= 0 ? ordered[rank] : undefined;
+    if (!match) {
+      throw new Error(`Reading ${selected.id} of ${sentenceId} has no counterpart among the `
+        + `${solutions.length} sequence-scoped readings (rank ${rank}).`);
+    }
+    // Only checked where it can actually go wrong -- a sentence with one reading needs no
+    // matching at all. Conditions are compared as a set: the merge reorders them, but a
+    // different reading of the same sentence differs in which conditions there are.
+    if (this.conditionSignature(match.semantic) !== this.conditionSignature(selected.semantic)) {
+      throw new Error(`Reading ${selected.id} of ${sentenceId} does not match its `
+        + `sequence-scoped counterpart ${match.id}; the readings may have been reordered.`);
+    }
+    return match;
   }
 
-  private graphAssignments(groups: LigerStructure[][]): LigerStructure[][] {
-    return groups.reduce<LigerStructure[][]>(
-      (assignments, alternatives) => assignments.flatMap(prefix =>
-        alternatives.map(alternative => [...prefix, alternative])),
-      [[]]
-    );
+  /** A reading's conditions as an order-independent signature. */
+  private conditionSignature(semantic: string | undefined): string {
+    return (semantic?.match(/[a-zA-Z_][a-zA-Z0-9_]*\([^()]*\)/g) ?? []).sort().join(',');
   }
 
-  private selectedSolutionGraphs(
+  /** Where a selected reading sits among ALL of its sentence's readings, in source-index
+   *  order. Computed against the full list because a disambiguated run selects a subset,
+   *  and the sequence re-derives every reading regardless of what was selected. */
+  private readingRank(
     sentenceId: string,
-    gswbOutputs: Record<string, GswbOutput>,
-    useDisambiguated: boolean
-  ): LigerStructure[] {
-    const solutions = gswbOutputs[sentenceId]?.solutions ?? [];
-    const selectedIds = this.session.selectedSolutionIdsBySentence[sentenceId];
-    return solutions
-      .filter(solution => !useDisambiguated || !selectedIds?.length || selectedIds.includes(solution.id))
-      .map(solution => solution.graph)
-      .filter((graph): graph is LigerStructure => !!graph);
+    solution: GswbSolution,
+    gswbOutputs: Record<string, GswbOutput>
+  ): number {
+    const solutions = [...(gswbOutputs[sentenceId]?.solutions ?? [])]
+      .sort((a, b) => (a.sourceIndex ?? 0) - (b.sourceIndex ?? 0));
+    return solutions.findIndex(candidate => candidate.id === solution.id);
+  }
+
+  /** A sequence part in the shape /merge_sequence_semantics wants. The graph is what the
+   *  server rebuilds the expression from; the text is the fallback when there is none. */
+  private semanticMergePart(solution: GswbSolution): { semantic: string; graph?: LigerStructure } {
+    return { semantic: this.solutionText(solution), graph: solution.graph };
+  }
+
+  /** Cartesian product over one side's per-sentence alternatives, preserving order. */
+  private solutionAssignments(groups: GswbSolution[][]): GswbSolution[][] {
+    return groups.reduce<GswbSolution[][]>(
+      (assignments, alternatives) => assignments.flatMap(prefix =>
+        alternatives.map(alternative => [...prefix, alternative])),
+      [[]]
+    );
   }
 
   private submitVampireRequest(
@@ -1794,23 +1980,48 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return sentenceIds.some(sentenceId => updatedSentenceIds.has(sentenceId));
   }
 
-  private getSolutionsText(
+  /** The solutions of one sentence that this run should reason over.
+   *
+   *  The single selection point: text, semantic graph and solution id are all read off
+   *  what this returns, so they cannot drift apart. It also owns the one filter that used
+   *  to live only on the graph side -- an LFGxDRT reading with no graph cannot be a
+   *  premise AST, and dropping it here (loudly) is what keeps the remaining lists aligned
+   *  instead of shifting one against the other. */
+  private selectedSolutions(
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean
-  ): string[] {
-    const sols = gswbOutputs[sentenceId]?.solutions ?? [];
-
-    const useLfgxDrt = Number(this.session.gswbPreferences?.outputstyle) === 5;
-    if (!useDisambiguated) return sols.map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution);
-
+  ): GswbSolution[] {
+    const solutions = gswbOutputs[sentenceId]?.solutions ?? [];
     const selectedIds = this.session.selectedSolutionIdsBySentence[sentenceId];
 
-    // In disambiguated mode, only the chosen solutions should be sent onward.
-    if (!selectedIds || selectedIds.length === 0) return [];
+    let selected = solutions;
+    if (useDisambiguated) {
+      // In disambiguated mode, only the chosen solutions should be sent onward.
+      if (!selectedIds || selectedIds.length === 0) return [];
+      const chosen = new Set(selectedIds);
+      selected = solutions.filter(solution => chosen.has(solution.id));
+    }
 
-    const sel = new Set(selectedIds);
-    return sols.filter(x => sel.has(x.id)).map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution);
+    if (!this.usesLfgxDrt()) return selected;
+
+    const withGraph = selected.filter(solution => !!solution.graph);
+    if (withGraph.length !== selected.length) {
+      console.warn('[Regression] some readings have no semantic graph and cannot be '
+        + 'reasoned over in lfgxdrt mode', {
+        sentenceId,
+        dropped: selected.filter(solution => !solution.graph).map(solution => solution.id),
+      });
+    }
+    return withGraph;
+  }
+
+  private usesLfgxDrt(): boolean {
+    return Number(this.session.gswbPreferences?.outputstyle) === 5;
+  }
+
+  private solutionText(solution: GswbSolution): string {
+    return this.usesLfgxDrt() ? (solution.semantic || solution.solution) : solution.solution;
   }
 
   private startVampireSummaryPolling(vampireStartedAt: number, runToken: number): void {

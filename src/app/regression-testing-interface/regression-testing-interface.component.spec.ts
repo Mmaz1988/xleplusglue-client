@@ -2,18 +2,23 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import { RegressionTestingInterfaceComponent } from './regression-testing-interface.component';
 import { DataService } from '../data.service';
+import { ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
 import { createRegressionTestingSession } from '../models/models';
 
 describe('RegressionTestingInterfaceComponent', () => {
   let component: RegressionTestingInterfaceComponent;
   let fixture: ComponentFixture<RegressionTestingInterfaceComponent>;
+  let reasoningPipeline: jasmine.SpyObj<ReasoningPipelineService>;
 
   beforeEach(() => {
     const dataServiceSpy = jasmine.createSpyObj('DataService', [
+      'ligerSequence',
+      'gswbDeduce',
+      'gswbMergeSequenceSemantics',
       'listRegressionSessions',
       'loadRegressionSession',
       'saveRegressionSession',
@@ -34,12 +39,40 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
     dataServiceSpy.getLastGswbSessionSummary.and.returnValue(of({} as any));
     dataServiceSpy.gswbReasoningChecks.and.returnValue(of({ checks: {} }));
+    // A three-sentence sequence: one part per sentence, each with its own MCs.
+    dataServiceSpy.ligerSequence.and.returnValue(of({
+      solutions: [{
+        structureJson: { constraints: [] },
+        sequenceParts: [
+          { sentenceId: 'S1', solutionKey: 'S0', meaningConstructors: 'mc1' },
+          { sentenceId: 'S2', solutionKey: 'S0', meaningConstructors: 'mc2' },
+          { sentenceId: 'S3', solutionKey: 'S0', meaningConstructors: 'mc3' },
+        ],
+      }]
+    } as any));
+    // Each part re-derived inside the sequence: new ids, rebased source indices.
+    let deduceCall = 0;
+    dataServiceSpy.gswbDeduce.and.callFake(() => {
+      const index = deduceCall++;
+      return of({ solutions: [{
+        id: `seq-${index + 1}`, sourceIndex: (index + 1) * 10,
+        semantic: ['A', 'B', 'C'][index] ?? 'X', graph: { constraints: [] },
+      }] } as any);
+    });
+    dataServiceSpy.gswbMergeSequenceSemantics.and.returnValue(
+      of({ id: 'sem-1+sem-2', semantic: 'P + Q', graph: { constraints: [] } } as any));
+
+    reasoningPipeline = jasmine.createSpyObj<ReasoningPipelineService>(
+      'ReasoningPipelineService', ['prepareReasoningChecks', 'prepareReasoningChecksSequentially']);
+    reasoningPipeline.prepareReasoningChecks.and.returnValue(
+      of({ scopeId: 'pxq-n1-1-1', assignments: [], failures: [], degradations: [] }));
 
     TestBed.configureTestingModule({
       imports: [FormsModule],
       declarations: [RegressionTestingInterfaceComponent],
       providers: [
         { provide: DataService, useValue: dataServiceSpy },
+        { provide: ReasoningPipelineService, useValue: reasoningPipeline },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => null } } } },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA]
@@ -67,24 +100,22 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  /** One sentence's GSWB output, in the shape the selection helpers read. */
+  const outputsFor = (solutions: any[]) => ({
+    S1: { solutions, log: '', derivation: null, discriminants: [] }
+  }) as any;
+
+  const selectedTexts = (outputs: any, useDisambiguated: boolean) =>
+    (component as any).selectedSolutions('S1', outputs, useDisambiguated)
+      .map((solution: any) => (component as any).solutionText(solution));
+
   it('filters Vampire solutions to the disambiguated selection', () => {
     component.session.selectedSolutionIdsBySentence = { S1: ['sol-2'] };
 
-    const result = (component as any).getSolutionsText(
-      'S1',
-      {
-        S1: {
-          solutions: [
-            { id: 'sol-1', solution: 'first' },
-            { id: 'sol-2', solution: 'second' },
-          ],
-          log: '',
-          derivation: null,
-          discriminants: [],
-        }
-      },
-      true
-    );
+    const result = selectedTexts(outputsFor([
+      { id: 'sol-1', solution: 'first' },
+      { id: 'sol-2', solution: 'second' },
+    ]), true);
 
     expect(result).toEqual(['second']);
   });
@@ -92,22 +123,12 @@ describe('RegressionTestingInterfaceComponent', () => {
   it('uses the LFGxDRT semantic field when preparing reasoning input', () => {
     component.session.gswbPreferences.outputstyle = 5;
 
-    const result = (component as any).getSolutionsText(
-      'S1',
-      {
-        S1: {
-          solutions: [{
-            id: 'sol-1',
-            solution: '<svg>rendered</svg>',
-            semantic: '([x],[dog(x)])'
-          }],
-          log: '',
-          derivation: null,
-          discriminants: [],
-        }
-      },
-      false
-    );
+    const result = selectedTexts(outputsFor([{
+      id: 'sol-1',
+      solution: '<svg>rendered</svg>',
+      semantic: '([x],[dog(x)])',
+      graph: { constraints: [] },
+    }]), false);
 
     expect(result).toEqual(['([x],[dog(x)])']);
   });
@@ -115,23 +136,207 @@ describe('RegressionTestingInterfaceComponent', () => {
   it('does not fall back to all solutions in disambiguated mode when no selection exists', () => {
     component.session.selectedSolutionIdsBySentence = {};
 
-    const result = (component as any).getSolutionsText(
-      'S1',
-      {
-        S1: {
-          solutions: [
-            { id: 'sol-1', solution: 'first' },
-            { id: 'sol-2', solution: 'second' },
-          ],
-          log: '',
-          derivation: null,
-          discriminants: [],
-        }
-      },
-      true
-    );
+    const result = selectedTexts(outputsFor([
+      { id: 'sol-1', solution: 'first' },
+      { id: 'sol-2', solution: 'second' },
+    ]), true);
 
     expect(result).toEqual([]);
+  });
+
+  it('selects readings once, so text and semantic graph cannot come apart', () => {
+    // A reading with no graph cannot be a premise AST. It used to be filtered out of the
+    // graph list only, leaving the text list one entry longer -- and the two were then
+    // indexed against each other, so every later reading was paired with the wrong graph.
+    component.session.gswbPreferences.outputstyle = 5;
+
+    const selected = (component as any).selectedSolutions('S1', outputsFor([
+      { id: 'sol-1', solution: 'a', semantic: '([x],[dog(x)])' },
+      { id: 'sol-2', solution: 'b', semantic: '([y],[cat(y)])', graph: { constraints: [] } },
+    ]), false);
+
+    expect(selected.map((solution: any) => solution.id)).toEqual(['sol-2']);
+    expect(selected.every((solution: any) => !!solution.graph)).toBeTrue();
+  });
+
+  it('keeps graphless readings when the run is not an LFGxDRT one', () => {
+    component.session.gswbPreferences.outputstyle = 1;
+
+    const selected = (component as any).selectedSolutions('S1', outputsFor([
+      { id: 'sol-1', solution: 'a' },
+    ]), false);
+
+    expect(selected.map((solution: any) => solution.id)).toEqual(['sol-1']);
+  });
+
+  /** Two premises and one conclusion, each with its own reading and graph. */
+  const nliPairSpec = () => ({
+    itemId: 'n1',
+    updateId: 'ru-n1',
+    pairId: 'pxq-n1-1-1',
+    premiseSentenceIds: ['S1', 'S2'],
+    hypothesisSentenceIds: ['S3'],
+    premiseSolutions: [
+      { id: 'sem-1', solution: 'a', semantic: 'A', graph: { constraints: [] } },
+      { id: 'sem-2', solution: 'b', semantic: 'B', graph: { constraints: [] } },
+    ],
+    hypothesisSolutions: [
+      { id: 'sem-3', solution: 'c', semantic: 'C', graph: { constraints: [] } },
+    ],
+    premiseReadingRanks: [0, 0],
+    hypothesisReadingRanks: [0],
+  }) as any;
+
+  it('supplies each sentence\'s parsed structure instead of re-parsing the sequence', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    component.session.gswbPreferences.outputstyle = 5;
+    component['sentenceMap'] = { S1: 'one', S2: 'two', S3: 'three' };
+    component.session.lastAnnotations = {
+      S1: { structureJson: { id: 'st-1' } as any, graph: null, appliedRules: [] },
+      S2: { structureJson: { id: 'st-2' } as any, graph: null, appliedRules: [] },
+      S3: { structureJson: { id: 'st-3' } as any, graph: null, appliedRules: [] },
+    } as any;
+
+    (component as any).prepareNliPair(nliPairSpec(), false, 'fof', false).subscribe(() => {
+      const sent = dataServiceSpy.ligerSequence.calls.mostRecent().args[0] as any;
+      // All three, in order: the endpoint only takes the supplied-structures path when
+      // every sentence has one, and a partial list silently falls back to re-parsing.
+      expect(sent.parsedSentences.map((group: any[]) => group[0].id))
+        .toEqual(['st-1', 'st-2', 'st-3']);
+      expect(sent.sentenceIds).toEqual(['S1', 'S2', 'S3']);
+      done();
+    });
+  });
+
+  it('sends the merged premises as the prior, separately from the whole sequence', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    component.session.gswbPreferences.outputstyle = 5;
+    component['sentenceMap'] = { S1: 'one', S2: 'two', S3: 'three' };
+    dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
+      id: 'merged', semantic: request.parts.map((part: any) => part.semantic).join(' + '),
+      graph: { constraints: [] },
+    } as any));
+
+    (component as any).prepareNliPair(nliPairSpec(), false, 'fof', false).subscribe(() => {
+      const request = reasoningPipeline.prepareReasoningChecks.calls.mostRecent().args[0];
+      expect(request.merged.semantic).toBe('A + B + C');
+      // The prior is the premises alone -- the conclusion must not appear in the axiom
+      // the four checks are tested against.
+      expect(request.premiseSemantic).toBe('A + B');
+      expect(request.scope!.updateId).toBe('ru-n1');
+      expect(request.scope!.premiseSemanticIds).toEqual(['sem-1', 'sem-2']);
+      expect(request.scope!.hypothesisSemanticIds).toEqual(['sem-3']);
+      done();
+    });
+  });
+
+  it('re-derives every part inside the sequence instead of merging per-sentence semantics', done => {
+    // Per-sentence semantics carry per-sentence source indices, which line up with the
+    // merged sequence's SYN-IDs only for the first sentence -- so no pronoun in any later
+    // sentence can bind. Every part must be re-derived within the sequence.
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    component.session.gswbPreferences.outputstyle = 5;
+    component['sentenceMap'] = { S1: 'one', S2: 'two', S3: 'three' };
+
+    (component as any).prepareNliPair(nliPairSpec(), false, 'fof', false).subscribe(() => {
+      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(3);
+      expect(dataServiceSpy.gswbDeduce.calls.allArgs().map(([request]: any[]) => request.premises))
+        .toEqual(['mc1', 'mc2', 'mc3']);
+      const request = reasoningPipeline.prepareReasoningChecks.calls.mostRecent().args[0];
+      const parts = dataServiceSpy.gswbMergeSequenceSemantics.calls.first().args[0].parts!;
+      expect(parts.map(part => part.semantic)).toEqual(['A', 'B', 'C']);
+      expect(request.premiseAsts.length).toBe(2);
+      done();
+    });
+  });
+
+  it('matches a selected reading to its sequence counterpart by source order, not position', done => {
+    // GSWB returns an ambiguous sentence's readings in no guaranteed order, and the
+    // sequence rebases their source indices -- so neither the id nor the array position
+    // survives. Relative source order within one part does.
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    component.session.gswbPreferences.outputstyle = 5;
+    component['sentenceMap'] = { S1: 'one', S2: 'two', S3: 'three' };
+    dataServiceSpy.ligerSequence.and.returnValue(of({
+      solutions: [{
+        structureJson: { constraints: [] },
+        sequenceParts: [{ sentenceId: 'S1', solutionKey: 'S0', meaningConstructors: 'mc1' }],
+      }]
+    } as any));
+    dataServiceSpy.gswbDeduce.and.returnValue(of({ solutions: [
+      // Returned in the opposite order to the sentence's own readings, and rebased.
+      { id: 'seq-b', sourceIndex: 17, semantic: 'see(e),arg1(e,y)', graph: { constraints: [] } },
+      { id: 'seq-a', sourceIndex: 11, semantic: 'see(e),arg1(e,x)', graph: { constraints: [] } },
+    ] } as any));
+
+    const spec = {
+      ...nliPairSpec(),
+      premiseSentenceIds: ['S1'],
+      hypothesisSentenceIds: [],
+      // The second reading in source order, i.e. the one that comes back FIRST here.
+      premiseSolutions: [{ id: 'sem-1b', semantic: 'arg1(e,y),see(e)', graph: {} }],
+      premiseReadingRanks: [1],
+      hypothesisSolutions: [],
+      hypothesisReadingRanks: [],
+    };
+
+    (component as any).prepareNliPair(spec, false, 'fof', false).subscribe((pair: any) => {
+      expect(pair.failures).toEqual([]);
+      const parts = dataServiceSpy.gswbMergeSequenceSemantics.calls.first().args[0].parts!;
+      expect(parts.map(part => part.semantic)).toEqual(['see(e),arg1(e,y)']);
+      done();
+    });
+  });
+
+  it('fails the pair when a selected reading has no counterpart in the sequence', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    component.session.gswbPreferences.outputstyle = 5;
+    component['sentenceMap'] = { S1: 'one', S2: 'two', S3: 'three' };
+    dataServiceSpy.ligerSequence.and.returnValue(of({
+      solutions: [{
+        structureJson: { constraints: [] },
+        sequenceParts: [{ sentenceId: 'S1', solutionKey: 'S0', meaningConstructors: 'mc1' }],
+      }]
+    } as any));
+    dataServiceSpy.gswbDeduce.and.returnValue(of({ solutions: [
+      { id: 'seq-a', sourceIndex: 11, semantic: 'see(e),arg1(e,x)', graph: { constraints: [] } },
+      { id: 'seq-b', sourceIndex: 17, semantic: 'see(e),arg1(e,y)', graph: { constraints: [] } },
+    ] } as any));
+
+    const spec = {
+      ...nliPairSpec(),
+      premiseSentenceIds: ['S1'],
+      hypothesisSentenceIds: [],
+      // Signature disagrees with the reading at this rank: substituting it silently would
+      // reason over a different reading than the one the run selected.
+      premiseSolutions: [{ id: 'sem-1c', semantic: 'smile(e),arg1(e,z)', graph: {} }],
+      premiseReadingRanks: [0],
+      hypothesisSolutions: [],
+      hypothesisReadingRanks: [],
+    };
+
+    (component as any).prepareNliPair(spec, false, 'fof', false).subscribe((pair: any) => {
+      expect(pair.assignments).toEqual([]);
+      expect(pair.failures[0]).toContain('sem-1c');
+      done();
+    });
+  });
+
+  it('reports a pair that could not be prepared instead of aborting the batch', done => {
+    // Every pair of every item used to live in one forkJoin under a single error handler,
+    // so one unpreparable reading killed the whole run.
+    component.session.gswbPreferences.outputstyle = 5;
+    component['sentenceMap'] = { S1: 'one', S2: 'two', S3: 'three' };
+    reasoningPipeline.prepareReasoningChecks.and.returnValue(
+      throwError(() => new Error('no post-processed sequence interpretations')));
+
+    (component as any).prepareNliPair(nliPairSpec(), false, 'fof', false).subscribe((pair: any) => {
+      expect(pair.itemId).toBe('n1');
+      expect(pair.assignments).toEqual([]);
+      expect(pair.failures.length).toBe(1);
+      expect(pair.failures[0]).toContain('no post-processed sequence interpretations');
+      done();
+    });
   });
 
   it('detects append items that touch updated sentences', () => {
