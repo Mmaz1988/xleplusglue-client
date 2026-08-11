@@ -7,6 +7,7 @@ import {
   DiscourseAnalysis,
   DiscourseUpdate,
   GswbRequest,
+  ReasoningUpdate,
   GswbSemanticMergePart,
   LigerStructure,
   LigerWebGraph,
@@ -21,7 +22,14 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
 import { catchError, concatMap, forkJoin, from, map, mergeMap, of, switchMap, toArray } from 'rxjs';
 import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
-import { compositeAnalysisId, discourseStructureId, validateAnalysisDocument } from '../../analysis-model';
+import {
+  compositeAnalysisId,
+  discourseStructureId,
+  majorityVerdict,
+  reasoningUpdateId,
+  validateAnalysisDocument,
+  validateReasoningUpdate
+} from '../../analysis-model';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 
 
@@ -479,25 +487,39 @@ export class ChatComponent {
             mcSetId: currentSolution.mcSetId,
             resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs
           }).pipe(map(merged => ({ merged, currentSolution })))),
-          switchMap(({ merged, currentSolution }) => this.reasoningPipeline.prepareReasoningChecks({
-            scopeId: pairId,
-            merged,
-            sequenceStructure: mergedSyntax,
-            premiseAsts: [premiseContext.semanticGraph],
-            hypothesisAsts: [currentSolution.graph],
-            typed,
-            prune: pruneContext
-          }).pipe(map(pair => ({
-            contextIndex,
-            priorElementId,
-            newSentenceId,
-            pairId,
-            checks: pair.assignments,
-            failures: pair.failures,
-            degradations: pair.degradations,
-            merged,
-            syntax: mergedSyntax
-          }))))
+          switchMap(({ merged, currentSolution }) => {
+            // Chat is the degenerate 1+1 case of the premise/conclusion shape: one prior
+            // element, one new sentence. The semantic ids are the readings actually used
+            // for this pair, and must be readings the document already registered --
+            // validateReasoningUpdate checks that positionally.
+            const premiseSemanticIds = [premiseContext.semanticAnalysis?.semId ?? ''];
+            const hypothesisSemanticIds = [
+              (currentSolution.semanticAnalysis ?? solution.semanticAnalysis)?.semId ?? ''];
+            const updateId = reasoningUpdateId([priorElementId], [newSentenceId]);
+            return this.reasoningPipeline.prepareReasoningChecks({
+              scopeId: pairId,
+              scope: { updateId, premiseSemanticIds, hypothesisSemanticIds },
+              merged,
+              sequenceStructure: mergedSyntax,
+              premiseAsts: [premiseContext.semanticGraph],
+              hypothesisAsts: [currentSolution.graph],
+              typed,
+              prune: pruneContext
+            }).pipe(map(pair => ({
+              contextIndex,
+              priorElementId,
+              newSentenceId,
+              pairId,
+              updateId,
+              premiseSemanticIds,
+              hypothesisSemanticIds,
+              checks: pair.assignments,
+              failures: pair.failures,
+              degradations: pair.degradations,
+              merged,
+              syntax: mergedSyntax
+            })));
+          })
         ))
       );
     };
@@ -551,6 +573,120 @@ export class ChatComponent {
         this.chatHistory.push({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
         this.loading = false;
       }
+    });
+  }
+
+  /** Records this turn's reasoning in the document, one ReasoningUpdate per
+   *  (premise element, hypothesis element) pair.
+   *
+   *  Chat used to discard everything but the accept/reject decision: the four checks, their
+   *  TPTP and the Vampire verdicts lived as method-local rxjs values and were thrown away
+   *  once used as a filter. They are a first-class part of the analysis, so they belong in
+   *  the document next to the discourse layer -- and the reasoning layer *references* the
+   *  DiscourseUpdate whose mapping was used rather than copying the mapping, which is what
+   *  keeps a mapping from being re-derived against a duplicated premise context.
+   *
+   *  Several pairs can share one update: two premise readings x one new sentence are two
+   *  assignments of the same premise/hypothesis pair, not two pairs. */
+  private upsertReasoningUpdates(
+    prepared: any[],
+    verdictFor: (item: any, index: number) => any,
+    pruneContext: boolean
+  ): void {
+    const updates = new Map<string, ReasoningUpdate>();
+
+    prepared.forEach((item, index) => {
+      const assignmentId = item?.checks?.assignmentId;
+      const updateId = item?.updateId;
+      if (!assignmentId || !updateId || !item.priorElementId || !item.newSentenceId) {
+        return;
+      }
+
+      if (!updates.has(updateId)) {
+        updates.set(updateId, {
+          id: updateId,
+          premiseElementIds: [item.priorElementId],
+          hypothesisElementIds: [item.newSentenceId],
+          sourceElementId: compositeAnalysisId([item.priorElementId, item.newSentenceId]),
+          sourceElementKind: 'sequence',
+          // Same source the TPTP itself was built from, not GSWB's output style.
+          logicType: this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff',
+          ruleString: APP_DEFAULTS.graphInspector.rulesText,
+          pruned: pruneContext,
+          assignments: [],
+          createdAt: new Date().toISOString(),
+        });
+      }
+      const update = updates.get(updateId)!;
+      if (update.assignments.some(existing => existing.id === assignmentId)) {
+        return;
+      }
+
+      // Only link the discourse branch when it was actually stored. A branch whose context
+      // Vampire rejected never became a DiscourseAnalysis, and pointing at one that does
+      // not exist fails validation -- correctly, since the pointer would be a lie.
+      const discourseUpdateId = `du-${compositeAnalysisId([item.priorElementId, item.newSentenceId])}`;
+      const discourseId = item.checks?.mappingId;
+      const linked = (this.chatDocument.discourseUpdates ?? []).some(du =>
+        du.id === discourseUpdateId && du.discourse.some(branch => branch.id === discourseId));
+
+      const check = verdictFor(item, index);
+      update.assignments.push({
+        id: assignmentId,
+        premiseSemanticIds: item.premiseSemanticIds ?? [],
+        hypothesisSemanticIds: item.hypothesisSemanticIds ?? [],
+        ruleBranchIndex: item.checks?.ruleBranchIndex ?? 1,
+        discourseUpdateId: linked ? discourseUpdateId : undefined,
+        discourseId: linked ? discourseId : undefined,
+        contextTptp: item.checks?.contextTptp ?? '',
+        contextSemanticId: item.merged?.id,
+        checks: item.checks?.checks,
+        verdict: check ? {
+          consistent: !!check.consistent,
+          informative: !!check.informative,
+          relevant: !!check.relevant,
+          glyph: check.glyph,
+          proofFiles: check.proof_files,
+          computedAt: new Date().toISOString(),
+        } : undefined,
+      });
+    });
+
+    updates.forEach(update => {
+      update.verdict = majorityVerdict(update.assignments);
+      update.updatedAt = new Date().toISOString();
+      const next = [
+        ...(this.chatDocument.reasoningUpdates ?? []).filter(existing => existing.id !== update.id),
+        update,
+      ];
+      try {
+        // Validated against a candidate document rather than after assignment, so a
+        // rejected update leaves the document exactly as it was.
+        validateReasoningUpdate({ ...this.chatDocument, reasoningUpdates: next }, update);
+        this.chatDocument.reasoningUpdates = next;
+      } catch (error) {
+        console.warn('[Chat] reasoning update rejected by document invariants',
+          { updateId: update.id, error });
+      }
+    });
+
+    console.info('[Chat] reasoning updates written', {
+      updateCount: updates.size,
+      assignmentCount: [...updates.values()].reduce((sum, update) => sum + update.assignments.length, 0),
+      storedUpdateCount: (this.chatDocument.reasoningUpdates ?? []).length,
+      updates: [...updates.values()].map(update => ({
+        id: update.id,
+        logicType: update.logicType,
+        verdict: update.verdict?.label,
+        assignments: update.assignments.map(assignment => ({
+          id: assignment.id,
+          checks: Object.keys(assignment.checks ?? {}).length,
+          contextTptpLength: (assignment.contextTptp ?? '').length,
+          discourseId: assignment.discourseId,
+          verdict: assignment.verdict
+            && [assignment.verdict.consistent, assignment.verdict.informative, assignment.verdict.relevant],
+        })),
+      })),
     });
   }
 
@@ -698,9 +834,27 @@ export class ChatComponent {
     const consistent = mappings.length ? this.majorityVote(mappings.map(item => !!item.consistent)) : null;
     const informative = mappings.length ? this.majorityVote(mappings.map(item => !!item.informative)) : null;
     const relevant = mappings.length ? this.majorityVote(mappings.map(item => !!item.relevant)) : null;
+    // Vampire echoes each bundle's assignment id back on its verdict, so a verdict is
+    // paired with the branch it was computed for rather than with whatever sits at the
+    // same array index. Position still works when every bundle survives, but stops being
+    // identity the moment one is filtered out.
+    const verdictByAssignment = new Map<string, any>();
+    mappings.forEach(check => {
+      const id = check?.assignment_id;
+      if (id) verdictByAssignment.set(id, check);
+    });
+    const verdictFor = (item: any, index: number) => {
+      const id = item?.checks?.assignmentId;
+      return (id && verdictByAssignment.get(id)) ?? mappings[index];
+    };
     const newContext = prepared.length
-      ? this.contextFromLfgxdrtChecks(prepared, mappings, userMessage, pruneContext)
+      ? this.contextFromLfgxdrtChecks(prepared, mappings, userMessage, pruneContext, verdictFor)
       : (vampData.context ?? []);
+    if (prepared.length) {
+      // After contextFromLfgxdrtChecks, so the DiscourseUpdates an assignment points at
+      // already exist -- validateReasoningUpdate requires both hops to resolve.
+      this.upsertReasoningUpdates(prepared, verdictFor, pruneContext);
+    }
     console.info('[Chat] Vampire verdict (lfgxdrt)', {
       sentence: userMessage,
       consistent, informative, relevant,
@@ -731,7 +885,8 @@ export class ChatComponent {
     prepared: any[],
     checks: any[],
     userMessage: string,
-    pruneContext: boolean
+    pruneContext: boolean,
+    verdictFor: (item: any, index: number) => any = (_item, index) => checks[index]
   ): context[] {
     const previous = this.context;
     const next: context[] = [];
@@ -748,7 +903,7 @@ export class ChatComponent {
     const groups = new Map<string, DiscourseGroup>();
 
     prepared.forEach((item, index) => {
-      const check = checks[index];
+      const check = verdictFor(item, index);
       if (!check?.consistent || !check?.informative || !item.merged?.semantic) return;
 
       const priorElementId = item.priorElementId ?? previous[item.contextIndex]?.elementId;

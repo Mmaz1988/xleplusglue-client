@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, forkJoin, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { APP_DEFAULTS } from '../app-defaults';
-import { discourseStructureId } from '../analysis-model';
+import { discourseStructureId, reasoningAssignmentId } from '../analysis-model';
 import {
   LigerStructure,
   LigerWebGraph,
@@ -18,10 +18,25 @@ interface RuleBranch {
   graph?: LigerWebGraph;
 }
 
+/** What a prepared assignment needs in order to carry a document-level id.
+ *  Supplied by the caller because only it knows which document elements and readings this
+ *  pair stands for; the service mints the id so both callers produce the same shape. */
+export interface ReasoningScope {
+  /** `reasoningUpdateId(...)` of the ReasoningUpdate these assignments belong to. */
+  updateId: string;
+  /** Positionally aligned with the update's premise element ids. */
+  premiseSemanticIds: string[];
+  /** Positionally aligned with the update's hypothesis element ids. */
+  hypothesisSemanticIds: string[];
+}
+
 export interface ReasoningPairRequest {
   /** Identifies this (premise reading x hypothesis reading) pair. Becomes the
    *  `parentSolutionId` prefix GSWB sees, so it must be stable and unique per pair. */
   scopeId: string;
+  /** When set, every prepared assignment carries a `reasoningAssignmentId` so it can be
+   *  written into the document and paired with its Vampire verdict by id. */
+  scope?: ReasoningScope;
   /** Output of GSWB /merge_sequence_semantics -- carries `semantic` and `graph`. */
   merged: any;
   /** The sequence provenance structure from LiGER (the merged *syntax* side). Required:
@@ -41,6 +56,10 @@ export interface ReasoningPairRequest {
  *  send it to Vampire and to record it in the document. */
 export interface PreparedAssignment {
   pairId: string;
+  /** The document-level `ReasoningAssignment.id`, set when the request carried a scope.
+   *  Sent to Vampire in the bundle and echoed back on the verdict, so a verdict is paired
+   *  with its assignment by id rather than by position in an array that gets filtered. */
+  assignmentId?: string;
   mappingId: string;
   /** GSWB's PCDRS solution: carries `semantic`, `graph` and `anaphoraRelations`. */
   mapping: any;
@@ -230,6 +249,13 @@ export class ReasoningPipelineService {
               return <PreparedBranch>{
                 assignment: {
                   pairId: scopeId,
+                  assignmentId: request.scope && reasoningAssignmentId({
+                    updateId: request.scope.updateId,
+                    premiseSemanticIds: request.scope.premiseSemanticIds,
+                    hypothesisSemanticIds: request.scope.hypothesisSemanticIds,
+                    ruleBranchIndex,
+                    anaphoraBranchId: mapping.id,
+                  }),
                   mappingId: mapping.id,
                   mapping,
                   ruleBranchIndex,

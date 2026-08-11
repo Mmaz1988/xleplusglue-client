@@ -106,6 +106,33 @@ describe('ReasoningPipelineService', () => {
     });
   });
 
+  it('mints a document-level assignment id when the request carries a scope', done => {
+    dataService.gswbGeneratePcdrs.and.returnValue(of({
+      solutions: [{ id: 'm1', semantic: 'P & Q', anaphoraRelations: [] }]
+    }) as any);
+
+    service.prepareReasoningChecks({
+      ...request(),
+      scope: {
+        updateId: 'ru-sentence-1=>sentence-2',
+        premiseSemanticIds: ['sem-1'],
+        hypothesisSemanticIds: ['sem-2'],
+      },
+    }).subscribe(pair => {
+      // Every component recoverable, so array position is never identity.
+      expect(pair.assignments[0].assignmentId)
+        .toBe('ru-sentence-1=>sentence-2/P[sem-1]/H[sem-2]/r1/mm1');
+      done();
+    });
+  });
+
+  it('leaves the assignment id unset when no scope is given', done => {
+    service.prepareReasoningChecks(request()).subscribe(pair => {
+      expect(pair.assignments[0].assignmentId).toBeUndefined();
+      done();
+    });
+  });
+
   it('reports a branch GSWB could only translate by dropping its anaphora mapping', done => {
     // The item still comes back with usable TPTP, so nothing downstream would notice on its
     // own -- a degraded bundle must not be indistinguishable from a resolved one.
