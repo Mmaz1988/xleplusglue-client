@@ -896,7 +896,17 @@ export class ChatComponent {
     verdictFor: (item: any, index: number) => any = (_item, index) => checks[index]
   ): context[] {
     const previous = this.context;
+    // One entry per distinct reading, not per surviving assignment. A turn's rule
+    // branches and PCDRS mappings are a DiscourseUpdate *of that turn*: they annotate one
+    // merged reading, they are not new readings. What carries forward is syntax +
+    // semantics, and the next turn re-derives the anaphora binding over the whole merged
+    // discourse (turn 3's mappings rebind turn 2's pronouns as well as its own), so
+    // carrying each branch forward as its own prior re-runs that enumeration once per
+    // branch: turn 3 sent 24 x 36 = 864 bundles where 2 x 36 = 72 was the branch count,
+    // and turn 4 would have multiplied by 72 again.
     const next: context[] = [];
+    const readingKeys = new Map<string, context>();
+    let acceptedAssignments = 0;
     interface DiscourseGroup {
       /** semanticOrigin -> discourseId. Accumulated per branch rather than assumed to
        *  be a single semantic: one sequence's contexts routinely span several merged
@@ -919,21 +929,34 @@ export class ChatComponent {
       const sequenceId = compositeAnalysisId([priorElementId, item.newSentenceId]);
       const semId = item.merged.id || sequenceId;
 
-      next.push({
-        original: `${previous[item.contextIndex]?.original ?? ''} ${userMessage}`.trim(),
-        prolog_drs: item.merged.semantic,
-        prolog_fol: '',
-        // The whole merged sequence, not the branch's context axiom: this entry becomes
-        // the NEXT turn's prior, and `contextTptp` is now the prior of *this* turn.
-        tptp: item.checks?.sequenceTptp ?? '',
-        box: item.merged.solution ?? '',
-        semantic: item.merged.semantic,
-        semanticGraph: item.merged.graph,
-        syntax: item.syntax,
-        semanticAnalysis: item.merged.semanticAnalysis,
-        synSemMapping: item.merged.synSemMapping,
-        elementId: sequenceId,
-      } as context);
+      acceptedAssignments++;
+      // The same identity upsertSequenceFromContexts() dedupes on with its semanticsById
+      // map, so this list and the document's SequenceAnalysis.semantics agree by
+      // construction instead of by coincidence. Every assignment of one pair carries the
+      // identical `merged` (expanded is built as {...item, checks}), so the first one to
+      // pass supplies the entry and the rest only add their branch to the groups below.
+      const readingKey = `${sequenceId}::${item.merged.semanticAnalysis?.semId ?? semId}`;
+      if (!readingKeys.has(readingKey)) {
+        const entry = {
+          original: `${previous[item.contextIndex]?.original ?? ''} ${userMessage}`.trim(),
+          prolog_drs: item.merged.semantic,
+          prolog_fol: '',
+          // The whole merged sequence, not the branch's context axiom: this entry becomes
+          // the NEXT turn's prior, and `contextTptp` is now the prior of *this* turn.
+          // Display-only on this path -- the next turn's context axiom is built from
+          // `semantic` below, via prepareReasoningChecks' premiseSemantic.
+          tptp: item.checks?.sequenceTptp ?? '',
+          box: item.merged.solution ?? '',
+          semantic: item.merged.semantic,
+          semanticGraph: item.merged.graph,
+          syntax: item.syntax,
+          semanticAnalysis: item.merged.semanticAnalysis,
+          synSemMapping: item.merged.synSemMapping,
+          elementId: sequenceId,
+        } as context;
+        readingKeys.set(readingKey, entry);
+        next.push(entry);
+      }
 
       if (!groups.has(sequenceId)) {
         groups.set(sequenceId, { semDiscourseMapping: {}, structures: {}, mergedGraphs: {}, discourse: [] });
@@ -981,6 +1004,15 @@ export class ChatComponent {
         anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
         collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
       });
+    });
+
+    // Said out loud: the fold is what keeps the next turn's work proportional to its own
+    // branch count, so a run where it collapses much more (or much less) than expected is
+    // the signal that the branching upstream changed shape.
+    console.info('[Chat] Discourse readings carried forward', {
+      acceptedAssignments,
+      readingsKept: next.length,
+      discourseBranches: [...groups.values()].reduce((sum, group) => sum + group.discourse.length, 0),
     });
 
     const bySequence = new Map<string, context[]>();
