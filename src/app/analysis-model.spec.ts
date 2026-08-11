@@ -2,6 +2,7 @@ import {
   compositeAnalysisId,
   discourseStructureId,
   findElementById,
+  inferenceResultsFromDocument,
   majorityVerdict,
   majorityVote,
   nliLabelFromVerdicts,
@@ -17,9 +18,13 @@ import {
 import {
   ReasoningCheckSet,
   ReasoningVerdict,
+  RegressionTestingSession,
   SentenceAnalysis,
   SequenceAnalysis,
   XlePlusGlueDocument,
+  createRegressionTestingSession,
+  regressionDocumentToSession,
+  regressionSessionToDocument,
 } from './models/models';
 
 describe('analysis model helpers', () => {
@@ -347,6 +352,117 @@ describe('analysis model helpers', () => {
 
     it('returns no aggregate verdict when nothing has been scored', () => {
       expect(majorityVerdict([])).toBeUndefined();
+    });
+  });
+
+  describe('regression v3 session shape', () => {
+    const checks = (): ReasoningCheckSet => ({
+      info_pos_check: { tptp: 'fof(a).' },
+      info_neg_check: { tptp: 'fof(b).' },
+      cons_pos_check: { tptp: 'fof(c).' },
+      cons_neg_check: { tptp: 'fof(d).' },
+    });
+
+    /** One NLI item's reasoning update, keyed by the item id the way regression mints it. */
+    const regressionDocument = (label: boolean): XlePlusGlueDocument => {
+      const doc = document();
+      const updateId = reasoningUpdateId(['S1'], ['S2'], 'n3');
+      const assignment = (suffix: string, verdictValue: ReasoningVerdict) => ({
+        id: reasoningAssignmentId({
+          updateId,
+          premiseSemanticIds: ['sem-1'],
+          hypothesisSemanticIds: ['sem-2'],
+          ruleBranchIndex: 1,
+          anaphoraBranchId: suffix,
+        }),
+        premiseSemanticIds: ['sem-1'],
+        hypothesisSemanticIds: ['sem-2'],
+        ruleBranchIndex: 1,
+        contextTptp: 'fof(context).',
+        checks: checks(),
+        verdict: verdictValue,
+      });
+      doc.reasoningUpdates = [{
+        id: updateId,
+        premiseElementIds: ['S1'],
+        hypothesisElementIds: ['S2'],
+        itemId: 'n3',
+        logicType: 'fof',
+        assignments: [
+          assignment('m1', { consistent: true, informative: label, relevant: true, glyph: 'g1' }),
+          assignment('m2', { consistent: true, informative: label, relevant: true, glyph: 'g2' }),
+        ],
+      }];
+      return doc;
+    };
+
+    it('mints a regression update id from the item id, not the element pair', () => {
+      expect(reasoningUpdateId(['S1'], ['S2'], 'n3')).toBe('ru-n3');
+    });
+
+    it('derives inference results from the document reasoning updates', () => {
+      const results = inferenceResultsFromDocument(
+        regressionDocument(false),
+        [{ id: 'n3', gold_label: '1' }],
+        { S1: 'A man walks.', S2: 'Someone walks.' });
+
+      // consistent and NOT informative -> the conclusion follows: entailment.
+      expect(results['n3'].predictedLabel).toBe('1');
+      expect(results['n3'].mismatch).toBeFalse();
+      expect(results['n3'].premises).toEqual(['A man walks.']);
+      expect(results['n3'].conclusion).toBe('Someone walks.');
+      expect(results['n3'].glyphs).toEqual(['g1', 'g2']);
+    });
+
+    it('yields nothing for an item with no reasoning update', () => {
+      const results = inferenceResultsFromDocument(
+        regressionDocument(false), [{ id: 'n9', gold_label: '1' }], {});
+
+      expect(results['n9']).toBeUndefined();
+    });
+
+    it('round-trips the document through the v3 session shape', () => {
+      const session: RegressionTestingSession = {
+        ...createRegressionTestingSession(),
+        analysisDocument: regressionDocument(true),
+      };
+
+      const stored = regressionSessionToDocument(session);
+      expect(stored.schemaVersion).toBe(3);
+      expect(stored.analysis.document.reasoningUpdates!.length).toBe(1);
+
+      const restored = regressionDocumentToSession(stored);
+      expect(restored.analysisDocument.reasoningUpdates![0].id).toBe('ru-n3');
+      expect(restored.analysisDocument.reasoningUpdates![0].assignments.length).toBe(2);
+    });
+
+    it('does not persist check graphs, which is what makes autosave unmanageable', () => {
+      const session: RegressionTestingSession = {
+        ...createRegressionTestingSession(),
+        analysisDocument: regressionDocument(true),
+      };
+      const heavy = session.analysisDocument.reasoningUpdates![0].assignments[0].checks;
+      (heavy.info_pos_check as any).graph = structure;
+      (heavy.info_pos_check as any).semanticSvg = '<svg/>';
+
+      const stored = regressionSessionToDocument(session);
+      const persisted = stored.analysis.document.reasoningUpdates![0].assignments[0].checks;
+      expect(persisted.info_pos_check.tptp).toBe(heavy.info_pos_check.tptp);
+      expect(persisted.info_pos_check.graph).toBeUndefined();
+      expect(persisted.info_pos_check.semanticSvg).toBeUndefined();
+    });
+
+    it('reads a v2 session, which has no document, as an empty one', () => {
+      const v2 = {
+        schemaVersion: 2,
+        metadata: { id: 'session-1', redisSessionKey: 'session-1' },
+        inputs: {},
+        analysis: { system: {}, human: {}, save_state: {} },
+      };
+
+      const restored = regressionDocumentToSession(v2);
+      expect(restored.analysisDocument.reasoningUpdates).toEqual([]);
+      expect(restored.analysisDocument.sentences).toEqual([]);
     });
   });
 });

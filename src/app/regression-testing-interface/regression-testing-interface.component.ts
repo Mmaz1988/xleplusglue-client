@@ -9,6 +9,12 @@ import {
   GswbBatchOutput,
   GswbOutput,
   GswbSolution,
+  ReasoningCheckSet,
+  ReasoningUpdate,
+  SemanticAnalysis,
+  SentenceAnalysis,
+  SynSemMapping,
+  SyntacticAnalysis,
   RegressionInferenceResult,
   RegressionParseResult,
   RegressionSessionSummary,
@@ -29,7 +35,13 @@ import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
 import { APP_DEFAULTS } from '../app-defaults';
-import { reasoningUpdateId } from '../analysis-model';
+import {
+  inferenceResultsFromDocument,
+  majorityVerdict,
+  parseReasoningAssignmentId,
+  reasoningUpdateId,
+  validateReasoningUpdate,
+} from '../analysis-model';
 import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
 
 /** One (premise reading x conclusion reading) pair of one NLI item, before any request
@@ -89,6 +101,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  session state: they describe the last preparation, not the stored analysis. */
   nliPreparationFailures: string[] = [];
   nliPreparationDegradations: string[] = [];
+
+  /** The last preparation's assignments, kept until Vampire's verdicts come back so each
+   *  verdict can be paired with the branch it was computed for, by the assignment id
+   *  Vampire echoes. Not persisted -- the document is what gets stored. */
+  private preparedNliPairs: PreparedNliPair[] = [];
 
   @ViewChild('arcy') cy1: GraphVisComponent;
   @ViewChild('ligerreport') ligerreport: ElementRef;
@@ -970,6 +987,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.regressionTestResults = currentRegressionTestResults;
     this.session.lastGswbOutputs = outputs;
     this.session.regressionTestResults = currentRegressionTestResults;
+    this.registerAnalysisSentences(outputs, annotations);
     if (!this.isHydratingSession) {
       this.scheduleSessionSave();
     }
@@ -977,6 +995,77 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.parsingSummary =
       `Parsing summary:\n` +
       `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`;
+  }
+
+  /** Registers every parsed sentence in the session's XlePlusGlueDocument.
+   *
+   *  A ReasoningUpdate may only reference elements and readings the document actually
+   *  holds -- validateReasoningUpdate checks both, positionally -- so the sentence
+   *  registry has to exist before any reasoning result can be written. Regression's
+   *  element ids are the testsuite's sentence ids, and its reading ids are GSWB's
+   *  solution ids, which is what the ReasoningScope already carries.
+   *
+   *  Sequences are deliberately not registered: an NLI item's premises are merged per
+   *  (reading x reading) pair, so the merge is an artefact of one assignment rather than
+   *  a document element the user built. The update records the premise elements. */
+  private registerAnalysisSentences(
+    gswbOutputs: Record<string, GswbOutput>,
+    annotations: Record<string, LigerRuleAnnotation>
+  ): void {
+    const sentences: SentenceAnalysis[] = [];
+    for (const sentenceId of Object.keys(this.sentenceMap)) {
+      const solutions = gswbOutputs[sentenceId]?.solutions ?? [];
+      if (!solutions.length) continue;
+
+      const annotation = annotations[sentenceId];
+      const syntaxByKey = new Map<string, SyntacticAnalysis>();
+      const semantics: SemanticAnalysis[] = [];
+      const synSemMapping: SynSemMapping = {};
+
+      solutions.forEach(solution => {
+        const synId = solution.solutionKey || solution.proofId || `${sentenceId}-syn`;
+        if (!syntaxByKey.has(synId)) {
+          syntaxByKey.set(synId, {
+            synId,
+            structure: annotation?.structureJson as LigerStructure,
+            graph: annotation?.graph,
+            meaningConstructors: annotation?.meaningConstructors,
+            numberOfMCsets: annotation?.numberOfMCsets,
+            appliedRules: annotation?.appliedRules,
+            axioms: annotation?.axioms,
+          });
+        }
+        const semantic: SemanticAnalysis = solution.semanticAnalysis ?? {
+          syntacticOrigin: synId,
+          semId: solution.id,
+          semString: solution.semantic || solution.solution || '',
+          graph: solution.graph,
+          semType: this.usesLfgxDrt() ? 'lfgxdrt' : 'prolog-drt',
+        };
+        semantics.push(semantic);
+        synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semantic.semId]));
+      });
+
+      sentences.push({
+        id: sentenceId,
+        text: this.sentenceMap[sentenceId],
+        syntax: Array.from(syntaxByKey.values()),
+        semantics,
+        synSemMapping,
+        discriminants: gswbOutputs[sentenceId]?.discriminants,
+        selectedSemanticIds: this.session.selectedSolutionIdsBySentence[sentenceId],
+      });
+    }
+
+    // Reasoning updates are kept: a re-parse replaces the readings, and an update that
+    // now references a reading that no longer exists is dropped by the validation on the
+    // next write rather than silently kept as a stale result.
+    this.session.analysisDocument = {
+      ...this.session.analysisDocument,
+      sentences,
+      elements: sentences.map(sentence => ({ kind: 'sentence' as const, id: sentence.id })),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   ngOnDestroy(): void {
@@ -1448,6 +1537,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const vampireStartedAt = Date.now();
     const vampireRunToken = ++this.vampireRunToken;
     this.vampirePreserveExistingResults = Object.keys(this.session.lastVampireResults ?? {}).length > 0;
+    // Dropped up front: these describe the last preparation, and a run that prepares
+    // nothing (a non-LFGxDRT run, or an aborted one) must not write the previous run's
+    // branches into the document against this run's verdicts.
+    this.preparedNliPairs = [];
+    this.nliPreparationFailures = [];
+    this.nliPreparationDegradations = [];
     this.vampireCurrentRunItemCount = 0;
     this.vampireReprocessingItemCount = 0;
     this.vampireNewItemCount = 0;
@@ -1658,6 +1753,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         // presenting it as a clean result is the thing to avoid.
         this.nliPreparationFailures = failures;
         this.nliPreparationDegradations = degradations;
+        this.preparedNliPairs = prepared;
         const bundleCount = prepared.reduce((sum, pair) => sum + pair.assignments.length, 0);
         console.info('[Regression] NLI reasoning bundles prepared',
           { pairCount: prepared.length, bundleCount, failures, degradations });
@@ -2146,6 +2242,103 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
+  /** Writes this run's reasoning into the session's XlePlusGlueDocument: one
+   *  ReasoningUpdate per NLI item (`ru-n3`), one assignment per prepared branch.
+   *
+   *  Verdicts are paired to assignments by the id Vampire echoes back, not by position in
+   *  the item's result array -- position stops being identity the moment a branch is
+   *  filtered out, and regression filters routinely.
+   *
+   *  A branch that could not be prepared never got an assignment id, so it cannot be
+   *  recorded as an assignment; those reasons go on the update's own `failure` instead, so
+   *  a stored session still says that readings were attempted and lost. Branches that were
+   *  translated only by dropping their anaphora mapping DO have ids, and carry their
+   *  reasons on the assignment. */
+  private upsertReasoningUpdates(results: Record<string, check[]>): void {
+    if (!this.preparedNliPairs.length) return;
+
+    const verdictByAssignment = new Map<string, check>();
+    Object.values(results ?? {}).forEach(checks => (checks ?? []).forEach(item => {
+      if (item?.assignment_id) verdictByAssignment.set(item.assignment_id, item);
+    }));
+
+    const itemsById = new Map(this.regressionTestItems.map(item => [String(item?.id ?? ''), item]));
+    const updates = new Map<string, ReasoningUpdate>();
+    const computedAt = new Date().toISOString();
+
+    for (const pair of this.preparedNliPairs) {
+      const item = itemsById.get(pair.itemId);
+      if (!item) continue;
+      const updateId = reasoningUpdateId(item.premises ?? [], item.conclusion ?? [], pair.itemId);
+
+      if (!updates.has(updateId)) {
+        updates.set(updateId, {
+          id: updateId,
+          premiseElementIds: [...(item.premises ?? [])],
+          hypothesisElementIds: [...(item.conclusion ?? [])],
+          itemId: pair.itemId,
+          logicType: this.session.lastLogicType === 'tff' ? 'tff' : 'fof',
+          ruleString: APP_DEFAULTS.graphInspector.rulesText,
+          pruned: this.contextPruning?.nativeElement?.checked ?? false,
+          assignments: [],
+          createdAt: computedAt,
+        });
+      }
+      const update = updates.get(updateId)!;
+      if (pair.failures.length) {
+        update.failure = [update.failure, ...pair.failures].filter(Boolean).join('; ');
+      }
+
+      for (const assignment of pair.assignments) {
+        if (!assignment.assignmentId
+          || update.assignments.some(existing => existing.id === assignment.assignmentId)) continue;
+        const verdict = verdictByAssignment.get(assignment.assignmentId);
+        update.assignments.push({
+          id: assignment.assignmentId,
+          premiseSemanticIds: parseReasoningAssignmentId(assignment.assignmentId).premiseSemanticIds,
+          hypothesisSemanticIds: parseReasoningAssignmentId(assignment.assignmentId).hypothesisSemanticIds,
+          ruleBranchIndex: assignment.ruleBranchIndex,
+          contextTptp: assignment.contextTptp,
+          checks: assignment.checks as ReasoningCheckSet,
+          ...(assignment.degradations?.length ? { degradations: assignment.degradations } : {}),
+          verdict: verdict ? {
+            consistent: !!verdict.consistent,
+            informative: !!verdict.informative,
+            relevant: !!verdict.relevant,
+            glyph: verdict.glyph,
+            proofFiles: verdict.proof_files,
+            computedAt,
+          } : undefined,
+        });
+      }
+    }
+
+    updates.forEach(update => {
+      update.verdict = majorityVerdict(update.assignments);
+      update.updatedAt = computedAt;
+      const next = [
+        ...(this.session.analysisDocument.reasoningUpdates ?? []).filter(existing => existing.id !== update.id),
+        update,
+      ];
+      try {
+        // Validated against a candidate document, so a rejected update leaves the stored
+        // one exactly as it was rather than half-applied.
+        const candidate = { ...this.session.analysisDocument, reasoningUpdates: next };
+        validateReasoningUpdate(candidate, update);
+        this.session.analysisDocument = { ...candidate, updatedAt: computedAt };
+      } catch (error) {
+        console.warn('[Regression] reasoning update rejected by document invariants',
+          { updateId: update.id, error });
+      }
+    });
+
+    console.info('[Regression] reasoning updates written', {
+      updateCount: updates.size,
+      assignmentCount: [...updates.values()].reduce((sum, update) => sum + update.assignments.length, 0),
+      storedUpdateCount: (this.session.analysisDocument.reasoningUpdates ?? []).length,
+    });
+  }
+
   private renderVampireResults(results: Record<string, check[]>, _summary: VampireSessionSummary, finalSnapshot: boolean, preserveExisting = false): void {
     const mergedResults: Record<string, check[]> = preserveExisting && this.session.lastVampireResults
       ? { ...this.session.lastVampireResults, ...results }
@@ -2167,6 +2360,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     let successful_neutral_predictions = 0;
     let successful_contradiction_predictions = 0;
 
+    // Written before the loop below reads it: the loop prefers the document's verdict for
+    // any item that has one, so the document is the record and `inferenceResults` the view.
+    this.upsertReasoningUpdates(mergedResults);
+    const documentResults = inferenceResultsFromDocument(
+      this.session.analysisDocument, this.regressionTestItems, this.sentenceMap);
+
     const currentInferenceResults: RegressionInferenceResult[] = [];
 
     for (const testItem of this.regressionTestItems) {
@@ -2175,7 +2374,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
       const infoCount = value.filter(check => check.informative).length;
       const consistentCount = value.filter(check => check.consistent).length;
-      const glyphs: string[] = value.map(check => check.glyph);
 
       const infoSuccess = infoCount > value.length / 2;
       const consistentSuccess = consistentCount > value.length / 2;
@@ -2184,6 +2382,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       if (infoSuccess && consistentSuccess) entailment_label = '0';
       else if (!infoSuccess && consistentSuccess) entailment_label = '1';
       else if (!consistentSuccess) entailment_label = '-1';
+
+      // The document's verdict for this item, when it has one. Same majority rule and
+      // same label mapping, but computed over the assignments the verdicts were paired
+      // to by id rather than over whatever came back in this item's array -- so a run
+      // where some branches were filtered out still attributes each verdict correctly.
+      const fromDocument = documentResults[testItem.id];
+      if (fromDocument) {
+        entailment_label = fromDocument.predictedLabel;
+      }
+      const glyphs: string[] = fromDocument?.glyphs ?? value.map(check => check.glyph);
 
       if (testItem.gold_label === entailment_label) {
         if (entailment_label === '1') successful_entailment_predictions++;

@@ -221,6 +221,16 @@ export interface ReasoningAssignment {
    *  call sites did before. An assignment with `failure` set is excluded from the
    *  Vampire payload but stays in the document as evidence. */
   failure?: string;
+  /** Items GSWB could translate only by dropping this branch's anaphora mapping, as
+   *  human-readable reasons.
+   *
+   *  On the assignment rather than on the update: a degradation is a property of the one
+   *  bundle it happened to, and a run routinely has degraded and cleanly resolved branches
+   *  side by side. Without it a stored session cannot tell a resolved result from one whose
+   *  pronoun bound to nothing -- the bundle still carries usable TPTP and a verdict either
+   *  way, which is precisely why it has to be said explicitly. A handful of short strings,
+   *  so unlike ReasoningCheck.graph it costs the autosave payload nothing. */
+  degradations?: string[];
 }
 
 /** Aggregated verdict across a reasoning update's assignments, plus the derived NLI label. */
@@ -660,6 +670,12 @@ export interface RegressionSessionAnalysis {
   system: RegressionSessionAnalysisSystem;
   human: RegressionSessionAnalysisHuman;
   save_state: RegressionSessionSaveState;
+  /** v3: the same XlePlusGlueDocument chat writes into, holding this run's reasoning
+   *  results. `system.inferenceResults` is a *view* over `document.reasoningUpdates` --
+   *  it is still written so a v2 reader and the confusion matrix keep working, but the
+   *  document is the record. `system.regressionTestItems`/`regressionTestResults` are not
+   *  views: they describe the testsuite and the parse phase, not reasoning. */
+  document: XlePlusGlueDocument;
 }
 
 export interface RegressionSessionSaveState {
@@ -673,8 +689,13 @@ export interface RegressionSessionSaveState {
   sortedMCmap: Record<string, any>;
 }
 
+/** v3 embeds an XlePlusGlueDocument under `analysis.document`; v2 had the three parallel
+ *  result arrays alone. The store (Redis/redis_store.py) dispatches on this on read: a v2
+ *  session is upgraded in memory and flagged `upgradedFrom`, a newer one is refused. */
+export const REGRESSION_SESSION_SCHEMA_VERSION = 3;
+
 export interface RegressionSessionDocument {
-  schemaVersion: 2;
+  schemaVersion: typeof REGRESSION_SESSION_SCHEMA_VERSION;
   metadata: RegressionSessionMetadata;
   inputs: RegressionSessionInputs;
   analysis: RegressionSessionAnalysis;
@@ -701,7 +722,14 @@ export interface RegressionTestingSession {
   sentenceMap: Record<string, string>;
   regressionTestItems: any[];
   regressionTestResults: RegressionParseResult[];
+  /** Derived from `analysisDocument.reasoningUpdates` for LFGxDRT runs (see
+   *  `inferenceResultsFromDocument`), computed directly from Vampire's checks otherwise.
+   *  Kept as a stored array either way: the confusion matrix and the saved-results view
+   *  read it, and a v2 reader has nothing else. */
   inferenceResults: RegressionInferenceResult[];
+  /** v3: this run's reasoning results in the shared analysis model -- one ReasoningUpdate
+   *  per NLI item (`ru-n3`), one assignment per reading x rule branch x anaphora branch. */
+  analysisDocument: XlePlusGlueDocument;
   selectedSolutionIdsBySentence: Record<string, string[]>;
   selectedScopeIdsBySentence: Record<string, string[]>;
   selectedMcIdsBySentence: Record<string, string[]>;
@@ -767,6 +795,44 @@ function cloneGswbOutput(output: GswbOutput): GswbOutput {
   };
 }
 
+export function createRegressionAnalysisDocument(sessionId: string): XlePlusGlueDocument {
+  return {
+    id: `analysis-${sessionId}`,
+    semanticType: 'lfgxdrt',
+    sentences: [],
+    sequences: [],
+    elements: [],
+    discourseUpdates: [],
+    reasoningUpdates: [],
+  };
+}
+
+/** The persisted form of one reasoning check.
+ *
+ *  `graph` and `semanticSvg` are dropped rather than stored: a regression run persists one
+ *  assignment per reading x rule branch x anaphora branch, and one graph per check of each
+ *  is what makes the autosave payload unmanageable. They are rebuildable from the TPTP's
+ *  source; the TPTP itself is not rebuildable from anything, so it stays. */
+function persistedReasoningCheck(check: ReasoningCheck): ReasoningCheck {
+  return { tptp: check?.tptp ?? '', ...(check?.canonicalSemantic
+    ? { canonicalSemantic: check.canonicalSemantic } : {}) };
+}
+
+function persistedReasoningUpdate(update: ReasoningUpdate): ReasoningUpdate {
+  return {
+    ...update,
+    premiseElementIds: [...(update.premiseElementIds ?? [])],
+    hypothesisElementIds: [...(update.hypothesisElementIds ?? [])],
+    assignments: (update.assignments ?? []).map(assignment => ({
+      ...assignment,
+      premiseSemanticIds: [...(assignment.premiseSemanticIds ?? [])],
+      hypothesisSemanticIds: [...(assignment.hypothesisSemanticIds ?? [])],
+      checks: Object.fromEntries(Object.entries(assignment.checks ?? {})
+        .map(([name, check]) => [name, persistedReasoningCheck(check)])) as ReasoningCheckSet,
+    })),
+  };
+}
+
 export function createRegressionSessionDocument(): RegressionSessionDocument {
   const runtime = createRegressionTestingSession();
   return regressionSessionToDocument(runtime);
@@ -779,7 +845,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
   const redisSessionKey = String(session?.redisSessionKey ?? sessionId);
 
   return {
-    schemaVersion: 2,
+    schemaVersion: REGRESSION_SESSION_SCHEMA_VERSION,
     metadata: {
       id: sessionId,
       redisSessionKey,
@@ -831,6 +897,15 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
         lastVampireSolutionIdsBySentence: { ...(session?.lastVampireSolutionIdsBySentence ?? {}) },
         sortedMCmap: { ...(session?.sortedMCmap ?? {}) },
       },
+      // No `updatedAt` stamp of its own here: the document carries the timestamp of the
+      // last change to the document, and the session snapshot is fingerprinted to decide
+      // whether an autosave is needed. Re-stamping it on every snapshot would make every
+      // fingerprint unique and turn autosave into a loop.
+      document: {
+        ...(session?.analysisDocument ?? createRegressionAnalysisDocument(sessionId)),
+        reasoningUpdates: (session?.analysisDocument?.reasoningUpdates ?? [])
+          .map(update => persistedReasoningUpdate(update)),
+      },
     },
   };
 }
@@ -871,6 +946,11 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     regressionTestItems: Array.isArray(system?.regressionTestItems ?? document?.regressionTestItems) ? (system?.regressionTestItems ?? document?.regressionTestItems) : [],
     regressionTestResults: Array.isArray(system?.regressionTestResults ?? document?.regressionTestResults) ? (system?.regressionTestResults ?? document?.regressionTestResults).map((result: RegressionParseResult) => cloneRegressionParseResult(result)) : [],
     inferenceResults: Array.isArray(system?.inferenceResults ?? document?.inferenceResults) ? (system?.inferenceResults ?? document?.inferenceResults).map((result: RegressionInferenceResult) => cloneRegressionInferenceResult(result)) : [],
+    // Absent in a v2 session, and in a v3 one the store upgraded from v2. Both read back
+    // as an empty document rather than as a missing one.
+    analysisDocument: analysis?.document
+      ? { ...createRegressionAnalysisDocument(String(metadata?.id ?? base.id)), ...analysis.document }
+      : createRegressionAnalysisDocument(String(metadata?.id ?? base.id)),
     selectedSolutionIdsBySentence: { ...(human?.selectedSolutionIdsBySentence ?? document?.selectedSolutionIdsBySentence ?? {}) },
     selectedScopeIdsBySentence: { ...(human?.selectedScopeIdsBySentence ?? document?.selectedScopeIdsBySentence ?? {}) },
     selectedMcIdsBySentence: { ...(human?.selectedMcIdsBySentence ?? document?.selectedMcIdsBySentence ?? {}) },
@@ -930,6 +1010,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     regressionTestItems: [],
     regressionTestResults: [],
     inferenceResults: [],
+    analysisDocument: createRegressionAnalysisDocument(sessionId),
     selectedSolutionIdsBySentence: {},
     selectedScopeIdsBySentence: {},
     selectedMcIdsBySentence: {},

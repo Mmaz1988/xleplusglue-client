@@ -1,6 +1,7 @@
 import {
   DiscourseUpdate,
   NliLabel,
+  RegressionInferenceResult,
   REASONING_CHECK_NAMES,
   ReasoningAssignment,
   ReasoningItemVerdict,
@@ -375,3 +376,45 @@ function validateMapping(
     });
   });
 }
+/** `inferenceResults` as a view over the document's reasoning updates.
+ *
+ *  The label is `majorityVerdict` + `nliLabelFromVerdicts`, which is the same majority rule
+ *  and the same label mapping the component applied to Vampire's checks directly -- so
+ *  this is a view, not a second opinion. Items with no reasoning update yield nothing;
+ *  the caller keeps whatever it computed for those (a non-LFGxDRT run has no updates at
+ *  all). Kept here rather than in the component so a stored session can be re-rendered
+ *  from the document alone. */
+export function inferenceResultsFromDocument(
+  document: XlePlusGlueDocument | undefined,
+  items: any[],
+  sentenceMap: Record<string, string>,
+): Record<string, RegressionInferenceResult> {
+  const results: Record<string, RegressionInferenceResult> = {};
+  const updatesById = new Map((document?.reasoningUpdates ?? []).map(update => [update.id, update]));
+
+  for (const item of items ?? []) {
+    const itemId = String(item?.id ?? '');
+    const update = updatesById.get(`ru-${itemId}`);
+    const verdict = update && majorityVerdict(update.assignments ?? []);
+    if (!update || !verdict) continue;
+
+    const goldLabel = item?.gold_label ?? 'unknown';
+    const textsFor = (ids: string[]) => (ids ?? [])
+      .map(sentenceId => sentenceMap[sentenceId])
+      .filter((text: any) => typeof text === 'string' && text.trim().length > 0);
+
+    results[itemId] = {
+      id: itemId,
+      premises: textsFor(update.premiseElementIds),
+      conclusion: textsFor(update.hypothesisElementIds).join(' '),
+      predictedLabel: verdict.label,
+      goldLabel,
+      premiseIds: [...update.premiseElementIds],
+      conclusionIds: [...update.hypothesisElementIds],
+      mismatch: goldLabel !== verdict.label,
+      glyphs: [...(verdict.glyphs ?? [])],
+    };
+  }
+  return results;
+}
+

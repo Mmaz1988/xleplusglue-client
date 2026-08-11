@@ -645,6 +645,9 @@ export class ChatComponent {
         contextTptp: item.checks?.contextTptp ?? '',
         contextSemanticId: item.merged?.id,
         checks: item.checks?.checks,
+        // A degraded bundle is still usable and still gets a verdict, so the only thing
+        // that keeps it distinguishable from a cleanly resolved one is saying so here.
+        ...(item.checks?.degradations?.length ? { degradations: item.checks.degradations } : {}),
         verdict: check ? {
           consistent: !!check.consistent,
           informative: !!check.informative,
