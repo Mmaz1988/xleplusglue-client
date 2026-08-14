@@ -84,6 +84,7 @@ export class GswbVisComponent implements AfterViewInit {
     this.semanticSolutionReady = false;
 
     this.updateMeaningConstructors();
+    this.syncSelectedProofInputFromEditor();
 
     this.gswbPreferences.onSubmit();
 
@@ -213,6 +214,28 @@ export class GswbVisComponent implements AfterViewInit {
 
   updateMeaningConstructors() {
     this.meaningConstructors = this.editor1?.getContent() ?? '';
+  }
+
+  /**
+   * Wired to editor1's (contentChange) output. GSWB's /deduce endpoint uses
+   * `proofs` instead of `premises` whenever `proofs` is non-empty, so an edit
+   * made only in the editor was previously discarded silently -- keep the
+   * selected proof input's meaningConstructors in sync as the user types.
+   */
+  onMeaningConstructorsEdited(content: string): void {
+    this.meaningConstructors = content;
+    const selected = this.proofInputs[this.selectedProofInputIndex];
+    if (selected) {
+      selected.meaningConstructors = content;
+    }
+  }
+
+  private syncSelectedProofInputFromEditor(): void {
+    const selected = this.proofInputs[this.selectedProofInputIndex];
+    const liveContent = this.editor1?.getContent();
+    if (selected && liveContent !== undefined && selected.meaningConstructors !== liveContent) {
+      selected.meaningConstructors = liveContent;
+    }
   }
 
   setProofInputs(proofInputs: GswbProofInput[]): void {

@@ -105,7 +105,7 @@ export class LigerVisComponent implements AfterViewInit {
     const sentence = inputValue.trim();
     if (!sentence || !this.canAppendSentence() || this.loading) {
       if (sentence && this.sequenceSentences.length && !this.canAppendSentence()) {
-        this.displayMessage("Calculate and select a GSWB semantic solution before adding a sentence.", "red");
+        this.displayMessage("Calculate and select a GSWB semantics solution before adding a sentence.", "red");
       }
       return;
     }

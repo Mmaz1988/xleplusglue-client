@@ -12,7 +12,7 @@
   <button type="button" (click)="nextProofInput()" [disabled]="proofInputs.length < 2">Next proof &#9654;</button>
 </div>
 <div class="editor-restr">
-<app-editor #edit1 [mode]="'glue'" >
+<app-editor #edit1 [mode]="'glue'" (contentChange)="onMeaningConstructorsEdited($event)">
 </app-editor>
 </div>
 

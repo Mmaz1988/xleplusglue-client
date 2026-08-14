@@ -155,4 +155,43 @@ describe('GswbVisComponent', () => {
       expect(request.parts[0].sentenceId).toBe('sB');
     });
   });
+
+  describe('onMeaningConstructorsEdited (editor-drops-edit regression)', () => {
+    it('syncs a live edit into the selected proof input, not just meaningConstructors', () => {
+      component.proofInputs = [
+        { proofId: 'p0', meaningConstructors: 'original 0' } as any,
+        { proofId: 'p1', meaningConstructors: 'original 1' } as any,
+      ];
+      component.selectedProofInputIndex = 0;
+
+      component.onMeaningConstructorsEdited('edited 0');
+
+      expect(component.meaningConstructors).toBe('edited 0');
+      expect(component.proofInputs[0].meaningConstructors).toBe('edited 0');
+      expect(component.proofInputs[1].meaningConstructors).toBe('original 1');
+    });
+
+    it('survives paging away and back via previous/nextProofInput', () => {
+      component.proofInputs = [
+        { proofId: 'p0', meaningConstructors: 'original 0' } as any,
+        { proofId: 'p1', meaningConstructors: 'original 1' } as any,
+      ];
+      component.selectedProofInputIndex = 0;
+      component.editor1 = { getContent: jasmine.createSpy('getContent'), updateContent: jasmine.createSpy('updateContent') } as any;
+
+      component.onMeaningConstructorsEdited('edited 0');
+      component.nextProofInput();
+      component.previousProofInput();
+
+      expect(component.proofInputs[0].meaningConstructors).toBe('edited 0');
+    });
+
+    it('is a no-op when no proof input is selected', () => {
+      component.proofInputs = [];
+      component.selectedProofInputIndex = 0;
+
+      expect(() => component.onMeaningConstructorsEdited('edited')).not.toThrow();
+      expect(component.meaningConstructors).toBe('edited');
+    });
+  });
 });
