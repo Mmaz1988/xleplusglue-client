@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Subject, of } from 'rxjs';
 import { DocumentBuilderService } from './document-builder.service';
 import { DataService } from '../data.service';
+import { validateSequenceAnalysis } from '../analysis-model';
 import { GswbSolution, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 
 describe('DocumentBuilderService', () => {
@@ -189,8 +190,27 @@ describe('DocumentBuilderService', () => {
       // live via misc/current/analysis-document-syntactic-ambiguity.json: 3 syntactic
       // analyses x 1 previously produced 3 separate SequenceAnalysis entries instead of
       // one with .syntax.length === 3. This is the 2-variant version of that.
+      //
+      // Each merge's own semanticAnalysis.syntacticOrigin is deliberately set to an
+      // UNRELATED id (mimicking GSWB's real /merge_sequence_semantics response, whose
+      // syntacticOrigin comes from its own solutionKey/parentId scheme -- a different
+      // namespace from LiGER's merged syntax ids). This is the exact shape of a real
+      // regression: the first cut of this method trusted that unrelated id as the
+      // synSemMapping key instead of overwriting it with the syntax merge's own id,
+      // producing a document where a semantic's syntacticOrigin didn't match any of its
+      // sequence's syntax entries -- confirmed live via
+      // misc/current/analysis-document-3x3syntaxambiguity.json (valid: false,
+      // "has unknown sequence syntax origin"). Only asserting `.syntax` ids (as the
+      // original version of this test did) does NOT catch that -- this test now also
+      // asserts syntacticOrigin/synSemMapping consistency and runs the real validator.
       dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
-        of(mergedSolution(request.parentSolutionId)));
+        of({
+          ...mergedSolution(request.parentSolutionId),
+          semanticAnalysis: {
+            syntacticOrigin: 'unrelated-gswb-key', semId: request.parentSolutionId,
+            semString: 'merged semantic', semType: 'lfgxdrt',
+          },
+        }));
       let ligerCallCount = 0;
       dataServiceMock.ligerSequence.and.callFake(() => {
         // Two distinct current-sentence structures parsed differently -> LiGER assigns
@@ -219,7 +239,20 @@ describe('DocumentBuilderService', () => {
       expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(2);
       expect(result.pairs.length).toBe(2);
       expect(result.sequenceAnalyses.length).toBe(1);
-      expect(result.sequenceAnalyses[0].syntax.map((s: any) => s.synId).sort()).toEqual(['syn-seq-a', 'syn-seq-b']);
+      const merged: SequenceAnalysis = result.sequenceAnalyses[0];
+      expect(merged.syntax.map((s: any) => s.synId).sort()).toEqual(['syn-seq-a', 'syn-seq-b']);
+      // Every semantic's syntacticOrigin must be ONE OF this sequence's own syntax ids
+      // -- not the unrelated GSWB key the merge response carried.
+      const syntaxIdSet = new Set(merged.syntax.map((s: any) => s.synId));
+      merged.semantics.forEach(semantic => expect(syntaxIdSet.has(semantic.syntacticOrigin)).toBeTrue());
+      expect(Object.keys(merged.synSemMapping).sort()).toEqual(['syn-seq-a', 'syn-seq-b']);
+
+      const knownSentencesDoc: any = {
+        id: 'doc', semanticType: 'lfgxdrt',
+        sentences: [previousSentence, { ...currentVariantA, id: 'sentence-2' }],
+        sequences: [merged], elements: [],
+      };
+      expect(() => validateSequenceAnalysis(knownSentencesDoc, merged)).not.toThrow();
     });
 
     it('keeps a pair whose syntax merge cannot be resolved, but does not register it as a sequence', () => {

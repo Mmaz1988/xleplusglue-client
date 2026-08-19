@@ -279,17 +279,28 @@ export class DocumentBuilderService {
             if (!syntax) {
               return group;
             }
+            // The syntax id THIS group actually merged to -- not whatever
+            // GswbSolution.semanticAnalysis.syntacticOrigin the semantic merge (a
+            // separate, earlier HTTP call, keyed by GSWB's own solutionKey/parentId
+            // scheme) happened to carry. Those two ids live in different namespaces;
+            // a semantic must be tagged with ITS OWN syntax pairing's id, or
+            // validateSequenceAnalysis's per-semantic syntacticOrigin check fails
+            // wherever the two happen not to coincide -- confirmed live via
+            // misc/current/analysis-document-3x3syntaxambiguity.json, whose semantics
+            // carried syntacticOrigin values from *other* groups' syntax ids entirely.
+            const syntaxId = syntax.syntax[0]?.synId || syntax.id;
             return group.map(pair => {
-              const semantic = this.semanticAnalysisFromMerged(pair.merged);
+              const semantic: SemanticAnalysis = {
+                ...this.semanticAnalysisFromMerged(pair.merged),
+                syntacticOrigin: syntaxId,
+              };
               pair.merged.sequenceAnalysis = {
                 id: pair.merged.id || syntax.id,
                 text: syntax.text,
                 sentenceIds: syntax.sentences.map(sentence => sentence.id),
                 syntax: syntax.syntax,
                 semantics: [semantic],
-                synSemMapping: pair.merged.synSemMapping ?? {
-                  [semantic.syntacticOrigin]: [semantic.semId]
-                },
+                synSemMapping: { [syntaxId]: [semantic.semId] },
               };
               return pair;
             });
