@@ -206,6 +206,33 @@ export class GswbVisComponent implements AfterViewInit {
     this.postProcessing.emit(mode);
   }
 
+  /** Clears every piece of in-flight semantic state a discourse accumulates. Paired with
+   *  LigerVisComponent.resetForNewDiscourse() -- see
+   *  docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md, "starting a new discourse does not
+   *  reset the document". Does not touch gswbPreferences -- those are workspace
+   *  settings, not discourse state. */
+  resetForNewDiscourse(): void {
+    this.meaningConstructors = '';
+    this.proofInputs = [];
+    this.selectedProofInputIndex = 0;
+    this.allSemanticSolutions = [];
+    this.semanticDiscriminants = [];
+    this.selectedSemanticIds = [];
+    this.selectedScopeIds = [];
+    this.selectedMcIds = [];
+    this.hasSemanticSolutions = false;
+    this.semanticSolutionReady = false;
+    this.editor1?.updateContent('');
+    this.sem?.updateContent('');
+    this.log?.updateContent('');
+    if (this.semvis) {
+      this.semvis.setItems([]);
+      this.semvis.setDiscriminants([]);
+      this.semvis.clearMc();
+      this.semvis.clearScope();
+    }
+  }
+
   displayMessage(message: string, color: string) {
     this.errorhandle.nativeElement.style.color = color;
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;

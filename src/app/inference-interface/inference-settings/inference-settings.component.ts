@@ -35,7 +35,7 @@ export class InferenceSettingsComponent {
 
 
     const vampirePreferences: VampirePreferences = {
-      logic_type: this.vampirePreferencesForm.value.logic_type,
+      logic_type: Number(this.vampirePreferencesForm.value.logic_type),
       model_building: this.vampirePreferencesForm.value.model_building,
       max_duration: this.vampirePreferencesForm.value.max_duration,
       layered: this.vampirePreferencesForm.value.layered

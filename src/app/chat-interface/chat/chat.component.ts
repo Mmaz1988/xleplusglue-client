@@ -32,6 +32,7 @@ import {
   validateReasoningUpdate
 } from '../../analysis-model';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
+import { DocumentBuilderService } from '../../document-builder/document-builder.service';
 
 
 @Component({
@@ -45,7 +46,8 @@ export class ChatComponent {
     private dataService: DataService,
     private changeDetector: ChangeDetectorRef,
     private sanitizer: DomSanitizer,
-    private reasoningPipeline: ReasoningPipelineService
+    private reasoningPipeline: ReasoningPipelineService,
+    private documentBuilder: DocumentBuilderService
   ) {}
 
   @ViewChild('contextPruning') contextPruning!: ElementRef;
@@ -65,6 +67,10 @@ export class ChatComponent {
 
   @Input() chatDocument: XlePlusGlueDocument = ChatComponent.emptyChatDocument();
   @Output() chatDocumentChange = new EventEmitter<XlePlusGlueDocument>();
+
+  // The parent-owned chat session id, threaded into every Vampire request so the adapter can
+  // group this conversation's tmp/debug files under one session directory.
+  @Input() sessionKey: string;
 
   chatHistory: ChatMessage[] = []; // Stores chat messages
   userInput: string = ''; // Stores user input
@@ -89,6 +95,19 @@ export class ChatComponent {
     this.userInput = '';
   }
 
+  /** One-indexed turn number for the current exchange, derived from how many surviving
+   *  context readings have accumulated so far. Sent to Vampire as `turn_index` so the
+   *  adapter can fold this turn's proof calls into the right session subfolder. */
+  private currentTurnIndex(): number {
+    return this.context.length === 0 ? 1 : this.context.length + 1;
+  }
+
+  /** Stamps and appends a chat message. Centralizing this (instead of pushing onto
+   *  chatHistory directly at every call site) keeps the timestamp assignment in one place. */
+  private pushChatMessage(message: Omit<ChatMessage, 'timestamp'>): void {
+    this.chatHistory.push({ ...message, timestamp: new Date().toISOString() });
+  }
+
   sendMessage() {
     if (!this.userInput.trim()) return;
 
@@ -96,7 +115,7 @@ export class ChatComponent {
     const userMessage = this.userInput;
 
     // Add user message to history
-    this.chatHistory.push({ text: userMessage, sender: 'User' });
+    this.pushChatMessage({ text: userMessage, sender: 'User' });
 
     // If logicType is 0 create string 'fof' if 1 create string 'tff'
     const logicType = this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
@@ -111,7 +130,7 @@ export class ChatComponent {
 
         if (!selectedSolution || !selectedSolution.graph?.graphElements?.length) {
           console.info('[Chat] LiGER parse failed', { sentence: userMessage });
-          this.chatHistory.push({ text: 'Syntactic analysis failed for this input!', sender: 'Bot' });
+          this.pushChatMessage({ text: 'Syntactic analysis failed for this input!', sender: 'Bot' });
           this.loading = false;
           return;
         }
@@ -160,7 +179,7 @@ export class ChatComponent {
           next: gswbData => {
             if (!Array.isArray(gswbData.solutions) || gswbData.solutions.length === 0 || gswbData.solutions[0] === '') {
               console.info('[Chat] GSWB deduce found no semantic analyses', { sentence: userMessage });
-              this.chatHistory.push({ text: 'No semantic analyses found for this input!', sender: 'Bot' });
+              this.pushChatMessage({ text: 'No semantic analyses found for this input!', sender: 'Bot' });
               this.loading = false;
               return;
             }
@@ -170,7 +189,7 @@ export class ChatComponent {
               sentence: userMessage,
               solutionCount: gswbData.solutions.length,
               useLfgxDrt,
-              turn: this.context.length === 0 ? 1 : this.context.length + 1,
+              turn: this.currentTurnIndex(),
             });
             const userSem = gswbData.solutions
               .map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution)
@@ -193,7 +212,9 @@ export class ChatComponent {
               hypothesis: userSem,
               pruning: pruneContext,
               active_indices: this.activeIndices,
-              vampire_preferences: this.vampirePreferences.vampirePreferences
+              vampire_preferences: this.vampirePreferences.vampirePreferences,
+              session_key: this.sessionKey,
+              turn_index: this.currentTurnIndex()
             };
 
             this.dataService.callVampire(vampRequest).subscribe({
@@ -242,7 +263,7 @@ export class ChatComponent {
                   const glyphGridSize = Math.max(1, Math.ceil(Math.sqrt(glyphs.length)));
                   const safeGlyphs = glyphs.map(g => this.sanitizer.bypassSecurityTrustHtml(g));
 
-                  this.chatHistory.push({
+                  this.pushChatMessage({
                     text: message,
                     sender: 'Bot',
                     detailText: tptp,
@@ -255,19 +276,19 @@ export class ChatComponent {
                 this.loading = false;
               },
               error: () => {
-                this.chatHistory.push({ text: 'An error occurred during the inference process', sender: 'Bot' });
+                this.pushChatMessage({ text: 'An error occurred during the inference process', sender: 'Bot' });
                 this.loading = false;
               }
             });
           },
           error: () => {
-            this.chatHistory.push({ text: 'An error occurred during the semantic analysis', sender: 'Bot' });
+            this.pushChatMessage({ text: 'An error occurred during the semantic analysis', sender: 'Bot' });
             this.loading = false;
           }
         });
       },
       error: () => {
-        this.chatHistory.push({ text: 'An unknown error occurred.', sender: 'Bot' });
+        this.pushChatMessage({ text: 'An unknown error occurred.', sender: 'Bot' });
         this.loading = false;
       }
     });
@@ -344,7 +365,7 @@ export class ChatComponent {
         },
         error: error => {
           console.warn('[Chat] Turn 1 sequence-sourced semantics failed', { sentence: userMessage, error });
-          this.chatHistory.push({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
+          this.pushChatMessage({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
           this.loading = false;
         }
       });
@@ -370,7 +391,7 @@ export class ChatComponent {
     const semanticSolutions = solutions.filter(solution =>
       typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
     if (!semanticSolutions.length) {
-      this.chatHistory.push({ text: 'No post-processed semantic analyses found.', sender: 'Bot' });
+      this.pushChatMessage({ text: 'No post-processed semantic analyses found.', sender: 'Bot' });
       this.loading = false;
       return;
     }
@@ -548,7 +569,7 @@ export class ChatComponent {
         // resolved discourse must never be presented as a cleanly resolved one.
         this.reportUnresolvedBranches(userMessage, prepared);
         if (!expanded.length) {
-          this.chatHistory.push({ text: 'No consistent continuation could be reasoned over.', sender: 'Bot' });
+          this.pushChatMessage({ text: 'No consistent continuation could be reasoned over.', sender: 'Bot' });
           this.loading = false;
           return;
         }
@@ -557,7 +578,9 @@ export class ChatComponent {
           axioms: this.axioms,
           pruning: pruneContext,
           vampire_preferences: this.vampirePreferences.vampirePreferences,
-          tptp_checks: expanded.map((item: any) => item.checks)
+          tptp_checks: expanded.map((item: any) => item.checks),
+          session_key: this.sessionKey,
+          turn_index: this.currentTurnIndex()
         };
         this.dataService.callVampire(request).subscribe({
           next: data => this.handleVampireResponse(
@@ -568,14 +591,14 @@ export class ChatComponent {
           ),
           error: error => {
             console.warn('[Chat] Vampire request failed', { sentence: userMessage, error });
-            this.chatHistory.push({ text: 'An error occurred during the inference process', sender: 'Bot' });
+            this.pushChatMessage({ text: 'An error occurred during the inference process', sender: 'Bot' });
             this.loading = false;
           }
         });
       },
       error: error => {
         console.warn('[Chat] NLI reasoning preparation failed', { sentence: userMessage, error });
-        this.chatHistory.push({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
+        this.pushChatMessage({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
         this.loading = false;
       }
     });
@@ -721,7 +744,7 @@ export class ChatComponent {
     const reasons = [...degraded, ...dropped];
     const shown = reasons.slice(0, 3).join('; ');
     const remainder = reasons.length > 3 ? ` (and ${reasons.length - 3} more)` : '';
-    this.chatHistory.push({
+    this.pushChatMessage({
       text: `Note: ${parts.join(' and ')}. ${shown}${remainder}`,
       sender: 'Bot'
     });
@@ -807,7 +830,7 @@ export class ChatComponent {
       .filter(item => item.semantic?.trim());
 
     if (!contexts.length) {
-      this.chatHistory.push({ text: 'No post-processed semantic analyses found.', sender: 'Bot' });
+      this.pushChatMessage({ text: 'No post-processed semantic analyses found.', sender: 'Bot' });
       this.loading = false;
       return;
     }
@@ -819,7 +842,7 @@ export class ChatComponent {
     this.history.push(contexts);
     this.historyChange.emit(this.history);
     this.clearSelected();
-    this.chatHistory.push({
+    this.pushChatMessage({
       text: 'Okay ...',
       sender: 'Bot',
       semanticText: contexts.map(item => item.semantic).join('\n')
@@ -883,7 +906,7 @@ export class ChatComponent {
     const semantic = branches
       ? ''
       : newContext.map((item: context) => item.semantic || item.prolog_drs).filter(Boolean).join('\n');
-    this.chatHistory.push({
+    this.pushChatMessage({
       text: message,
       sender: 'Bot',
       glyphs,
@@ -1120,14 +1143,13 @@ export class ChatComponent {
       synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semanticAnalysis.semId]));
     });
 
-    this.chatDocument.sentences = [...this.chatDocument.sentences, {
+    this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [{
       id,
       text: userMessage,
       syntax: Array.from(syntaxByKey.values()),
       semantics,
       synSemMapping,
-    }];
-    this.chatDocument.elements = [...this.chatDocument.elements, { kind: 'sentence', id }];
+    }]);
     this.emitChatDocument();
     return id;
   }
@@ -1183,13 +1205,7 @@ export class ChatComponent {
       synSemMapping,
     };
 
-    const index = this.chatDocument.sequences.findIndex(seq => seq.id === sequenceId);
-    this.chatDocument.sequences = index === -1
-      ? [...this.chatDocument.sequences, sequence]
-      : this.chatDocument.sequences.map((seq, i) => i === index ? sequence : seq);
-    if (!this.chatDocument.elements.some(ref => ref.id === sequenceId)) {
-      this.chatDocument.elements = [...this.chatDocument.elements, { kind: 'sequence', id: sequenceId }];
-    }
+    this.documentBuilder.upsertSequenceAnalyses(this.chatDocument, [sequence]);
     this.emitChatDocument();
   }
 

@@ -8,7 +8,7 @@
   <!-- Chat History -->
   <div class="chat-history">
     <div *ngFor="let message of chatHistory" [ngClass]="{'user-message': message.sender === 'User', 'bot-message': message.sender === 'Bot'}" class="message-container">
-      <span class="message-sender">{{ message.sender }}:</span>
+      <span class="message-sender">{{ message.sender }} (<span class="message-timestamp">{{ message.timestamp | date:'HH:mm:ss' }}</span>):</span>
       <pre class="message-text">{{ message.text }}</pre>
 
 

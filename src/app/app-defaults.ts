@@ -9,11 +9,11 @@ export function isLfgxdrtPreferences(prefs: GswbPreferences): boolean {
 
 export const APP_DEFAULTS = {
   grammar: {
-    ligerPath: './grammars/dev/glue-basic-drt.lfg.glue',
-    ligerRulesPath: './liger_resources/rules/basic_axiom_rules.txt',
+    ligerPath: './grammars/dev/lfgxdrt_inference_grammar/main_lfgxdrt_inference_grammar.lfg.glue',
+    ligerRulesPath: './liger_resources/rules/degree_rules_lfgxdrt.liger',
   },
   liger: {
-    sentence: 'Kim told a man about himself',
+    sentence: 'The PC-6082 is faster than the ITEL-XZ.',
   },
   graphInspector: {
     rulesText: "// HIERARCHIES\n" +
@@ -165,7 +165,7 @@ tff(pn_type2, type, 'itel-zx': $i).`,
   vampire: {
     chat: {
       logic_type: 1,
-      model_building: true,
+      model_building: false,
       max_duration: 10,
       layered: false,
     },

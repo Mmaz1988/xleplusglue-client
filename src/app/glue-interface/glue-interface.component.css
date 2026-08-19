@@ -137,4 +137,14 @@
 
 .data-model-sidebar-panel button {
   width: 100%;
+  margin-bottom: 6px;
+}
+
+/* Discreet: helps correlate a live session with tmp/log files on disk. Mirrors
+   chat-interface.component.css's .session-id-row. */
+.session-id-row {
+  font-family: monospace;
+  font-size: 11px;
+  color: #888;
+  word-break: break-all;
 }

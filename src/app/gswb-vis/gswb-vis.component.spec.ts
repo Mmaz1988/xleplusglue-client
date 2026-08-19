@@ -194,4 +194,42 @@ describe('GswbVisComponent', () => {
       expect(component.meaningConstructors).toBe('edited');
     });
   });
+
+  describe('resetForNewDiscourse', () => {
+    it('clears accumulated semantic state and the sem-vis display', () => {
+      component.meaningConstructors = 'stale mcs';
+      component.proofInputs = [{ proofId: 'p0' } as any];
+      component.selectedProofInputIndex = 1;
+      (component as any).allSemanticSolutions = [{ id: 's1' }];
+      (component as any).semanticDiscriminants = [{ id: 'd1' } as any];
+      (component as any).selectedSemanticIds = ['s1'];
+      (component as any).selectedScopeIds = ['scope-1'];
+      (component as any).selectedMcIds = ['mc-1'];
+      (component as any).hasSemanticSolutions = true;
+      component.semanticSolutionReady = true;
+      component.editor1 = { updateContent: jasmine.createSpy('updateContent') } as any;
+      component.sem = { updateContent: jasmine.createSpy('updateContent') } as any;
+      component.log = { updateContent: jasmine.createSpy('updateContent') } as any;
+      component.semvis = {
+        setItems: jasmine.createSpy('setItems'),
+        setDiscriminants: jasmine.createSpy('setDiscriminants'),
+        clearMc: jasmine.createSpy('clearMc'),
+        clearScope: jasmine.createSpy('clearScope'),
+      } as any;
+
+      component.resetForNewDiscourse();
+
+      expect(component.meaningConstructors).toBe('');
+      expect(component.proofInputs).toEqual([]);
+      expect(component.selectedProofInputIndex).toBe(0);
+      expect(component.semanticSolutionReady).toBeFalse();
+      expect(component.editor1.updateContent).toHaveBeenCalledWith('');
+      expect(component.sem.updateContent).toHaveBeenCalledWith('');
+      expect(component.log.updateContent).toHaveBeenCalledWith('');
+      expect(component.semvis.setItems).toHaveBeenCalledWith([]);
+      expect(component.semvis.setDiscriminants).toHaveBeenCalledWith([]);
+      expect(component.semvis.clearMc).toHaveBeenCalled();
+      expect(component.semvis.clearScope).toHaveBeenCalled();
+    });
+  });
 });

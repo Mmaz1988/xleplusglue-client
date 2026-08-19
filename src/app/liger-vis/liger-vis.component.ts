@@ -33,6 +33,13 @@ export class LigerVisComponent implements AfterViewInit {
   structureJson: LigerStructure | null = null;
   changeDetector: EventEmitter<any> = new EventEmitter();
   proofInputChange: EventEmitter<GswbProofInput[]> = new EventEmitter();
+  /** Fires when a successful `analyzeSentence()` parse starts a brand new discourse (as
+   *  opposed to `addSentence()`, which continues one). A discourse is not supposed to
+   *  need an explicit "New discourse" action at all -- parsing a fresh first sentence
+   *  IS starting one, per design intent (docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md).
+   *  Emitted before proofInputChange/changeDetector so the document is empty before the
+   *  new sentence tries to register into it. */
+  discourseReset: EventEmitter<void> = new EventEmitter();
   graphElements: any
   loading: boolean = false;
   solutions: LigerSolutionAnnotation[] = [];
@@ -76,6 +83,12 @@ export class LigerVisComponent implements AfterViewInit {
         this.selectedSolutionIndex = 0;
 
         if (this.solutions.length > 0) {
+          // A fresh parse always starts a new discourse -- the document must be empty
+          // before this sentence tries to register as 'sentence-1', or it collides with
+          // whatever discourse was there before (see docs/plans/
+          // DOCUMENT_BUILDER_UNIFICATION_PLAN.md's captured
+          // analysis-document-sequence-not-reset-properly.json repro).
+          this.discourseReset.emit();
           this.renderSelectedSolution(0);
           this.displayMessage(`Parsing successful... ${this.solutions.length} solution(s) found`, "green");
         } else {
@@ -449,6 +462,34 @@ export class LigerVisComponent implements AfterViewInit {
 
   onGrammarLoaded(path: string): void {
     this.loadedGrammarPath = path;
+  }
+
+  /** Clears every piece of in-flight parse/sequence state a discourse accumulates, so
+   *  the next sentence starts a genuinely new sequence instead of appending onto the
+   *  previous discourse's sentence-1/2/... ids (see
+   *  docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md, "starting a new discourse does not
+   *  reset the document"). Does not touch the grammar/rules selection -- those are
+   *  workspace settings, not discourse state. */
+  resetForNewDiscourse(): void {
+    this.sequenceSentences = [];
+    this.sequenceSentenceIds = [];
+    this.parsedSentenceStructures = [];
+    this.structureJson = null;
+    this.graphElements = [];
+    this.solutions = [];
+    this.selectedSolutionIndex = 0;
+    this.meaningConstructors = '';
+    if (this.textarea) {
+      this.textarea.nativeElement.value = this.defaultValue;
+    }
+    if (this.errorhandle) {
+      this.errorhandle.nativeElement.innerHTML = '';
+    }
+    // Clears gswb-vis's proofInputs and glue's editor content -- both already subscribe
+    // to these for the normal parse flow, so reset reuses the same path rather than
+    // reaching into gswb-vis directly.
+    this.proofInputChange.emit([]);
+    this.changeDetector.emit('');
   }
 
   captureState(): LigerWorkspaceState | null {

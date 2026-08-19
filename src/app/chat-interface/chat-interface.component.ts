@@ -9,6 +9,7 @@ import {InferenceSettingsComponent} from "../inference-interface/inference-setti
 import { APP_DEFAULTS } from '../app-defaults';
 import { DataService } from '../data.service';
 import { validateAnalysisDocument } from '../analysis-model';
+import { DocumentBuilderService } from '../document-builder/document-builder.service';
 
 @Component({
   selector: 'app-inference-vis',
@@ -32,12 +33,18 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
 
   tabsInitialized = false;
 
-  private chatDocumentSessionKey = this.newChatSessionKey();
+  // Not private: read from the template for the discreet on-screen session-id display, and
+  // passed down to ChatComponent so it can be threaded into Vampire requests.
+  chatDocumentSessionKey = this.newChatSessionKey();
   chatDocument: XlePlusGlueDocument = this.newChatDocument();
   private pendingChatDocumentSave: XlePlusGlueDocument | null = null;
   private chatDocumentSaveInProgress = false;
 
-  constructor(private cdRef: ChangeDetectorRef, private dataService: DataService) {}
+  constructor(
+    private cdRef: ChangeDetectorRef,
+    private dataService: DataService,
+    private documentBuilder: DocumentBuilderService,
+  ) {}
 
   ngAfterViewInit() {
 
@@ -85,14 +92,19 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
     console.log("Called onClearSelection in parent component");
   }
 
+  // CodeMirror lays out incorrectly while its tab is hidden (0-width host), so switching
+  // to a tab just needs a refresh -- the editor's own contentChange keeps `axioms` in sync,
+  // reading getContent() back here would clobber it before the editor has ever been seeded.
   onTabChange(index: number) {
-    setTimeout(() => {
-      if (this.editor?.getContent) {
-        console.log("Updating axioms to: ",this.editor.getContent())
-        this.axioms = this.editor.getContent();
-        this.editor.codeMirrorInstance.refresh();
-      }
-    });
+    setTimeout(() => this.editor?.codeMirrorInstance?.refresh());
+  }
+
+  /** The Axioms editor is the source of truth: seeded with APP_DEFAULTS.chat.axioms on
+   *  load, and every keystroke there flows back into `axioms` via this handler. Whatever
+   *  the editor currently holds -- untouched defaults or the user's edits -- is what gets
+   *  sent with the next discourse update. */
+  onAxiomsEdited(value: string): void {
+    this.axioms = value;
   }
 
   updateAxioms(value: string): void {
@@ -103,13 +115,17 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  // Readable, time-of-initiation-based id (matches the `session-<iso>` format already used
+  // elsewhere in this app for regression sessions) so a tmp/log dir on disk can be matched
+  // back to the chat conversation that produced it just by reading the name.
   private newChatSessionKey(): string {
-    const random = Math.random().toString(36).slice(2, 10);
-    return `chat-${Date.now()}-${random}`;
+    const iso = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_');
+    const random = Math.random().toString(36).slice(2, 8);
+    return `chat-${iso}-${random}`;
   }
 
   private newChatDocument(): XlePlusGlueDocument {
-    return { id: this.chatDocumentSessionKey, semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [] };
+    return this.documentBuilder.newDocument(this.chatDocumentSessionKey, 'lfgxdrt');
   }
 
   updateChatDocument(document: XlePlusGlueDocument): void {
@@ -127,6 +143,11 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
     this.chatDocument = this.newChatDocument();
     this.history = [];
     this.chatComponent?.resetConversationState();
+    // Selection indices are positional into the old, now-discarded history -- stale
+    // otherwise (docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md, "starting a new
+    // discourse does not reset the document").
+    this.selectedElements = [];
+    this.historyComponent?.clearSelection();
   }
 
   /**

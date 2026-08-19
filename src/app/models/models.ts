@@ -1085,6 +1085,10 @@ export interface vampireRequest {
   active_indices?: number[];
   vampire_preferences?: VampirePreferences;
   tptp_checks?: GswbReasoningChecksOutput[];
+  // Lets the Vampire adapter group this conversation's tmp/debug files under one session
+  // directory, one subfolder per chat turn, instead of an unrelated fresh directory per call.
+  session_key?: string;
+  turn_index?: number;
 }
 
 /*
@@ -1169,6 +1173,7 @@ export interface context {
 export interface ChatMessage {
   text: string;
   sender: 'User' | 'Bot';
+  timestamp: string;
   //optional glyph
   glyph?: string;
    showGlyph?: false

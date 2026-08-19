@@ -110,6 +110,20 @@ describe('analysis model helpers', () => {
       invalid.sentenceIds = ['sentence-1', 'ghost-sentence'];
       expect(() => validateSequenceAnalysis(document(), invalid)).toThrow();
     });
+
+    it('rejects a sequence referencing the same sentence id twice', () => {
+      // Regression for the captured reset-corruption bug (see
+      // docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md,
+      // misc/analysis-document-1787160588928.json): a sequence with
+      // sentenceIds ['sentence-1', 'sentence-2', 'sentence-2'] previously passed
+      // validation even though a discourse never merges an existing sentence with
+      // itself.
+      const doc = document();
+      doc.sentences.push({ ...sentence(), id: 'sentence-2', synSemMapping: {}, semantics: [], syntax: [] });
+      const invalid = sequence();
+      invalid.sentenceIds = ['sentence-1', 'sentence-2', 'sentence-2'];
+      expect(() => validateSequenceAnalysis(doc, invalid)).toThrowError(/more than once/);
+    });
   });
 
   describe('resolveElement / findElementById', () => {

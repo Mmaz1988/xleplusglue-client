@@ -4,11 +4,12 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument, XlePlusGlueElementRef } from '../models/models';
+import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
 import { discourseStructureId, validateAnalysisDocument } from '../analysis-model';
+import { DocumentBuilderService } from '../document-builder/document-builder.service';
 
 interface PostProcessingResult {
   semanticSolution: GswbSolution;
@@ -56,12 +57,21 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   private sequenceAnalyses: SequenceAnalysis[] = [];
   previousSentenceAnalyses: SentenceAnalysis[] = [];
   previousSequenceAnalyses: SequenceAnalysis[] = [];
-  private readonly analysisDocumentSessionKey = this.newAnalysisSessionKey();
-  private analysisDocument: XlePlusGlueDocument = this.newAnalysisDocument();
+  private analysisDocumentSessionKey = this.newAnalysisSessionKey();
+  private analysisDocument: XlePlusGlueDocument = this.documentBuilder.newDocument(this.analysisDocumentSessionKey, 'lfgxdrt');
   private pendingDocumentSave: XlePlusGlueDocument | null = null;
   private documentSaveInProgress = false;
 
-  constructor(private router: Router, private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {}
+  constructor(
+    private router: Router,
+    private dataService: DataService,
+    private workspaceState: AnalysisWorkspaceStateService,
+    private documentBuilder: DocumentBuilderService,
+  ) {}
+
+  get analysisDocumentSessionId(): string {
+    return this.analysisDocumentSessionKey;
+  }
 
   /** Canonical, always-fully-enriched sentence registry, passed to <app-gswb-vis> so it
    *  can resolve a SequenceAnalysis's sentenceIds without embedding stale copies. */
@@ -99,7 +109,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       });
       this.liger.proofInputChange.subscribe((proofInputs: GswbProofInput[]) => {
         this.glue.setProofInputs(proofInputs);
-        this.upsertSentenceAnalyses(
+        this.tryUpsertSentenceAnalyses(
           proofInputs.map(input => input.sentenceAnalysis).filter((analysis): analysis is SentenceAnalysis => !!analysis)
         );
         console.info('[Analysis] updated GSWB proof inputs from LiGER', {
@@ -119,7 +129,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         const snapshots = analyses.map(analysis => this.snapshotSequenceAnalysis(analysis));
         this.sequenceAnalyses = snapshots;
         snapshots[0] && this.liger.displaySequenceAnalysis(snapshots[0]);
-        this.upsertSequenceAnalyses(snapshots);
+        this.documentBuilder.upsertSequenceAnalyses(this.analysisDocument, snapshots);
         this.persistAnalysisDocument();
         console.info('[Analysis] canonical sequence analyses updated', {
           count: analyses.length,
@@ -135,10 +145,21 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       });
       this.glue.sentenceAnalysisChange.subscribe((analyses: SentenceAnalysis[]) => {
         this.sentenceAnalyses = analyses;
-        this.upsertSentenceAnalyses(analyses);
+        this.tryUpsertSentenceAnalyses(analyses);
         console.info('[Analysis] canonical sentence analyses updated', {
           count: analyses.length,
           analyses: analyses.map(analysis => ({ id: analysis.id, text: analysis.text })),
+        });
+      });
+      this.liger.discourseReset.subscribe(() => {
+        // A fresh "Parse and rewrite" IS starting a new discourse by design -- no
+        // separate action should be required. Reset the document/gswb-vis side only;
+        // liger's own state was just correctly set by the parse that triggered this and
+        // must not be wiped (see docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md).
+        this.resetDocumentForNewDiscourse();
+        this.glue?.resetForNewDiscourse();
+        console.info('[Analysis] new discourse started automatically by Parse and rewrite', {
+          sessionKey: this.analysisDocumentSessionKey,
         });
       });
     }
@@ -146,19 +167,58 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     setTimeout(() => this.restoreWorkspaceState(), 0);
   }
 
-  private newAnalysisDocument(): XlePlusGlueDocument {
-    return {
-      id: this.analysisDocumentSessionKey,
-      semanticType: 'lfgxdrt',
-      sentences: [],
-      sequences: [],
-      elements: [],
-    };
-  }
-
   private newAnalysisSessionKey(): string {
     const random = Math.random().toString(36).slice(2, 10);
     return `analysis-${Date.now()}-${random}`;
+  }
+
+  /** Manual escape hatch: fully resets the document AND both child views' in-progress
+   *  parse/semantic state, including anything typed but not yet parsed. Not the primary
+   *  mechanism for starting a new discourse -- a fresh "Parse and rewrite" already does
+   *  that automatically (see the `liger.discourseReset` subscription in
+   *  `ngAfterViewInit`, and `resetDocumentForNewDiscourse` below) -- this button exists
+   *  for clearing state without necessarily typing a new sentence right away. */
+  startNewDiscourse(): void {
+    this.resetDocumentForNewDiscourse();
+    this.liger?.resetForNewDiscourse();
+    this.glue?.resetForNewDiscourse();
+    console.info('[Analysis] started new discourse (manual)', { sessionKey: this.analysisDocumentSessionKey });
+  }
+
+  /** The document/local-state half of starting a new discourse: clears the old volatile
+   *  Redis document, mints a new session key/document, and resets every piece of local
+   *  state that would otherwise let a new discourse's sentence ids collide with the old
+   *  discourse's (see docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md, "starting a new
+   *  discourse does not reset the document" -- glue-interface previously had no reset
+   *  path at all, so a second discourse's `sentence-1` silently merged into the first's).
+   *  Deliberately does NOT touch `liger`'s own component state -- callers that are
+   *  reacting to a parse already in progress (the automatic path) must not wipe out
+   *  what that parse just legitimately set. */
+  private resetDocumentForNewDiscourse(): void {
+    this.dataService.clearAnalysisDocument(this.analysisDocumentSessionKey).subscribe({
+      error: error => console.warn('[Analysis] could not clear volatile Redis document', error),
+    });
+    this.analysisDocumentSessionKey = this.newAnalysisSessionKey();
+    this.analysisDocument = this.documentBuilder.newDocument(this.analysisDocumentSessionKey, 'lfgxdrt');
+    this.pendingDocumentSave = null;
+    this.documentSaveInProgress = false;
+
+    this.sentenceAnalyses = [];
+    this.sequenceAnalyses = [];
+    this.previousSentenceAnalyses = [];
+    this.previousSequenceAnalyses = [];
+    this.lastSequenceLength = 0;
+
+    this.postProcessingResults = [];
+    this.postProcessingResultsReady = false;
+    this.selectedPostProcessingIndex = 0;
+    this.showInlinePostProcessing = false;
+    this.mergedStructureContent = '';
+    this.mergedGraphElements = [];
+    this.pcdrsSolutions = [];
+    this.pcdrsDisplaySolutions = [];
+    this.collapsedPcdrsById = {};
+    this.showCollapsedAnaphora = false;
   }
 
   private snapshotSequenceAnalysis(analysis: SequenceAnalysis): SequenceAnalysis {
@@ -173,74 +233,22 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     };
   }
 
-  private upsertSentenceAnalyses(analyses: SentenceAnalysis[], persist = true): void {
-    analyses.forEach(incoming => {
-      const existing = this.analysisDocument.sentences.find(sentence => sentence.id === incoming.id);
-      if (!existing) {
-        this.analysisDocument.sentences.push({
-          ...incoming,
-          syntax: [...incoming.syntax],
-          semantics: [...incoming.semantics],
-          synSemMapping: { ...incoming.synSemMapping },
-          discriminants: [...(incoming.discriminants ?? [])],
-          selectedSemanticIds: [...(incoming.selectedSemanticIds ?? incoming.semantics.map(semantic => semantic.semId))],
-          selectedScopeIds: [...(incoming.selectedScopeIds ?? [])],
-          selectedMcIds: [...(incoming.selectedMcIds ?? [])],
-        });
-        this.upsertElementRef({ kind: 'sentence', id: incoming.id });
-        this.analysisDocument.activeElementId = incoming.id;
-        return;
-      }
-
-      existing.syntax = this.mergeById(existing.syntax, incoming.syntax, item => item.synId);
-      existing.semantics = this.mergeById(existing.semantics, incoming.semantics, item => item.semId);
-      existing.discriminants = [...(incoming.discriminants ?? existing.discriminants ?? [])];
-      existing.selectedSemanticIds = [...(incoming.selectedSemanticIds ?? existing.selectedSemanticIds ?? [])];
-      existing.selectedScopeIds = [...(incoming.selectedScopeIds ?? existing.selectedScopeIds ?? [])];
-      existing.selectedMcIds = [...(incoming.selectedMcIds ?? existing.selectedMcIds ?? [])];
-      Object.entries(incoming.synSemMapping).forEach(([syntaxId, semanticIds]) => {
-        existing.synSemMapping[syntaxId] = Array.from(new Set([
-          ...(existing.synSemMapping[syntaxId] ?? []),
-          ...semanticIds,
-        ]));
-      });
-      // No `elements` write needed: the ref for `existing.id` already occupies the right
-      // position and never changes -- only the registry entry's own fields are mutated.
-    });
+  /** Thin wrapper around DocumentBuilderService.upsertSentenceAnalyses: that call now
+   *  throws if an incoming sentence's text disagrees with an already-registered sentence
+   *  under the same id (see its doc comment) -- a signal that the document was never
+   *  reset for a new discourse. Caught and surfaced loudly here rather than left to
+   *  crash the subscription it's called from, since a live document-corruption bug is
+   *  more useful reported than silently swallowed. */
+  private tryUpsertSentenceAnalyses(analyses: SentenceAnalysis[], persist = true): void {
+    try {
+      this.documentBuilder.upsertSentenceAnalyses(this.analysisDocument, analyses);
+    } catch (error) {
+      console.error('[Analysis] could not register sentence analyses', error);
+      return;
+    }
     if (persist) {
       this.persistAnalysisDocument();
     }
-  }
-
-  /** Upserts sequences into the canonical `sequences` registry by id, preserving each
-   *  sequence's position on update (matching sentence-upsert semantics) rather than
-   *  moving it to the end of the timeline. */
-  private upsertSequenceAnalyses(analyses: SequenceAnalysis[]): void {
-    analyses.forEach(incoming => {
-      const index = this.analysisDocument.sequences.findIndex(sequence => sequence.id === incoming.id);
-      if (index === -1) {
-        this.analysisDocument.sequences.push(incoming);
-      } else {
-        this.analysisDocument.sequences[index] = incoming;
-      }
-      this.upsertElementRef({ kind: 'sequence', id: incoming.id });
-      this.analysisDocument.activeElementId = incoming.id;
-    });
-  }
-
-  /** Appends a ref if this id isn't already registered in `elements`; a no-op otherwise,
-   *  so callers can call it unconditionally on every upsert without disturbing the
-   *  existing position of an already-registered sentence/sequence. */
-  private upsertElementRef(ref: XlePlusGlueElementRef): void {
-    if (!this.analysisDocument.elements.some(existingRef => existingRef.id === ref.id)) {
-      this.analysisDocument.elements = [...this.analysisDocument.elements, ref];
-    }
-  }
-
-  private mergeById<T>(existing: T[], incoming: T[], id: (item: T) => string): T[] {
-    const merged = new Map(existing.map(item => [id(item), item]));
-    incoming.forEach(item => merged.set(id(item), item));
-    return Array.from(merged.values());
   }
 
   private discourseUpdateFor(sourceElementId: string): DiscourseUpdate | undefined {

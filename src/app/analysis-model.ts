@@ -208,10 +208,19 @@ export function validateSequenceAnalysis(document: XlePlusGlueDocument, sequence
     }
   });
   const knownSentenceIds = new Set(document.sentences.map(sentence => sentence.id));
+  const seenSentenceIds = new Set<string>();
   sequence.sentenceIds.forEach(sentenceId => {
     if (!knownSentenceIds.has(sentenceId)) {
       throw new Error(`Sequence ${sequence.id} references unknown sentence ${sentenceId}.`);
     }
+    // A sentence appearing twice in one sequence is not "the same sentence spoken
+    // twice" -- discourse never repeats an existing sentence into itself. Seen live
+    // as a symptom of stale document-reset state: a second discourse's sentence
+    // upserted into a first discourse's id under the same session key.
+    if (seenSentenceIds.has(sentenceId)) {
+      throw new Error(`Sequence ${sequence.id} references sentence ${sentenceId} more than once.`);
+    }
+    seenSentenceIds.add(sentenceId);
   });
 }
 

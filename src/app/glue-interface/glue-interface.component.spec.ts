@@ -453,15 +453,19 @@ describe('GlueInterfaceComponent', () => {
 
     let sentenceAnalysisChange: EventEmitter<SentenceAnalysis[]>;
     let sequenceAnalysisChange: EventEmitter<SequenceAnalysis[]>;
+    let discourseReset: EventEmitter<void>;
 
     beforeEach(() => {
       sentenceAnalysisChange = new EventEmitter<SentenceAnalysis[]>();
       sequenceAnalysisChange = new EventEmitter<SequenceAnalysis[]>();
+      discourseReset = new EventEmitter<void>();
       component.liger = {
         changeDetector: new Subject<string>(),
         sequenceSentences: [],
         proofInputChange: new EventEmitter(),
         displaySequenceAnalysis: jasmine.createSpy('displaySequenceAnalysis'),
+        discourseReset,
+        resetForNewDiscourse: jasmine.createSpy('resetForNewDiscourse'),
       } as any;
       component.glue = {
         editor1: { updateContent: jasmine.createSpy('updateContent') },
@@ -533,6 +537,62 @@ describe('GlueInterfaceComponent', () => {
 
       expect(warnSpy).toHaveBeenCalled();
       expect(warnSpy.calls.mostRecent().args[0]).toContain('document invariant failed');
+    });
+
+    it('does not merge a new discourse\'s sentence-1 into the old discourse\'s sentence-1', () => {
+      // Regression for the captured reset-corruption bug: before startNewDiscourse()
+      // existed, glue-interface had no reset path at all, so a fresh discourse's
+      // first sentence silently merged into the previous discourse's sentence-1 by id.
+      sentenceAnalysisChange.emit([sentenceAnalysis('sentence-1', 'a man saw a woman')]);
+      sequenceAnalysisChange.emit([sequenceAnalysisOf('seq-1', ['sentence-1'])]);
+      const oldSessionKey = (component as any).analysisDocumentSessionKey;
+
+      component.liger.resetForNewDiscourse = jasmine.createSpy('resetForNewDiscourse');
+      component.glue.resetForNewDiscourse = jasmine.createSpy('resetForNewDiscourse');
+      component.startNewDiscourse();
+
+      expect(dataServiceMock.clearAnalysisDocument).toHaveBeenCalledWith(oldSessionKey);
+      expect((component as any).analysisDocumentSessionKey).not.toBe(oldSessionKey);
+      const freshDoc = (component as any).analysisDocument;
+      expect(freshDoc.sentences).toEqual([]);
+      expect(freshDoc.sequences).toEqual([]);
+      expect(freshDoc.elements).toEqual([]);
+      expect(component.liger.resetForNewDiscourse).toHaveBeenCalled();
+      expect(component.glue.resetForNewDiscourse).toHaveBeenCalled();
+
+      sentenceAnalysisChange.emit([sentenceAnalysis('sentence-1', 'a completely different sentence')]);
+
+      expect(freshDoc.sentences.length).toBe(1);
+      expect(freshDoc.sentences[0].text).toBe('a completely different sentence');
+    });
+
+    it('resets the document automatically when liger reports a fresh discourse, without touching liger itself', () => {
+      // Regression for the captured corruption
+      // (misc/current/analysis-document-sequence-not-reset-properly.json): "Parse and
+      // rewrite" is supposed to start a new discourse on its own -- no separate "New
+      // discourse" click should be required.
+      sentenceAnalysisChange.emit([sentenceAnalysis('sentence-1', 'a man appeared')]);
+      sentenceAnalysisChange.emit([sentenceAnalysis('sentence-2', 'a woman appeared')]);
+      sequenceAnalysisChange.emit([sequenceAnalysisOf('seq-1', ['sentence-1', 'sentence-2'])]);
+      const oldSessionKey = (component as any).analysisDocumentSessionKey;
+
+      component.glue.resetForNewDiscourse = jasmine.createSpy('resetForNewDiscourse');
+      discourseReset.emit();
+
+      expect((component as any).analysisDocumentSessionKey).not.toBe(oldSessionKey);
+      const freshDoc = (component as any).analysisDocument;
+      expect(freshDoc.sentences).toEqual([]);
+      expect(freshDoc.sequences).toEqual([]);
+      expect(component.glue.resetForNewDiscourse).toHaveBeenCalled();
+      // liger's own state is untouched -- it was just correctly set by the parse that
+      // triggered this event, and resetting it here would wipe that out.
+      expect(component.liger.resetForNewDiscourse).not.toHaveBeenCalled();
+
+      // The new discourse's own sentence-1 registers cleanly against the empty document.
+      sentenceAnalysisChange.emit([sentenceAnalysis('sentence-1', 'he smiled')]);
+
+      expect(freshDoc.sentences.length).toBe(1);
+      expect(freshDoc.sentences[0].text).toBe('he smiled');
     });
   });
 });

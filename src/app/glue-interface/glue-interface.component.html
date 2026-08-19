@@ -112,5 +112,7 @@
       data model evolves at each analysis step.
     </p>
     <button type="button" (click)="downloadDataModelSnapshot()">Download JSON snapshot</button>
+    <button type="button" (click)="startNewDiscourse()" title="Parse and rewrite already starts a new discourse automatically -- use this to clear everything without typing a sentence first">Clear discourse</button>
+    <div class="session-id-row" title="Analysis session id -- matches tmp/log file names on the inference backend">{{ analysisDocumentSessionId }}</div>
   </div>
 </div>

@@ -19,8 +19,16 @@
 <mat-tab-group *ngIf="tabsInitialized" (selectedIndexChange)="onTabChange($event)">
   <mat-tab label="Chat">
     <div class="tab-content">
-      <button type="button" (click)="startNewConversation()">New conversation</button>
-      <button type="button" (click)="downloadChatDocumentSnapshot()">Download JSON snapshot</button>
+      <!-- Fixed-position, off-flow like glue-interface's .data-model-sidebar: never affects
+           app-chat's layout/width, regardless of hover state. -->
+      <div class="chat-toolbar-sidebar">
+        <div class="chat-toolbar-handle">Chat options</div>
+        <div class="chat-toolbar-panel">
+          <button type="button" (click)="startNewConversation()">New conversation</button>
+          <button type="button" (click)="downloadChatDocumentSnapshot()">Download JSON snapshot</button>
+          <div class="session-id-row" title="Chat session id -- matches tmp/log file names on the inference backend">{{ chatDocumentSessionKey }}</div>
+        </div>
+      </div>
       <app-chat #chat [ruleString]="ruleFile"
                 [axioms]="axioms"
                 [gswbPreferences]="gswbPrefs"
@@ -28,6 +36,7 @@
                 [history]="history" (historyChange)="updateHistory($event)"
                 [activeIndices]="selectedElements"
                 [chatDocument]="chatDocument" (chatDocumentChange)="updateChatDocument($event)"
+                [sessionKey]="chatDocumentSessionKey"
                 (clearSelection)="onClearSelection()"
                 (axiomsChanged)="updateAxioms($event)">
         ></app-chat>
@@ -44,7 +53,8 @@
   <mat-tab label="Axioms">
     <div class="tab-content">
       <div class="editor-restr">
-        <app-editor #axiomEdit [mode]="'vampire'">
+        <app-editor #axiomEdit [mode]="'vampire'" [initialContent]="axioms"
+                    (contentChange)="onAxiomsEdited($event)">
         </app-editor>
       </div>
     </div>
