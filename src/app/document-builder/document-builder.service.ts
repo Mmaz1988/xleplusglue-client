@@ -1,15 +1,73 @@
 import { Injectable } from '@angular/core';
+import { Observable, catchError, concatMap, from, map, of, toArray } from 'rxjs';
+import { DataService } from '../data.service';
+import { compositeAnalysisId } from '../analysis-model';
 import {
+  GswbSemanticMergePart,
+  GswbSolution,
+  SemanticAnalysis,
   SentenceAnalysis,
   SequenceAnalysis,
   XlePlusGlueDocument,
   XlePlusGlueElementRef,
 } from '../models/models';
 
+/** One of the new sentence's own candidate readings, already resolved by the caller
+ *  (`semanticAnalysisFor`/`sentenceAnalysisFor` stay caller-local -- see class doc). */
+export interface SequenceMergeCurrentSolution {
+  /** For `parentSolutionId`/`solutionKey`/`mcSetId` on the merge request only -- its
+   *  semantic content is NOT re-read from here, `semantic` below is authoritative. */
+  solution: GswbSolution;
+  semantic: SemanticAnalysis;
+  /** Absent when the caller could not resolve which sentence this reading belongs to
+   *  (e.g. before that sentence is registered anywhere) -- the merge still proceeds
+   *  semantic-only in that case, matching gswb-vis's existing tolerance for this. */
+  sentenceAnalysis?: SentenceAnalysis;
+}
+
+export interface SequenceMergePreviousContext {
+  semantic: SemanticAnalysis;
+  element: SentenceAnalysis | SequenceAnalysis;
+}
+
+export interface SequenceMergeRequest {
+  current: SequenceMergeCurrentSolution[];
+  previousContexts: SequenceMergePreviousContext[];
+  /** Canonical, always-fully-enriched sentence registry, used to resolve a previous
+   *  SequenceAnalysis's sentenceIds back to full SentenceAnalysis objects for the
+   *  syntax-merge request. */
+  knownSentences: SentenceAnalysis[];
+  resolveDrs: boolean;
+}
+
+export interface SequenceMergePair {
+  merged: GswbSolution;
+  previousElement: SentenceAnalysis | SequenceAnalysis;
+  currentElement?: SentenceAnalysis;
+}
+
+export interface SequenceMergeResult {
+  /** Every (current x previous) pair -- never dropped just because its syntax merge
+   *  could not be resolved; see the "no semantic alternative may be discarded" invariant
+   *  in docs/analysis-data-model.md (xleplusglue-client). */
+  pairs: SequenceMergePair[];
+  /** One SequenceAnalysis per distinct sentence PAIR (by composite id of the merged
+   *  sentenceIds), holding every syntax variant that pair produced in its `.syntax[]` --
+   *  not one per syntax variant. Fixes the "multiple sequences per sentence pair" defect
+   *  (docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md), confirmed live via
+   *  misc/current/analysis-document-syntactic-ambiguity.json: 3 syntactic analyses x 1
+   *  previously produced 3 separate SequenceAnalysis entries instead of one with
+   *  `.syntax.length === 3`. Only pairs whose syntax merge actually succeeded
+   *  contribute here -- a pair that couldn't be resolved (see SequenceMergePair) still
+   *  appears in `pairs` for display, but is not guessed into a sequence entry. */
+  sequenceAnalyses: SequenceAnalysis[];
+}
+
 /**
- * Owns document lifecycle and registry upserts for an `XlePlusGlueDocument`, shared
- * between chat and the analysis view (glue-interface/gswb-vis) so the two stop
- * maintaining independent copies of "how a Sentence/Sequence gets registered."
+ * Owns document lifecycle, registry upserts, and sequence merging for an
+ * `XlePlusGlueDocument`, shared between chat and the analysis view (glue-interface/
+ * gswb-vis) so the two stop maintaining independent copies of "how a Sentence/Sequence
+ * gets registered and merged."
  *
  * `upsertSentenceAnalyses`/`upsertSequenceAnalyses` are moved from
  * `GlueInterfaceComponent`, which owned the only implementation of this that already
@@ -24,11 +82,19 @@ import {
  * sentence texts under one id, so that failure mode surfaces loudly instead of
  * persisting a corrupted document.
  *
- * The merge/rebase half described in the plan (`mergeSequence`) is not implemented yet;
- * this is the document-assembly half only.
+ * `mergeSequence` is moved from `GswbVisComponent`'s `mergeCurrentSolutions`/
+ * `mergeSyntaxForResults` (Stage A of the plan above), with two deliberate behavior
+ * changes recorded there: syntax merges now serialize via `concatMap` instead of
+ * `forkJoin` (2+ concurrent Angular HttpClient calls have been observed to silently
+ * drop a response -- see `ReasoningPipelineService`'s own note on the same issue), and
+ * `sequenceAnalyses` groups by sentence-pair id rather than syntax-variant id (see
+ * `SequenceMergeResult` above). Chat's own re-derivation path (Stage B of the plan) is
+ * not implemented here yet -- this only covers glue-vis's "already-computed readings"
+ * case.
  */
 @Injectable({ providedIn: 'root' })
 export class DocumentBuilderService {
+  constructor(private dataService: DataService) {}
 
   newDocument(sessionKey: string, semanticType: string): XlePlusGlueDocument {
     return {
@@ -118,5 +184,201 @@ export class DocumentBuilderService {
     const merged = new Map(existing.map(item => [id(item), item]));
     incoming.forEach(item => merged.set(id(item), item));
     return Array.from(merged.values());
+  }
+
+  /** The current x previous cross product, one `gswbMergeSequenceSemantics` call per
+   *  pair, reusing each side's already-computed `SemanticAnalysis` verbatim -- never a
+   *  `/deduce` re-derivation. Then groups the results by distinct syntax pairing and
+   *  attaches one syntax merge per group, and finally aggregates by sentence pair. */
+  mergeSequence(request: SequenceMergeRequest): Observable<SequenceMergeResult> {
+    const pairSpecs = request.current.flatMap(currentEntry =>
+      request.previousContexts.map(previousContext => ({ currentEntry, previousContext }))
+    );
+
+    return from(pairSpecs).pipe(
+      concatMap(({ currentEntry, previousContext }) =>
+        this.dataService.gswbMergeSequenceSemantics({
+          parts: [
+            this.semanticPart(previousContext.semantic, previousContext.element.id),
+            this.semanticPart(currentEntry.semantic, currentEntry.sentenceAnalysis?.id),
+          ],
+          parentSolutionId: currentEntry.solution.id,
+          solutionKey: currentEntry.solution.solutionKey,
+          mcSetId: currentEntry.solution.mcSetId,
+          resolveDrs: request.resolveDrs,
+        }).pipe(
+          map((merged): SequenceMergePair => ({
+            merged,
+            previousElement: previousContext.element,
+            currentElement: currentEntry.sentenceAnalysis,
+          }))
+        )
+      ),
+      toArray(),
+      concatMap(pairs => this.mergeSyntaxForPairs(pairs, request.knownSentences)),
+      map(pairs => ({
+        pairs,
+        sequenceAnalyses: this.aggregateSequenceAnalyses(pairs),
+      }))
+    );
+  }
+
+  /** Groups pairs by distinct (previous syntax, current syntax) identity and issues one
+   *  `ligerSequence` call per group -- reused across every semantic reading combination
+   *  sharing that group -- instead of once per pair. Groups are processed sequentially
+   *  (`concatMap`), same rationale as the pair merges above. A pair whose previous/
+   *  current element can't be resolved to a syntax, or whose previous sequence's
+   *  sentences can't all be found in `knownSentences`, keeps its `merged` semantic
+   *  result but is not attached a `sequenceAnalysis` -- it must not be silently dropped
+   *  from the result, only from sequence-registration (see SequenceMergeResult). */
+  private mergeSyntaxForPairs(
+    pairs: SequenceMergePair[],
+    knownSentences: SentenceAnalysis[],
+  ): Observable<SequenceMergePair[]> {
+    const groups = new Map<string, SequenceMergePair[]>();
+    pairs.forEach(pair => {
+      const key = `${this.syntaxIds(pair.previousElement)}=>${this.syntaxIds(pair.currentElement)}`;
+      const group = groups.get(key) ?? [];
+      group.push(pair);
+      groups.set(key, group);
+    });
+
+    return from(Array.from(groups.values())).pipe(
+      concatMap(group => {
+        const first = group[0];
+        if (!first.currentElement) {
+          return of(group);
+        }
+        let previousSentences: SentenceAnalysis[];
+        if ('sentenceIds' in first.previousElement) {
+          const missingSentenceIds: string[] = [];
+          previousSentences = first.previousElement.sentenceIds.map(id => {
+            const sentence = knownSentences.find(candidate => candidate.id === id);
+            if (!sentence) missingSentenceIds.push(id);
+            return sentence as SentenceAnalysis;
+          });
+          if (missingSentenceIds.length) {
+            console.error('[DocumentBuilder] cannot resolve previous sequence sentences for syntax merge; skipping syntax merge for this group', {
+              previousSequenceId: first.previousElement.id,
+              missingSentenceIds,
+              knownSentenceIds: knownSentences.map(sentence => sentence.id),
+            });
+            return of(group);
+          }
+        } else {
+          previousSentences = [first.previousElement];
+        }
+        const sentences = [...previousSentences, first.currentElement];
+        return this.dataService.ligerSequence({
+          sentences: sentences.map(sentence => sentence.text),
+          sentenceIds: sentences.map(sentence => sentence.id),
+          parsedSentences: sentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
+        }).pipe(
+          map(sequence => {
+            const syntax = sequence?.solutions?.[0]?.sequenceAnalysis;
+            if (!syntax) {
+              return group;
+            }
+            return group.map(pair => {
+              const semantic = this.semanticAnalysisFromMerged(pair.merged);
+              pair.merged.sequenceAnalysis = {
+                id: pair.merged.id || syntax.id,
+                text: syntax.text,
+                sentenceIds: syntax.sentences.map(sentence => sentence.id),
+                syntax: syntax.syntax,
+                semantics: [semantic],
+                synSemMapping: pair.merged.synSemMapping ?? {
+                  [semantic.syntacticOrigin]: [semantic.semId]
+                },
+              };
+              return pair;
+            });
+          }),
+          catchError(() => of(group))
+        );
+      }),
+      toArray(),
+      map(groupResults => groupResults.flat())
+    );
+  }
+
+  /** One SequenceAnalysis per distinct sentence-pair id, unioning every syntax variant
+   *  that pair produced into its `.syntax[]` -- the fix for the "multiple sequences per
+   *  sentence pair" defect (see SequenceMergeResult doc). Only pairs that got a
+   *  `sequenceAnalysis` attached (i.e. their syntax merge succeeded) contribute; a pair
+   *  whose syntax merge failed is not guessed into an existing or new sequence entry. */
+  private aggregateSequenceAnalyses(pairs: SequenceMergePair[]): SequenceAnalysis[] {
+    const bySentencePair = new Map<string, SequenceAnalysis>();
+    pairs.forEach(pair => {
+      const template = pair.merged.sequenceAnalysis;
+      const syntaxEntry = template?.syntax[0];
+      const semantic = template?.semantics[0];
+      if (!template || !syntaxEntry || !semantic) {
+        return;
+      }
+
+      const sequenceId = compositeAnalysisId(template.sentenceIds);
+      const analysis = bySentencePair.get(sequenceId) ?? {
+        id: sequenceId,
+        text: template.text,
+        sentenceIds: template.sentenceIds,
+        syntax: [],
+        semantics: [],
+        synSemMapping: {},
+      } as SequenceAnalysis;
+
+      if (!analysis.syntax.some(item => item.synId === syntaxEntry.synId)) {
+        analysis.syntax = [...analysis.syntax, syntaxEntry];
+      }
+      if (!analysis.semantics.some(item => item.semId === semantic.semId)) {
+        analysis.semantics = [...analysis.semantics, semantic];
+      }
+      analysis.synSemMapping[syntaxEntry.synId] = Array.from(new Set([
+        ...(analysis.synSemMapping[syntaxEntry.synId] ?? []),
+        semantic.semId,
+      ]));
+      bySentencePair.set(sequenceId, analysis);
+      // Point the pair's merged solution at the canonical, aggregated entry rather than
+      // the single-syntax-variant one mergeSyntaxForPairs attached it to.
+      pair.merged.sequenceAnalysis = analysis;
+    });
+    return Array.from(bySentencePair.values());
+  }
+
+  private syntaxIds(element?: SentenceAnalysis | SequenceAnalysis): string {
+    return element?.syntax.map(syntax => syntax.synId).join('+') ?? 'unknown';
+  }
+
+  /** Mirrors GswbVisComponent's own `semanticAnalysisFor` fallback shape, but scoped to
+   *  a just-merged GswbSolution specifically (which almost always already carries
+   *  `.semanticAnalysis` set server-side by `/merge_sequence_semantics`) -- this is
+   *  internal merge bookkeeping, not the caller-facing "which sentence does this belong
+   *  to" identity policy that stays local to each caller (see class doc). */
+  private semanticAnalysisFromMerged(solution: GswbSolution): SemanticAnalysis {
+    if (solution.semanticAnalysis) {
+      return solution.semanticAnalysis;
+    }
+    return {
+      syntacticOrigin: solution.solutionKey || solution.proofId || 'syntax',
+      semId: solution.id,
+      semString: solution.semantic || solution.solution || '',
+      graph: solution.graph,
+      semType: 'lfgxdrt',
+    };
+  }
+
+  private semanticPart(semantic: SemanticAnalysis, sentenceId?: string): GswbSemanticMergePart {
+    return {
+      id: semantic.semId,
+      sentenceId,
+      solutionId: semantic.semId,
+      syntacticOrigin: semantic.syntacticOrigin,
+      semantic: semantic.semString,
+      graph: semantic.graph,
+      provenance: {
+        syntacticOrigin: semantic.syntacticOrigin,
+        semanticId: semantic.semId,
+      },
+    };
   }
 }

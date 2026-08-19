@@ -1,18 +1,21 @@
 import { TestBed } from '@angular/core/testing';
+import { Subject, of } from 'rxjs';
 import { DocumentBuilderService } from './document-builder.service';
-import { SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { DataService } from '../data.service';
+import { GswbSolution, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 
 describe('DocumentBuilderService', () => {
   let service: DocumentBuilderService;
+  let dataServiceMock: { gswbMergeSequenceSemantics: jasmine.Spy; ligerSequence: jasmine.Spy };
 
   const structure = { constraints: [], annotations: [], choiceSpace: {} };
 
-  const sentence = (id: string, text: string): SentenceAnalysis => ({
+  const sentence = (id: string, text: string, synId = `syn-${id}`): SentenceAnalysis => ({
     id,
     text,
-    syntax: [{ synId: `syn-${id}`, structure, graph: { graphElements: [] } }],
-    semantics: [{ syntacticOrigin: `syn-${id}`, semId: `sem-${id}`, semString: 'P', semType: 'lfgxdrt' }],
-    synSemMapping: { [`syn-${id}`]: [`sem-${id}`] },
+    syntax: [{ synId, structure, graph: { graphElements: [] } }],
+    semantics: [{ syntacticOrigin: synId, semId: `sem-${id}`, semString: 'P', semType: 'lfgxdrt' }],
+    synSemMapping: { [synId]: [`sem-${id}`] },
   });
 
   const sequence = (id: string, sentenceIds: string[]): SequenceAnalysis => ({
@@ -24,8 +27,29 @@ describe('DocumentBuilderService', () => {
     synSemMapping: { [`syn-${id}`]: [`sem-${id}`] },
   });
 
+  /** A LiGER sequence response for two sentences, tagged so its merged syntax id is
+   *  distinguishable across calls. */
+  const ligerSequenceResponse = (mergedSynId: string, sentences: SentenceAnalysis[]) => ({
+    solutions: [{
+      sequenceAnalysis: {
+        id: mergedSynId,
+        text: sentences.map(s => s.text).join('\n'),
+        sentences: sentences.map(s => ({ id: s.id, text: s.text })),
+        syntax: [{ synId: mergedSynId, structure, graph: { graphElements: [] } }],
+        semantics: [],
+        synSemMapping: {},
+      },
+    }],
+  });
+
   beforeEach(() => {
-    TestBed.configureTestingModule({});
+    dataServiceMock = {
+      gswbMergeSequenceSemantics: jasmine.createSpy('gswbMergeSequenceSemantics'),
+      ligerSequence: jasmine.createSpy('ligerSequence'),
+    };
+    TestBed.configureTestingModule({
+      providers: [{ provide: DataService, useValue: dataServiceMock }],
+    });
     service = TestBed.inject(DocumentBuilderService);
   });
 
@@ -127,6 +151,128 @@ describe('DocumentBuilderService', () => {
       expect(document.sequences[0].text).toBe('updated text');
       // No duplicate element ref was appended for the update.
       expect(document.elements.filter(ref => ref.id === 'seq-1').length).toBe(1);
+    });
+  });
+
+  describe('mergeSequence', () => {
+    const previousSentence = sentence('sentence-1', 'A man appeared.');
+    const previousContext = { semantic: previousSentence.semantics[0], element: previousSentence };
+
+    const mergedSolution = (id: string): GswbSolution => ({
+      id, solution: 'merged', solutionKey: id, graph: structure, semantic: 'merged semantic',
+    });
+
+    it('merges one current reading against one previous context and registers one sequence', () => {
+      dataServiceMock.gswbMergeSequenceSemantics.and.returnValue(of(mergedSolution('merged-1')));
+      dataServiceMock.ligerSequence.and.returnValue(
+        of(ligerSequenceResponse('syn-seq-a', [previousSentence, sentence('sentence-2', 'A woman appeared.')])));
+
+      const currentSentence = sentence('sentence-2', 'A woman appeared.');
+      let result: any;
+      service.mergeSequence({
+        current: [{ solution: mergedSolution('cur-1'), semantic: currentSentence.semantics[0], sentenceAnalysis: currentSentence }],
+        previousContexts: [previousContext],
+        knownSentences: [previousSentence, currentSentence],
+        resolveDrs: true,
+      }).subscribe(r => result = r);
+
+      expect(dataServiceMock.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(1);
+      expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(1);
+      expect(result.pairs.length).toBe(1);
+      expect(result.sequenceAnalyses.length).toBe(1);
+      expect(result.sequenceAnalyses[0].id).toBe('sentence-1+sentence-2');
+      expect(result.sequenceAnalyses[0].sentenceIds).toEqual(['sentence-1', 'sentence-2']);
+    });
+
+    it('groups two syntax variants of the same sentence pair into ONE SequenceAnalysis with two syntax entries, not two separate sequences', () => {
+      // Regression for the "multiple sequences per sentence pair" defect, confirmed
+      // live via misc/current/analysis-document-syntactic-ambiguity.json: 3 syntactic
+      // analyses x 1 previously produced 3 separate SequenceAnalysis entries instead of
+      // one with .syntax.length === 3. This is the 2-variant version of that.
+      dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+        of(mergedSolution(request.parentSolutionId)));
+      let ligerCallCount = 0;
+      dataServiceMock.ligerSequence.and.callFake(() => {
+        // Two distinct current-sentence structures parsed differently -> LiGER assigns
+        // each pairing its own merged syntax id, exactly as it would for a genuinely
+        // syntactically ambiguous sentence. Discriminated by call order since both
+        // variants share the same sentence id (they're readings of the same sentence).
+        ligerCallCount += 1;
+        const mergedSynId = ligerCallCount === 1 ? 'syn-seq-a' : 'syn-seq-b';
+        return of(ligerSequenceResponse(mergedSynId, [previousSentence, sentence('sentence-2', 'A woman appeared.')]));
+      });
+
+      const currentVariantA = sentence('cur-a', 'A woman appeared.', 'syn-cur-a');
+      const currentVariantB = sentence('cur-a', 'A woman appeared.', 'syn-cur-b');
+
+      let result: any;
+      service.mergeSequence({
+        current: [
+          { solution: mergedSolution('cur-1'), semantic: currentVariantA.semantics[0], sentenceAnalysis: currentVariantA },
+          { solution: mergedSolution('cur-2'), semantic: currentVariantB.semantics[0], sentenceAnalysis: currentVariantB },
+        ],
+        previousContexts: [previousContext],
+        knownSentences: [previousSentence, currentVariantA, currentVariantB],
+        resolveDrs: true,
+      }).subscribe(r => result = r);
+
+      expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(2);
+      expect(result.pairs.length).toBe(2);
+      expect(result.sequenceAnalyses.length).toBe(1);
+      expect(result.sequenceAnalyses[0].syntax.map((s: any) => s.synId).sort()).toEqual(['syn-seq-a', 'syn-seq-b']);
+    });
+
+    it('keeps a pair whose syntax merge cannot be resolved, but does not register it as a sequence', () => {
+      const previousSequence = sequence('seq-1', ['sentence-1', 'sentence-2']);
+      dataServiceMock.gswbMergeSequenceSemantics.and.returnValue(of(mergedSolution('merged-1')));
+
+      const currentSentence = sentence('sentence-3', 'He smiled.');
+      let result: any;
+      const errorSpy = spyOn(console, 'error');
+      service.mergeSequence({
+        current: [{ solution: mergedSolution('cur-1'), semantic: currentSentence.semantics[0], sentenceAnalysis: currentSentence }],
+        previousContexts: [{ semantic: previousSequence.semantics[0], element: previousSequence }],
+        knownSentences: [], // sentence-1/sentence-2 deliberately unresolved
+        resolveDrs: true,
+      }).subscribe(r => result = r);
+
+      expect(dataServiceMock.ligerSequence).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
+      expect(result.pairs.length).toBe(1);
+      expect(result.pairs[0].merged.sequenceAnalysis).toBeUndefined();
+      expect(result.sequenceAnalyses.length).toBe(0);
+    });
+
+    it('serializes merge calls instead of firing them concurrently (forkJoin hang regression)', () => {
+      // ReasoningPipelineService's own comment documents 2+ concurrent Angular
+      // HttpClient calls silently dropping a response; the fix there was concatMap
+      // instead of forkJoin, and this must hold here too.
+      const mergeSubjects: Subject<GswbSolution>[] = [];
+      dataServiceMock.gswbMergeSequenceSemantics.and.callFake(() => {
+        const subject = new Subject<GswbSolution>();
+        mergeSubjects.push(subject);
+        return subject.asObservable();
+      });
+      dataServiceMock.ligerSequence.and.returnValue(of({ solutions: [] }));
+
+      const currentA = sentence('cur-a', 'A woman appeared.');
+      const currentB = sentence('cur-b', 'A cat appeared.');
+      service.mergeSequence({
+        current: [
+          { solution: mergedSolution('cur-1'), semantic: currentA.semantics[0], sentenceAnalysis: currentA },
+          { solution: mergedSolution('cur-2'), semantic: currentB.semantics[0], sentenceAnalysis: currentB },
+        ],
+        previousContexts: [previousContext],
+        knownSentences: [previousSentence, currentA, currentB],
+        resolveDrs: true,
+      }).subscribe();
+
+      // Only the first pair's HTTP call has been made -- the second must not fire until
+      // the first resolves.
+      expect(dataServiceMock.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(1);
+      mergeSubjects[0].next(mergedSolution('merged-1'));
+      mergeSubjects[0].complete();
+      expect(dataServiceMock.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
     });
   });
 });
