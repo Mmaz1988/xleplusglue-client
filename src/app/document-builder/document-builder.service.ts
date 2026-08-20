@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
-import { Observable, catchError, concatMap, from, map, of, toArray } from 'rxjs';
+import { Observable, catchError, concatMap, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { compositeAnalysisId } from '../analysis-model';
 import {
+  GswbPreferences,
   GswbSemanticMergePart,
   GswbSolution,
   LigerStructure,
@@ -33,7 +34,41 @@ export interface SequenceMergePreviousContext {
   element: SentenceAnalysis | SequenceAnalysis;
 }
 
+/** Chat's variant: chat never computes the new sentence's own reading through a
+ *  sequence-aware step the way glue-vis's `LigerVisComponent.addSentence()` does (it
+ *  only ever independently parses+proves a sentence in isolation, at message-send
+ *  time) -- so `mergeSequence` performs that step itself here, once per distinct
+ *  previous context, exactly mirroring `addSentence()`/`proofInputsForSequencePart`:
+ *  call `ligerSequence` over [prior sentences (supplied, already-parsed) + this new
+ *  sentence (deliberately UNSUPPLIED)], so LiGER parses and rule-applies the new
+ *  sentence fresh as part of the sequence, producing a `sequenceParts[]` entry whose
+ *  meaning constructors are already rebased into the merged SYN-ID range. Proving
+ *  those via a scoped `/deduce` (mirroring chat's own turn-1
+ *  `calculateSequencePartSemantics`) is what makes the later `/merge_sequence_semantics`
+ *  call's lack of its own rebasing safe -- the same precondition glue-vis relies on.
+ *  Supplying every sentence's structure instead (as the non-rebase path does) makes
+ *  LiGER skip rule application for the whole call and reuse the new sentence's own
+ *  unrelated solution-key, which is what silently broke chat's pronoun resolution
+ *  (confirmed live via misc/current/chat-document-pronoun-new.json: zero
+ *  anaphoraRelations on every assignment).
+ *
+ *  Whatever `/deduce` derives simply IS the new sentence's reading set for that
+ *  context -- there is no earlier candidate to match it back to, so `request.current`
+ *  is not used at all when this is set.
+ *
+ *  No pruning here, by design (user, 2026-08-20): this always builds the full cross
+ *  product, same as the non-rebase path. Discarding down to one candidate happens
+ *  exactly once, at the very end of the whole turn
+ *  (ReasoningPipelineService.prepareReasoningChecks's own `prune`). */
+export interface SequenceMergeRebase {
+  newSentence: { id: string; text: string };
+  ruleString?: string;
+  logicType?: 'fof' | 'tff';
+  gswbPreferences: GswbPreferences;
+}
+
 export interface SequenceMergeRequest {
+  /** Ignored when `rebase` is set -- see SequenceMergeRebase. */
   current: SequenceMergeCurrentSolution[];
   previousContexts: SequenceMergePreviousContext[];
   /** Canonical, always-fully-enriched sentence registry, used to resolve a previous
@@ -42,10 +77,14 @@ export interface SequenceMergeRequest {
   knownSentences: SentenceAnalysis[];
   resolveDrs: boolean;
   /** Passed through to the syntax-merge `ligerSequence` call only (never to a semantic
-   *  derivation -- there isn't one). Optional because glue-vis's own callers don't
-   *  configure these; chat does (its own grammar/logic-type preferences). */
+   *  derivation -- there isn't one, in the non-rebase path). Optional because glue-vis's
+   *  own callers don't configure these; chat does (its own grammar/logic-type
+   *  preferences). Ignored when `rebase` is set -- rebase carries its own copies. */
   ruleString?: string;
   logicType?: 'fof' | 'tff';
+  /** Absent (the default): glue-vis's path -- `current`'s own semantic/solution fields
+   *  are the merge input, unchanged. Present: chat's path, see SequenceMergeRebase. */
+  rebase?: SequenceMergeRebase;
 }
 
 export interface SequenceMergePair {
@@ -108,23 +147,29 @@ export interface SequenceMergeResult {
  * `sequenceAnalyses` groups by sentence-pair id rather than syntax-variant id (see
  * `SequenceMergeResult` above).
  *
- * Chat (Stage B) now calls this same method instead of a separate re-derivation path.
- * That earlier chat-only path merged syntax and then re-proved the new sentence's
- * semantics from scratch via a `/deduce` call on the merged structure -- redundant with
- * a plain `/deduce` chat already runs once per sentence when it's first parsed, and the
- * actual source of a solution-count duplication bug (a sentence with N readings sharing
- * one syntax variant produced N times too many merged pairs, confirmed live via
- * misc/current/chat-document-plan-b-test.json: turn 2 had 8 solutions instead of 4).
+ * Chat (Stage B) calls this same method for its own sequence merging, via the `rebase`
+ * request field (see SequenceMergeRebase) rather than a separate implementation.
+ *
  * Investigating the backend endpoints directly (`GswbController.java`) showed
- * `/merge_sequence_semantics` never re-invokes the prover at all -- it only performs a
- * structural DRS-graph merge of two already-proven readings, which is safe because
- * LiGER's `/apply_rules_xle_sequence` already returns source-index-rebased meaning
- * constructors per sequence part (`liger-vis.component.ts`'s `sequenceParts[]`
- * handling), and GSWB's supplied-structure parsing derives source indices from SYN-ID
- * rather than a positional counter (`docs/plans/SUPPLIED_STRUCTURE_ANAPHORA_PLAN.md`).
- * So a sentence's own reading only ever needs to be proven once, at parse time -- the
- * same shape glue-vis already used -- and chat now reuses it here unchanged, dropping
- * its own `ligerSequence`+`gswbDeduce` rebase chain entirely.
+ * `/merge_sequence_semantics` never re-invokes the prover -- it only performs a
+ * structural DRS-graph merge of two already-proven readings, with no source-index
+ * rebasing of its own (`DrsSequenceMerger.merge` just wraps both trees in a `DrsMerge`
+ * node verbatim). That is safe for glue-vis only because its own reading for each
+ * sentence is never computed independently: `LigerVisComponent.addSentence()` always
+ * calls `ligerSequence` over the growing discourse and proves the newest sentence's
+ * `sequenceParts[]` entry (already rebased into the merged SYN-ID range by LiGER's
+ * SequenceGraphAssembler) via a scoped `/deduce` -- see `proofInputsForSequencePart`.
+ * Chat's own per-sentence reading was never computed that way (a bare, context-free
+ * `/apply_rules_xle` + `/deduce` at message-send time), so routing it through the same
+ * non-rebase `/merge_sequence_semantics` call unaligned silently broke anaphora
+ * resolution: the SRC/SYN-ID join `ReasoningPipelineService.applyNliRules` depends on
+ * found nothing to bind, so every mapping degraded to "no antecedent" (confirmed live,
+ * misc/current/chat-document-pronoun-new.json: zero non-empty `anaphoraRelations`
+ * across 12 assignments). `rebase` makes chat perform the same sequence-aware
+ * derivation glue-vis's `addSentence()` does, once per distinct previous context
+ * (chat can have several, from an ambiguous premise; glue-vis's own flow only ever has
+ * one "sequence so far"), before falling through to the same `/merge_sequence_semantics`
+ * call non-rebase pairs use.
  */
 @Injectable({ providedIn: 'root' })
 export class DocumentBuilderService {
@@ -225,6 +270,10 @@ export class DocumentBuilderService {
    *  `/deduce` re-derivation. Then groups the results by distinct syntax pairing and
    *  attaches one syntax merge per group, and finally aggregates by sentence pair. */
   mergeSequence(request: SequenceMergeRequest): Observable<SequenceMergeResult> {
+    if (request.rebase) {
+      return this.mergeSequenceDerived(
+        request.previousContexts, request.rebase, request.resolveDrs, request.knownSentences);
+    }
     const pairSpecs = request.current.flatMap(currentEntry =>
       request.previousContexts.map(previousContext => ({ currentEntry, previousContext }))
     );
@@ -256,6 +305,159 @@ export class DocumentBuilderService {
         sequenceAnalyses: this.aggregateSequenceAnalyses(pairs),
       }))
     );
+  }
+
+  /** Chat's path: one sequence-aware derivation per distinct previous context, run
+   *  sequentially (`concatMap`, same forkJoin-avoidance rationale as the non-rebase
+   *  path). There is no `current`-driven fan-out here -- see SequenceMergeRebase. */
+  private mergeSequenceDerived(
+    previousContexts: SequenceMergePreviousContext[],
+    rebase: SequenceMergeRebase,
+    resolveDrs: boolean,
+    knownSentences: SentenceAnalysis[],
+  ): Observable<SequenceMergeResult> {
+    return from(previousContexts).pipe(
+      concatMap(previousContext => this.deriveAndMergeForContext(previousContext, rebase, resolveDrs, knownSentences)),
+      toArray(),
+      // Chat's own registration (registerSentence/upsertSequenceFromContexts) is driven
+      // from Vampire's accepted results, not from every raw merge result the way
+      // glue-vis's is -- so this path never builds SequenceAnalysis entries itself.
+      map(contextResults => ({ pairs: contextResults.flat(), sequenceAnalyses: [] }))
+    );
+  }
+
+  /** One previous context: merge syntax exactly like `LigerVisComponent.addSentence()`
+   *  does -- supply the previous sentence(s)' already-parsed structures, but deliberately
+   *  leave the new sentence unsupplied so LiGER parses (and rule-applies) it fresh as
+   *  part of this sequence call. Then extract and prove its rebased `sequenceParts[]`
+   *  entry (`deriveCurrentPart`), and semantic-merge every resulting reading against
+   *  this context. Whatever the derivation returns simply IS the new sentence's reading
+   *  set for this context -- there is no earlier candidate it needs to be matched back
+   *  to. */
+  private deriveAndMergeForContext(
+    previousContext: SequenceMergePreviousContext,
+    rebase: SequenceMergeRebase,
+    resolveDrs: boolean,
+    knownSentences: SentenceAnalysis[],
+  ): Observable<SequenceMergePair[]> {
+    const previousElement = previousContext.element;
+    let previousSentences: SentenceAnalysis[];
+    if ('sentenceIds' in previousElement) {
+      // Chat's previous context is always registered as a single opaque unit (its whole
+      // accumulated discourse text/structure, not decomposed sentence-by-sentence) -- this
+      // branch exists only in case a caller ever passes a genuine multi-sentence
+      // SequenceAnalysis, mirroring mergeSyntaxForPairs's own resolution against
+      // knownSentences.
+      const missingSentenceIds: string[] = [];
+      previousSentences = previousElement.sentenceIds.map(id => {
+        const sentence = knownSentences.find(candidate => candidate.id === id);
+        if (!sentence) missingSentenceIds.push(id);
+        return sentence as SentenceAnalysis;
+      });
+      if (missingSentenceIds.length) {
+        console.error('[DocumentBuilder] cannot resolve previous sentences for rebase merge; skipping this context', {
+          previousElementId: previousElement.id, missingSentenceIds,
+        });
+        return of([]);
+      }
+    } else {
+      previousSentences = [previousElement];
+    }
+
+    return this.dataService.ligerSequence({
+      sentences: [...previousSentences.map(sentence => sentence.text), rebase.newSentence.text],
+      sentenceIds: [...previousSentences.map(sentence => sentence.id), rebase.newSentence.id],
+      ruleString: rebase.ruleString,
+      logicType: rebase.logicType,
+      // Deliberately no entry for the new sentence -- see SequenceMergeRebase and
+      // commit 78847cb ("Fix chat's pronoun-resolution bug"). Supplying it here would
+      // make GswbController.applyRuleRequestXLESequence's suppliedAllSentences path
+      // reuse its independent parse verbatim (skipping rule application for the WHOLE
+      // call, and keeping whatever solution-key that independent parse had) instead of
+      // letting LiGER parse and rule-apply it fresh, positionally numbered into this
+      // sequence.
+      parsedSentences: previousSentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
+    }).pipe(
+      switchMap(sequence => this.deriveCurrentPart(sequence, rebase.gswbPreferences)),
+      concatMap(({ sequenceStructure, derived }) => from(derived).pipe(
+        concatMap(candidate => {
+          const semantic = this.toSemanticAnalysis(candidate, rebase.newSentence.id);
+          return this.dataService.gswbMergeSequenceSemantics({
+            parts: [
+              this.semanticPart(previousContext.semantic, previousElement.id),
+              this.semanticPart(semantic, rebase.newSentence.id),
+            ],
+            parentSolutionId: candidate.id,
+            solutionKey: semantic.syntacticOrigin,
+            mcSetId: semantic.syntacticOrigin,
+            resolveDrs,
+          }).pipe(map((merged): SequenceMergePair => ({
+            merged, previousElement, sequenceStructure, currentSemantic: semantic,
+          })));
+        }),
+        toArray()
+      )),
+      catchError(error => {
+        console.error('[DocumentBuilder] syntax merge/derive failed for this context; no pairs produced', {
+          previousElementId: previousElement.id, error,
+        });
+        return of([]);
+      })
+    );
+  }
+
+  /** Extracts the newest sentence's own, sequence-rebased meaning constructors from a
+   *  ligerSequence response -- its last `sequenceParts[]` entry, since
+   *  SequenceGraphAssembler numbers parts positionally and the new sentence is always
+   *  appended last -- and proves them. Mirrors `LigerVisComponent`'s
+   *  `proofInputsForSequencePart` + the scoped `/deduce` chat's own turn-1 path already
+   *  runs (`calculateSequencePartSemantics`), so this is not new behavior, just reused
+   *  for turn 2+ as well. */
+  private deriveCurrentPart(
+    sequence: { solutions?: Array<{ structureJson?: LigerStructure; sequenceParts?: Array<{ solutionKey?: string; meaningConstructors?: string }> }> },
+    gswbPreferences: GswbPreferences,
+  ): Observable<{ sequenceStructure?: LigerStructure; derived: GswbSolution[] }> {
+    const sequenceSolution = sequence?.solutions?.[0];
+    const sequenceStructure = sequenceSolution?.structureJson;
+    const parts = Array.isArray(sequenceSolution?.sequenceParts) ? sequenceSolution.sequenceParts : [];
+    const currentPart = parts[parts.length - 1];
+    if (!currentPart?.meaningConstructors?.trim()) {
+      throw new Error('The merged sequence has no source-indexed current sentence part.');
+    }
+    return this.dataService.gswbDeduce({
+      premises: currentPart.meaningConstructors,
+      gswbPreferences,
+      structure: sequenceStructure,
+      proofs: [{
+        proofId: currentPart.solutionKey || 'sequence-current-sentence',
+        solutionKey: currentPart.solutionKey,
+        meaningConstructors: currentPart.meaningConstructors,
+        structure: sequenceStructure,
+      }],
+    }).pipe(map((result: { solutions?: GswbSolution[] }) => {
+      const derived: GswbSolution[] = (result?.solutions ?? []).filter(candidate =>
+        typeof candidate?.semantic === 'string' && candidate.semantic.trim().length > 0 && !!candidate.graph);
+      if (!derived.length) {
+        throw new Error('No source-indexed semantic analyses found for the current sentence.');
+      }
+      return { sequenceStructure, derived };
+    }));
+  }
+
+  /** Wraps one of GSWB /deduce's raw derived solutions as a SemanticAnalysis, for the
+   *  rebase path -- this is a freshly-derived reading, not a merge result, so it has no
+   *  `.semanticAnalysis` of its own to prefer the way `semanticAnalysisFromMerged` does. */
+  private toSemanticAnalysis(candidate: GswbSolution, fallbackSyntacticOrigin: string): SemanticAnalysis {
+    if (candidate.semanticAnalysis) {
+      return candidate.semanticAnalysis;
+    }
+    return {
+      syntacticOrigin: candidate.solutionKey || candidate.proofId || fallbackSyntacticOrigin,
+      semId: candidate.id,
+      semString: candidate.semantic || candidate.solution || '',
+      graph: candidate.graph,
+      semType: 'lfgxdrt',
+    };
   }
 
   /** Groups pairs by distinct (previous syntax, current syntax) identity and issues one

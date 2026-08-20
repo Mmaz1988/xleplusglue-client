@@ -192,22 +192,26 @@ describe('ChatComponent', () => {
     });
   });
 
-  describe('finishLfgxdrtPreparation (Stage B: chat on DocumentBuilderService)', () => {
+  describe('finishLfgxdrtPreparation (Stage B: chat on DocumentBuilderService, rebase)', () => {
     const structure = { constraints: [], annotations: [], choiceSpace: {} };
 
-    /** LiGER's merged-sequence response for the syntax merge -- the same shape
-     *  glue-vis's own document-builder path uses, now that chat no longer re-derives
-     *  semantics from the merged structure. */
-    const ligerSequenceResponse = () => ({
+    /** LiGER's merged-sequence response, carrying the rebased current-part meaning
+     *  constructors -- mirrors LigerVisComponent.addSentence()'s sequenceParts[]
+     *  handling. `sequenceParts` has one entry per sentence in the call; the LAST is
+     *  always the new sentence (never supplied via parsedSentences, so LiGER parses and
+     *  rule-applies it fresh -- see the assertion on `parsedSentences.length` below). */
+    const ligerRebaseResponse = (mcSuffix = '') => ({
       solutions: [{
         structureJson: structure,
-        sequenceAnalysis: {
-          id: 'seq-1', text: 'a man saw a man he saw him',
-          sentences: [{ id: 'sentence-1' }, { id: 'sentence-3' }],
-          syntax: [{ synId: 'seq-1', structure, graph: { graphElements: [] } }],
-          semantics: [], synSemMapping: {},
-        },
+        sequenceParts: [
+          { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
+          { sourceIndex: 1, solutionKey: 'part-1', meaningConstructors: `mc-current${mcSuffix}` },
+        ],
       }],
+    });
+
+    const derivedSolution = (id: string, semantic: string): any => ({
+      id, solution: semantic, semantic, graph: structure, solutionKey: id,
     });
 
     beforeEach(() => {
@@ -217,12 +221,13 @@ describe('ChatComponent', () => {
       component.activeIndices = [];
     });
 
-    it('merges syntax once per distinct prior element, not once per (prior x reading) pairing, and never re-derives semantics', () => {
+    it('derives the new sentence\'s own reading once per distinct previous context, mirroring glue-vis\'s addSentence() -- never reusing chat\'s bare, context-free parse', () => {
       // Two accepted READINGS of the SAME prior element (an ambiguous premise) --
-      // this is exactly the shape that used to trigger a second, redundant
-      // ligerSequence/gswbDeduce round trip per reading before Stage B. Now the new
-      // sentence's own reading is never re-derived at all: mergeSequence reuses it
-      // verbatim, the same call glue-vis's own document-builder path uses.
+      // each is a genuinely distinct discourse state, so each gets its own
+      // ligerSequence + scoped /deduce call (grouping/dedup only makes sense across
+      // pairings that share one syntax, and there is no such pairing here: chat's own
+      // readings of the NEW sentence are never used as merge input at all, see
+      // SequenceMergeRebase).
       component.context = [
         {
           original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
@@ -240,7 +245,10 @@ describe('ChatComponent', () => {
         },
       ] as any;
 
-      dataServiceSpy.ligerSequence.and.returnValue(of(ligerSequenceResponse()));
+      dataServiceSpy.ligerSequence.and.returnValue(of(ligerRebaseResponse()));
+      dataServiceSpy.gswbDeduce.and.returnValue(of({
+        solutions: [derivedSolution('derived-1', 'Q')],
+      }));
       dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
         id: request.parentSolutionId, solution: 'merged', solutionKey: request.parentSolutionId,
         graph: structure, semantic: 'merged',
@@ -251,17 +259,24 @@ describe('ChatComponent', () => {
         return of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] });
       });
 
+      // The candidateSolutions passed here (chat's own bare parse of "he saw him") are
+      // registered as the sentence's document entry only -- not reused as merge input.
       (component as any).finishLfgxdrtPreparation('he saw him', [
-        { id: 'cand-1', semantic: 'Q', solution: 'Q', graph: structure, solutionKey: 'part-1' },
+        { id: 'cand-1', semantic: 'unused-bare-parse-reading', solution: 'unused', graph: structure, solutionKey: 'part-1' },
       ], false, []);
 
-      // One prior element (both readings share one syntax variant), one syntax variant
-      // of the new sentence -> one group -> one syntax merge, no re-derivation.
-      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
-      // But every (prior-reading x current-reading) pair still gets its own semantic
-      // merge and its own reasoning-check preparation -- nothing is discarded just
-      // because the syntax-merge group was shared.
+      // One ligerSequence + one scoped /deduce per distinct previous context.
+      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(2);
+      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(2);
+      expect(dataServiceSpy.gswbDeduce.calls.allArgs().map(([request]: any[]) => request.premises))
+        .toEqual(['mc-current', 'mc-current']);
+      // The new sentence must never be supplied as an already-parsed structure -- only
+      // the previous sentence is, so LiGER parses (and rule-applies) the new one fresh.
+      dataServiceSpy.ligerSequence.calls.allArgs().forEach(([request]: any[]) => {
+        expect(request.parsedSentences.length).toBe(1);
+      });
+      // Each derived reading still gets its own semantic merge and reasoning-check
+      // preparation.
       expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
       expect(preparedCallCount).toBe(2);
 
@@ -274,13 +289,14 @@ describe('ChatComponent', () => {
       });
     });
 
-    it('a sentence with two readings sharing one syntax variant produces exactly one pair per reading, not a duplicated cross product', () => {
+    it('one previous context whose /deduce derives two readings produces exactly one pair per reading, from a single ligerSequence/deduce call', () => {
       // The confirmed regression (misc/current/chat-document-plan-b-test.json): turn 2
       // had 8 solutions instead of 4, because the old rebase path cross-produced a
-      // redundant "group" of pairSpecs against freshly re-derived readings. Routed
-      // through the shared mergeSequence, one previous reading x two current readings
-      // (sharing one syntax variant, e.g. "Every Swede is a Scandinavian") must yield
-      // exactly two pairs, with the syntax merge still deduplicated to one call.
+      // redundant "group" of pairSpecs against freshly re-derived readings. With
+      // grouping keyed only by distinct previous context (never by chat's own readings
+      // of the new sentence), one context whose /deduce naturally derives two readings
+      // (e.g. "Every Swede is a Scandinavian") must yield exactly two pairs from one
+      // ligerSequence + one /deduce call, not four and not eight.
       component.context = [{
         original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
         semantic: 'P1', semanticGraph: { constraints: [], annotations: [], choiceSpace: {} },
@@ -289,7 +305,10 @@ describe('ChatComponent', () => {
         elementId: 'sentence-1',
       }] as any;
 
-      dataServiceSpy.ligerSequence.and.returnValue(of(ligerSequenceResponse()));
+      dataServiceSpy.ligerSequence.and.returnValue(of(ligerRebaseResponse()));
+      dataServiceSpy.gswbDeduce.and.returnValue(of({
+        solutions: [derivedSolution('derived-1', 'Q1'), derivedSolution('derived-2', 'Q2')],
+      }));
       dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
         id: request.parentSolutionId, solution: 'merged', solutionKey: request.parentSolutionId,
         graph: structure, semantic: 'merged',
@@ -301,12 +320,11 @@ describe('ChatComponent', () => {
       });
 
       (component as any).finishLfgxdrtPreparation('every swede is a scandinavian', [
-        { id: 'cand-1', semantic: 'Q1', solution: 'Q1', graph: structure, solutionKey: 'part-1' },
-        { id: 'cand-2', semantic: 'Q2', solution: 'Q2', graph: structure, solutionKey: 'part-1' },
+        { id: 'cand-1', semantic: 'unused', solution: 'unused', graph: structure, solutionKey: 'part-1' },
       ], false, []);
 
       expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
+      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
       expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
       expect(preparedCallCount).toBe(2);
     });

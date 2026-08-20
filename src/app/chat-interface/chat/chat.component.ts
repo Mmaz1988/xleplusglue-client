@@ -34,7 +34,6 @@ import {
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 import {
   DocumentBuilderService,
-  SequenceMergeCurrentSolution,
   SequenceMergePreviousContext,
 } from '../../document-builder/document-builder.service';
 
@@ -410,7 +409,7 @@ export class ChatComponent {
     // ReasoningPipelineService.prepareReasoningChecks (`prune: pruneContext` below) --
     // less efficient when pruning, but keeps this method's own shape independent of
     // whether the turn happens to be pruned.
-    const { id: newSentenceId, perSolution } = this.registerSentence(userMessage, semanticSolutions, ligerSolutions);
+    const { id: newSentenceId } = this.registerSentence(userMessage, semanticSolutions, ligerSolutions);
     console.info('[Chat] Preparing NLI reasoning', {
       sentence: userMessage,
       newSentenceId,
@@ -419,13 +418,7 @@ export class ChatComponent {
       pruneContext,
     });
 
-    const current: SequenceMergeCurrentSolution[] = semanticSolutions.map((solution, index) => ({
-      solution,
-      semantic: perSolution[index].semantics[0],
-      sentenceAnalysis: perSolution[index],
-    }));
-
-    // Same shape as glue-vis's own merge input: one wrapper element per accepted prior
+    // One wrapper element per accepted prior
     // reading, carrying just enough (id/text/syntax/semantics) for mergeSequence's syntax
     // grouping and semantic-merge parts -- chat's prior is always this single opaque unit
     // (its whole accumulated discourse text/structure), never a document element that
@@ -487,22 +480,33 @@ export class ChatComponent {
     // not specific to request volume. mergeSequence's own concatMap-based grouping avoids
     // ever having two of these chains in flight at once, sidestepping the issue entirely.
     //
-    // mergeSequence is now the exact same call glue-vis's own merge uses: `current`'s
-    // readings are already independently parsed and proven (one /deduce per sentence,
-    // at parse time, same as glue-vis's own scoped-deduce-per-sentence step) -- nothing
-    // here re-derives semantics from the merged structure. That used to be a separate
-    // chat-only path (merge syntax, then /deduce again on the merged structure) which
-    // both duplicated work /deduce already did and, when a sentence's readings shared
-    // one syntax variant, produced N times too many merged pairs (confirmed live via
-    // misc/current/chat-document-plan-b-test.json: turn 2 had 8 solutions instead of 4).
-    // See docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md for the full trace.
+    // `rebase` makes mergeSequence derive the new sentence's own reading the same way
+    // glue-vis's LigerVisComponent.addSentence() does -- ligerSequence over [this
+    // context's own structure + the new sentence, deliberately unsupplied so LiGER
+    // parses and rule-applies it fresh], then a scoped /deduce on its rebased
+    // sequenceParts[] entry -- once per distinct previous context, not once per
+    // (context x reading) pairing. Chat's own bare, context-free parse/deduce
+    // (semanticSolutions above) is registered as the sentence's own document entry only;
+    // it is not reused as merge input here, because it was never rebased against any
+    // prior discourse and using it directly is what silently broke anaphora resolution
+    // (confirmed live via misc/current/chat-document-pronoun-new.json: zero
+    // anaphoraRelations across every assignment) after mergeSequence briefly routed
+    // through the non-rebase, already-computed-reading path glue-vis's OWN merge step
+    // uses -- that step is safe for glue-vis only because ITS own reading is already
+    // sequence-rebased before merging, via the same addSentence() mechanism `rebase`
+    // reproduces here. See docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md for the full
+    // trace.
     this.documentBuilder.mergeSequence({
-      current,
+      current: [],
       previousContexts,
       knownSentences: this.chatDocument.sentences,
       resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
-      ruleString: this.ruleString,
-      logicType: typed ? 'tff' : 'fof',
+      rebase: {
+        newSentence: { id: newSentenceId, text: userMessage },
+        ruleString: this.ruleString,
+        logicType: typed ? 'tff' : 'fof',
+        gswbPreferences: this.gswbPreferences.gswbPreferences,
+      },
     }).pipe(
       switchMap(result => from(result.pairs).pipe(
         concatMap(pair => {
@@ -1101,23 +1105,17 @@ export class ChatComponent {
 
   /** Registers the just-parsed message as a new Sentence in the chat's document (box Q's
    *  source), independent of whether any downstream NLI check accepts it -- a Sentence
-   *  exists as soon as it's parsed, regardless of the eventual reasoning verdict.
-   *
-   *  Also returns one scoped `SentenceAnalysis` view per input solution, positionally
-   *  aligned with `solutions` -- each sharing the sentence's id but narrowed to just that
-   *  solution's own syntax variant, so `mergeSequence`'s grouping-by-syntax-id can tell a
-   *  sentence's own syntax variants apart (mirrors how glue-vis's `sentenceAnalysisFor`
-   *  resolves a per-solution-scoped copy rather than the full multi-variant registry
-   *  entry). */
+   *  exists as soon as it's parsed, regardless of the eventual reasoning verdict. This is
+   *  document bookkeeping only: the sentence's own reading, as used for sequence merging,
+   *  is derived fresh per previous context (see `finishLfgxdrtPreparation`'s `rebase`
+   *  call), not read back from this registration. */
   private registerSentence(
     userMessage: string, solutions: any[], ligerSolutions: any[]
-  ): { id: string; perSolution: SentenceAnalysis[] } {
+  ): { id: string } {
     const id = `sentence-${this.chatDocument.sentences.length + 1}`;
     const syntaxByKey = new Map<string, SyntacticAnalysis>();
     const semantics: SemanticAnalysis[] = [];
     const synSemMapping: Record<string, string[]> = {};
-    const syntaxBySolution: SyntacticAnalysis[] = [];
-    const semanticBySolution: SemanticAnalysis[] = [];
 
     solutions.forEach(solution => {
       const synId = solution.solutionKey || solution.proofId || `${id}-syn`;
@@ -1141,8 +1139,6 @@ export class ChatComponent {
       };
       semantics.push(semanticAnalysis);
       synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semanticAnalysis.semId]));
-      syntaxBySolution.push(syntax);
-      semanticBySolution.push(semanticAnalysis);
     });
 
     this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [{
@@ -1154,15 +1150,7 @@ export class ChatComponent {
     }]);
     this.emitChatDocument();
 
-    const perSolution: SentenceAnalysis[] = solutions.map((_, index) => ({
-      id,
-      text: userMessage,
-      syntax: [syntaxBySolution[index]],
-      semantics: [semanticBySolution[index]],
-      synSemMapping: { [syntaxBySolution[index].synId]: [semanticBySolution[index].semId] },
-    }));
-
-    return { id, perSolution };
+    return { id };
   }
 
   /** Builds the Sequence from *every* surviving context, not just the first.

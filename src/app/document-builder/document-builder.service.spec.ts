@@ -7,7 +7,7 @@ import { GswbSolution, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument }
 
 describe('DocumentBuilderService', () => {
   let service: DocumentBuilderService;
-  let dataServiceMock: { gswbMergeSequenceSemantics: jasmine.Spy; ligerSequence: jasmine.Spy };
+  let dataServiceMock: { gswbMergeSequenceSemantics: jasmine.Spy; ligerSequence: jasmine.Spy; gswbDeduce: jasmine.Spy };
 
   const structure = { constraints: [], annotations: [], choiceSpace: {} };
 
@@ -47,6 +47,7 @@ describe('DocumentBuilderService', () => {
     dataServiceMock = {
       gswbMergeSequenceSemantics: jasmine.createSpy('gswbMergeSequenceSemantics'),
       ligerSequence: jasmine.createSpy('ligerSequence'),
+      gswbDeduce: jasmine.createSpy('gswbDeduce'),
     };
     TestBed.configureTestingModule({
       providers: [{ provide: DataService, useValue: dataServiceMock }],
@@ -314,8 +315,9 @@ describe('DocumentBuilderService', () => {
       // syntax variant but two semantic readings. Both readings share `current`'s syntax
       // id, so the syntax-merge group collapses to one `ligerSequence` call, while each
       // reading still gets its own `gswbMergeSequenceSemantics` call -- 1 previous x 2
-      // readings = 2 pairs, not 4 and not 8. There is no re-derivation step to
-      // over-multiply against, unlike the deleted rebase path.
+      // readings = 2 pairs, not 4 and not 8. This is the non-rebase path, whose already-
+      // computed `current` readings are merge input as-is; see the `rebase` tests below
+      // for the analogous check on chat's own path.
       const currentSentence = sentence('sentence-2', 'Every Swede is a Scandinavian.', 'syn-shared');
       currentSentence.semantics = [
         { syntacticOrigin: 'syn-shared', semId: 'sem-reading-1', semString: 'P', semType: 'lfgxdrt' },
@@ -343,6 +345,129 @@ describe('DocumentBuilderService', () => {
       expect(result.pairs.length).toBe(2);
       expect(result.pairs.map((pair: any) => pair.currentSemantic.semId).sort())
         .toEqual(['sem-reading-1', 'sem-reading-2']);
+    });
+
+    describe('rebase (chat\'s path: derive the new sentence\'s own reading, mirroring LigerVisComponent.addSentence())', () => {
+      const derivedSolution = (id: string, semantic: string): GswbSolution => ({
+        id, solution: semantic, semantic, graph: structure, solutionKey: id,
+      });
+
+      /** A LiGER sequence response carrying the rebased current-part meaning
+       *  constructors the derive step needs -- mirrors addSentence()'s sequenceParts[]
+       *  handling, distinct from `ligerSequenceResponse` (which has no sequenceParts). */
+      const rebaseLigerResponse = () => ({
+        solutions: [{
+          structureJson: structure,
+          sequenceParts: [
+            { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
+            { sourceIndex: 1, solutionKey: 'part-1', meaningConstructors: 'mc-current' },
+          ],
+        }],
+      });
+
+      const currentSentence = { id: 'sentence-3', text: 'A woman appeared.' };
+
+      it('supplies only the previous sentence\'s structure -- never the new sentence\'s -- so LiGER parses and rule-applies it fresh', () => {
+        dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+        dataServiceMock.gswbDeduce.and.returnValue(of({
+          solutions: [derivedSolution('derived-1', 'P(x)')],
+        }));
+        dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+          of(mergedSolution(request.parentSolutionId)));
+
+        service.mergeSequence({
+          current: [],
+          previousContexts: [previousContext],
+          knownSentences: [previousSentence],
+          resolveDrs: true,
+          rebase: {
+            newSentence: currentSentence,
+            ruleString: 'rules',
+            logicType: 'fof',
+            gswbPreferences: {} as any,
+          },
+        }).subscribe();
+
+        expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(1);
+        const [request] = dataServiceMock.ligerSequence.calls.mostRecent().args;
+        expect(request.sentences).toEqual([previousSentence.text, currentSentence.text]);
+        // Only the previous sentence's structure is supplied -- one entry, not two.
+        expect(request.parsedSentences.length).toBe(1);
+        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(1);
+        expect(dataServiceMock.gswbDeduce.calls.mostRecent().args[0].premises).toBe('mc-current');
+      });
+
+      it('never uses request.current as merge input -- whatever /deduce derives simply is the reading set', () => {
+        dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+        dataServiceMock.gswbDeduce.and.returnValue(of({
+          solutions: [derivedSolution('derived-1', 'P(x)'), derivedSolution('derived-2', 'Q(x)')],
+        }));
+        dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+          of(mergedSolution(request.parentSolutionId)));
+
+        let result: any;
+        service.mergeSequence({
+          // A non-empty `current` that must be entirely ignored -- if it were used as
+          // merge input, this would produce a very different pair count/content.
+          current: [{
+            solution: derivedSolution('cur-1', 'unused-pre-merge-reading'),
+            semantic: { syntacticOrigin: 'unused', semId: 'unused-sem', semString: 'unused', semType: 'lfgxdrt' },
+          }],
+          previousContexts: [previousContext],
+          knownSentences: [previousSentence],
+          resolveDrs: true,
+          rebase: {
+            newSentence: currentSentence,
+            ruleString: 'rules',
+            logicType: 'fof',
+            gswbPreferences: {} as any,
+          },
+        }).subscribe(r => result = r);
+
+        expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(1);
+        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(1);
+        expect(dataServiceMock.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
+        expect(result.pairs.length).toBe(2);
+        expect(result.pairs.map((pair: any) => pair.currentSemantic.semId).sort())
+          .toEqual(['derived-1', 'derived-2']);
+        expect(result.sequenceAnalyses).toEqual([]);
+      });
+
+      it('groups by distinct previous context -- one ligerSequence/deduce call per context, not per (context x reading) pairing', () => {
+        const otherPreviousSentence = { ...sentence('sentence-1', 'A man appeared.'), id: 'sentence-1' };
+        const otherPreviousContext = {
+          semantic: { ...previousSentence.semantics[0], semId: 'sem-sentence-1-b' },
+          element: otherPreviousSentence,
+        };
+
+        dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+        dataServiceMock.gswbDeduce.and.returnValue(of({
+          solutions: [derivedSolution('derived-1', 'P(x)')],
+        }));
+        dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+          of(mergedSolution(request.parentSolutionId)));
+
+        let result: any;
+        service.mergeSequence({
+          current: [],
+          previousContexts: [previousContext, otherPreviousContext],
+          knownSentences: [previousSentence],
+          resolveDrs: true,
+          rebase: {
+            newSentence: currentSentence,
+            ruleString: 'rules',
+            logicType: 'fof',
+            gswbPreferences: {} as any,
+          },
+        }).subscribe(r => result = r);
+
+        // Two distinct previous contexts -> two ligerSequence/deduce calls (grouping
+        // is by previous context, not by any pre-computed reading of the new sentence).
+        expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(2);
+        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(2);
+        expect(dataServiceMock.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
+        expect(result.pairs.length).toBe(2);
+      });
     });
   });
 });
