@@ -263,6 +263,14 @@
 
     <div class="results-panel">
       <h3>Inference report ({{ inferenceResultCount }} of {{ expectedInferenceCount }}):</h3>
+      <div *ngIf="session.hasRunVampire && failedInferenceItems.length > 0" class="inference-failures-panel">
+        <strong>{{ failedInferenceItems.length }} item(s) produced no verdict:</strong>
+        <ul>
+          <li *ngFor="let failed of failedInferenceItems">
+            <strong>{{ failed.id }}</strong><span *ngIf="failed.sentences"> ({{ failed.sentences }})</span>: {{ failed.reason }}
+          </li>
+        </ul>
+      </div>
       <app-toggle-display type="liger" showText="Show inference results" hideText="Hide inference results">
         <div>
           <div class="results-list">

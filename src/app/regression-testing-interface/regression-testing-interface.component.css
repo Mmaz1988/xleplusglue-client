@@ -104,6 +104,20 @@ div.errorhandling {
   color: #114a7a;
 }
 
+.inference-failures-panel {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #f0d9a8;
+  border-radius: 10px;
+  background: #fff8e8;
+  color: #7a5b11;
+}
+
+.inference-failures-panel ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
 .vampire-progress-header,
 .vampire-progress-meta {
   display: flex;

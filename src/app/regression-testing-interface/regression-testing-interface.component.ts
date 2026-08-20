@@ -1225,6 +1225,36 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return this.regressionTestItems.length;
   }
 
+  /** Items the "Inference report (N of M)" count silently drops: submitted but never
+   *  produced a majority verdict, whether because their reading-pair preparation failed
+   *  outright (0 assignments -- e.g. a GSWB merge_sequence_semantics error, or the reading-
+   *  matching failure the document-first Stage 4 rework removes) or because Vampire was
+   *  never reached for them at all this run. Built from the persisted document, not the
+   *  transient nliPreparationFailures array, so it also works when reviewing a reloaded
+   *  session rather than only live during a run -- see REGRESSION_ALIGNMENT_PLAN.md, found
+   *  live when a 16-item run silently reported "13 of 16" with no indication of why the
+   *  other 3 were missing. */
+  get failedInferenceItems(): { id: string; sentences: string; reason: string }[] {
+    const updatesById = new Map(
+      (this.session.analysisDocument?.reasoningUpdates ?? []).map(update => [update.id, update]));
+    const failed: { id: string; sentences: string; reason: string }[] = [];
+
+    for (const item of this.regressionTestItems) {
+      const itemId = String(item?.id ?? '');
+      const update = updatesById.get(`ru-${itemId}`);
+      if (update && majorityVerdict(update.assignments ?? [])) continue;
+
+      const sentences = [...(item?.premises ?? []), ...(item?.conclusion ?? [])]
+        .map((sid: string) => this.sentenceMap[sid])
+        .filter((s: any) => typeof s === 'string' && s.trim().length > 0)
+        .join(' / ');
+      const reason = update?.failure || (update ? 'No reading assignment produced a verdict.' : 'Not attempted yet.');
+      failed.push({ id: itemId, sentences, reason });
+    }
+
+    return failed;
+  }
+
   get processingTimingSummary(): string {
     const timing = this.session.timing;
 

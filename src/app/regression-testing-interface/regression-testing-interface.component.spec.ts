@@ -606,6 +606,39 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.canResendVampire).toBeTrue();
   });
 
+  it('surfaces items that produced no verdict instead of silently dropping them from the count', () => {
+    component.session.hasRunVampire = true;
+    component['regressionTestItems'] = [
+      { id: 'n0', premises: ['S0'], conclusion: ['S1'], gold_label: '1' },
+      { id: 'n1', premises: ['S2'], conclusion: ['S3'], gold_label: '1' },
+    ];
+    component['sentenceMap'] = { S0: 'Premise zero.', S1: 'Hypothesis zero.', S2: 'Premise one.', S3: 'Hypothesis one.' };
+    component.session.analysisDocument = {
+      ...component.session.analysisDocument,
+      reasoningUpdates: [
+        {
+          id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], itemId: 'n0',
+          logicType: 'fof', ruleString: '', pruned: false, assignments: [{
+            id: 'a1', premiseSemanticIds: [], hypothesisSemanticIds: [], checks: {} as any,
+            verdict: { consistent: true, informative: false, relevant: false, glyph: '', computedAt: '' },
+          }],
+        } as any,
+        {
+          id: 'ru-n1', premiseElementIds: ['S2'], hypothesisElementIds: ['S3'], itemId: 'n1',
+          logicType: 'fof', ruleString: '', pruned: false, assignments: [],
+          failure: 'pxq-n1-1-1: Http failure response for http://localhost:8081/merge_sequence_semantics: 500 OK',
+        } as any,
+      ],
+    };
+
+    const failed = component.failedInferenceItems;
+
+    expect(failed.length).toBe(1);
+    expect(failed[0].id).toBe('n1');
+    expect(failed[0].sentences).toBe('Premise one. / Hypothesis one.');
+    expect(failed[0].reason).toContain('merge_sequence_semantics');
+  });
+
   it('treats a zero item_count after a non-empty submission as a failed run, keeping prior results', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));
