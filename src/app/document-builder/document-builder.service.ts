@@ -10,6 +10,7 @@ import {
   SemanticAnalysis,
   SentenceAnalysis,
   SequenceAnalysis,
+  SyntacticAnalysis,
   XlePlusGlueDocument,
   XlePlusGlueElementRef,
 } from '../models/models';
@@ -98,9 +99,21 @@ export interface SequenceMergePair {
    *  failure rather than guessing, the same way chat's own reasoning-check builder does. */
   sequenceStructure?: LigerStructure;
   /** The new sentence's own reading that went into this pair -- copied straight from
-   *  `SequenceMergeCurrentSolution.semantic`, so its `.graph` is available as the
-   *  hypothesis AST reasoning needs, without re-deriving anything. */
+   *  `SequenceMergeCurrentSolution.semantic` in the non-rebase path, so its `.graph` is
+   *  available as the hypothesis AST reasoning needs, without re-deriving anything. In
+   *  the rebase path this is a freshly-derived reading (see SequenceMergeRebase); its
+   *  `syntacticOrigin` always matches `currentSyntax.synId` below when that is set. */
   currentSemantic?: SemanticAnalysis;
+  /** Rebase path only: the new sentence's own syntax, as scoped within this specific
+   *  ligerSequence call (`sequenceAnalysis.sentences[last]`, mirroring
+   *  `LigerVisComponent.proofInputsForSequencePart`'s `sentenceAnalysis` field). The
+   *  caller needs this to register `currentSemantic` under the new sentence's OWN
+   *  document entry (its `syntacticOrigin` must resolve to a registered synId there, or
+   *  `validateSentenceAnalysis`/`validateReasoningUpdate` reject it -- confirmed live via
+   *  misc/current/chat-document-pronoun-bug.json and -bug2.json: chat never re-registered
+   *  the rebase-derived reading under the sentence, so every reasoning update was
+   *  silently rejected by document invariants, turn after turn). */
+  currentSyntax?: SyntacticAnalysis;
 }
 
 export interface SequenceMergeResult {
@@ -379,9 +392,16 @@ export class DocumentBuilderService {
       parsedSentences: previousSentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
     }).pipe(
       switchMap(sequence => this.deriveCurrentPart(sequence, rebase.gswbPreferences)),
-      concatMap(({ sequenceStructure, derived }) => from(derived).pipe(
+      concatMap(({ sequenceStructure, currentSyntax, derived }) => from(derived).pipe(
         concatMap(candidate => {
           const semantic = this.toSemanticAnalysis(candidate, rebase.newSentence.id);
+          // The reading's syntacticOrigin must resolve to a synId registered under the
+          // new sentence's OWN document entry (see SequenceMergePair.currentSyntax) --
+          // override whatever /deduce's response happened to carry (its own solutionKey/
+          // proofId namespace, unrelated to this) rather than merely falling back to it.
+          if (currentSyntax) {
+            semantic.syntacticOrigin = currentSyntax.synId;
+          }
           return this.dataService.gswbMergeSequenceSemantics({
             parts: [
               this.semanticPart(previousContext.semantic, previousElement.id),
@@ -392,7 +412,7 @@ export class DocumentBuilderService {
             mcSetId: semantic.syntacticOrigin,
             resolveDrs,
           }).pipe(map((merged): SequenceMergePair => ({
-            merged, previousElement, sequenceStructure, currentSemantic: semantic,
+            merged, previousElement, sequenceStructure, currentSemantic: semantic, currentSyntax,
           })));
         }),
         toArray()
@@ -412,11 +432,21 @@ export class DocumentBuilderService {
    *  appended last -- and proves them. Mirrors `LigerVisComponent`'s
    *  `proofInputsForSequencePart` + the scoped `/deduce` chat's own turn-1 path already
    *  runs (`calculateSequencePartSemantics`), so this is not new behavior, just reused
-   *  for turn 2+ as well. */
+   *  for turn 2+ as well. Also extracts the new sentence's own per-sentence syntax
+   *  fragment (`sequenceAnalysis.sentences[last]`, the same field
+   *  `proofInputsForSequencePart` exposes as `sentenceAnalysis`), so the caller can
+   *  register the derived reading under a synId that actually belongs to the new
+   *  sentence's own document entry. */
   private deriveCurrentPart(
-    sequence: { solutions?: Array<{ structureJson?: LigerStructure; sequenceParts?: Array<{ solutionKey?: string; meaningConstructors?: string }> }> },
+    sequence: {
+      solutions?: Array<{
+        structureJson?: LigerStructure;
+        sequenceParts?: Array<{ solutionKey?: string; meaningConstructors?: string }>;
+        sequenceAnalysis?: { sentences?: Array<{ syntax?: SyntacticAnalysis[] }> };
+      }>;
+    },
     gswbPreferences: GswbPreferences,
-  ): Observable<{ sequenceStructure?: LigerStructure; derived: GswbSolution[] }> {
+  ): Observable<{ sequenceStructure?: LigerStructure; currentSyntax?: SyntacticAnalysis; derived: GswbSolution[] }> {
     const sequenceSolution = sequence?.solutions?.[0];
     const sequenceStructure = sequenceSolution?.structureJson;
     const parts = Array.isArray(sequenceSolution?.sequenceParts) ? sequenceSolution.sequenceParts : [];
@@ -424,6 +454,8 @@ export class DocumentBuilderService {
     if (!currentPart?.meaningConstructors?.trim()) {
       throw new Error('The merged sequence has no source-indexed current sentence part.');
     }
+    const sentences = sequenceSolution?.sequenceAnalysis?.sentences ?? [];
+    const currentSyntax = sentences[sentences.length - 1]?.syntax?.[0];
     return this.dataService.gswbDeduce({
       premises: currentPart.meaningConstructors,
       gswbPreferences,
@@ -440,7 +472,7 @@ export class DocumentBuilderService {
       if (!derived.length) {
         throw new Error('No source-indexed semantic analyses found for the current sentence.');
       }
-      return { sequenceStructure, derived };
+      return { sequenceStructure, currentSyntax, derived };
     }));
   }
 

@@ -199,7 +199,10 @@ describe('ChatComponent', () => {
      *  constructors -- mirrors LigerVisComponent.addSentence()'s sequenceParts[]
      *  handling. `sequenceParts` has one entry per sentence in the call; the LAST is
      *  always the new sentence (never supplied via parsedSentences, so LiGER parses and
-     *  rule-applies it fresh -- see the assertion on `parsedSentences.length` below). */
+     *  rule-applies it fresh -- see the assertion on `parsedSentences.length` below).
+     *  `sequenceAnalysis.sentences[last]` is the new sentence's own per-sentence syntax
+     *  fragment -- required so the derived reading can be registered under the new
+     *  sentence's own document entry (see `currentSyntax` assertions below). */
     const ligerRebaseResponse = (mcSuffix = '') => ({
       solutions: [{
         structureJson: structure,
@@ -207,6 +210,12 @@ describe('ChatComponent', () => {
           { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
           { sourceIndex: 1, solutionKey: 'part-1', meaningConstructors: `mc-current${mcSuffix}` },
         ],
+        sequenceAnalysis: {
+          sentences: [
+            { id: 'sentence-1', syntax: [{ synId: 'S0', structure, graph: { graphElements: [] } }] },
+            { id: 'sentence-new', syntax: [{ synId: 'S1', structure, graph: { graphElements: [] } }] },
+          ],
+        },
       }],
     });
 
@@ -287,6 +296,17 @@ describe('ChatComponent', () => {
         expect(request.prune).toBeFalse();
         expect(request.sequenceStructure).toEqual(structure);
       });
+
+      // The derived reading must be registered under the new sentence's OWN document
+      // entry, with a syntacticOrigin that resolves to a synId registered there too --
+      // otherwise validateReasoningUpdate/validateSentenceAnalysis reject every
+      // assignment as referencing an unknown reading (confirmed live via
+      // misc/current/chat-document-pronoun-bug.json and -bug2.json: reasoningUpdates
+      // came back completely empty, "rejected by document invariants", every turn).
+      const registered = component.chatDocument.sentences.find(s => s.id === 'sentence-3');
+      expect(registered?.semantics.some(sem => sem.semId === 'derived-1' && sem.syntacticOrigin === 'S1'))
+        .toBeTrue();
+      expect(registered?.syntax.some(syn => syn.synId === 'S1')).toBeTrue();
     });
 
     it('one previous context whose /deduce derives two readings produces exactly one pair per reading, from a single ligerSequence/deduce call', () => {

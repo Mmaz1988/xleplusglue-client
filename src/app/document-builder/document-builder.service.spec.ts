@@ -354,7 +354,11 @@ describe('DocumentBuilderService', () => {
 
       /** A LiGER sequence response carrying the rebased current-part meaning
        *  constructors the derive step needs -- mirrors addSentence()'s sequenceParts[]
-       *  handling, distinct from `ligerSequenceResponse` (which has no sequenceParts). */
+       *  handling, distinct from `ligerSequenceResponse` (which has no sequenceParts).
+       *  `sequenceAnalysis.sentences[last]` is the new sentence's own per-sentence
+       *  syntax fragment, the same field `proofInputsForSequencePart` reads as
+       *  `sentenceAnalysis` -- required for `currentSyntax`/registering the derived
+       *  reading under the new sentence's own document entry. */
       const rebaseLigerResponse = () => ({
         solutions: [{
           structureJson: structure,
@@ -362,6 +366,12 @@ describe('DocumentBuilderService', () => {
             { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
             { sourceIndex: 1, solutionKey: 'part-1', meaningConstructors: 'mc-current' },
           ],
+          sequenceAnalysis: {
+            sentences: [
+              { id: 'sentence-1', syntax: [{ synId: 'S0', structure, graph: { graphElements: [] } }] },
+              { id: 'sentence-3', syntax: [{ synId: 'S1', structure, graph: { graphElements: [] } }] },
+            ],
+          },
         }],
       });
 
@@ -431,6 +441,41 @@ describe('DocumentBuilderService', () => {
         expect(result.pairs.map((pair: any) => pair.currentSemantic.semId).sort())
           .toEqual(['derived-1', 'derived-2']);
         expect(result.sequenceAnalyses).toEqual([]);
+      });
+
+      it('attaches the new sentence\'s own syntax fragment and makes the derived reading\'s syntacticOrigin match it, not /deduce\'s own solutionKey', () => {
+        // Without this, validateSentenceAnalysis/validateReasoningUpdate reject the
+        // reading once the caller registers it under the new sentence's document entry
+        // (its syntacticOrigin would point at a synId nothing registers) -- confirmed
+        // live via misc/current/chat-document-pronoun-bug.json and -bug2.json:
+        // reasoningUpdates came back completely empty, every turn.
+        dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+        dataServiceMock.gswbDeduce.and.returnValue(of({
+          // solutionKey deliberately differs from the sequence's own synId ('S1') --
+          // this is /deduce's own response-id namespace, unrelated to LiGER's.
+          solutions: [derivedSolution('derived-1', 'P(x)')],
+        }));
+        dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+          of(mergedSolution(request.parentSolutionId)));
+
+        let result: any;
+        service.mergeSequence({
+          current: [],
+          previousContexts: [previousContext],
+          knownSentences: [previousSentence],
+          resolveDrs: true,
+          rebase: {
+            newSentence: currentSentence,
+            ruleString: 'rules',
+            logicType: 'fof',
+            gswbPreferences: {} as any,
+          },
+        }).subscribe(r => result = r);
+
+        expect(result.pairs.length).toBe(1);
+        const [pair] = result.pairs;
+        expect(pair.currentSyntax?.synId).toBe('S1');
+        expect(pair.currentSemantic.syntacticOrigin).toBe('S1');
       });
 
       it('groups by distinct previous context -- one ligerSequence/deduce call per context, not per (context x reading) pairing', () => {

@@ -508,7 +508,37 @@ export class ChatComponent {
         gswbPreferences: this.gswbPreferences.gswbPreferences,
       },
     }).pipe(
-      switchMap(result => from(result.pairs).pipe(
+      switchMap(result => {
+        // The rebase path derives the new sentence's own reading(s) fresh, scoped to
+        // each previous context -- register them under the sentence's OWN document
+        // entry now, or validateReasoningUpdate/validateSentenceAnalysis reject every
+        // assignment below as referencing an unregistered semantic (confirmed live via
+        // misc/current/chat-document-pronoun-bug.json and -bug2.json: reasoningUpdates
+        // came back completely empty, "rejected by document invariants", every turn).
+        const syntaxById = new Map<string, SyntacticAnalysis>();
+        const semanticById = new Map<string, SemanticAnalysis>();
+        const synSemMapping: Record<string, string[]> = {};
+        result.pairs.forEach(pair => {
+          if (!pair.currentSyntax || !pair.currentSemantic) return;
+          syntaxById.set(pair.currentSyntax.synId, pair.currentSyntax);
+          semanticById.set(pair.currentSemantic.semId, pair.currentSemantic);
+          const mapped = synSemMapping[pair.currentSyntax.synId] ?? [];
+          if (!mapped.includes(pair.currentSemantic.semId)) {
+            mapped.push(pair.currentSemantic.semId);
+          }
+          synSemMapping[pair.currentSyntax.synId] = mapped;
+        });
+        if (syntaxById.size) {
+          this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [{
+            id: newSentenceId,
+            text: userMessage,
+            syntax: Array.from(syntaxById.values()),
+            semantics: Array.from(semanticById.values()),
+            synSemMapping,
+          }]);
+          this.emitChatDocument();
+        }
+        return from(result.pairs).pipe(
         concatMap(pair => {
           const priorElementId = pair.previousElement.id;
           const previousEntry = previousContextByElement.get(pair.previousElement);
@@ -556,7 +586,8 @@ export class ChatComponent {
           })));
         }),
         toArray()
-      ))
+        );
+      })
     ).subscribe({
       next: prepared => {
         const expanded = prepared.flatMap((item: any) =>
