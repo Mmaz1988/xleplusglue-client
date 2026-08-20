@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { of } from 'rxjs';
 
 import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
@@ -9,14 +10,21 @@ import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.ser
 describe('ChatComponent', () => {
   let component: ChatComponent;
   let fixture: ComponentFixture<ChatComponent>;
+  let dataServiceSpy: jasmine.SpyObj<{
+    ligerSequence: any; gswbDeduce: any; gswbMergeSequenceSemantics: any; callVampire: any;
+  }>;
+  let reasoningPipelineSpy: jasmine.SpyObj<{
+    prepareReasoningChecks: any; prepareReasoningChecksSequentially: any;
+  }>;
 
   beforeEach(() => {
-    const dataServiceSpy = jasmine.createSpyObj('DataService', [
+    dataServiceSpy = jasmine.createSpyObj('DataService', [
       'ligerSequence',
+      'gswbDeduce',
       'gswbMergeSequenceSemantics',
       'callVampire'
     ]);
-    const reasoningPipelineSpy = jasmine.createSpyObj('ReasoningPipelineService', [
+    reasoningPipelineSpy = jasmine.createSpyObj('ReasoningPipelineService', [
       'prepareReasoningChecks',
       'prepareReasoningChecksSequentially'
     ]);
@@ -181,6 +189,94 @@ describe('ChatComponent', () => {
 
       expect(result.length).toBe(1);
       expect(result[0].tptp).toBe('fof(seq_6_1, axiom, $true).');
+    });
+  });
+
+  describe('finishLfgxdrtPreparation (Stage B: chat on DocumentBuilderService)', () => {
+    const structure = { constraints: [], annotations: [], choiceSpace: {} };
+
+    /** LiGER's merged-sequence response, carrying the rebased current-part meaning
+     *  constructors the derive step needs. */
+    const ligerRebaseResponse = () => ({
+      solutions: [{
+        structureJson: structure,
+        sequenceParts: [
+          { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
+          { sourceIndex: 1, solutionKey: 'part-1', meaningConstructors: 'mc-current' },
+        ],
+        sequenceAnalysis: {
+          id: 'seq-1', text: 'a man saw a man he saw him',
+          sentences: [{ id: 'sentence-1' }, { id: 'sentence-3' }],
+          syntax: [{ synId: 'seq-1', structure, graph: { graphElements: [] } }],
+          semantics: [], synSemMapping: {},
+        },
+      }],
+    });
+
+    beforeEach(() => {
+      component.gswbPreferences = { gswbPreferences: { resolveDrs: true } } as any;
+      component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
+      component.ruleString = 'rules';
+      component.activeIndices = [];
+    });
+
+    it('merges syntax and derives semantics once per distinct prior element, not once per (prior x reading) pairing', () => {
+      // Two accepted READINGS of the SAME prior element (an ambiguous premise) --
+      // this is exactly the shape that used to trigger a second, redundant
+      // ligerSequence/gswbDeduce round trip per reading before Stage B.
+      component.context = [
+        {
+          original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
+          semantic: 'P1', semanticGraph: { constraints: [], annotations: [], choiceSpace: {} },
+          syntax: structure,
+          semanticAnalysis: { syntacticOrigin: 'syn-1a', semId: 'sem-1a', semString: 'P1', semType: 'lfgxdrt' },
+          elementId: 'sentence-1',
+        },
+        {
+          original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
+          semantic: 'P2', semanticGraph: { constraints: [], annotations: [], choiceSpace: {} },
+          syntax: structure,
+          semanticAnalysis: { syntacticOrigin: 'syn-1b', semId: 'sem-1b', semString: 'P2', semType: 'lfgxdrt' },
+          elementId: 'sentence-1',
+        },
+      ] as any;
+
+      dataServiceSpy.ligerSequence.and.returnValue(of(ligerRebaseResponse()));
+      dataServiceSpy.gswbDeduce.and.returnValue(of({
+        solutions: [{ id: 'derived-1', solution: 'Q', semantic: 'Q', graph: structure, solutionKey: 'derived-1' }],
+      }));
+      dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
+        id: request.parentSolutionId, solution: 'merged', solutionKey: request.parentSolutionId,
+        graph: structure, semantic: 'merged',
+      }));
+      let preparedCallCount = 0;
+      reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) => {
+        preparedCallCount++;
+        return of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] });
+      });
+
+      (component as any).finishLfgxdrtPreparation('he saw him', [
+        { id: 'cand-1', semantic: 'Q', solution: 'Q', graph: structure, solutionKey: 'part-1' },
+      ], false, []);
+
+      // One prior element, one syntax variant of the new sentence -> one group -> one
+      // syntax merge and one derive call, reused across both prior readings.
+      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.gswbDeduce.calls.mostRecent().args[0].premises).toBe('mc-current');
+      // But every (prior-reading x derived-reading) pair still gets its own semantic
+      // merge and its own reasoning-check preparation -- nothing is discarded just
+      // because the group was shared.
+      expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
+      expect(preparedCallCount).toBe(2);
+
+      const premiseSemantics = reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs()
+        .map(([request]: any[]) => request.premiseSemantic).sort();
+      expect(premiseSemantics).toEqual(['P1', 'P2']);
+      reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs().forEach(([request]: any[]) => {
+        expect(request.prune).toBeFalse();
+        expect(request.sequenceStructure).toEqual(structure);
+      });
     });
   });
 

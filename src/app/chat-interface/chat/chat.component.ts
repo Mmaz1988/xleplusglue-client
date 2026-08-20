@@ -9,10 +9,10 @@ import {
   GswbRequest,
   GswbSolution,
   ReasoningUpdate,
-  GswbSemanticMergePart,
   LigerStructure,
   LigerWebGraph,
   SemanticAnalysis,
+  SentenceAnalysis,
   SequenceAnalysis,
   SyntacticAnalysis,
   vampireRequest,
@@ -21,7 +21,7 @@ import {
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
-import { catchError, concatMap, forkJoin, from, map, mergeMap, of, switchMap, toArray } from 'rxjs';
+import { concatMap, from, map, switchMap, toArray } from 'rxjs';
 import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
 import {
   compositeAnalysisId,
@@ -32,7 +32,11 @@ import {
   validateReasoningUpdate
 } from '../../analysis-model';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
-import { DocumentBuilderService } from '../../document-builder/document-builder.service';
+import {
+  DocumentBuilderService,
+  SequenceMergeCurrentSolution,
+  SequenceMergePreviousContext,
+} from '../../document-builder/document-builder.service';
 
 
 @Component({
@@ -376,7 +380,6 @@ export class ChatComponent {
       userMessage,
       candidates.map(candidate => ({ ...candidate.solution, syntax: candidate.syntax })),
       pruneContext,
-      ligerSolution.structureJson,
       ligerSolutions
     );
   }
@@ -385,7 +388,6 @@ export class ChatComponent {
     userMessage: string,
     solutions: any[],
     pruneContext: boolean,
-    syntax: any,
     ligerSolutions: any[] = []
   ): void {
     const semanticSolutions = solutions.filter(solution =>
@@ -398,161 +400,155 @@ export class ChatComponent {
 
     const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
 
-    let contextIndices = this.activeIndices.length
+    const contextIndices = this.activeIndices.length
       ? this.activeIndices.filter(index => index >= 0 && index < this.context.length)
       : this.context.map((_, index) => index);
-    let candidateSolutions = semanticSolutions;
 
-    // Pruning = pick one solution and only reason over it. The reduction happens here,
-    // before any LiGER/GSWB/Vampire work is done, not after computing everything and
-    // discarding the rest -- picking "first" is provisional, refine later.
-    if (pruneContext) {
-      contextIndices = contextIndices.slice(0, 1);
-      candidateSolutions = candidateSolutions.slice(0, 1);
-    }
-
-    const newSentenceId = this.registerSentence(userMessage, candidateSolutions, ligerSolutions);
+    // No pruning here (2026-08-20): the full cross product always runs through the merge
+    // below, exactly like glue-vis's own merge never discards an alternative. Discarding
+    // down to one candidate happens exactly once, downstream, inside
+    // ReasoningPipelineService.prepareReasoningChecks (`prune: pruneContext` below) --
+    // less efficient when pruning, but keeps this method's own shape independent of
+    // whether the turn happens to be pruned.
+    const { id: newSentenceId, perSolution } = this.registerSentence(userMessage, semanticSolutions, ligerSolutions);
     console.info('[Chat] Preparing NLI reasoning', {
       sentence: userMessage,
       newSentenceId,
       contextIndices,
-      candidateCount: candidateSolutions.length,
+      candidateCount: semanticSolutions.length,
       pruneContext,
     });
 
-    // Every (contextIndex, candidateSolution) pair used to be processed as an independently
-    // subscribed, fully concurrent "bundle" (pushed into an array and joined with
-    // forkJoin(bundles)). With more than one accepted context reading (e.g. an ambiguous
-    // premise like "a man saw a man"), that ran two /apply_rules_xle_sequence calls (and
-    // everything downstream) at the same time. In testing, one of the two concurrent
-    // sequence$ HTTP calls would reliably get a real 200 response at the network level
-    // (confirmed via the Performance API) but its Angular HttpClient Observable would never
-    // emit next/error/complete to its subscriber -- forkJoin(bundles) then waits forever on
-    // that pair, the loading spinner never clears, and Vampire is never called. This
-    // reproduced with a live-verified, isolated case and is not specific to request volume.
-    // Processing pairs sequentially via concatMap avoids ever having two of these chains
-    // in flight at once, sidestepping the issue entirely.
-    interface PairSpec {
-      contextIndex: number;
-      premiseContext: context;
-      priorElementId: string;
-      contextSyntax: any;
-      hypothesisSyntax: any;
-      solution: any;
-      hypothesisIndex: number;
-      pairId: string;
-    }
-    const pairSpecs: PairSpec[] = [];
-    contextIndices.forEach(contextIndex => {
+    const current: SequenceMergeCurrentSolution[] = semanticSolutions.map((solution, index) => ({
+      solution,
+      semantic: perSolution[index].semantics[0],
+      sentenceAnalysis: perSolution[index],
+    }));
+
+    // Same shape as glue-vis's own merge input: one wrapper element per accepted prior
+    // reading, carrying just enough (id/text/syntax/semantics) for mergeSequence's syntax
+    // grouping and semantic-merge parts -- chat's prior is always this single opaque unit
+    // (its whole accumulated discourse text/structure), never a document element that
+    // needs decomposing into individual registered sentences the way glue-vis's is.
+    // Keyed by the wrapper element OBJECT, not by elementId: an ambiguous premise
+    // contributes several context entries that all share one elementId (they are
+    // several READINGS of the same prior element), so a string-keyed map would collapse
+    // them and silently pair the wrong premise semantics with a pair built from a
+    // different reading -- exactly the class of bug this whole rewrite exists to fix.
+    // Each contextIndex gets its own wrapper object instance below (never reused), and
+    // mergeSequence threads that same reference back as `pair.previousElement`, so
+    // identity is a safe, exact key here.
+    const previousContextByElement = new Map<SentenceAnalysis | SequenceAnalysis, { premiseContext: context; semanticAnalysis: SemanticAnalysis }>();
+    const previousContexts: SequenceMergePreviousContext[] = contextIndices.map(contextIndex => {
       const premiseContext = this.context[contextIndex];
-      const contextSyntax = premiseContext?.syntax;
-      const priorElementId = premiseContext?.elementId;
-      if (!contextSyntax || !priorElementId) {
+      if (!premiseContext?.syntax || !premiseContext?.elementId) {
         throw new Error('Accepted context syntax and document element id are required for sequence merging.');
       }
-      candidateSolutions.forEach((solution, hypothesisIndex) => {
-        const pairId = `pxq-${contextIndex + 1}-${solution.id || hypothesisIndex + 1}`;
-        // The new sentence's own parsed structure, paired to this semantic reading by
-        // solutionKey -- supplied to the sequence call as the second operand.
-        const hypothesisSyntax = ligerSolutions
-          .find(item => item.solutionKey === solution.solutionKey)?.structureJson ?? syntax;
-        pairSpecs.push({
-          contextIndex, premiseContext, priorElementId, contextSyntax,
-          hypothesisSyntax, solution, hypothesisIndex, pairId,
-        });
-      });
+      // contextFromLfgxdrtChecks sets this from the merge response's own
+      // semanticAnalysis with no fallback (chat.component.ts, turn 2+ path) -- GSWB's
+      // real merge endpoint always sets it, but degrade rather than throw on the
+      // off-chance it doesn't, same tolerance acceptInitialLfgxdrtContext already has
+      // for turn 1.
+      const semanticAnalysis: SemanticAnalysis = premiseContext.semanticAnalysis ?? {
+        syntacticOrigin: premiseContext.elementId,
+        semId: `${premiseContext.elementId}-sem`,
+        semString: premiseContext.semantic || '',
+        graph: premiseContext.semanticGraph,
+        semType: 'lfgxdrt',
+      };
+      const element: SentenceAnalysis = {
+        id: premiseContext.elementId,
+        text: premiseContext.original,
+        // .graph is display-only elsewhere and unused by mergeSequence's rebase path
+        // (only .structure feeds the syntax merge) -- an empty placeholder, not a cast
+        // of the wrong type into this slot.
+        syntax: [{
+          synId: `${premiseContext.elementId}-syn`,
+          structure: premiseContext.syntax,
+          graph: { graphElements: [] },
+        }],
+        semantics: [semanticAnalysis],
+        synSemMapping: {},
+      };
+      previousContextByElement.set(element, { premiseContext, semanticAnalysis });
+      return { semantic: semanticAnalysis, element };
     });
 
-    const processPair = ({ contextIndex, premiseContext, priorElementId, contextSyntax,
-                           hypothesisSyntax, solution, pairId }: PairSpec) => {
-      // Sequence + sentence: both operands are supplied as already-parsed structures, so
-      // LiGER skips XLE entirely and SequenceGraphAssembler merges them directly, rebasing
-      // the new sentence's SYN-ID/SRC ids onto the sequence's numbering.
-      //
-      // This must supply a structure for BOTH slots. The endpoint only takes the
-      // supplied-structures path when parsedSentences.size() == sentences.size(); passing
-      // just the premise's structure silently fell through to re-parsing, and since the
-      // premise text is the whole accumulated discourse ("a man saw a man he saw him"),
-      // XLE could not parse it as one sentence and contributed nothing -- turn 3's syntax
-      // was only the new sentence, leaving earlier pronouns with no anchor to be
-      // re-resolved against.
-      //
-      // Reusing the new sentence's own parse here is safe now that the assembler numbers
-      // part provenance positionally. It previously kept whatever SOLUTION-KEY a supplied
-      // structure arrived with -- always S0 for an independent parse -- so it collided
-      // with the premise's own S0 and the pronoun-binding rules could not tell the parts
-      // apart. Verified equivalent to merging all sentences at once: same constraint
-      // count, same SYN-ID count, same [S0, S1, S2] keys.
-      const sequence$ = this.dataService.ligerSequence({
-        sentences: [premiseContext.original, userMessage],
-        sentenceIds: [`${pairId}-sentence-1`, `${pairId}-sentence-2`],
+    // Every (contextIndex, syntax-variant) pairing used to be processed as an
+    // independently subscribed, fully concurrent "bundle" (pushed into an array and
+    // joined with forkJoin(bundles)). With more than one accepted context reading (e.g.
+    // an ambiguous premise like "a man saw a man"), that ran two /apply_rules_xle_sequence
+    // calls (and everything downstream) at the same time. In testing, one of the two
+    // concurrent sequence$ HTTP calls would reliably get a real 200 response at the
+    // network level (confirmed via the Performance API) but its Angular HttpClient
+    // Observable would never emit next/error/complete to its subscriber -- forkJoin
+    // (bundles) then waits forever on that pair, the loading spinner never clears, and
+    // Vampire is never called. This reproduced with a live-verified, isolated case and is
+    // not specific to request volume. mergeSequence's own concatMap-based grouping avoids
+    // ever having two of these chains in flight at once, sidestepping the issue entirely
+    // -- and additionally merges syntax once per distinct (prior x syntax-variant) pairing
+    // instead of once per (prior x reading) pairing, which is what actually lost reading
+    // identity across pairings before (see docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md).
+    this.documentBuilder.mergeSequence({
+      current,
+      previousContexts,
+      knownSentences: this.chatDocument.sentences,
+      resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
+      rebase: {
         ruleString: this.ruleString,
         logicType: typed ? 'tff' : 'fof',
-        parsedSentences: [[contextSyntax], [hypothesisSyntax]]
-      });
-      return sequence$.pipe(
-        switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
-          map(currentSolutions => ({
-            currentSolutions,
-            syntax: sequence?.solutions?.[0]?.structureJson ?? syntax
-          }))
-        )),
-        mergeMap(({ currentSolutions, syntax: mergedSyntax }) => from(currentSolutions).pipe(
-          switchMap(currentSolution => this.dataService.gswbMergeSequenceSemantics({
-            parts: [
-              this.semanticPart(premiseContext.semanticAnalysis, premiseContext.semantic, priorElementId),
-              this.semanticPart(currentSolution.semanticAnalysis ?? solution.semanticAnalysis,
-                currentSolution.semantic, newSentenceId)
-            ],
-            parentSolutionId: pairId,
-            solutionKey: currentSolution.solutionKey,
-            mcSetId: currentSolution.mcSetId,
-            resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs
-          }).pipe(map(merged => ({ merged, currentSolution })))),
-          switchMap(({ merged, currentSolution }) => {
-            // Chat is the degenerate 1+1 case of the premise/conclusion shape: one prior
-            // element, one new sentence. The semantic ids are the readings actually used
-            // for this pair, and must be readings the document already registered --
-            // validateReasoningUpdate checks that positionally.
-            const premiseSemanticIds = [premiseContext.semanticAnalysis?.semId ?? ''];
-            const hypothesisSemanticIds = [
-              (currentSolution.semanticAnalysis ?? solution.semanticAnalysis)?.semId ?? ''];
-            const updateId = reasoningUpdateId([priorElementId], [newSentenceId]);
-            return this.reasoningPipeline.prepareReasoningChecks({
-              scopeId: pairId,
-              scope: { updateId, premiseSemanticIds, hypothesisSemanticIds },
-              merged,
-              // The prior: this turn's accepted context entry, which for turn n>1 is
-              // already the merged semantics of every earlier turn. That is exactly the
-              // "A for A+B, A+B for A+B+C" reading of the context axiom.
-              premiseSemantic: premiseContext.semantic,
-              sequenceStructure: mergedSyntax,
-              premiseAsts: [premiseContext.semanticGraph],
-              hypothesisAsts: [currentSolution.graph],
-              typed,
-              prune: pruneContext
-            }).pipe(map(pair => ({
-              contextIndex,
-              priorElementId,
-              newSentenceId,
-              pairId,
-              updateId,
-              premiseSemanticIds,
-              hypothesisSemanticIds,
-              checks: pair.assignments,
-              failures: pair.failures,
-              degradations: pair.degradations,
-              merged,
-              syntax: mergedSyntax
-            })));
-          })
-        ))
-      );
-    };
-
-    from(pairSpecs).pipe(
-      concatMap(spec => processPair(spec)),
-      toArray()
+        gswbPreferences: this.gswbPreferences.gswbPreferences,
+      },
+    }).pipe(
+      switchMap(result => from(result.pairs).pipe(
+        concatMap(pair => {
+          const priorElementId = pair.previousElement.id;
+          const previousEntry = previousContextByElement.get(pair.previousElement);
+          if (!previousEntry) {
+            throw new Error(`Merged pair references unknown prior element ${priorElementId}.`);
+          }
+          const { premiseContext, semanticAnalysis: premiseSemanticAnalysis } = previousEntry;
+          const pairId = `pxq-${priorElementId}-${pair.currentSemantic?.semId ?? newSentenceId}`;
+          // Chat is the degenerate 1+1 case of the premise/conclusion shape: one prior
+          // element, one new sentence. The semantic ids are the readings actually used
+          // for this pair, and must be readings the document already registered --
+          // validateReasoningUpdate checks that positionally.
+          const premiseSemanticIds = [premiseSemanticAnalysis.semId];
+          const hypothesisSemanticIds = [pair.currentSemantic?.semId ?? ''];
+          const updateId = reasoningUpdateId([priorElementId], [newSentenceId]);
+          if (!pair.sequenceStructure) {
+            throw new Error(`Merged pair for ${priorElementId} has no sequence structure to reason over.`);
+          }
+          return this.reasoningPipeline.prepareReasoningChecks({
+            scopeId: pairId,
+            scope: { updateId, premiseSemanticIds, hypothesisSemanticIds },
+            merged: pair.merged,
+            // The prior: this turn's accepted context entry, which for turn n>1 is
+            // already the merged semantics of every earlier turn. That is exactly the
+            // "A for A+B, A+B for A+B+C" reading of the context axiom.
+            premiseSemantic: premiseContext.semantic,
+            sequenceStructure: pair.sequenceStructure,
+            premiseAsts: [premiseContext.semanticGraph],
+            hypothesisAsts: [pair.currentSemantic?.graph],
+            typed,
+            prune: pruneContext
+          }).pipe(map(preparedPair => ({
+            priorElementId,
+            newSentenceId,
+            pairId,
+            updateId,
+            premiseSemanticIds,
+            hypothesisSemanticIds,
+            checks: preparedPair.assignments,
+            failures: preparedPair.failures,
+            degradations: preparedPair.degradations,
+            merged: pair.merged,
+            syntax: pair.sequenceStructure,
+            previousOriginal: premiseContext.original,
+          })));
+        }),
+        toArray()
+      ))
     ).subscribe({
       next: prepared => {
         const expanded = prepared.flatMap((item: any) =>
@@ -750,18 +746,6 @@ export class ChatComponent {
     });
   }
 
-  private semanticPart(semanticAnalysis: SemanticAnalysis | undefined, fallbackSemantic: string,
-                        sentenceId: string): GswbSemanticMergePart {
-    return {
-      id: semanticAnalysis?.semId,
-      sentenceId,
-      solutionId: semanticAnalysis?.semId,
-      syntacticOrigin: semanticAnalysis?.syntacticOrigin,
-      semantic: semanticAnalysis?.semString || fallbackSemantic || '',
-      graph: semanticAnalysis?.graph,
-    };
-  }
-
   private calculateSequencePartSemantics(sequence: any): import('rxjs').Observable<any[]> {
     const sequenceSolution = sequence?.solutions?.[0];
     const parts = Array.isArray(sequenceSolution?.sequenceParts)
@@ -835,7 +819,7 @@ export class ChatComponent {
       return;
     }
 
-    const sentenceId = this.registerSentence(userMessage, solutions, ligerSolutions);
+    const { id: sentenceId } = this.registerSentence(userMessage, solutions, ligerSolutions);
     contexts.forEach(entry => entry.elementId = sentenceId);
 
     this.context = contexts;
@@ -963,7 +947,6 @@ export class ChatComponent {
     pruneContext: boolean,
     verdictFor: (item: any, index: number) => any = (_item, index) => checks[index]
   ): context[] {
-    const previous = this.context;
     // One entry per distinct reading, not per surviving assignment. A turn's rule
     // branches and PCDRS mappings are a DiscourseUpdate *of that turn*: they annotate one
     // merged reading, they are not new readings. What carries forward is syntax +
@@ -991,7 +974,7 @@ export class ChatComponent {
       const check = verdictFor(item, index);
       if (!check?.consistent || !check?.informative || !item.merged?.semantic) return;
 
-      const priorElementId = item.priorElementId ?? previous[item.contextIndex]?.elementId;
+      const priorElementId = item.priorElementId;
       if (!priorElementId || !item.newSentenceId) return;
 
       const sequenceId = compositeAnalysisId([priorElementId, item.newSentenceId]);
@@ -1012,7 +995,7 @@ export class ChatComponent {
       ].join('::');
       if (!readingKeys.has(readingKey)) {
         const entry = {
-          original: `${previous[item.contextIndex]?.original ?? ''} ${userMessage}`.trim(),
+          original: `${item.previousOriginal ?? ''} ${userMessage}`.trim(),
           prolog_drs: item.merged.semantic,
           prolog_fol: '',
           // The whole merged sequence, not the branch's context axiom: this entry becomes
@@ -1114,23 +1097,36 @@ export class ChatComponent {
 
   /** Registers the just-parsed message as a new Sentence in the chat's document (box Q's
    *  source), independent of whether any downstream NLI check accepts it -- a Sentence
-   *  exists as soon as it's parsed, regardless of the eventual reasoning verdict. */
-  private registerSentence(userMessage: string, solutions: any[], ligerSolutions: any[]): string {
+   *  exists as soon as it's parsed, regardless of the eventual reasoning verdict.
+   *
+   *  Also returns one scoped `SentenceAnalysis` view per input solution, positionally
+   *  aligned with `solutions` -- each sharing the sentence's id but narrowed to just that
+   *  solution's own syntax variant, so `mergeSequence`'s grouping-by-syntax-id can tell a
+   *  sentence's own syntax variants apart (mirrors how glue-vis's `sentenceAnalysisFor`
+   *  resolves a per-solution-scoped copy rather than the full multi-variant registry
+   *  entry). */
+  private registerSentence(
+    userMessage: string, solutions: any[], ligerSolutions: any[]
+  ): { id: string; perSolution: SentenceAnalysis[] } {
     const id = `sentence-${this.chatDocument.sentences.length + 1}`;
     const syntaxByKey = new Map<string, SyntacticAnalysis>();
     const semantics: SemanticAnalysis[] = [];
     const synSemMapping: Record<string, string[]> = {};
+    const syntaxBySolution: SyntacticAnalysis[] = [];
+    const semanticBySolution: SemanticAnalysis[] = [];
 
     solutions.forEach(solution => {
       const synId = solution.solutionKey || solution.proofId || `${id}-syn`;
-      if (!syntaxByKey.has(synId)) {
+      let syntax = syntaxByKey.get(synId);
+      if (!syntax) {
         const ligerMatch = ligerSolutions.find(item => item.solutionKey === synId);
-        syntaxByKey.set(synId, {
+        syntax = {
           synId,
           structure: solution.syntax ?? ligerMatch?.structureJson,
           graph: ligerMatch?.graph ?? solution.syntax,
           meaningConstructors: ligerMatch?.meaningConstructors,
-        });
+        };
+        syntaxByKey.set(synId, syntax);
       }
       const semanticAnalysis: SemanticAnalysis = solution.semanticAnalysis ?? {
         syntacticOrigin: synId,
@@ -1141,6 +1137,8 @@ export class ChatComponent {
       };
       semantics.push(semanticAnalysis);
       synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semanticAnalysis.semId]));
+      syntaxBySolution.push(syntax);
+      semanticBySolution.push(semanticAnalysis);
     });
 
     this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [{
@@ -1151,7 +1149,16 @@ export class ChatComponent {
       synSemMapping,
     }]);
     this.emitChatDocument();
-    return id;
+
+    const perSolution: SentenceAnalysis[] = solutions.map((_, index) => ({
+      id,
+      text: userMessage,
+      syntax: [syntaxBySolution[index]],
+      semantics: [semanticBySolution[index]],
+      synSemMapping: { [syntaxBySolution[index].synId]: [semanticBySolution[index].semId] },
+    }));
+
+    return { id, perSolution };
   }
 
   /** Builds the Sequence from *every* surviving context, not just the first.
