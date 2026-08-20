@@ -418,19 +418,17 @@ export class ChatComponent {
       pruneContext,
     });
 
-    // One wrapper element per accepted prior
-    // reading, carrying just enough (id/text/syntax/semantics) for mergeSequence's syntax
-    // grouping and semantic-merge parts -- chat's prior is always this single opaque unit
-    // (its whole accumulated discourse text/structure), never a document element that
-    // needs decomposing into individual registered sentences the way glue-vis's is.
-    // Keyed by the wrapper element OBJECT, not by elementId: an ambiguous premise
+    // One wrapper element per accepted prior reading, carrying just enough
+    // (id/text/syntax/semantics) for mergeSequence's syntax grouping and semantic-merge
+    // parts. Keyed by the wrapper element OBJECT, not by elementId: an ambiguous premise
     // contributes several context entries that all share one elementId (they are
     // several READINGS of the same prior element), so a string-keyed map would collapse
     // them and silently pair the wrong premise semantics with a pair built from a
     // different reading -- exactly the class of bug this whole rewrite exists to fix.
-    // Each contextIndex gets its own wrapper object instance below (never reused), and
-    // mergeSequence threads that same reference back as `pair.previousElement`, so
-    // identity is a safe, exact key here.
+    // Each contextIndex gets its own wrapper object instance below (never reused, even
+    // when it clones an already-registered Sequence -- see the `registeredSequence`
+    // branch), and mergeSequence threads that same reference back as
+    // `pair.previousElement`, so identity is a safe, exact key here.
     const previousContextByElement = new Map<SentenceAnalysis | SequenceAnalysis, { premiseContext: context; semanticAnalysis: SemanticAnalysis }>();
     const previousContexts: SequenceMergePreviousContext[] = contextIndices.map(contextIndex => {
       const premiseContext = this.context[contextIndex];
@@ -449,20 +447,40 @@ export class ChatComponent {
         graph: premiseContext.semanticGraph,
         semType: 'lfgxdrt',
       };
-      const element: SentenceAnalysis = {
-        id: premiseContext.elementId,
-        text: premiseContext.original,
-        // .graph is display-only elsewhere and unused by mergeSequence's syntax merge
-        // (only .structure feeds it) -- an empty placeholder, not a cast of the wrong
-        // type into this slot.
-        syntax: [{
-          synId: `${premiseContext.elementId}-syn`,
-          structure: premiseContext.syntax,
-          graph: { graphElements: [] },
-        }],
-        semantics: [semanticAnalysis],
-        synSemMapping: {},
-      };
+      // Turn 3+: the prior context is a multi-sentence discourse already registered as a
+      // real Sequence (upsertSequenceFromContexts registers it under exactly this id, with
+      // correct per-sentence sentenceIds -- see chat.component.ts's own upsertSequenceFromContexts).
+      // Use (a clone of) that registered element, NOT a synthetic single-sentence wrapper
+      // built from the concatenated discourse text, so mergeSequence/deriveAndMergeForContext's
+      // `'sentenceIds' in previousElement` branch decomposes it into its real constituent
+      // sentences before calling ligerSequence -- exactly like glue-vis's addSentence()
+      // always sends genuine per-sentence texts. Feeding the concatenated text as if it
+      // were one sentence made LiGER parse an ungrammatical blob, breaking the SRC/SYN-ID
+      // link earlier pronouns need in order to re-resolve each turn (confirmed live via
+      // misc/current/chat-document-pronoun-bug3.json: turn 3's PCDRS mapping only ever
+      // bound the newest sentence's own pronoun, never the prior turn's -- GSWB's collapse
+      // then threw "Pronoun requires an anaphora mapping" for every check still containing
+      // the older pronoun). Cloned (not the registry object itself) so two ambiguous
+      // readings sharing one elementId still get distinct object identities for the Map
+      // key above -- reusing the registry object verbatim would silently collapse them,
+      // the exact bug the object-identity keying exists to prevent.
+      const registeredSequence = this.chatDocument.sequences.find(sequence => sequence.id === premiseContext.elementId);
+      const element: SentenceAnalysis | SequenceAnalysis = registeredSequence
+        ? { ...registeredSequence }
+        : {
+          id: premiseContext.elementId,
+          text: premiseContext.original,
+          // .graph is display-only elsewhere and unused by mergeSequence's syntax merge
+          // (only .structure feeds it) -- an empty placeholder, not a cast of the wrong
+          // type into this slot.
+          syntax: [{
+            synId: `${premiseContext.elementId}-syn`,
+            structure: premiseContext.syntax,
+            graph: { graphElements: [] },
+          }],
+          semantics: [semanticAnalysis],
+          synSemMapping: {},
+        };
       previousContextByElement.set(element, { premiseContext, semanticAnalysis });
       return { semantic: semanticAnalysis, element };
     });
@@ -995,7 +1013,22 @@ export class ChatComponent {
     // branch: turn 3 sent 24 x 36 = 864 bundles where 2 x 36 = 72 was the branch count,
     // and turn 4 would have multiplied by 72 again.
     const next: context[] = [];
+    // Every distinct reading that actually produced a merged result, regardless of
+    // Vampire's verdict -- this is what gets registered as a Sequence/DiscourseUpdate
+    // (see the loop below). Kept separate from `next` (which is filtered to
+    // consistent&&informative readings, for carrying the discourse forward) because a
+    // ReasoningUpdate's `sourceElementId` must resolve to a registered Sequence even when
+    // the turn concluded "consistent but not informative" -- a proven entailment, exactly
+    // what the modus-ponens benchmark's own 3rd turn tests -- or inconsistent. Before this
+    // split, such a turn's sequence was never registered (only informative readings fed
+    // `upsertSequenceFromContexts`), so `validateReasoningUpdate` rejected the update
+    // outright with "reasoning update rejected by document invariants" (confirmed live:
+    // Vampire correctly returned consistent:true/informative:false for "A Scandinavian won
+    // a Nobel prize" after its two entailing premises, but the update pointing at that
+    // reasoning was silently dropped because nothing had registered what it pointed at).
+    const registeredEntries: context[] = [];
     const readingKeys = new Map<string, context>();
+    const acceptedReadingKeys = new Set<string>();
     let acceptedAssignments = 0;
     interface DiscourseGroup {
       /** semanticOrigin -> discourseId. Accumulated per branch rather than assumed to
@@ -1011,7 +1044,7 @@ export class ChatComponent {
 
     prepared.forEach((item, index) => {
       const check = verdictFor(item, index);
-      if (!check?.consistent || !check?.informative || !item.merged?.semantic) return;
+      if (!item.merged?.semantic) return;
 
       const priorElementId = item.priorElementId;
       if (!priorElementId || !item.newSentenceId) return;
@@ -1019,7 +1052,6 @@ export class ChatComponent {
       const sequenceId = compositeAnalysisId([priorElementId, item.newSentenceId]);
       const semId = item.merged.id || sequenceId;
 
-      acceptedAssignments++;
       // The same identity upsertSequenceFromContexts() dedupes on with its semanticsById
       // and syntaxById maps, so this list and the document's SequenceAnalysis agree by
       // construction instead of by coincidence. Every assignment of one pair carries the
@@ -1032,7 +1064,15 @@ export class ChatComponent {
         item.merged.semanticAnalysis?.syntacticOrigin ?? '',
         item.merged.semanticAnalysis?.semId ?? semId,
       ].join('::');
-      if (!readingKeys.has(readingKey)) {
+      const isAccepted = !!(check?.consistent && check?.informative);
+      const existingEntry = readingKeys.get(readingKey);
+      // The first ACCEPTED branch supplies the entry when one exists for this reading;
+      // a not-yet-accepted branch registers a fallback entry only so a reading with no
+      // accepted branch at all (e.g. a proven entailment, informative:false throughout)
+      // still has something for upsertSequenceFromContexts to register below -- see
+      // `registeredEntries`. Once an accepted branch has supplied the entry, later
+      // branches (accepted or not) never overwrite it.
+      if (!existingEntry || (isAccepted && !acceptedReadingKeys.has(readingKey))) {
         const entry = {
           original: `${item.previousOriginal ?? ''} ${userMessage}`.trim(),
           prolog_drs: item.merged.semantic,
@@ -1051,7 +1091,31 @@ export class ChatComponent {
           elementId: sequenceId,
         } as context;
         readingKeys.set(readingKey, entry);
-        next.push(entry);
+        if (existingEntry) {
+          const existingIndex = registeredEntries.indexOf(existingEntry);
+          if (existingIndex !== -1) {
+            registeredEntries[existingIndex] = entry;
+          } else {
+            registeredEntries.push(entry);
+          }
+        } else {
+          registeredEntries.push(entry);
+        }
+        if (isAccepted) {
+          acceptedReadingKeys.add(readingKey);
+        }
+      }
+
+      // Carrying a reading forward as the next turn's context is still gated on the
+      // verdict -- a proven entailment or an inconsistent branch legitimately shouldn't
+      // extend the discourse -- but that decision no longer controls whether the
+      // reasoning that already ran gets registered (see `registeredEntries` above).
+      if (isAccepted) {
+        acceptedAssignments++;
+        const entry = readingKeys.get(readingKey)!;
+        if (!next.includes(entry)) {
+          next.push(entry);
+        }
       }
 
       if (!groups.has(sequenceId)) {
@@ -1112,7 +1176,7 @@ export class ChatComponent {
     });
 
     const bySequence = new Map<string, context[]>();
-    next.forEach(entry => {
+    registeredEntries.forEach(entry => {
       const list = bySequence.get(entry.elementId!) ?? [];
       list.push(entry);
       bySequence.set(entry.elementId!, list);
