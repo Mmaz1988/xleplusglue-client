@@ -37,6 +37,7 @@ import {
   LigerSequenceRequest,
   vampireMultipleRequest, vampireMultipleResponse,
   VampireSessionSummary,
+  VampireProgress,
   RegressionSessionSummary,
   RegressionSessionDocument,
   XlePlusGlueDocument
@@ -191,6 +192,10 @@ callVampire(vampireRequest: vampireRequest){
 
   requestVampireCancel(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
     return this.http.post(`${this.vampirepage}/vampire_progress/${sessionKey}/cancel`, {});
+  }
+
+  getVampireProgress(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireProgress> {
+    return this.http.get<VampireProgress>(`${this.vampirepage}/vampire_progress/${sessionKey}`);
   }
 
   listRegressionSessions(): Observable<RegressionSessionSummary[]> {

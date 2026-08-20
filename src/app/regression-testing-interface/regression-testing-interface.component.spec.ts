@@ -28,7 +28,8 @@ describe('RegressionTestingInterfaceComponent', () => {
       'getLastSessionSummary',
       'getLastGswbSession',
       'getLastGswbSessionSummary',
-      'gswbReasoningChecks'
+      'gswbReasoningChecks',
+      'getVampireProgress'
     ]);
     dataServiceSpy.listRegressionSessions.and.returnValue(of([]));
     dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
@@ -38,6 +39,11 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
     dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
     dataServiceSpy.getLastGswbSessionSummary.and.returnValue(of({} as any));
+    dataServiceSpy.getVampireProgress.and.returnValue(of({
+      sessionKey: 'k', runId: null, state: 'idle', cancelRequested: false, activeItemId: null,
+      completedItemIds: [], changedItemIds: [], itemResults: {}, itemCount: 0, proofCount: 0,
+      totalItemCount: 0,
+    } as any));
     dataServiceSpy.gswbReasoningChecks.and.returnValue(of({ checks: {} }));
     // A three-sentence sequence: one part per sentence, each with its own MCs.
     dataServiceSpy.ligerSequence.and.returnValue(of({
@@ -503,14 +509,22 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.processingTimingDetails).toContain('Proofs: 1 total');
   });
 
-  it('tracks rerun progress against the current unprocessed batch', () => {
+  it('drives progress from the live vampire_progress record, not from last_session results', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.getVampireProgress.and.returnValue(of({
+      sessionKey: 'k', runId: null, state: 'running', cancelRequested: false, activeItemId: 'n1',
+      completedItemIds: ['n1'], changedItemIds: [], itemResults: {}, itemCount: 2, proofCount: 2,
+      totalItemCount: 5,
+    } as any));
+
     (component as any).startVampireProgressIndicator(5);
     expect(component.vampireProgressItemCount).toBe(0);
 
-    (component as any).updateVampireProgressIndicator({ item_count: 2, proof_count: 2 });
+    (component as any).pollVampireProgress((component as any).vampireRunToken);
 
     expect(component.vampireProgressItemCount).toBe(2);
     expect(component.vampireProgressPercent).toBe(40);
+    expect(dataServiceSpy.getVampireProgress).toHaveBeenCalled();
   });
 
   it('describes the completion message using the absolute processed count', () => {
@@ -590,5 +604,27 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component['abortRequestInFlight']).toBeFalse();
     expect(component.loading).toBeFalse();
     expect(component.canResendVampire).toBeTrue();
+  });
+
+  it('treats a zero item_count after a non-empty submission as a failed run, keeping prior results', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));
+    dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
+    const displaySpy = spyOn(component, 'displayMessage');
+
+    component.loading = true;
+    component['vampireRunToken'] = 7;
+    component['vampireCurrentRunItemCount'] = 3;
+    component.session.lastVampireResults = {
+      'item-1': [{ glyph: 'old', informative: true, consistent: true, relevant: true, proof_files: ['p1'] }],
+    };
+    component['inferenceResults'] = [{ id: 'item-1' } as any];
+
+    (component as any).loadAndRenderVampireState(true, Date.now(), 7);
+
+    expect(component.session.lastVampireResults['item-1'][0].glyph).toBe('old');
+    expect(component.inferenceResults).toEqual([{ id: 'item-1' } as any]);
+    expect(component.loading).toBeFalse();
+    expect(displaySpy).toHaveBeenCalledWith(jasmine.stringMatching(/failed/i), 'red');
   });
 });

@@ -1141,6 +1141,27 @@ export interface VampireSessionSummary {
   proof_count: number;
 }
 
+/** GET /vampire_progress/{session_key} -- the live, per-request progress record
+ *  (`inference/run_vampire.py`'s `_update_vampire_progress`), distinct from
+ *  `VampireSessionSummary`: the summary is cumulative across every run ever merged into
+ *  a session key, while this record's counts reset to 0 at the start of each
+ *  `/vampire_multiple_request` call, so it is the source for a moving progress bar
+ *  rather than for the session's overall result totals. */
+export interface VampireProgress {
+  sessionKey: string;
+  runId: string | null;
+  state: 'idle' | 'running' | 'cancel_requested' | 'cancelled' | 'completed';
+  cancelRequested: boolean;
+  activeItemId: string | null;
+  completedItemIds: string[];
+  changedItemIds: string[];
+  itemResults: { [key: string]: check[] };
+  itemCount: number;
+  proofCount: number;
+  totalItemCount: number;
+  updatedAt?: string;
+}
+
 export interface check {
   glyph: string;
   informative: boolean;

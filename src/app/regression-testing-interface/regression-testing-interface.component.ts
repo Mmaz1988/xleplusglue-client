@@ -132,6 +132,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   sessionLoadDetails = '';
   private gswbSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
   private vampireSummaryPollTimer: ReturnType<typeof setInterval> | null = null;
+  private vampireProgressPollTimer: ReturnType<typeof setInterval> | null = null;
+  /** Count of items already completed in a prior run of this session (from
+   *  `lastVampireResults`), captured once when a rerun/append starts. Added to this run's
+   *  own submitted-item count so the progress bar's denominator reflects the full
+   *  regression bank rather than just today's subset -- see
+   *  docs/archive/vampire-rerun-fix-plan.txt and REGRESSION_ALIGNMENT_PLAN.md Stage 2. */
+  private vampireProgressBaselineCount = 0;
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionPersistenceEnabled = false;
   private isBootstrapping = true;
@@ -2049,7 +2056,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.loading = true;
     this.vampirePendingItemCount = Object.keys(inference_items).length;
     this.activeVampireRunStartedAt = vampireStartedAt;
-    this.startVampireProgressIndicator(this.regressionTestItems.length || 0);
+    this.vampireProgressBaselineCount = this.currentVampireRunKind === 'initial'
+      ? 0
+      : Object.keys(this.session.lastVampireResults ?? {}).length;
+    this.startVampireProgressIndicator(this.vampireCurrentRunItemCount + this.vampireProgressBaselineCount);
     this.startVampireSummaryPolling(vampireStartedAt, vampireRunToken);
     this.loadAndRenderVampireState(false, vampireStartedAt, vampireRunToken);
 
@@ -2123,9 +2133,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private startVampireSummaryPolling(vampireStartedAt: number, runToken: number): void {
     this.stopVampireSummaryPolling();
 
+    // Results (last_session) poll: infrequent, since it drives the parse/inference report
+    // panel, not the moving bar.
     this.vampireSummaryPollTimer = setInterval(() => {
       this.loadAndRenderVampireState(false, vampireStartedAt, runToken);
     }, 15000);
+
+    // Progress poll: the live per-request record (vampire_progress:<key>) updates on
+    // every branch, not just once an item finishes, so this can run much more often
+    // without depending on results ever being persisted at all.
+    this.vampireProgressPollTimer = setInterval(() => {
+      this.pollVampireProgress(runToken);
+    }, 2000);
+    this.pollVampireProgress(runToken);
   }
 
   private stopVampireSummaryPolling(): void {
@@ -2133,6 +2153,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       clearInterval(this.vampireSummaryPollTimer);
       this.vampireSummaryPollTimer = null;
     }
+    if (this.vampireProgressPollTimer !== null) {
+      clearInterval(this.vampireProgressPollTimer);
+      this.vampireProgressPollTimer = null;
+    }
+  }
+
+  private pollVampireProgress(runToken: number): void {
+    if (runToken !== this.vampireRunToken) return;
+
+    this.dataService.getVampireProgress(this.redisSessionKey).subscribe({
+      next: progress => {
+        if (runToken !== this.vampireRunToken) return;
+        this.vampireProgressItemCount = (progress?.itemCount ?? 0) + this.vampireProgressBaselineCount;
+        this.vampireProgressProofCount = progress?.proofCount ?? this.vampireProgressProofCount;
+      },
+      error: error => console.warn('Unable to load live Vampire progress.', error)
+    });
   }
 
   private startVampireProgressIndicator(totalCount: number): void {
@@ -2142,16 +2179,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampireProgressInProgress = true;
   }
 
-  private updateVampireProgressIndicator(summary: VampireSessionSummary): void {
-    this.vampireProgressItemCount = summary?.item_count ?? 0;
-    this.vampireProgressProofCount = summary?.proof_count ?? 0;
-  }
-
   private clearVampireProgressIndicator(): void {
     this.vampireProgressItemCount = null;
     this.vampireProgressProofCount = null;
     this.vampireProgressTotalCount = null;
     this.vampireProgressInProgress = false;
+    this.vampireProgressBaselineCount = 0;
   }
 
   private clearPendingVampireFinalSnapshot(): void {
@@ -2190,7 +2223,27 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       next: ({ session, summary }) => {
         if (runToken !== this.vampireRunToken) return;
 
-        this.updateVampireProgressIndicator(summary);
+        // A non-empty submission that comes back with a zero item count is a failed run,
+        // not an empty-but-successful one -- the TPTP branch used to silently drop its
+        // results this way (see REGRESSION_ALIGNMENT_PLAN.md Stage 1/2). Surface it and
+        // leave the previous results/inferenceResults alone rather than overwriting them
+        // with {}.
+        if (finalSnapshot && this.vampireCurrentRunItemCount > 0 && (summary?.item_count ?? 0) === 0) {
+          this.loading = false;
+          this.vampirePendingItemCount = null;
+          this.activeGswbRunStartedAt = null;
+          this.activeVampireRunStartedAt = null;
+          this.stopVampireSummaryPolling();
+          this.clearVampireProgressIndicator();
+          this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
+          this.abortRequestInFlight = false;
+          this.displayMessage(
+            "Vampire run failed: no items were processed despite a non-empty submission. Previous results were kept.",
+            "red"
+          );
+          return;
+        }
+
         this.renderVampireResults(session?.results ?? {}, summary, finalSnapshot, this.vampirePreserveExistingResults);
 
         const progressDescription = finalSnapshot
@@ -2370,28 +2423,33 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     for (const testItem of this.regressionTestItems) {
       const value = mergedResults?.[testItem.id];
-      if (!value || value.length === 0) continue;
-
-      const infoCount = value.filter(check => check.informative).length;
-      const consistentCount = value.filter(check => check.consistent).length;
-
-      const infoSuccess = infoCount > value.length / 2;
-      const consistentSuccess = consistentCount > value.length / 2;
-
-      let entailment_label = '0';
-      if (infoSuccess && consistentSuccess) entailment_label = '0';
-      else if (!infoSuccess && consistentSuccess) entailment_label = '1';
-      else if (!consistentSuccess) entailment_label = '-1';
-
       // The document's verdict for this item, when it has one. Same majority rule and
       // same label mapping, but computed over the assignments the verdicts were paired
       // to by id rather than over whatever came back in this item's array -- so a run
       // where some branches were filtered out still attributes each verdict correctly.
+      // Consulted BEFORE deciding to skip: an item can have a document verdict with no
+      // entry in mergedResults (e.g. every branch for it was filtered upstream), and the
+      // document is then the only source of truth for it, not a reason to drop it.
       const fromDocument = documentResults[testItem.id];
+      if ((!value || value.length === 0) && !fromDocument) continue;
+
+      let entailment_label = '0';
+      if (value && value.length > 0) {
+        const infoCount = value.filter(check => check.informative).length;
+        const consistentCount = value.filter(check => check.consistent).length;
+
+        const infoSuccess = infoCount > value.length / 2;
+        const consistentSuccess = consistentCount > value.length / 2;
+
+        if (infoSuccess && consistentSuccess) entailment_label = '0';
+        else if (!infoSuccess && consistentSuccess) entailment_label = '1';
+        else if (!consistentSuccess) entailment_label = '-1';
+      }
+
       if (fromDocument) {
         entailment_label = fromDocument.predictedLabel;
       }
-      const glyphs: string[] = fromDocument?.glyphs ?? value.map(check => check.glyph);
+      const glyphs: string[] = fromDocument?.glyphs ?? (value ?? []).map(check => check.glyph);
 
       if (testItem.gold_label === entailment_label) {
         if (entailment_label === '1') successful_entailment_predictions++;
