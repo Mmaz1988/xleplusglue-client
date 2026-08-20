@@ -459,9 +459,9 @@ export class ChatComponent {
       const element: SentenceAnalysis = {
         id: premiseContext.elementId,
         text: premiseContext.original,
-        // .graph is display-only elsewhere and unused by mergeSequence's rebase path
-        // (only .structure feeds the syntax merge) -- an empty placeholder, not a cast
-        // of the wrong type into this slot.
+        // .graph is display-only elsewhere and unused by mergeSequence's syntax merge
+        // (only .structure feeds it) -- an empty placeholder, not a cast of the wrong
+        // type into this slot.
         syntax: [{
           synId: `${premiseContext.elementId}-syn`,
           structure: premiseContext.syntax,
@@ -485,20 +485,24 @@ export class ChatComponent {
     // (bundles) then waits forever on that pair, the loading spinner never clears, and
     // Vampire is never called. This reproduced with a live-verified, isolated case and is
     // not specific to request volume. mergeSequence's own concatMap-based grouping avoids
-    // ever having two of these chains in flight at once, sidestepping the issue entirely
-    // -- and additionally merges syntax once per distinct (prior x syntax-variant) pairing
-    // instead of once per (prior x reading) pairing, which is what actually lost reading
-    // identity across pairings before (see docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md).
+    // ever having two of these chains in flight at once, sidestepping the issue entirely.
+    //
+    // mergeSequence is now the exact same call glue-vis's own merge uses: `current`'s
+    // readings are already independently parsed and proven (one /deduce per sentence,
+    // at parse time, same as glue-vis's own scoped-deduce-per-sentence step) -- nothing
+    // here re-derives semantics from the merged structure. That used to be a separate
+    // chat-only path (merge syntax, then /deduce again on the merged structure) which
+    // both duplicated work /deduce already did and, when a sentence's readings shared
+    // one syntax variant, produced N times too many merged pairs (confirmed live via
+    // misc/current/chat-document-plan-b-test.json: turn 2 had 8 solutions instead of 4).
+    // See docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md for the full trace.
     this.documentBuilder.mergeSequence({
       current,
       previousContexts,
       knownSentences: this.chatDocument.sentences,
       resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
-      rebase: {
-        ruleString: this.ruleString,
-        logicType: typed ? 'tff' : 'fof',
-        gswbPreferences: this.gswbPreferences.gswbPreferences,
-      },
+      ruleString: this.ruleString,
+      logicType: typed ? 'tff' : 'fof',
     }).pipe(
       switchMap(result => from(result.pairs).pipe(
         concatMap(pair => {

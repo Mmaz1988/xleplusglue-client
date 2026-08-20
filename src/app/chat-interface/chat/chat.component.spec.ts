@@ -195,15 +195,12 @@ describe('ChatComponent', () => {
   describe('finishLfgxdrtPreparation (Stage B: chat on DocumentBuilderService)', () => {
     const structure = { constraints: [], annotations: [], choiceSpace: {} };
 
-    /** LiGER's merged-sequence response, carrying the rebased current-part meaning
-     *  constructors the derive step needs. */
-    const ligerRebaseResponse = () => ({
+    /** LiGER's merged-sequence response for the syntax merge -- the same shape
+     *  glue-vis's own document-builder path uses, now that chat no longer re-derives
+     *  semantics from the merged structure. */
+    const ligerSequenceResponse = () => ({
       solutions: [{
         structureJson: structure,
-        sequenceParts: [
-          { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
-          { sourceIndex: 1, solutionKey: 'part-1', meaningConstructors: 'mc-current' },
-        ],
         sequenceAnalysis: {
           id: 'seq-1', text: 'a man saw a man he saw him',
           sentences: [{ id: 'sentence-1' }, { id: 'sentence-3' }],
@@ -220,10 +217,12 @@ describe('ChatComponent', () => {
       component.activeIndices = [];
     });
 
-    it('merges syntax and derives semantics once per distinct prior element, not once per (prior x reading) pairing', () => {
+    it('merges syntax once per distinct prior element, not once per (prior x reading) pairing, and never re-derives semantics', () => {
       // Two accepted READINGS of the SAME prior element (an ambiguous premise) --
       // this is exactly the shape that used to trigger a second, redundant
-      // ligerSequence/gswbDeduce round trip per reading before Stage B.
+      // ligerSequence/gswbDeduce round trip per reading before Stage B. Now the new
+      // sentence's own reading is never re-derived at all: mergeSequence reuses it
+      // verbatim, the same call glue-vis's own document-builder path uses.
       component.context = [
         {
           original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
@@ -241,10 +240,7 @@ describe('ChatComponent', () => {
         },
       ] as any;
 
-      dataServiceSpy.ligerSequence.and.returnValue(of(ligerRebaseResponse()));
-      dataServiceSpy.gswbDeduce.and.returnValue(of({
-        solutions: [{ id: 'derived-1', solution: 'Q', semantic: 'Q', graph: structure, solutionKey: 'derived-1' }],
-      }));
+      dataServiceSpy.ligerSequence.and.returnValue(of(ligerSequenceResponse()));
       dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
         id: request.parentSolutionId, solution: 'merged', solutionKey: request.parentSolutionId,
         graph: structure, semantic: 'merged',
@@ -259,14 +255,13 @@ describe('ChatComponent', () => {
         { id: 'cand-1', semantic: 'Q', solution: 'Q', graph: structure, solutionKey: 'part-1' },
       ], false, []);
 
-      // One prior element, one syntax variant of the new sentence -> one group -> one
-      // syntax merge and one derive call, reused across both prior readings.
+      // One prior element (both readings share one syntax variant), one syntax variant
+      // of the new sentence -> one group -> one syntax merge, no re-derivation.
       expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce.calls.mostRecent().args[0].premises).toBe('mc-current');
-      // But every (prior-reading x derived-reading) pair still gets its own semantic
+      expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
+      // But every (prior-reading x current-reading) pair still gets its own semantic
       // merge and its own reasoning-check preparation -- nothing is discarded just
-      // because the group was shared.
+      // because the syntax-merge group was shared.
       expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
       expect(preparedCallCount).toBe(2);
 
@@ -277,6 +272,43 @@ describe('ChatComponent', () => {
         expect(request.prune).toBeFalse();
         expect(request.sequenceStructure).toEqual(structure);
       });
+    });
+
+    it('a sentence with two readings sharing one syntax variant produces exactly one pair per reading, not a duplicated cross product', () => {
+      // The confirmed regression (misc/current/chat-document-plan-b-test.json): turn 2
+      // had 8 solutions instead of 4, because the old rebase path cross-produced a
+      // redundant "group" of pairSpecs against freshly re-derived readings. Routed
+      // through the shared mergeSequence, one previous reading x two current readings
+      // (sharing one syntax variant, e.g. "Every Swede is a Scandinavian") must yield
+      // exactly two pairs, with the syntax merge still deduplicated to one call.
+      component.context = [{
+        original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
+        semantic: 'P1', semanticGraph: { constraints: [], annotations: [], choiceSpace: {} },
+        syntax: structure,
+        semanticAnalysis: { syntacticOrigin: 'syn-1a', semId: 'sem-1a', semString: 'P1', semType: 'lfgxdrt' },
+        elementId: 'sentence-1',
+      }] as any;
+
+      dataServiceSpy.ligerSequence.and.returnValue(of(ligerSequenceResponse()));
+      dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
+        id: request.parentSolutionId, solution: 'merged', solutionKey: request.parentSolutionId,
+        graph: structure, semantic: 'merged',
+      }));
+      let preparedCallCount = 0;
+      reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) => {
+        preparedCallCount++;
+        return of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] });
+      });
+
+      (component as any).finishLfgxdrtPreparation('every swede is a scandinavian', [
+        { id: 'cand-1', semantic: 'Q1', solution: 'Q1', graph: structure, solutionKey: 'part-1' },
+        { id: 'cand-2', semantic: 'Q2', solution: 'Q2', graph: structure, solutionKey: 'part-1' },
+      ], false, []);
+
+      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
+      expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
+      expect(preparedCallCount).toBe(2);
     });
   });
 

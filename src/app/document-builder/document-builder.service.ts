@@ -1,9 +1,8 @@
 import { Injectable } from '@angular/core';
-import { Observable, catchError, concatMap, from, map, of, switchMap, toArray } from 'rxjs';
+import { Observable, catchError, concatMap, from, map, of, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { compositeAnalysisId } from '../analysis-model';
 import {
-  GswbPreferences,
   GswbSemanticMergePart,
   GswbSolution,
   LigerStructure,
@@ -14,8 +13,10 @@ import {
   XlePlusGlueElementRef,
 } from '../models/models';
 
-/** One of the new sentence's own candidate readings, already resolved by the caller
- *  (`semanticAnalysisFor`/`sentenceAnalysisFor` stay caller-local -- see class doc). */
+/** One of the new sentence's own candidate readings -- already independently parsed and
+ *  proven by the caller (a sentence's own reading is never derived inline by this
+ *  service; see class doc), and already resolved to which sentence/syntax variant it
+ *  belongs to (`semanticAnalysisFor`/`sentenceAnalysisFor` stay caller-local). */
 export interface SequenceMergeCurrentSolution {
   /** For `parentSolutionId`/`solutionKey`/`mcSetId` on the merge request only -- its
    *  semantic content is NOT re-read from here, `semantic` below is authoritative. */
@@ -32,29 +33,6 @@ export interface SequenceMergePreviousContext {
   element: SentenceAnalysis | SequenceAnalysis;
 }
 
-/** Chat's variant: the new sentence's readings are not known ahead of the merge the way
- *  glue-vis's are (glue-vis's "current" solutions come from a /deduce the user already
- *  ran against sequence-rebased meaning constructors, via LigerVisComponent.addSentence()
- *  -- see docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md). Chat has no such prior step,
- *  so this rebase strategy performs it inline: merge syntax, then derive semantics from
- *  the merged structure. Whatever comes back from that derivation simply IS the new
- *  sentence's reading set for this discourse context -- there is no earlier candidate to
- *  match it back to, so none of `request.current`'s `semantic`/`solution` fields are used
- *  as merge input when this is set; they exist only so `sentenceAnalysis` can identify
- *  which syntax variant to derive from.
- *
- *  No pruning here, by design (user, 2026-08-20): this always builds the full cross
- *  product, same as the non-rebase path. Discarding down to one candidate happens exactly
- *  once, at the very end of the whole turn (ReasoningPipelineService.prepareReasoningChecks's
- *  own `prune`, and the caller's own final selection) -- not cascaded through this method's
- *  intermediate stages. Less efficient when pruning, but keeps this method's behavior
- *  identical regardless of whether the caller happens to be pruning. */
-export interface SequenceMergeRebase {
-  ruleString?: string;
-  logicType?: 'fof' | 'tff';
-  gswbPreferences: GswbPreferences;
-}
-
 export interface SequenceMergeRequest {
   current: SequenceMergeCurrentSolution[];
   previousContexts: SequenceMergePreviousContext[];
@@ -63,20 +41,26 @@ export interface SequenceMergeRequest {
    *  syntax-merge request. */
   knownSentences: SentenceAnalysis[];
   resolveDrs: boolean;
-  /** Absent (the default): glue-vis's path -- `current`'s own semantic/solution fields
-   *  are the merge input, unchanged. Present: chat's path, see SequenceMergeRebase. */
-  rebase?: SequenceMergeRebase;
+  /** Passed through to the syntax-merge `ligerSequence` call only (never to a semantic
+   *  derivation -- there isn't one). Optional because glue-vis's own callers don't
+   *  configure these; chat does (its own grammar/logic-type preferences). */
+  ruleString?: string;
+  logicType?: 'fof' | 'tff';
 }
 
 export interface SequenceMergePair {
   merged: GswbSolution;
   previousElement: SentenceAnalysis | SequenceAnalysis;
   currentElement?: SentenceAnalysis;
-  /** Set only by the rebase path: the merged sequence's own syntax structure (needed as
-   *  `sequenceStructure` for reasoning-check building), and the specific sequence-scoped
-   *  reading that was actually merged -- its own `.graph` is the hypothesis AST
-   *  reasoning needs, distinct from `merged` (the whole premise+conclusion). */
+  /** The merged sequence's own syntax structure, attached once its syntax merge
+   *  resolves -- needed as `sequenceStructure` for reasoning-check building. Absent if
+   *  the syntax merge for this pair's group could not be resolved (see
+   *  `mergeSyntaxForPairs`); a caller that requires it should treat that as a hard
+   *  failure rather than guessing, the same way chat's own reasoning-check builder does. */
   sequenceStructure?: LigerStructure;
+  /** The new sentence's own reading that went into this pair -- copied straight from
+   *  `SequenceMergeCurrentSolution.semantic`, so its `.graph` is available as the
+   *  hypothesis AST reasoning needs, without re-deriving anything. */
   currentSemantic?: SemanticAnalysis;
 }
 
@@ -122,9 +106,25 @@ export interface SequenceMergeResult {
  * `forkJoin` (2+ concurrent Angular HttpClient calls have been observed to silently
  * drop a response -- see `ReasoningPipelineService`'s own note on the same issue), and
  * `sequenceAnalyses` groups by sentence-pair id rather than syntax-variant id (see
- * `SequenceMergeResult` above). Chat's own re-derivation path (Stage B of the plan) is
- * not implemented here yet -- this only covers glue-vis's "already-computed readings"
- * case.
+ * `SequenceMergeResult` above).
+ *
+ * Chat (Stage B) now calls this same method instead of a separate re-derivation path.
+ * That earlier chat-only path merged syntax and then re-proved the new sentence's
+ * semantics from scratch via a `/deduce` call on the merged structure -- redundant with
+ * a plain `/deduce` chat already runs once per sentence when it's first parsed, and the
+ * actual source of a solution-count duplication bug (a sentence with N readings sharing
+ * one syntax variant produced N times too many merged pairs, confirmed live via
+ * misc/current/chat-document-plan-b-test.json: turn 2 had 8 solutions instead of 4).
+ * Investigating the backend endpoints directly (`GswbController.java`) showed
+ * `/merge_sequence_semantics` never re-invokes the prover at all -- it only performs a
+ * structural DRS-graph merge of two already-proven readings, which is safe because
+ * LiGER's `/apply_rules_xle_sequence` already returns source-index-rebased meaning
+ * constructors per sequence part (`liger-vis.component.ts`'s `sequenceParts[]`
+ * handling), and GSWB's supplied-structure parsing derives source indices from SYN-ID
+ * rather than a positional counter (`docs/plans/SUPPLIED_STRUCTURE_ANAPHORA_PLAN.md`).
+ * So a sentence's own reading only ever needs to be proven once, at parse time -- the
+ * same shape glue-vis already used -- and chat now reuses it here unchanged, dropping
+ * its own `ligerSequence`+`gswbDeduce` rebase chain entirely.
  */
 @Injectable({ providedIn: 'root' })
 export class DocumentBuilderService {
@@ -225,9 +225,6 @@ export class DocumentBuilderService {
    *  `/deduce` re-derivation. Then groups the results by distinct syntax pairing and
    *  attaches one syntax merge per group, and finally aggregates by sentence pair. */
   mergeSequence(request: SequenceMergeRequest): Observable<SequenceMergeResult> {
-    if (request.rebase) {
-      return this.mergeSequenceDerived(request, request.rebase);
-    }
     const pairSpecs = request.current.flatMap(currentEntry =>
       request.previousContexts.map(previousContext => ({ currentEntry, previousContext }))
     );
@@ -248,160 +245,16 @@ export class DocumentBuilderService {
             merged,
             previousElement: previousContext.element,
             currentElement: currentEntry.sentenceAnalysis,
+            currentSemantic: currentEntry.semantic,
           }))
         )
       ),
       toArray(),
-      concatMap(pairs => this.mergeSyntaxForPairs(pairs, request.knownSentences)),
+      concatMap(pairs => this.mergeSyntaxForPairs(pairs, request.knownSentences, request.ruleString, request.logicType)),
       map(pairs => ({
         pairs,
         sequenceAnalyses: this.aggregateSequenceAnalyses(pairs),
       }))
-    );
-  }
-
-  /** Chat's path: group (previous x current-syntax-variant) pairs, merge syntax and
-   *  derive semantics once per group (never once per reading pairing -- that was the
-   *  actual defect in chat's original per-pairing implementation), then semantic-merge
-   *  every derived reading against its group's previous context. See SequenceMergeRebase. */
-  private mergeSequenceDerived(
-    request: SequenceMergeRequest,
-    rebase: SequenceMergeRebase,
-  ): Observable<SequenceMergeResult> {
-    const pairSpecs = request.current.flatMap(currentEntry =>
-      request.previousContexts.map(previousContext => ({ currentEntry, previousContext }))
-    );
-
-    const groups = new Map<string, typeof pairSpecs>();
-    pairSpecs.forEach(spec => {
-      const key = `${spec.previousContext.element.id}=>${this.syntaxIds(spec.currentEntry.sentenceAnalysis)}`;
-      const group = groups.get(key) ?? [];
-      group.push(spec);
-      groups.set(key, group);
-    });
-
-    return from(Array.from(groups.values())).pipe(
-      concatMap(group => this.deriveGroupPairs(group, rebase, request.resolveDrs, request.knownSentences)),
-      toArray(),
-      // Chat's own registration (registerSentence/upsertSequenceFromContexts) is driven
-      // from Vampire's accepted results, not from every raw merge result the way
-      // glue-vis's is -- so this path never builds SequenceAnalysis entries itself.
-      map(groupResults => ({ pairs: groupResults.flat(), sequenceAnalyses: [] }))
-    );
-  }
-
-  /** One (previous x current-syntax-variant) group: merge syntax once, derive semantics
-   *  from the merged structure once (pruned to the first reading here if requested --
-   *  syntax:semantics is 1:many, so this can only happen after deriving), then semantic-
-   *  merge every resulting reading against every previous context in the group. Whatever
-   *  the derivation returns simply IS the new sentence's reading set for this context --
-   *  there is no earlier candidate it needs to be matched back to. */
-  private deriveGroupPairs(
-    group: Array<{ currentEntry: SequenceMergeCurrentSolution; previousContext: SequenceMergePreviousContext }>,
-    rebase: SequenceMergeRebase,
-    resolveDrs: boolean,
-    knownSentences: SentenceAnalysis[],
-  ): Observable<SequenceMergePair[]> {
-    const first = group[0];
-    const previousElement = first.previousContext.element;
-    const currentElement = first.currentEntry.sentenceAnalysis;
-    if (!currentElement) {
-      console.error('[DocumentBuilder] no resolvable syntax for the new sentence; skipping this group', {
-        previousElementId: previousElement.id,
-      });
-      return of([]);
-    }
-
-    let previousSentences: SentenceAnalysis[];
-    if ('sentenceIds' in previousElement) {
-      // Chat's previous context is always registered as a single opaque unit (its whole
-      // accumulated discourse text/structure, not decomposed sentence-by-sentence) -- this
-      // branch exists only in case a caller ever passes a genuine multi-sentence
-      // SequenceAnalysis, mirroring mergeSyntaxForPairs's own resolution against
-      // knownSentences.
-      const missingSentenceIds: string[] = [];
-      previousSentences = previousElement.sentenceIds.map(id => {
-        const sentence = knownSentences.find(candidate => candidate.id === id);
-        if (!sentence) missingSentenceIds.push(id);
-        return sentence as SentenceAnalysis;
-      });
-      if (missingSentenceIds.length) {
-        console.error('[DocumentBuilder] cannot resolve previous sentences for rebase merge; skipping this group', {
-          previousElementId: previousElement.id, missingSentenceIds,
-        });
-        return of([]);
-      }
-    } else {
-      previousSentences = [previousElement];
-    }
-
-    const sentences = [...previousSentences, currentElement];
-    const mergeDerivedReading = (
-      spec: { currentEntry: SequenceMergeCurrentSolution; previousContext: SequenceMergePreviousContext },
-      semantic: SemanticAnalysis,
-      sequenceStructure?: LigerStructure,
-    ): Observable<SequenceMergePair> =>
-      this.dataService.gswbMergeSequenceSemantics({
-        parts: [
-          this.semanticPart(spec.previousContext.semantic, spec.previousContext.element.id),
-          this.semanticPart(semantic, currentElement.id),
-        ],
-        parentSolutionId: spec.currentEntry.solution.id,
-        solutionKey: semantic.syntacticOrigin,
-        mcSetId: semantic.syntacticOrigin,
-        resolveDrs,
-      }).pipe(map((merged): SequenceMergePair => ({
-        merged, previousElement: spec.previousContext.element, currentElement,
-        sequenceStructure, currentSemantic: semantic,
-      })));
-
-    return this.dataService.ligerSequence({
-      sentences: sentences.map(sentence => sentence.text),
-      sentenceIds: sentences.map(sentence => sentence.id),
-      ruleString: rebase.ruleString,
-      logicType: rebase.logicType,
-      parsedSentences: sentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
-    }).pipe(
-      switchMap(sequence => {
-        const sequenceSolution = sequence?.solutions?.[0];
-        const sequenceStructure = sequenceSolution?.structureJson;
-        const parts = Array.isArray(sequenceSolution?.sequenceParts) ? sequenceSolution.sequenceParts : [];
-        const currentPart = parts[parts.length - 1];
-        if (!currentPart?.meaningConstructors?.trim()) {
-          throw new Error('The merged sequence has no source-indexed current sentence part.');
-        }
-        return this.dataService.gswbDeduce({
-          premises: currentPart.meaningConstructors,
-          gswbPreferences: rebase.gswbPreferences,
-          structure: sequenceStructure,
-          proofs: [{
-            proofId: currentPart.solutionKey || 'sequence-current-sentence',
-            solutionKey: currentPart.solutionKey,
-            meaningConstructors: currentPart.meaningConstructors,
-            structure: sequenceStructure,
-          }],
-        }).pipe(map((result: { solutions?: GswbSolution[] }) => {
-          const derived: GswbSolution[] = (result?.solutions ?? []).filter(candidate =>
-            typeof candidate?.semantic === 'string' && candidate.semantic.trim().length > 0 && !!candidate.graph);
-          if (!derived.length) {
-            throw new Error('No source-indexed semantic analyses found for the current sentence.');
-          }
-          return { sequenceStructure, derived };
-        }));
-      }),
-      switchMap(({ sequenceStructure, derived }) => from(group).pipe(
-        concatMap(spec => from(derived).pipe(
-          concatMap(candidate => mergeDerivedReading(
-            spec, this.toSemanticAnalysis(candidate, currentElement.id), sequenceStructure))
-        )),
-        toArray()
-      )),
-      catchError(error => {
-        console.error('[DocumentBuilder] syntax merge/derive failed for this group; no pairs produced', {
-          previousElementId: previousElement.id, currentElementId: currentElement.id, error,
-        });
-        return of([]);
-      })
     );
   }
 
@@ -416,6 +269,8 @@ export class DocumentBuilderService {
   private mergeSyntaxForPairs(
     pairs: SequenceMergePair[],
     knownSentences: SentenceAnalysis[],
+    ruleString?: string,
+    logicType?: 'fof' | 'tff',
   ): Observable<SequenceMergePair[]> {
     const groups = new Map<string, SequenceMergePair[]>();
     pairs.forEach(pair => {
@@ -454,10 +309,13 @@ export class DocumentBuilderService {
         return this.dataService.ligerSequence({
           sentences: sentences.map(sentence => sentence.text),
           sentenceIds: sentences.map(sentence => sentence.id),
+          ruleString,
+          logicType,
           parsedSentences: sentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
         }).pipe(
           map(sequence => {
-            const syntax = sequence?.solutions?.[0]?.sequenceAnalysis;
+            const solution = sequence?.solutions?.[0];
+            const syntax = solution?.sequenceAnalysis;
             if (!syntax) {
               return group;
             }
@@ -484,6 +342,7 @@ export class DocumentBuilderService {
                 semantics: [semantic],
                 synSemMapping: { [syntaxId]: [semantic.semId] },
               };
+              pair.sequenceStructure = solution.structureJson;
               return pair;
             });
           }),
@@ -540,22 +399,6 @@ export class DocumentBuilderService {
 
   private syntaxIds(element?: SentenceAnalysis | SequenceAnalysis): string {
     return element?.syntax.map(syntax => syntax.synId).join('+') ?? 'unknown';
-  }
-
-  /** Wraps one of GSWB /deduce's raw derived solutions as a SemanticAnalysis, for the
-   *  rebase path -- this is a freshly-derived reading, not a merge result, so it has no
-   *  `.semanticAnalysis` of its own to prefer the way `semanticAnalysisFromMerged` does. */
-  private toSemanticAnalysis(candidate: GswbSolution, fallbackSyntacticOrigin: string): SemanticAnalysis {
-    if (candidate.semanticAnalysis) {
-      return candidate.semanticAnalysis;
-    }
-    return {
-      syntacticOrigin: candidate.solutionKey || candidate.proofId || fallbackSyntacticOrigin,
-      semId: candidate.id,
-      semString: candidate.semantic || candidate.solution || '',
-      graph: candidate.graph,
-      semType: 'lfgxdrt',
-    };
   }
 
   /** Mirrors GswbVisComponent's own `semanticAnalysisFor` fallback shape, but scoped to
