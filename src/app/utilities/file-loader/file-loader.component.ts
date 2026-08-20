@@ -175,7 +175,15 @@ export class FileLoaderComponent implements OnChanges {
   }
 
   private refreshStatusMessage(): void {
-    if (this.noFileSelected || !this.loadedPath) {
+    if (!this.loadedPath) {
+      // A parent reset (new session, hydrating a session with no file loaded) sets
+      // loadedPath back to '' via the @Input binding. Silently returning here used to
+      // leave the previous "Currently loaded ...: ..." message on screen forever -- see
+      // rule-loader.component.ts's refreshStatusMessage for the investigation that found
+      // this (same component shape, same bug). noFileSelected is intentionally not part of
+      // this guard: it is this component's own load-attempt state and can lag behind an
+      // externally (parent-driven) loadedPath change, which is exactly the case this fixes.
+      this.currentStatusMessage = '';
       return;
     }
 

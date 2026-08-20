@@ -148,6 +148,13 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
   private refreshStatusMessage(): void {
     if (!this.loadedPath) {
+      // A parent reset (new session, hydrating a session with no rules file) sets
+      // loadedPath back to '' via the @Input binding. Silently returning here used to
+      // leave the previous "Currently loaded rules: ..." message on screen forever, so the
+      // UI kept claiming a rules file was active after the editor content backing it had
+      // already been wiped -- see REGRESSION_ALIGNMENT_PLAN.md's modus-ponens-ambig
+      // investigation, where this made a missing-axioms failure look like a working setup.
+      this.currentStatusMessage = '';
       return;
     }
 
