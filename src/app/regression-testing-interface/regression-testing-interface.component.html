@@ -194,10 +194,10 @@
     <span *ngIf="!isAbortInProgress">Abort and save</span>
     <span *ngIf="isAbortInProgress">Aborting...</span>
   </button>
-  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()" [disabled]="runLocked">
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()" [disabled]="disambiguationActionLocked">
   Continue
 </button>
-  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()" [disabled]="runLocked">
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()" [disabled]="disambiguationActionLocked">
     Skip
   </button>
 
@@ -252,10 +252,8 @@
               <app-test-result
                 [data]="element"
                 [displayIndex]="i + 1"
-                [disambiguationActive]="enableDisambiguation && disambiguationMode"
                 [selectedSolutionIds]="getSelectedSolutionIds(element)"
-                (openSemVis)="openSemVisDialog($event)"
-                (selectionChange)="onSelectionChange($event)">
+                (openSemVis)="openSemVisDialog($event)">
               </app-test-result>
             </div>
           </div>

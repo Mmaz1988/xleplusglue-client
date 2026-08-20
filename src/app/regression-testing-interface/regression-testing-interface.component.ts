@@ -194,8 +194,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     Array.from({ length: 3 }, () => [])
   );
 
-  // UI toggle for the disambiguation flow.
-  enableDisambiguation = false;
+  // UI toggle for the disambiguation flow. Persisted alongside disambiguationMode (not
+  // component-local) so a reload during a paused run does not leave disambiguationMode
+  // true with no visible way to see or exit the pause -- Continue/Skip render only when
+  // both are true.
+  get enableDisambiguation(): boolean {
+    return this.session.enableDisambiguation;
+  }
+
+  set enableDisambiguation(value: boolean) {
+    this.session.enableDisambiguation = value;
+  }
+
   get disambiguationMode(): boolean {
     return this.session.disambiguationMode;
   }
@@ -253,13 +263,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   // Prefetch buffer for smoother scrolling.
   minBufferPx = 600;
   maxBufferPx = 1200;
-
-  // Called from template on each <app-test-result ... (selectionChange)="onSelectionChange($event)">
-  onSelectionChange(ev: { sentenceId: string; selectedSolutionIds: string[] }) {
-    if (!ev?.sentenceId) return;
-    this.session.selectedSolutionIdsBySentence[ev.sentenceId] = [...(ev.selectedSolutionIds ?? [])];
-    this.scheduleSessionSave();
-  }
 
   ngAfterViewInit() {
     if (this.gswbPreferences) {
@@ -2963,6 +2966,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   get runLocked(): boolean {
     return this.loading || this.saveOperationInProgress || (this.enableDisambiguation && this.disambiguationMode);
+  }
+
+  /** Continue/Skip are only ever shown *during* the disambiguation pause -- gating them on
+   *  the same `enableDisambiguation && disambiguationMode` clause `runLocked` uses for
+   *  Parse all/Multistage made them permanently disabled the moment they appeared, since
+   *  that condition is exactly when they are visible. This is the narrower lock: still
+   *  blocked while an actual run/save/abort is in flight, never by the pause itself. */
+  get disambiguationActionLocked(): boolean {
+    return this.loading || this.saveOperationInProgress || this.abortRequestInFlight
+      || this.sessionLoadState === 'loading';
   }
 
   get isSessionActionLocked(): boolean {

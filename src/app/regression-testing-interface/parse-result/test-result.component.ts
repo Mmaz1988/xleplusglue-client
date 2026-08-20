@@ -15,12 +15,6 @@ export class TestResultComponent  {
   @Input() displayIndex: number | null = null;
   @Input() selectedSolutionIds: string[] = [];
 
-  // NEW: emitter to parent
-  @Output() selectionChange = new EventEmitter<{
-    sentenceId: string;
-    selectedSolutionIds: string[];
-  }>();
-
   @Output() openSemVis = new EventEmitter<{
     sentenceId: string;
     items: any[];
@@ -28,8 +22,6 @@ export class TestResultComponent  {
     startIndex?: number;
     meaningConstructors?: any;
   }>();
-
-  @Input() disambiguationActive = false;
 
   sentence_id: string = '';
   sentence: string = '';
@@ -90,15 +82,6 @@ export class TestResultComponent  {
       meaningConstructors: this.allMCs,
     });
   }
-
-  private emitSelection(): void {
-    this.selectionChange.emit({
-      sentenceId: this.sentence_id,
-      selectedSolutionIds: [...this.selectedSolutions],
-    });
-  }
-
-
 
 
 

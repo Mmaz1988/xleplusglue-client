@@ -642,6 +642,12 @@ export interface RegressionSessionMetadata {
   testsuiteUpdateMode: 'write' | 'append';
   hasRunVampire: boolean;
   disambiguationMode: boolean;
+  /** The "Disambiguate before Vampire" checkbox. Component-local before this field
+   *  existed, so a reload while `disambiguationMode` was still true (a paused, unfinished
+   *  run) restored the pause with no way to see it: Continue/Skip are only rendered when
+   *  `enableDisambiguation && disambiguationMode` both hold. Persisted alongside
+   *  `disambiguationMode` so the two travel together. */
+  enableDisambiguation: boolean;
 }
 
 export interface RegressionSessionInputs {
@@ -743,6 +749,7 @@ export interface RegressionTestingSession {
   sortedMCmap: Record<string, any>;
   hasRunVampire: boolean;
   disambiguationMode: boolean;
+  enableDisambiguation: boolean;
   timing: RegressionRunTiming;
 }
 
@@ -854,6 +861,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       testsuiteUpdateMode: session?.testsuiteUpdateMode ?? 'write',
       hasRunVampire: Boolean(session?.hasRunVampire),
       disambiguationMode: Boolean(session?.disambiguationMode),
+      enableDisambiguation: Boolean(session?.enableDisambiguation),
     },
     inputs: {
       grammarPath: String(session?.grammarPath ?? ''),
@@ -964,6 +972,7 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     sortedMCmap: { ...(saveState?.sortedMCmap ?? document?.sortedMCmap ?? {}) },
     hasRunVampire: Boolean(metadata?.hasRunVampire ?? document?.hasRunVampire),
     disambiguationMode: Boolean(metadata?.disambiguationMode ?? document?.disambiguationMode),
+    enableDisambiguation: Boolean(metadata?.enableDisambiguation ?? document?.enableDisambiguation),
     timing: document?.timing ?? base.timing,
   };
 }
@@ -1024,6 +1033,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     sortedMCmap: {},
     hasRunVampire: false,
     disambiguationMode: false,
+    enableDisambiguation: false,
     timing: {
       startedAt: null,
       parseMs: null,
