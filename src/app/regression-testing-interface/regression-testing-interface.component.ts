@@ -1925,7 +1925,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       switchMap(seedBranches => remaining.reduce(
         (branches$, next) => branches$.pipe(
           switchMap(branches => this.foldSentenceIntoBranches(
-            document, branches, next, ruleString, logicType, gswbPreferences, resolveDrs))),
+            document, branches, next, ruleString, logicType, gswbPreferences, resolveDrs,
+            this.selectedDiscriminantIdentifiers(next.sentenceId, gswbOutputs, useDisambiguated)))),
         of(seedBranches)
       )),
       switchMap(branches => {
@@ -2088,6 +2089,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     logicType: 'fof' | 'tff',
     gswbPreferences: GswbPreferences,
     resolveDrs: boolean,
+    selectedDiscriminantIdentifiers: string[] = [],
   ): Observable<NliChainBranch[]> {
     const branchByElement = new Map(branches.map(branch => [branch.element, branch]));
     const previousContexts: SequenceMergePreviousContext[] = branches.map(branch =>
@@ -2104,6 +2106,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         ruleString,
         logicType,
         gswbPreferences,
+        selectedDiscriminantIdentifiers,
       },
     }).pipe(
       map(result => {
@@ -2363,6 +2366,43 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  to live only on the graph side -- an LFGxDRT reading with no graph cannot be a
    *  premise AST, and dropping it here (loudly) is what keeps the remaining lists aligned
    *  instead of shifting one against the other. */
+  /** The user's disambiguation choice for one sentence, as stable discriminant
+   *  **identifiers**.
+   *
+   *  The session stores scope/MC selections as discriminant ids (`sc1`, `mc21`), which are
+   *  per-response counters, and solution selections as solution ids -- neither survives
+   *  rebasing. A discriminant's `identifier` does (verified live), so it is what gets
+   *  handed to the fold. See SequenceMergeRebase.selectedDiscriminantIdentifiers.
+   *
+   *  Returns [] when nothing is selected or disambiguation is off, which the fold reads as
+   *  "no pruning". */
+  private selectedDiscriminantIdentifiers(
+    sentenceId: string,
+    gswbOutputs: Record<string, GswbOutput>,
+    useDisambiguated: boolean
+  ): string[] {
+    if (!useDisambiguated) return [];
+    const chosenIds = new Set([
+      ...(this.session.selectedScopeIdsBySentence[sentenceId] ?? []),
+      ...(this.session.selectedMcIdsBySentence[sentenceId] ?? []),
+    ]);
+    if (!chosenIds.size) return [];
+
+    const identifiers = (gswbOutputs[sentenceId]?.discriminants ?? [])
+      .filter(discriminant => chosenIds.has(String(discriminant?.id)))
+      .map(discriminant => discriminant?.identifier)
+      .filter((identifier): identifier is string => typeof identifier === 'string' && !!identifier);
+
+    if (chosenIds.size && !identifiers.length) {
+      // Said out loud rather than degrading to "no pruning": a selection that resolves to
+      // nothing means the fold will reason over every reading, which is the failure mode
+      // this whole path exists to remove.
+      console.warn('[Regression] disambiguation choice could not be resolved to identifiers',
+        { sentenceId, chosenIds: [...chosenIds] });
+    }
+    return identifiers;
+  }
+
   private selectedSolutions(
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,

@@ -3,6 +3,7 @@ import { Observable, catchError, concatMap, defer, from, map, of, switchMap, toA
 import { DataService } from '../data.service';
 import { compositeAnalysisId } from '../analysis-model';
 import {
+  GswbDiscriminant,
   GswbPreferences,
   GswbProofInput,
   GswbSemanticMergePart,
@@ -67,6 +68,24 @@ export interface SequenceMergeRebase {
   ruleString?: string;
   logicType?: 'fof' | 'tff';
   gswbPreferences: GswbPreferences;
+  /** The user's disambiguation choice for this sentence, as GSWB discriminant
+   *  **identifiers** -- not solution ids.
+   *
+   *  A rebase-derived reading gets a brand-new solution id (`sequence-1-sequence+S0-s1`
+   *  where the standalone parse said `sequence-1-S0-s1`), so a selection stored as a
+   *  solution id can never be applied to it. Measured consequence before this existed: a
+   *  fully-disambiguated 3-item run reasoned over 4 branches per item instead of 1 and ran
+   *  48 Vampire checks instead of 12, three quarters of them over readings the user had
+   *  explicitly deselected -- and reported verdicts from them.
+   *
+   *  A discriminant's `identifier` IS stable across rebasing (verified live: the same
+   *  `(f7_t -o (f15_t -o f15_t)) < (f13_t -o (f15_t -o f15_t))` names the same reading
+   *  standalone and inside a sequence), because it describes the scope ordering in glue
+   *  types rather than naming a solution. So the identifier is the reading identity, and
+   *  filtering by it is sound where matching ids or comparing condition strings was not.
+   *
+   *  Empty/absent means no pruning -- the full cross product, as before. */
+  selectedDiscriminantIdentifiers?: string[];
 }
 
 export interface SequenceMergeRequest {
@@ -541,7 +560,9 @@ export class DocumentBuilderService {
       parsedSentences: parsedSentences.length ? parsedSentences : undefined,
     }).pipe(
       switchMap(sequence => this.deriveCurrentPart(sequence, rebase, newSentenceIndex)),
-      map(({ variants, derived }) => derived.map(candidate => {
+      map(({ variants, derived, discriminants }) => this
+        .applyDisambiguation(derived, discriminants, rebase)
+        .map(candidate => {
         // Which syntactic variant did GSWB derive this reading from? It stamps the
         // originating proof's solutionKey/proofId onto every solution
         // (GswbController.java:1181-1188), so this is a lookup, not a guess.
@@ -576,6 +597,56 @@ export class DocumentBuilderService {
       }))
     );
     });
+  }
+
+  /** Narrows freshly-derived readings to the ones the user actually selected.
+   *
+   *  Matches on discriminant **identifier**, the one thing about a reading that survives
+   *  rebasing -- see `SequenceMergeRebase.selectedDiscriminantIdentifiers`. Several
+   *  selected identifiers intersect: a reading has to satisfy every one of them, which is
+   *  what selecting two discriminants means in the semvis UI.
+   *
+   *  Deliberately NOT a silent best-effort: if a selection was made and none of it can be
+   *  applied, that is reported rather than quietly reasoning over everything, because
+   *  "quietly reasoning over everything" is exactly the bug this replaces. */
+  private applyDisambiguation(
+    derived: GswbSolution[],
+    discriminants: GswbDiscriminant[],
+    rebase: SequenceMergeRebase,
+  ): GswbSolution[] {
+    const selected = rebase.selectedDiscriminantIdentifiers ?? [];
+    if (!selected.length) {
+      return derived;
+    }
+
+    const wanted = new Set(selected);
+    const matched = discriminants.filter(discriminant =>
+      discriminant?.identifier != null && wanted.has(String(discriminant.identifier)));
+    if (!matched.length) {
+      throw new Error(
+        `None of the ${selected.length} disambiguation choice(s) for ${rebase.newSentence.id} `
+        + `could be applied: no derived discriminant carries a matching identifier `
+        + `(the derivation offered ${discriminants.length}). Refusing to silently reason over `
+        + `every reading instead of the selected one.`);
+    }
+
+    let keep: Set<string> | null = null;
+    for (const discriminant of matched) {
+      const associated = new Set((discriminant.associatedSolutions ?? []).map(String));
+      keep = keep === null ? associated : new Set([...keep].filter(id => associated.has(id)));
+    }
+
+    const filtered = derived.filter(candidate => keep!.has(String(candidate.id)));
+    if (!filtered.length) {
+      throw new Error(
+        `The disambiguation choice(s) for ${rebase.newSentence.id} matched `
+        + `${matched.length} discriminant(s) but no reading satisfies all of them together.`);
+    }
+    console.info('[DocumentBuilder] disambiguation applied to derived readings', {
+      newSentenceId: rebase.newSentence.id,
+      derived: derived.length, kept: filtered.length, matchedDiscriminants: matched.length,
+    });
+    return filtered;
   }
 
   /** Best-effort one-line rendering of whatever an HttpClient/derivation failure carried,
@@ -620,7 +691,11 @@ export class DocumentBuilderService {
     },
     rebase: SequenceMergeRebase,
     newSentenceIndex: number,
-  ): Observable<{ variants: Map<string, DerivedSequenceVariant>; derived: GswbSolution[] }> {
+  ): Observable<{
+    variants: Map<string, DerivedSequenceVariant>;
+    derived: GswbSolution[];
+    discriminants: GswbDiscriminant[];
+  }> {
     const solutions = Array.isArray(sequence?.solutions) ? sequence.solutions : [];
     const variants = new Map<string, DerivedSequenceVariant>();
     const proofs: GswbProofInput[] = [];
@@ -673,13 +748,13 @@ export class DocumentBuilderService {
       gswbPreferences: rebase.gswbPreferences,
       structure: proofs[0].structure,
       proofs,
-    }).pipe(map((result: { solutions?: GswbSolution[] }) => {
+    }).pipe(map((result: { solutions?: GswbSolution[]; discriminants?: GswbDiscriminant[] }) => {
       const derived: GswbSolution[] = (result?.solutions ?? []).filter(candidate =>
         typeof candidate?.semantic === 'string' && candidate.semantic.trim().length > 0 && !!candidate.graph);
       if (!derived.length) {
         throw new Error('No source-indexed semantic analyses found for the current sentence.');
       }
-      return { variants, derived };
+      return { variants, derived, discriminants: result?.discriminants ?? [] };
     }));
   }
 

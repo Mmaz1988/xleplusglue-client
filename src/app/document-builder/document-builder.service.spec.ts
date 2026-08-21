@@ -690,6 +690,88 @@ describe('DocumentBuilderService', () => {
         });
       });
 
+      /** The measured failure this replaces: a fully-disambiguated 3-item run reasoned over
+       *  4 branches per item instead of 1 and ran 48 Vampire checks instead of 12, because
+       *  a rebase-derived reading gets a new solution id that the stored selection cannot
+       *  name. Discriminant identifiers survive rebasing; solution ids do not. */
+      describe('disambiguation by discriminant identifier', () => {
+        const derivedWithDiscriminants = () => of({
+          solutions: [
+            derivedSolution('rebased-a', 'P(x)'),
+            derivedSolution('rebased-b', 'Q(x)'),
+          ],
+          discriminants: [
+            { id: 'sc0', type: 'scope', identifier: 'A < B', associatedSolutions: ['rebased-a'] },
+            { id: 'sc1', type: 'scope', identifier: 'B < A', associatedSolutions: ['rebased-b'] },
+          ],
+        } as any);
+
+        const run = (selectedDiscriminantIdentifiers?: string[]) => {
+          dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+          dataServiceMock.gswbDeduce.and.returnValue(derivedWithDiscriminants());
+          dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+            of(mergedSolution(request.parentSolutionId)));
+          let result: any;
+          service.mergeSequence({
+            current: [],
+            previousContexts: [previousContext],
+            knownSentences: [previousSentence],
+            resolveDrs: true,
+            rebase: {
+              newSentence: currentSentence,
+              ruleString: 'rules',
+              logicType: 'fof',
+              gswbPreferences: {} as any,
+              ...(selectedDiscriminantIdentifiers ? { selectedDiscriminantIdentifiers } : {}),
+            },
+          }).subscribe(r => result = r);
+          return result;
+        };
+
+        it('keeps only the reading the selected discriminant names', () => {
+          const result = run(['B < A']);
+          expect(result.pairs.length).toBe(1);
+          expect(result.pairs[0].currentSemantic.semId).toBe('rebased-b');
+        });
+
+        it('keeps every reading when nothing is selected', () => {
+          const result = run();
+          expect(result.pairs.length).toBe(2);
+        });
+
+        it('intersects several selected discriminants rather than unioning them', () => {
+          dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+          dataServiceMock.gswbDeduce.and.returnValue(of({
+            solutions: [derivedSolution('r1', 'P'), derivedSolution('r2', 'Q'), derivedSolution('r3', 'R')],
+            discriminants: [
+              { id: 'sc0', type: 'scope', identifier: 'A < B', associatedSolutions: ['r1', 'r2'] },
+              { id: 'mc9', type: 'MCs', identifier: 'mc-x', associatedSolutions: ['r2', 'r3'] },
+            ],
+          } as any));
+          dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+            of(mergedSolution(request.parentSolutionId)));
+          let result: any;
+          service.mergeSequence({
+            current: [], previousContexts: [previousContext], knownSentences: [previousSentence],
+            resolveDrs: true,
+            rebase: {
+              newSentence: currentSentence, ruleString: 'rules', logicType: 'fof',
+              gswbPreferences: {} as any,
+              selectedDiscriminantIdentifiers: ['A < B', 'mc-x'],
+            },
+          }).subscribe(r => result = r);
+          expect(result.pairs.length).toBe(1);
+          expect(result.pairs[0].currentSemantic.semId).toBe('r2');
+        });
+
+        it('reports rather than silently reasoning over everything when a selection cannot be applied', () => {
+          const result = run(['no such identifier']);
+          expect(result.pairs).toEqual([]);
+          expect(result.failures.length).toBe(1);
+          expect(result.failures[0]).toContain('could be applied');
+        });
+      });
+
       describe('deriveSentenceInSequence (the first-sentence case, shared with chat turn 1)', () => {
         it('sends no parsedSentences and still fans out over every syntactic variant', () => {
           dataServiceMock.ligerSequence.and.returnValue(of({
