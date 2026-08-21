@@ -3,6 +3,7 @@ import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import {GrammarLoaderComponent} from "../utilities/grammar-loader/grammar-loader.component";
+import { proofInputsFrom } from '../document-builder/proof-inputs';
 import { DataService } from '../data.service';
 import { GswbProofInput, LigerSolutionAnnotation, LigerStructure, SequenceAnalysis } from '../models/models';
 import { AnalysisWorkspaceStateService, LigerWorkspaceState } from '../analysis-workspace-state.service';
@@ -386,46 +387,18 @@ export class LigerVisComponent implements AfterViewInit {
     this.renderSelectedSolution(this.selectedSolutionIndex);
   }
 
+  /** This view keeps `keyBy: 'part'`, its long-standing keying, because `gswb-vis`
+   *  resolves solutions back to sentences by the solutionKey GSWB stamps and that
+   *  resolution has not been re-verified against a change. It carries a latent collision
+   *  (two sequence variants differing only in a PREVIOUS sentence's parse share the new
+   *  sentence's part key) -- filed rather than changed blind; see proof-inputs.ts. */
   private proofInputsFor(solutions: LigerSolutionAnnotation[]): GswbProofInput[] {
-    return solutions
-      .map((solution, index) => ({
-        proofId: solution.solutionKey || `solution-${index}`,
-        sentenceId: solution.sentenceAnalysis?.id,
-        solutionKey: solution.solutionKey,
-        mcSetId: solution.solutionKey || `solution-${index}`,
-         meaningConstructors: solution.meaningConstructors ?? '',
-         structure: solution.structureJson,
-         sentenceAnalysis: solution.sentenceAnalysis,
-         sequenceAnalysis: solution.sequenceAnalysis,
-       }))
-      .filter(input => input.meaningConstructors.trim().length > 0);
+    return proofInputsFrom(solutions, { keyBy: 'part' });
   }
 
-  /**
-   * Proof inputs for one sentence's own part within a merged sequence
-   * response, keyed by sequenceParts[sentenceIndex] rather than the
-   * solution's whole-sequence meaningConstructors. sequenceParts entries are
-   * already shifted into the sequence-global SYN-ID range by LiGER's
-   * SequenceGraphAssembler, so SRC ids in the returned meaning constructors
-   * line up with the SYN-IDs of the same sentence's nodes in structureJson
-   * (the full merged structure).
-   */
+  /** One sentence's own part within a merged sequence -- see ProofInputOptions.sentenceIndex. */
   private proofInputsForSequencePart(solutions: LigerSolutionAnnotation[], sentenceIndex: number): GswbProofInput[] {
-    return solutions
-      .map((solution, index) => {
-        const part = solution.sequenceParts?.find(candidate => candidate.sourceIndex === sentenceIndex);
-        return {
-          proofId: part?.solutionKey || solution.solutionKey || `solution-${index}`,
-          sentenceId: solution.sequenceAnalysis?.sentences?.[sentenceIndex]?.id,
-          solutionKey: solution.solutionKey,
-          mcSetId: part?.solutionKey || solution.solutionKey || `solution-${index}`,
-          meaningConstructors: part?.meaningConstructors ?? '',
-          structure: solution.structureJson,
-          sentenceAnalysis: solution.sequenceAnalysis?.sentences?.[sentenceIndex],
-          sequenceAnalysis: solution.sequenceAnalysis,
-        };
-      })
-      .filter(input => input.meaningConstructors.trim().length > 0);
+    return proofInputsFrom(solutions, { sentenceIndex, keyBy: 'part' });
   }
 
   private renderSelectedSolution(index: number): void {

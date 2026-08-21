@@ -1,5 +1,6 @@
 import { Component, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { DataService } from "../data.service";
+import { proofInputsFrom } from '../document-builder/proof-inputs';
 import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
 import { ActivatedRoute } from '@angular/router';
 import {
@@ -2435,10 +2436,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *
    *  Returns [] when nothing is selected or disambiguation is off, which the fold reads as
    *  "no pruning". */
-  /** One `GswbProofInput` per syntactic analysis of a batch-parsed sentence, each with
-   *  its own structure -- the contract `/deduce` is built around ("One syntactic origin
-   *  and its MC input within an aggregate deduction"), and the same thing
-   *  `LigerVisComponent.proofInputsFor` builds for the analysis view. */
   /** Rules applied across a sentence's syntactic analyses, counted once each.
    *  Per-analysis now that the batch endpoint returns them separately; it used to be a
    *  single cumulative number that (because one RuleParser was shared across every
@@ -2453,20 +2450,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return seen.size;
   }
 
+  /** One `GswbProofInput` per syntactic analysis of a batch-parsed sentence. Shared with
+   *  the analysis view and DocumentBuilderService -- see proof-inputs.ts. */
   private batchProofInputs(
     sentenceId: string, annotation: LigerSolutionAnnotationResponse | undefined
   ): GswbProofInput[] {
-    return (annotation?.solutions ?? [])
-      .map((solution, index) => ({
-        proofId: solution.solutionKey || `${sentenceId}-${index + 1}`,
-        sentenceId,
-        solutionKey: solution.solutionKey,
-        mcSetId: solution.solutionKey || `${sentenceId}-${index + 1}`,
-        meaningConstructors: solution.meaningConstructors ?? '',
-        structure: solution.structureJson,
-        sentenceAnalysis: solution.sentenceAnalysis,
-      }))
-      .filter(proof => proof.meaningConstructors.trim().length > 0);
+    return proofInputsFrom(annotation?.solutions, { idPrefix: sentenceId });
   }
 
   private selectedDiscriminantIdentifiers(

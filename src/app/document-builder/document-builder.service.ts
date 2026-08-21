@@ -2,12 +2,14 @@ import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, defer, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { compositeAnalysisId } from '../analysis-model';
+import { proofInputsFrom } from './proof-inputs';
 import {
   GswbDiscriminant,
   GswbPreferences,
   GswbProofInput,
   GswbSemanticMergePart,
   GswbSolution,
+  LigerSolutionAnnotation,
   LigerStructure,
   SemanticAnalysis,
   SentenceAnalysis,
@@ -700,32 +702,26 @@ export class DocumentBuilderService {
     const variants = new Map<string, DerivedSequenceVariant>();
     const proofs: GswbProofInput[] = [];
 
+    // Shared with the analysis view and regression -- see proof-inputs.ts. `keyBy` defaults
+    // to the SEQUENCE key, which is what makes a returned reading attributable to the
+    // variant it came from: variants differing only in a previous sentence's parse share
+    // the new sentence's part key.
+    proofs.push(...proofInputsFrom(solutions as LigerSolutionAnnotation[], {
+      sentenceIndex: newSentenceIndex,
+      idPrefix: 'sequence-variant',
+    }));
+
     solutions.forEach((solution, index) => {
-      const parts = Array.isArray(solution?.sequenceParts) ? solution.sequenceParts : [];
-      const currentPart = parts.find(part => part?.sourceIndex === newSentenceIndex)
-        // Positional fallback for a LiGER build that predates `sourceIndex` on the part.
-        ?? parts[parts.length - 1];
-      if (!currentPart?.meaningConstructors?.trim()) {
+      const variantKey = solution.solutionKey || `sequence-variant-${index}`;
+      if (!proofs.some(proof => proof.proofId === variantKey)) {
         return;
       }
-      // The SEQUENCE key, not the part key: variants that differ only in a previous
-      // sentence's parse share the new sentence's part key, so keying on that would
-      // collapse exactly the distinction this lookup exists to preserve.
-      const variantKey = solution.solutionKey || `sequence-variant-${index + 1}`;
       const sentences = solution?.sequenceAnalysis?.sentences ?? [];
       const currentSentence = sentences[newSentenceIndex] ?? sentences[sentences.length - 1];
       variants.set(variantKey, {
         variantKey,
         sequenceStructure: solution.structureJson,
         currentSyntax: currentSentence?.syntax?.[0],
-      });
-      proofs.push({
-        proofId: variantKey,
-        sentenceId: currentSentence?.id ?? rebase.newSentence.id,
-        solutionKey: variantKey,
-        mcSetId: variantKey,
-        meaningConstructors: currentPart.meaningConstructors,
-        structure: solution.structureJson,
       });
     });
 
