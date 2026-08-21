@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, timeout } from 'rxjs';
 import {
   GswbRequest,
   GswbMultipleRequest,
@@ -48,6 +48,25 @@ import {
 })
 export class DataService {
   private readonly defaultRedisSessionKey = 'last_session';
+
+  /** Session/CRUD calls hit Redis through a thin proxy and should answer in
+   *  milliseconds. Angular's HttpClient has no default timeout, and Docker's port proxy
+   *  ACCEPTS the TCP connection even when the container behind it is down -- so a request
+   *  to a dead service is not refused, it hangs forever. That is how one
+   *  `saveRegressionSession` call held `saveOperationInProgress` true indefinitely and
+   *  left the UI stuck "autosaving" with no visible cause (2026-08-21): `finalize` never
+   *  ran, so the lock was never released and every later change queued behind a promise
+   *  that would not settle.
+   *
+   *  Deliberately NOT applied to the long-running calls -- callVampire, batchVampire,
+   *  gswbDeduce, ligerSequence and friends legitimately run for minutes, and capping them
+   *  would turn slow work into failed work. */
+  private readonly sessionRequestTimeoutMs = 20000;
+
+  private withSessionTimeout<T>(request: Observable<T>): Observable<T> {
+    return request.pipe(timeout(this.sessionRequestTimeoutMs));
+  }
+
   private vampirepage = 'http://localhost:8082'
   private redispage = 'http://localhost:8083';
   private gswbpage = 'http://localhost:8081';
@@ -179,23 +198,23 @@ callVampire(vampireRequest: vampireRequest){
   }
 
   getLastSession(sessionKey: string = this.defaultRedisSessionKey): Observable<vampireMultipleResponse> {
-    return this.http.get<vampireMultipleResponse>(`${this.vampirepage}/last_session/${sessionKey}`);
+    return this.withSessionTimeout(this.http.get<vampireMultipleResponse>(`${this.vampirepage}/last_session/${sessionKey}`));
   }
 
   getLastSessionSummary(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireSessionSummary> {
-    return this.http.get<VampireSessionSummary>(`${this.vampirepage}/last_session/${sessionKey}/summary`);
+    return this.withSessionTimeout(this.http.get<VampireSessionSummary>(`${this.vampirepage}/last_session/${sessionKey}/summary`));
   }
 
   resetLastSession(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
-    return this.http.delete(`${this.vampirepage}/last_session/${sessionKey}`);
+    return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/last_session/${sessionKey}`));
   }
 
   requestVampireCancel(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
-    return this.http.post(`${this.vampirepage}/vampire_progress/${sessionKey}/cancel`, {});
+    return this.withSessionTimeout(this.http.post(`${this.vampirepage}/vampire_progress/${sessionKey}/cancel`, {}));
   }
 
   getVampireProgress(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireProgress> {
-    return this.http.get<VampireProgress>(`${this.vampirepage}/vampire_progress/${sessionKey}`);
+    return this.withSessionTimeout(this.http.get<VampireProgress>(`${this.vampirepage}/vampire_progress/${sessionKey}`));
   }
 
   /** Drops a finished run's progress record. The backend only clears it on cancel, so
@@ -203,23 +222,23 @@ callVampire(vampireRequest: vampireRequest){
    *  the NEXT run reads it before the service has written its own "running" snapshot,
    *  showing a full bar for a second or two. Call this before submitting a run. */
   clearVampireProgress(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
-    return this.http.delete(`${this.vampirepage}/vampire_progress/${sessionKey}`);
+    return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/vampire_progress/${sessionKey}`));
   }
 
   listRegressionSessions(): Observable<RegressionSessionSummary[]> {
-    return this.http.get<RegressionSessionSummary[]>(`${this.vampirepage}/regression_sessions`);
+    return this.withSessionTimeout(this.http.get<RegressionSessionSummary[]>(`${this.vampirepage}/regression_sessions`));
   }
 
   loadRegressionSession(sessionKey: string): Observable<RegressionSessionDocument> {
-    return this.http.get<RegressionSessionDocument>(`${this.vampirepage}/regression_session/${sessionKey}`);
+    return this.withSessionTimeout(this.http.get<RegressionSessionDocument>(`${this.vampirepage}/regression_session/${sessionKey}`));
   }
 
   saveRegressionSession(sessionKey: string, payload: RegressionSessionDocument): Observable<any> {
-    return this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload);
+    return this.withSessionTimeout(this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload));
   }
 
   deleteRegressionSession(sessionKey: string): Observable<any> {
-    return this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`);
+    return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`));
   }
 
   saveAnalysisDocument(sessionKey: string, document: XlePlusGlueDocument): Observable<{ status: string; document: XlePlusGlueDocument }> {
@@ -228,7 +247,7 @@ callVampire(vampireRequest: vampireRequest){
   }
 
   clearAnalysisDocument(sessionKey: string): Observable<any> {
-    return this.http.delete(`${this.redispage}/analysis_document/${sessionKey}`);
+    return this.withSessionTimeout(this.http.delete(`${this.redispage}/analysis_document/${sessionKey}`));
   }
 
   saveChatDocument(sessionKey: string, document: XlePlusGlueDocument): Observable<{ status: string; document: XlePlusGlueDocument }> {

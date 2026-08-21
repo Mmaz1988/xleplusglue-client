@@ -605,7 +605,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           onSuccess();
         }
       },
-      error: error => console.warn("Unable to save regression session.", error)
+      error: error => {
+        console.warn("Unable to save regression session.", error);
+        // Surfaced, not just logged. A save that silently does nothing is how a session's
+        // work goes missing without anyone noticing until they reload -- and the previous
+        // failure mode here (a request to a dead service that hangs forever rather than
+        // erroring) showed only as a permanently "autosaving" UI with no stated cause.
+        const detail = error?.name === 'TimeoutError'
+          ? 'the session service did not respond'
+          : (error?.message ?? 'unknown error');
+        this.setSessionLoadStatus('error',
+          `Could not save session ${this.redisSessionKey}`,
+          `${detail}. Your work is still in the browser; try saving again once the services are up.`);
+      }
     });
   }
 
