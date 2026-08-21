@@ -21,7 +21,7 @@ import {
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
-import { concatMap, from, map, switchMap, toArray } from 'rxjs';
+import { catchError, concatMap, from, map, of, switchMap, toArray } from 'rxjs';
 import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
 import {
   compositeAnalysisId,
@@ -31,7 +31,7 @@ import {
   validateAnalysisDocument,
   validateReasoningUpdate
 } from '../../analysis-model';
-import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
+import { MappingWithStructure, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 import {
   DocumentBuilderService,
   SequenceMergePreviousContext,
@@ -876,7 +876,114 @@ export class ChatComponent {
       semanticText: contexts.map(item => item.semantic).join('\n')
     });
     this.changeDetector.detectChanges();
-    this.loading = false;
+    this.postProcessInitialContext(sentenceId, contexts, solutions);
+  }
+
+  /** Turn 1's post-processing: apply the rules over each reading's syntax+semantics union
+   *  and generate its PCDRS, recorded as a DiscourseUpdate on the sentence.
+   *
+   *  Turn 1 has no premise/hypothesis pair, so there is nothing to REASON about yet -- but
+   *  it can still contain a reflexive or a pronoun, and whether that bound correctly in
+   *  this turn is exactly what the user needs to see (user, 2026-08-21). It is also what
+   *  the analysis view does: post-processing there is a button available from the first
+   *  sentence on, not something gated on a sequence existing. Previously chat skipped this
+   *  entirely, so its first sentence was the only element in the document with no
+   *  pragmatic layer at all.
+   *
+   *  Runs after the reply is already on screen and never blocks it: a failure here costs
+   *  the anaphora view for this turn, not the turn. */
+  private postProcessInitialContext(
+    sentenceId: string, contexts: context[], solutions: any[]
+  ): void {
+    const readings = contexts
+      .map((entry, index) => ({ entry, solution: solutions[index] }))
+      .filter(({ entry }) => !!entry.semanticGraph && !!entry.syntax);
+
+    if (!readings.length) {
+      this.loading = false;
+      return;
+    }
+
+    const structures: Record<string, LigerStructure> = {};
+    const mergedGraphs: Record<string, LigerWebGraph> = {};
+    const discourse: DiscourseAnalysis[] = [];
+    const semDiscourseMapping: Record<string, string[]> = {};
+
+    // Serialized, same rationale as everywhere else on this path.
+    from(readings).pipe(
+      concatMap(({ entry, solution }) => {
+        const semId = entry.semanticAnalysis?.semId ?? `${sentenceId}-sem`;
+        const scopeId = `turn1-${sentenceId}-${semId}`;
+        return this.reasoningPipeline.generateDiscourseMappings({
+          scopeId,
+          merged: { semantic: entry.semantic, graph: entry.semanticGraph, ...(solution ?? {}) },
+          sequenceStructure: entry.syntax as LigerStructure,
+          ruleString: this.ruleString,
+        }).pipe(
+          map(mappings => ({ semId, scopeId, mappings })),
+          catchError(error => {
+            console.warn('[Chat] turn 1 post-processing failed for one reading',
+              { sentenceId, semId, error });
+            return of({ semId, scopeId, mappings: [] as MappingWithStructure[] });
+          })
+        );
+      }),
+      toArray()
+    ).subscribe({
+      next: results => {
+        results.forEach(({ semId, scopeId, mappings }) => {
+          mappings.forEach(({ mapping, branch, ruleBranchIndex, base }) => {
+            const baseStructureId = discourseStructureId(scopeId);
+            const structureId = discourseStructureId(scopeId, ruleBranchIndex);
+            if (base?.structureJson) {
+              structures[baseStructureId] = base.structureJson as LigerStructure;
+              if (base.graph) mergedGraphs[baseStructureId] = base.graph;
+            }
+            if (branch?.structure) {
+              structures[structureId] = branch.structure as LigerStructure;
+              if (branch.graph) mergedGraphs[structureId] = branch.graph;
+            }
+            const discourseId = mapping?.id ?? `${semId}-pcdrs-${ruleBranchIndex}`;
+            const mapped = semDiscourseMapping[semId] ?? [];
+            if (!mapped.includes(discourseId)) mapped.push(discourseId);
+            semDiscourseMapping[semId] = mapped;
+            discourse.push({
+              id: discourseId,
+              semanticOrigin: semId,
+              drsString: mapping?.semantic ?? '',
+              drsGraph: mapping?.graph,
+              structureId,
+              anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
+              collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
+            });
+          });
+        });
+
+        if (discourse.length) {
+          console.info('[Chat] turn 1 post-processing complete', {
+            sentenceId,
+            readings: results.length,
+            discourseBranches: discourse.length,
+            anaphoraResolvedCount: discourse.filter(item => item.collapsed).length,
+          });
+          this.upsertDiscourseUpdate({
+            id: `du-${sentenceId}`,
+            sourceElementId: sentenceId,
+            sourceElementKind: 'sentence',
+            structures,
+            mergedGraphs,
+            discourse,
+            semDiscourseMapping,
+          });
+        }
+        this.changeDetector.detectChanges();
+        this.loading = false;
+      },
+      error: error => {
+        console.warn('[Chat] turn 1 post-processing failed', { sentenceId, error });
+        this.loading = false;
+      }
+    });
   }
 
   private handleVampireResponse(

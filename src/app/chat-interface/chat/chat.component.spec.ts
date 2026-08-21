@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
@@ -15,6 +15,7 @@ describe('ChatComponent', () => {
   }>;
   let reasoningPipelineSpy: jasmine.SpyObj<{
     prepareReasoningChecks: any; prepareReasoningChecksSequentially: any;
+    generateDiscourseMappings: any;
   }>;
 
   beforeEach(() => {
@@ -26,7 +27,8 @@ describe('ChatComponent', () => {
     ]);
     reasoningPipelineSpy = jasmine.createSpyObj('ReasoningPipelineService', [
       'prepareReasoningChecks',
-      'prepareReasoningChecksSequentially'
+      'prepareReasoningChecksSequentially',
+      'generateDiscourseMappings'
     ]);
 
     TestBed.configureTestingModule({
@@ -430,6 +432,80 @@ describe('ChatComponent', () => {
       expect(message.branchSolutions?.length).toBe(1);
       // ... but the branch still has its TPTP block, so nothing disappears silently.
       expect((message.detailText ?? '').split('\n\n').filter(Boolean).length).toBe(2);
+    });
+  });
+
+  describe('turn 1 post-processing (PCDRS on the first sentence)', () => {
+    const structure = { constraints: [], annotations: [], choiceSpace: {} } as any;
+
+    beforeEach(() => {
+      component.gswbPreferences = { gswbPreferences: { resolveDrs: true } } as any;
+      component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
+      component.ruleString = 'rules';
+      component.chatDocument = {
+        id: 'doc', semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [],
+      } as any;
+    });
+
+    /** A first sentence has no premise/hypothesis pair, so nothing is reasoned about --
+     *  but a reflexive or pronoun in it still has to be shown as bound or unbound for
+     *  that turn, which is what the PCDRS mappings carry. Chat used to skip this
+     *  entirely, leaving sentence-1 as the only document element with no pragmatic
+     *  layer at all. */
+    it('generates PCDRS for the first sentence and records it as a DiscourseUpdate', () => {
+      reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(of([{
+        mapping: {
+          id: 'pcdrs-1', semantic: 'drs-with-binding', graph: { id: 'pcdrs-graph' },
+          anaphoraRelations: [{ pronoun: 'x2', antecedent: 'x1' }],
+        },
+        branch: { structure: { id: 'branch-struct' }, graph: { graphElements: [] } },
+        ruleBranchIndex: 1,
+        base: { structureJson: { id: 'base-struct' }, graph: { graphElements: [] } },
+      }] as any));
+
+      (component as any).acceptInitialLfgxdrtContext('a man saw himself', [{
+        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        syntax: structure, solutionKey: 'S0',
+        semanticAnalysis: {
+          syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
+          graph: structure, semType: 'lfgxdrt',
+        },
+      }], []);
+
+      expect(reasoningPipelineSpy.generateDiscourseMappings).toHaveBeenCalledTimes(1);
+      const [request] = reasoningPipelineSpy.generateDiscourseMappings.calls.mostRecent().args;
+      expect(request.sequenceStructure).toBe(structure);
+      expect(request.ruleString).toBe('rules');
+
+      const update = component.chatDocument.discourseUpdates?.[0] as any;
+      expect(update).toBeTruthy();
+      expect(update.sourceElementId).toBe('sentence-1');
+      expect(update.sourceElementKind).toBe('sentence');
+      expect(update.discourse.length).toBe(1);
+      expect(update.discourse[0].collapsed).toBe(true);
+      expect(update.discourse[0].anaphoraMapping.relations.length).toBe(1);
+      expect(update.semDiscourseMapping['sem-1']).toEqual(['pcdrs-1']);
+      expect(component.loading).toBe(false);
+    });
+
+    it('still answers the turn when post-processing fails', () => {
+      reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(
+        throwError(() => new Error('rules blew up')));
+
+      (component as any).acceptInitialLfgxdrtContext('a man appeared', [{
+        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        syntax: structure, solutionKey: 'S0',
+        semanticAnalysis: {
+          syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
+          graph: structure, semType: 'lfgxdrt',
+        },
+      }], []);
+
+      // The reply is already on screen; a post-processing failure costs the anaphora
+      // view for this turn, not the turn.
+      expect(component.chatHistory.some(m => m.text === 'Okay ...')).toBe(true);
+      expect(component.chatDocument.discourseUpdates ?? []).toEqual([]);
+      expect(component.loading).toBe(false);
     });
   });
 });

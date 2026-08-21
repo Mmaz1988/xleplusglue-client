@@ -1264,16 +1264,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       (this.session.analysisDocument?.reasoningUpdates ?? []).map(update => [update.id, update]));
     const failed: { id: string; sentences: string; reason: string }[] = [];
 
+    // An item that simply has not been reached yet is PENDING, not failed. While a run is
+    // in flight every item starts without a reasoning update, so reporting those made the
+    // panel accuse the whole testsuite of failing for the first seconds of every run,
+    // clearing itself as results landed. Only an item that was actually attempted and
+    // produced no verdict belongs here; before any run has happened at all, nothing does.
+    const runInFlight = this.activeVampireRunStartedAt !== null;
     for (const item of this.regressionTestItems) {
       const itemId = String(item?.id ?? '');
       const update = updatesById.get(`ru-${itemId}`);
       if (update && majorityVerdict(update.assignments ?? [])) continue;
+      if (!update && (runInFlight || !this.session.hasRunVampire)) continue;
 
       const sentences = [...(item?.premises ?? []), ...(item?.conclusion ?? [])]
         .map((sid: string) => this.sentenceMap[sid])
         .filter((s: any) => typeof s === 'string' && s.trim().length > 0)
         .join(' / ');
-      const reason = update?.failure || (update ? 'No reading assignment produced a verdict.' : 'Not attempted yet.');
+      const reason = update?.failure || (update ? 'No reading assignment produced a verdict.' : 'Never attempted.');
       failed.push({ id: itemId, sentences, reason });
     }
 
@@ -2248,7 +2255,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       ? 0
       : Object.keys(this.session.lastVampireResults ?? {}).length;
     this.startVampireProgressIndicator(this.vampireCurrentRunItemCount + this.vampireProgressBaselineCount);
-    this.startVampireSummaryPolling(vampireStartedAt, vampireRunToken);
+
+    // Clear the PREVIOUS run's progress record before polling starts. It is only cleared
+    // automatically on cancel, so after a normal run it stays in Redis describing a
+    // completed run (itemCount == totalItemCount) -- and the first poll below fires
+    // before the vampire service has written this run's own "running" snapshot, so it
+    // read that stale record and painted a full bar until the real snapshot landed a
+    // couple of seconds later. A failed clear must not block the run: worst case the bar
+    // is briefly wrong again, which is strictly better than not running.
+    this.dataService.clearVampireProgress(this.redisSessionKey).pipe(
+      catchError(error => {
+        console.warn('Unable to clear the previous run\'s Vampire progress record.', error);
+        return of(null);
+      })
+    ).subscribe(() => {
+      if (vampireRunToken !== this.vampireRunToken) return;
+      this.startVampireSummaryPolling(vampireStartedAt, vampireRunToken);
+    });
     this.loadAndRenderVampireState(false, vampireStartedAt, vampireRunToken);
 
     this.batchVampire(vampireRequest).subscribe({

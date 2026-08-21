@@ -120,6 +120,19 @@ export interface PreparedReasoningPair {
   degradations: string[];
 }
 
+/** One PCDRS/anaphora mapping together with the rule branch and tier-A union it came
+ *  from -- the output of the post-processing half of the pipeline, before any reasoning
+ *  checks are built on top. */
+export interface MappingWithStructure {
+  /** GSWB's PCDRS solution: `.id`, `.semantic`, `.graph`, `.anaphoraRelations`. */
+  mapping: any;
+  /** The tier-B rule branch this mapping was generated from. */
+  branch: { structure?: any; graph?: LigerWebGraph };
+  ruleBranchIndex: number;
+  /** The tier-A syntax+semantics union the branches were derived from. */
+  base: { structureJson?: any; graph?: LigerWebGraph };
+}
+
 /**
  * Builds the four discourse-reasoning checks for a premise/conclusion pair.
  *
@@ -150,38 +163,29 @@ export class ReasoningPipelineService {
     );
   }
 
-  prepareReasoningChecks(request: ReasoningPairRequest): Observable<PreparedReasoningPair> {
-    const { scopeId, merged, sequenceStructure, premiseAsts, hypothesisAsts, typed } = request;
-
-    if (!sequenceStructure) {
-      throw new Error('NLI checks require the sequence provenance structure.');
-    }
-    if (!premiseAsts?.length || !hypothesisAsts?.length || !merged?.graph) {
-      throw new Error('NLI sequence semantic graphs are missing.');
-    }
-    // Not fatal -- the four checks are complete without it -- but it silently removes the
-    // context axiom from every proof file in this pair, so it is said out loud.
-    if (!request.premiseSemantic) {
-      console.warn('[Reasoning] no prior semantics supplied; no context axiom will be emitted',
-        { scopeId });
-    }
-
-    const ruleString = request.ruleString ?? APP_DEFAULTS.graphInspector.rulesText;
-
-    // The check ASTs are fixed for this pair and never vary across the PCDRS mappings
-    // below, so they are fetched exactly once and reused by every mapping. This call
-    // needs none of the PCDRS pipeline's output, so it runs concurrently with it rather
-    // than waiting for PCDRS generation to finish.
-    const reasoningChecks$ = this.dataService.gswbReasoningCheckAsts({
-      premiseAsts, hypothesisAsts, typed
-    });
-
+  /** The post-processing half of the pipeline: union the merged syntax with the merged
+   *  semantics, apply the NLI rules over that union, and generate the PCDRS/anaphora
+   *  mappings from every resulting rule branch.
+   *
+   *  Shared by `prepareReasoningChecks` (which then builds the four checks on top) and by
+   *  `generateDiscourseMappings` (which stops here). A first sentence has no premise/
+   *  hypothesis pair to reason over, but it does have pronouns and reflexives to bind --
+   *  and the user needs to see whether they were bound correctly in that turn, which is
+   *  exactly what these mappings show.
+   */
+  private buildDiscourseMappings(
+    scopeId: string,
+    merged: any,
+    sequenceStructure: LigerStructure,
+    ruleString: string,
+    prune: boolean,
+  ): Observable<MappingWithStructure[]> {
     // /merge_uploaded_structures only UNIONS the merged syntax with the merged
     // semantics -- both sides end up in one graph with no edges between them. The
     // post-processing rules below are what interconnect them (they join SRC to SYN-ID
     // and emit SYNSEM). Tier A is kept alongside the tier-B branches so the discourse
     // layer can record both.
-    const mappingsWithStructure$ = this.dataService.ligerMergeStructure({
+    return this.dataService.ligerMergeStructure({
       syntax: sequenceStructure, drs: merged.graph
     }).pipe(
       switchMap(base => this.applyNliRules(base.structureJson, ruleString, base.graph).pipe(
@@ -210,12 +214,68 @@ export class ReasoningPipelineService {
         });
         // Pruning reasons over the first candidate alone; the reduction happens here,
         // before the expensive collapse/TPTP/Vampire steps below.
-        if (request.prune) {
+        if (prune) {
           mappingsWithStructure = mappingsWithStructure.slice(0, 1);
         }
         return mappingsWithStructure;
       })
     );
+  }
+
+  /** Post-processing only: the DRS plus its anaphora mappings for ONE reading, with no
+   *  premise/hypothesis pair and no reasoning checks. This is what a first sentence needs
+   *  -- it has nothing to reason against yet, but a reflexive or pronoun in it still has
+   *  to be shown as bound (or not) for that turn. */
+  generateDiscourseMappings(request: {
+    scopeId: string;
+    merged: any;
+    sequenceStructure: LigerStructure;
+    ruleString?: string;
+    prune?: boolean;
+  }): Observable<MappingWithStructure[]> {
+    if (!request.sequenceStructure) {
+      throw new Error('Discourse mappings require the sequence provenance structure.');
+    }
+    if (!request.merged?.graph) {
+      throw new Error('Discourse mappings require the reading\'s semantic graph.');
+    }
+    return this.buildDiscourseMappings(
+      request.scopeId,
+      request.merged,
+      request.sequenceStructure,
+      request.ruleString ?? APP_DEFAULTS.graphInspector.rulesText,
+      !!request.prune,
+    );
+  }
+
+  prepareReasoningChecks(request: ReasoningPairRequest): Observable<PreparedReasoningPair> {
+    const { scopeId, merged, sequenceStructure, premiseAsts, hypothesisAsts, typed } = request;
+
+    if (!sequenceStructure) {
+      throw new Error('NLI checks require the sequence provenance structure.');
+    }
+    if (!premiseAsts?.length || !hypothesisAsts?.length || !merged?.graph) {
+      throw new Error('NLI sequence semantic graphs are missing.');
+    }
+    // Not fatal -- the four checks are complete without it -- but it silently removes the
+    // context axiom from every proof file in this pair, so it is said out loud.
+    if (!request.premiseSemantic) {
+      console.warn('[Reasoning] no prior semantics supplied; no context axiom will be emitted',
+        { scopeId });
+    }
+
+    const ruleString = request.ruleString ?? APP_DEFAULTS.graphInspector.rulesText;
+
+    // The check ASTs are fixed for this pair and never vary across the PCDRS mappings
+    // below, so they are fetched exactly once and reused by every mapping. This call
+    // needs none of the PCDRS pipeline's output, so it runs concurrently with it rather
+    // than waiting for PCDRS generation to finish.
+    const reasoningChecks$ = this.dataService.gswbReasoningCheckAsts({
+      premiseAsts, hypothesisAsts, typed
+    });
+
+    const mappingsWithStructure$ = this.buildDiscourseMappings(
+      scopeId, merged, sequenceStructure, ruleString, !!request.prune);
 
     return forkJoin({
       reasoningChecksResponse: reasoningChecks$,

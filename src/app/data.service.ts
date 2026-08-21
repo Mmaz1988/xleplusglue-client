@@ -198,6 +198,14 @@ callVampire(vampireRequest: vampireRequest){
     return this.http.get<VampireProgress>(`${this.vampirepage}/vampire_progress/${sessionKey}`);
   }
 
+  /** Drops a finished run's progress record. The backend only clears it on cancel, so
+   *  after a normal run it lingers describing a COMPLETED run -- and the first poll of
+   *  the NEXT run reads it before the service has written its own "running" snapshot,
+   *  showing a full bar for a second or two. Call this before submitting a run. */
+  clearVampireProgress(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
+    return this.http.delete(`${this.vampirepage}/vampire_progress/${sessionKey}`);
+  }
+
   listRegressionSessions(): Observable<RegressionSessionSummary[]> {
     return this.http.get<RegressionSessionSummary[]>(`${this.vampirepage}/regression_sessions`);
   }
