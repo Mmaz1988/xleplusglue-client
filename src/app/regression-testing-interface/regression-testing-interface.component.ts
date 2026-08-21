@@ -13,6 +13,9 @@ import {
   ReasoningCheckSet,
   ReasoningUpdate,
   SemanticAnalysis,
+  GswbProofInput,
+  GswbRequest,
+  LigerSolutionAnnotationResponse,
   SentenceAnalysis,
   SequenceAnalysis,
   XlePlusGlueDocument,
@@ -88,7 +91,7 @@ type ParsedRegressionRunSnapshot = {
   regressionTestResults: RegressionParseResult[];
   inferenceResults: RegressionInferenceResult[];
   sentenceMap: Record<string, string>;
-  annotations: Record<string, LigerRuleAnnotation> | null;
+  annotations: Record<string, LigerSolutionAnnotationResponse> | null;
   gswbOutputs: Record<string, GswbOutput> | null;
 };
 
@@ -995,11 +998,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       const regressionTestResult: RegressionParseResult = {
         sentence_id: key,
         sentence: this.sentenceMap[key],
-        noOfAppliedRules: annotations[key]?.appliedRules?.length ?? 0,
-        noOfMCsets: annotations[key]?.numberOfMCsets ?? 0,
+        // Aggregated across this sentence's syntactic analyses, which the batch endpoint
+        // now returns individually instead of pre-flattening into one annotation.
+        noOfAppliedRules: this.distinctAppliedRuleCount(annotations[key]),
+        noOfMCsets: (annotations[key]?.solutions ?? [])
+          .reduce((sum, solution) => sum + (solution.numberOfMCsets ?? 0), 0),
         noOfSolutions: sols.length,
-        ligerGraph: annotations[key]?.graph,
-        ligerMCsets: annotations[key]?.meaningConstructors,
+        ligerGraph: annotations[key]?.solutions?.[0]?.graph,
+        ligerMCsets: (annotations[key]?.solutions ?? [])
+          .map(solution => solution.meaningConstructors ?? '').join('\n'),
         allMCs: this.sortedMCmap[key],
         gswbSolutions: sols,
         gswbDerivation: out?.derivation,
@@ -1041,7 +1048,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  `registerFinalSequence` once its chain has been built. */
   private registerAnalysisSentences(
     gswbOutputs: Record<string, GswbOutput>,
-    annotations: Record<string, LigerRuleAnnotation>
+    annotations: Record<string, LigerSolutionAnnotationResponse>
   ): void {
     const sentences: SentenceAnalysis[] = [];
     for (const sentenceId of Object.keys(this.sentenceMap)) {
@@ -1056,25 +1063,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       solutions.forEach(solution => {
         const synId = solution.solutionKey || solution.proofId || `${sentenceId}-syn`;
         if (!syntaxByKey.has(synId)) {
-          // `structure` is legitimately absent here: `/apply_rules_to_batch` never
-          // populates `structureJson` (LigerController.applyRulesToTestsuiteNew builds
-          // its LigerRuleAnnotation with a 6-arg constructor that omits it), so these
-          // entries are display/provenance records, not usable parse input. They are
-          // still registered, because `semantics` below carry `syntacticOrigin: synId`
-          // and dropping the syntax entry would orphan them against
-          // validateSentenceAnalysis. Consumers that feed syntax back to LiGER must
-          // therefore filter for a present `structure` -- see
-          // DocumentBuilderService.deriveAndMergeForContext, and
-          // docs/bug_reports/regression_second_fold_null_structure_500.md for what
-          // happens when they don't (a `null` in `parsedSentences` 500s the call).
+          // The batch endpoint now returns one annotation per syntactic analysis, so this
+          // registers each reading's OWN structure instead of a structureless placeholder.
+          // Matched by solutionKey -- the GSWB solution carries the proof origin's key,
+          // which is exactly the LiGER solution key the proof was built from.
+          const variant = (annotation?.solutions ?? []).find(candidate =>
+            candidate.solutionKey === synId) ?? annotation?.solutions?.[0];
           syntaxByKey.set(synId, {
             synId,
-            structure: annotation?.structureJson as LigerStructure,
-            graph: annotation?.graph,
-            meaningConstructors: annotation?.meaningConstructors,
-            numberOfMCsets: annotation?.numberOfMCsets,
-            appliedRules: annotation?.appliedRules,
-            axioms: annotation?.axioms,
+            structure: variant?.structureJson as LigerStructure,
+            graph: variant?.graph,
+            meaningConstructors: variant?.meaningConstructors,
+            numberOfMCsets: variant?.numberOfMCsets,
+            appliedRules: variant?.appliedRules,
+            axioms: variant?.axioms,
           });
         }
         const semantic: SemanticAnalysis = solution.semanticAnalysis ?? {
@@ -1522,24 +1524,36 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (data.hasOwnProperty("annotations")) {
           console.log("Annotations:", data.annotations);
 
-          let mcMap = {};
-          for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
-            mcMap[key] = value.meaningConstructors;
-          }
-
-          let sortedMcMap = {};
-          Object.keys(mcMap).sort((a, b) => {
-            let aNum = parseInt(a.match(/\d+/)[0]);
-            let bNum = parseInt(b.match(/\d+/)[0]);
+          // One GswbRequest per sentence, built from that sentence's OWN per-variant
+          // solutions -- the same shape glue-vis and chat send to /deduce, one
+          // GswbProofInput per syntactic analysis carrying its own structure. The batch
+          // used to send flat concatenated meaning constructors with no structure, which
+          // is why its discriminants came back with no surface labels and no origin ids,
+          // and why every sentence's solution ids were a bare `s0`.
+          const sortedIds = Object.keys(data.annotations ?? {}).sort((a, b) => {
+            const aNum = parseInt(a.match(/\d+/)?.[0] ?? '0');
+            const bNum = parseInt(b.match(/\d+/)?.[0] ?? '0');
             return aNum - bNum;
-          }).forEach(key => {
-            sortedMcMap[key] = mcMap[key];
           });
+
+          const items: Record<string, GswbRequest> = {};
+          const sortedMcMap: Record<string, string> = {};
+          for (const key of sortedIds) {
+            const proofs = this.batchProofInputs(key, data.annotations[key]);
+            if (!proofs.length) continue;
+            sortedMcMap[key] = proofs.map(proof => proof.meaningConstructors).join('\n');
+            items[key] = {
+              premises: sortedMcMap[key],
+              gswbPreferences: this.gswbPreferences.gswbPreferences,
+              structure: proofs[0].structure,
+              proofs,
+            };
+          }
 
           this.sortedMCmap = sortedMcMap;
 
           this.gswbMultipleRequest = {
-            premises: sortedMcMap,
+            items,
             gswbPreferences: this.gswbPreferences.gswbPreferences,
             sessionKey: this.redisSessionKey
           };
@@ -1723,9 +1737,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             premise_strings.push(sols.join('\n'));
           }
 
-          const liger_data = annotations[premise];
-          if (liger_data?.axioms?.length) {
-            for (let axiom of liger_data.axioms) {
+          // Axioms are per syntactic analysis now; collect across all of them, deduped
+          // by the existing `axioms.includes` guard below.
+          const premiseAxioms = (annotations[premise]?.solutions ?? [])
+            .flatMap(solution => solution.axioms ?? []);
+          if (premiseAxioms.length) {
+            for (let axiom of premiseAxioms) {
               if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
                 axioms += logicType + "(" +
                   "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
@@ -1747,9 +1764,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             conclusion_strings.push(sols.join('\n'));
           }
 
-          const liger_data = annotations[conclusion];
-          if (liger_data?.axioms?.length) {
-            for (let axiom of liger_data.axioms) {
+          const conclusionAxioms = (annotations[conclusion]?.solutions ?? [])
+            .flatMap(solution => solution.axioms ?? []);
+          if (conclusionAxioms.length) {
+            for (let axiom of conclusionAxioms) {
               if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
                 axioms += logicType + "(" +
                   "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
@@ -2023,7 +2041,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           throw new Error(`LiGER returned no structure for ${sentenceId}.`);
         }
         const synId = solution?.sequenceAnalysis?.sentences?.[0]?.syntax?.[0]?.synId ?? `${sentenceId}-syn`;
-        return { synId, structure: structureJson as LigerStructure, graph: this.session.lastAnnotations?.[sentenceId]?.graph };
+        return {
+          synId,
+          structure: structureJson as LigerStructure,
+          graph: this.session.lastAnnotations?.[sentenceId]?.solutions?.[0]?.graph,
+        };
       })
     );
   }
@@ -2376,6 +2398,40 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *
    *  Returns [] when nothing is selected or disambiguation is off, which the fold reads as
    *  "no pruning". */
+  /** One `GswbProofInput` per syntactic analysis of a batch-parsed sentence, each with
+   *  its own structure -- the contract `/deduce` is built around ("One syntactic origin
+   *  and its MC input within an aggregate deduction"), and the same thing
+   *  `LigerVisComponent.proofInputsFor` builds for the analysis view. */
+  /** Rules applied across a sentence's syntactic analyses, counted once each.
+   *  Per-analysis now that the batch endpoint returns them separately; it used to be a
+   *  single cumulative number that (because one RuleParser was shared across every
+   *  sentence) also included rules applied to earlier sentences. */
+  private distinctAppliedRuleCount(annotation: LigerSolutionAnnotationResponse | undefined): number {
+    const seen = new Set<string>();
+    for (const solution of annotation?.solutions ?? []) {
+      for (const rule of solution.appliedRules ?? []) {
+        seen.add(String((rule as any)?.index ?? (rule as any)?.rule ?? rule));
+      }
+    }
+    return seen.size;
+  }
+
+  private batchProofInputs(
+    sentenceId: string, annotation: LigerSolutionAnnotationResponse | undefined
+  ): GswbProofInput[] {
+    return (annotation?.solutions ?? [])
+      .map((solution, index) => ({
+        proofId: solution.solutionKey || `${sentenceId}-${index + 1}`,
+        sentenceId,
+        solutionKey: solution.solutionKey,
+        mcSetId: solution.solutionKey || `${sentenceId}-${index + 1}`,
+        meaningConstructors: solution.meaningConstructors ?? '',
+        structure: solution.structureJson,
+        sentenceAnalysis: solution.sentenceAnalysis,
+      }))
+      .filter(proof => proof.meaningConstructors.trim().length > 0);
+  }
+
   private selectedDiscriminantIdentifiers(
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,
@@ -2885,13 +2941,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.dataService.ligerBatchMultistage(ligerMultipleRequest).subscribe(
       data => {
         if (data.hasOwnProperty("annotations")) {
-          let mcMap = {};
-          for (let [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
-            mcMap[key] = value.meaningConstructors;
+          // `/multistage_to_batch` was NOT migrated to the per-variant shape (different
+          // semantics, no coverage here), so it still returns one annotation per sentence
+          // with concatenated meaning constructors. Sent as premises-only items, which is
+          // the flat path GSWB still supports -- see LigerRuleAnnotationBatchAnalysis.
+          const items: Record<string, GswbRequest> = {};
+          for (const [key, value] of Object.entries(data.annotations) as [string, LigerRuleAnnotation][]) {
+            items[key] = {
+              premises: value.meaningConstructors,
+              gswbPreferences: this.gswbPreferences.gswbPreferences,
+            };
           }
 
           this.gswbMultipleRequest = {
-            premises: mcMap,
+            items,
             gswbPreferences: this.gswbPreferences.gswbPreferences
           };
 

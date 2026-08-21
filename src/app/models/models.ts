@@ -1,7 +1,20 @@
 import { SafeHtml } from '@angular/platform-browser';
 
+/** A batch parse: per sentence id, exactly what `/apply_rules_xle` returns for that
+ *  sentence -- one `LigerSolutionAnnotation` per syntactic analysis, each with its own
+ *  `structureJson`, `structureVariants`, `sentenceAnalysis`, graph and meaning
+ *  constructors. Was one `LigerRuleAnnotation` per sentence carrying none of that. */
 export interface LigerBatchParsingAnalysis {
-  annotations: { [key: number]: LigerRuleAnnotation };
+  annotations: { [key: string]: LigerSolutionAnnotationResponse };
+  ruleApplicationGraph: LigerGraphComponent[];
+  report: string;
+}
+
+/** The pre-Stage-4 batch shape, still returned by `/multistage_to_batch` and
+ *  `/apply_rules_to_dependency_batch` -- endpoints with different semantics that were not
+ *  migrated. */
+export interface LigerRuleAnnotationBatchAnalysis {
+  annotations: { [key: string]: LigerRuleAnnotation };
   ruleApplicationGraph: LigerGraphComponent[];
   report: string;
 }
@@ -433,8 +446,12 @@ export interface GswbProofInput {
   sequenceAnalysis?: LigerSequenceAnalysis;
 }
 
+/** A batch deduction: one `GswbRequest` per sentence id -- the same payload `/deduce`
+ *  takes, so the batch returns the same per-sentence result (per-origin provenance,
+ *  surface labels on scope discriminants, sentence-scoped solution ids). Was
+ *  `premises: {[id]: string}`, flat meaning constructors with no structure and no proofs. */
 export interface GswbMultipleRequest {
-  premises: { [key: string]: string };
+  items: { [key: string]: GswbRequest };
   gswbPreferences: GswbPreferences;
   sessionKey?: string;
 }
@@ -696,7 +713,7 @@ export interface RegressionSessionAnalysis {
 
 export interface RegressionSessionSaveState {
   lastGswbOutputs: Record<string, GswbOutput> | null;
-  lastAnnotations: Record<string, LigerRuleAnnotation> | null;
+  lastAnnotations: Record<string, LigerSolutionAnnotationResponse> | null;
   lastVampireResults: Record<string, check[]> | null;
   lastLogicType: 'fof' | 'tff';
   lastVampireScopeIdsBySentence: Record<string, string[]>;
@@ -753,7 +770,7 @@ export interface RegressionTestingSession {
   selectedScopeIdsBySentence: Record<string, string[]>;
   selectedMcIdsBySentence: Record<string, string[]>;
   lastGswbOutputs: Record<string, GswbOutput> | null;
-  lastAnnotations: Record<string, LigerRuleAnnotation> | null;
+  lastAnnotations: Record<string, LigerSolutionAnnotationResponse> | null;
   lastVampireResults: Record<string, check[]> | null;
   lastLogicType: 'fof' | 'tff';
   lastVampireScopeIdsBySentence: Record<string, string[]>;
