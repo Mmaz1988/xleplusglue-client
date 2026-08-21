@@ -11,6 +11,7 @@ import {
   reasoningUpdateId,
   resolveElement,
   selectedSentenceSemantics,
+  selectedSentenceSyntax,
   validateAnalysisDocument,
   validateSentenceAnalysis,
   validateSequenceAnalysis,
@@ -505,6 +506,53 @@ describe('analysis model helpers', () => {
 
       const restored = regressionDocumentToSession(v3);
       expect(restored.analysisDocuments).toEqual({});
+    });
+  });
+
+  describe('selectedSentenceSyntax', () => {
+    const sentence = (selected?: string[]): any => ({
+      id: 'sentence-1', text: 'ambiguous',
+      syntax: [{ synId: 'S0' }, { synId: 'S1' }, { synId: 'S2' }],
+      semantics: [
+        { semId: 'a', syntacticOrigin: 'S0' }, { semId: 'b', syntacticOrigin: 'S0' },
+        { semId: 'c', syntacticOrigin: 'S1' },
+        { semId: 'd', syntacticOrigin: 'S2' },
+      ],
+      synSemMapping: { S0: ['a', 'b'], S1: ['c'], S2: ['d'] },
+      ...(selected ? { selectedSemanticIds: selected } : {}),
+    });
+
+    /** The point of SYNSEM_MAPPING being a disjoint partition: disambiguating semantically
+     *  tells you exactly which syntactic analyses no longer have a reading. */
+    it('drops syntax whose readings were all deselected', () => {
+      const surviving = selectedSentenceSyntax(sentence(['c']));
+      expect(surviving.map(s => s.synId)).toEqual(['S1']);
+    });
+
+    it('keeps a syntax that retains at least one selected reading', () => {
+      const surviving = selectedSentenceSyntax(sentence(['b', 'd']));
+      expect(surviving.map(s => s.synId)).toEqual(['S0', 'S2']);
+    });
+
+    it('narrows an explicit selection only -- never invents one', () => {
+      expect(selectedSentenceSyntax(sentence()).map(s => s.synId)).toEqual(['S0', 'S1', 'S2']);
+    });
+
+    it('leaves a sentence whose readings are not derived yet untouched', () => {
+      // Normal for an appended sentence: its syntax is registered, its readings live in
+      // the sequence.
+      const notYetDerived: any = {
+        id: 'sentence-2', text: 'the woman smiled',
+        syntax: [{ synId: 'S0' }], semantics: [], synSemMapping: {},
+        selectedSemanticIds: [],
+      };
+      expect(selectedSentenceSyntax(notYetDerived).map((s: any) => s.synId)).toEqual(['S0']);
+    });
+
+    it('does not strip everything when a selection matches nothing', () => {
+      // Better to over-supply than to hand LiGER an empty parsedSentences entry.
+      expect(selectedSentenceSyntax(sentence(['nonexistent'])).map(s => s.synId))
+        .toEqual(['S0', 'S1', 'S2']);
     });
   });
 });

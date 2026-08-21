@@ -298,6 +298,18 @@ describe('ChatComponent', () => {
       expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
       expect(preparedCallCount).toBe(2);
 
+      // The scope id names the PRIOR'S READING, not just its element id. GSWB derives
+      // every PCDRS id from this scope, so when it omitted the prior's reading, two pairs
+      // differing only in which reading of an ambiguous premise they used produced
+      // IDENTICAL pragmatic ids -- measured in chat-document-pronoun-bug3.json as 24
+      // discourse branches sharing 12 ids. That broke the (syn, sem, prag) joint id:
+      // a reasoning assignment could not say which semantics produced its mapping.
+      const scopeIds = reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs()
+        .map(([request]: any[]) => request.scopeId);
+      expect(new Set(scopeIds).size).toBe(2);
+      expect(scopeIds.some((id: string) => id.includes('sem-1a'))).toBeTrue();
+      expect(scopeIds.some((id: string) => id.includes('sem-1b'))).toBeTrue();
+
       const premiseSemantics = reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs()
         .map(([request]: any[]) => request.premiseSemantic).sort();
       expect(premiseSemantics).toEqual(['P1', 'P2']);

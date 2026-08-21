@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, defer, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
-import { compositeAnalysisId } from '../analysis-model';
+import { compositeAnalysisId, selectedSentenceSyntax } from '../analysis-model';
 import { proofInputsFrom } from './proof-inputs';
 import {
   GswbDiscriminant,
@@ -530,7 +530,14 @@ export class DocumentBuilderService {
     const parsedSentences: LigerStructure[][] = [];
     const structurelessSentenceIds: string[] = [];
     for (const sentence of previousSentences) {
-      const structures = sentence.syntax
+      // Only the syntax that still has a selected reading. SYNSEM_MAPPING is a disjoint
+      // partition, so once semantics are disambiguated the surviving syntax is exactly
+      // the buckets with something left in them. Supplying all of it made LiGER compute
+      // the full sequence-variant cross product over parses whose readings the user had
+      // already ruled out -- the syntactic counterpart of the semantic over-derivation
+      // fixed by SequenceMergeRebase.selectedDiscriminantIdentifiers. A sentence with no
+      // recorded selection is unaffected.
+      const structures = selectedSentenceSyntax(sentence)
         .map(syntax => syntax.structure)
         .filter((structure): structure is LigerStructure => !!structure);
       if (!structures.length) {

@@ -12,6 +12,7 @@ import {
   SynSemMapping,
   XlePlusGlueDocument,
   XlePlusGlueElement,
+  SyntacticAnalysis,
   XlePlusGlueElementRef,
 } from './models/models';
 
@@ -176,6 +177,31 @@ export function selectedSentenceSemantics(sentence: SentenceAnalysis): SemanticA
   }
   const selected = new Set(sentence.selectedSemanticIds);
   return sentence.semantics.filter(semantic => selected.has(semantic.semId));
+}
+
+/** The syntactic analyses that still have a selected semantic reading.
+ *
+ *  The point of `SYNSEM_MAPPING` being a disjoint partition: once semantics are
+ *  disambiguated, the syntax that survives is exactly the buckets with something left in
+ *  them. Preserving a syntactic analysis whose readings were all deselected is how a
+ *  discourse ends up re-deriving branches the user already ruled out.
+ *
+ *  A sentence with no `selectedSemanticIds`, or one whose syntax carries no semantics of
+ *  its own yet (normal before its readings are derived in a sequence), is returned
+ *  unchanged -- this narrows an explicit selection, it does not invent one. */
+export function selectedSentenceSyntax(sentence: SentenceAnalysis): SyntacticAnalysis[] {
+  if (!sentence.selectedSemanticIds?.length || !sentence.semantics?.length) {
+    return sentence.syntax;
+  }
+  const selected = new Set(sentence.selectedSemanticIds);
+  const surviving = sentence.syntax.filter(syntax => {
+    const mapped = sentence.synSemMapping?.[syntax.synId];
+    // A syntax with no mapping at all is not "deselected" -- nothing was ever recorded
+    // about it, so it stays.
+    if (!mapped?.length) return true;
+    return mapped.some(semanticId => selected.has(semanticId));
+  });
+  return surviving.length ? surviving : sentence.syntax;
 }
 
 export function validateSentenceAnalysis(sentence: SentenceAnalysis): void {

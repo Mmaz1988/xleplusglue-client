@@ -580,7 +580,18 @@ export class ChatComponent {
             throw new Error(`Merged pair references unknown prior element ${priorElementId}.`);
           }
           const { premiseContext, semanticAnalysis: premiseSemanticAnalysis } = previousEntry;
-          const pairId = `pxq-${priorElementId}-${pair.currentSemantic?.semId ?? newSentenceId}`;
+          // The PRIOR'S READING, not just its element id. GSWB derives every PCDRS id
+          // from this scope, so two pairs differing only in which reading of the prior
+          // they used produced identical pragmatic ids -- measured in
+          // misc/current/chat-document-pronoun-bug3.json: 24 discourse branches sharing
+          // only 12 ids, with `pxq-sentence-1-S1-s0-rule-1-pcdrs-1` appearing under both
+          // `S0-s0+S1-s0` and `S0-s1+S1-s0`. That breaks the (syn, sem, prag) joint id:
+          // a reasoning assignment pointing at a discourseId could not say which
+          // semantics produced it. Keying on an elementId where several readings share
+          // it is the same hazard as the Map<elementId,...> bug this method already
+          // documents above.
+          const pairId = `pxq-${priorElementId}-${premiseSemanticAnalysis.semId}`
+            + `-${pair.currentSemantic?.semId ?? newSentenceId}`;
           // Chat is the degenerate 1+1 case of the premise/conclusion shape: one prior
           // element, one new sentence. The semantic ids are the readings actually used
           // for this pair, and must be readings the document already registered --
