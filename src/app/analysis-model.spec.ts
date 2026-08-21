@@ -435,38 +435,53 @@ describe('analysis model helpers', () => {
       expect(results['n9']).toBeUndefined();
     });
 
-    it('round-trips the document through the v3 session shape', () => {
+    it('round-trips one document per NLI item through the v4 session shape', () => {
       const session: RegressionTestingSession = {
         ...createRegressionTestingSession(),
-        analysisDocument: regressionDocument(true),
+        analysisDocuments: { n3: regressionDocument(true) },
       };
 
       const stored = regressionSessionToDocument(session);
-      expect(stored.schemaVersion).toBe(3);
-      expect(stored.analysis.document.reasoningUpdates!.length).toBe(1);
+      expect(stored.schemaVersion).toBe(4);
+      expect(stored.analysis.documents['n3'].reasoningUpdates!.length).toBe(1);
 
       const restored = regressionDocumentToSession(stored);
-      expect(restored.analysisDocument.reasoningUpdates![0].id).toBe('ru-n3');
-      expect(restored.analysisDocument.reasoningUpdates![0].assignments.length).toBe(2);
+      expect(restored.analysisDocuments['n3'].reasoningUpdates![0].id).toBe('ru-n3');
+      expect(restored.analysisDocuments['n3'].reasoningUpdates![0].assignments.length).toBe(2);
+    });
+
+    it('keeps each item\'s document separate, so one item cannot see another\'s readings', () => {
+      const session: RegressionTestingSession = {
+        ...createRegressionTestingSession(),
+        analysisDocuments: { n3: regressionDocument(true), n4: regressionDocument(true) },
+      };
+
+      const stored = regressionSessionToDocument(session);
+      const restored = regressionDocumentToSession(stored);
+
+      expect(Object.keys(restored.analysisDocuments).sort()).toEqual(['n3', 'n4']);
+      expect(restored.analysisDocuments['n3']).not.toBe(restored.analysisDocuments['n4']);
+      expect(restored.analysisDocuments['n3'].sentences)
+        .not.toBe(restored.analysisDocuments['n4'].sentences);
     });
 
     it('does not persist check graphs, which is what makes autosave unmanageable', () => {
       const session: RegressionTestingSession = {
         ...createRegressionTestingSession(),
-        analysisDocument: regressionDocument(true),
+        analysisDocuments: { n3: regressionDocument(true) },
       };
-      const heavy = session.analysisDocument.reasoningUpdates![0].assignments[0].checks;
+      const heavy = session.analysisDocuments['n3'].reasoningUpdates![0].assignments[0].checks;
       (heavy.info_pos_check as any).graph = structure;
       (heavy.info_pos_check as any).semanticSvg = '<svg/>';
 
       const stored = regressionSessionToDocument(session);
-      const persisted = stored.analysis.document.reasoningUpdates![0].assignments[0].checks;
+      const persisted = stored.analysis.documents['n3'].reasoningUpdates![0].assignments[0].checks;
       expect(persisted.info_pos_check.tptp).toBe(heavy.info_pos_check.tptp);
       expect(persisted.info_pos_check.graph).toBeUndefined();
       expect(persisted.info_pos_check.semanticSvg).toBeUndefined();
     });
 
-    it('reads a v2 session, which has no document, as an empty one', () => {
+    it('reads a v2 session, which has no documents, as an empty map', () => {
       const v2 = {
         schemaVersion: 2,
         metadata: { id: 'session-1', redisSessionKey: 'session-1' },
@@ -475,8 +490,23 @@ describe('analysis model helpers', () => {
       };
 
       const restored = regressionDocumentToSession(v2);
-      expect(restored.analysisDocument.reasoningUpdates).toEqual([]);
-      expect(restored.analysisDocument.sentences).toEqual([]);
+      expect(restored.analysisDocuments).toEqual({});
+    });
+
+    it('wraps an unupgraded v3 single document rather than losing it', () => {
+      // The store's v3->v4 upgrade is the real partitioning step; this is the client-side
+      // safety net for a payload that reached it without one.
+      const v3 = {
+        schemaVersion: 3,
+        metadata: { id: 'session-1', redisSessionKey: 'session-1' },
+        inputs: {},
+        analysis: { system: {}, human: {}, save_state: {}, document: regressionDocument(true) },
+      };
+
+      const restored = regressionDocumentToSession(v3);
+      const documents = Object.values(restored.analysisDocuments);
+      expect(documents.length).toBe(1);
+      expect(documents[0].reasoningUpdates![0].id).toBe('ru-n3');
     });
   });
 });

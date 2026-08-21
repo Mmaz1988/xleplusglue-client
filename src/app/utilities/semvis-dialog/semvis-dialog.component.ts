@@ -49,8 +49,15 @@ export class SemvisDialogComponent {
     setTimeout(() => {
       if (!this.semVis) return;
 
-      // set discriminants + items first so filtering has a universe
-        if (discriminants.length) this.semVis.setDiscriminants(discriminants);
+      // set discriminants + items first so filtering has a universe.
+      // Unconditional: an empty array is the correct instruction, not a no-op. Guarding
+      // on `.length` meant a sentence with NO discriminants never cleared the previous
+      // sentence's, so opening an ambiguous sentence and then an unambiguous one showed
+      // the first one's scope discriminants against the second one's solutions -- present
+      // but unselectable, since they name scope constraints that do not occur there.
+      // Verified live: GSWB returns zero discriminants for those sentences, batch or
+      // alone, so the bleed was entirely here. gswb-vis already calls setDiscriminants([]).
+        this.semVis.setDiscriminants(discriminants);
         this.semVis.meaningConstructors = meaningConstructors;
         this.semVis.svgSolutions = svgSolutions;
         this.semVis.setItems(items, startIndex);

@@ -7,7 +7,10 @@ import { Subject, of, throwError } from 'rxjs';
 import { RegressionTestingInterfaceComponent } from './regression-testing-interface.component';
 import { DataService } from '../data.service';
 import { ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
-import { createRegressionTestingSession } from '../models/models';
+import {
+  createRegressionAnalysisDocument,
+  createRegressionTestingSession,
+} from '../models/models';
 
 describe('RegressionTestingInterfaceComponent', () => {
   let component: RegressionTestingInterfaceComponent;
@@ -617,22 +620,26 @@ describe('RegressionTestingInterfaceComponent', () => {
       { id: 'n1', premises: ['S2'], conclusion: ['S3'], gold_label: '1' },
     ];
     component['sentenceMap'] = { S0: 'Premise zero.', S1: 'Hypothesis zero.', S2: 'Premise one.', S3: 'Hypothesis one.' };
-    component.session.analysisDocument = {
-      ...component.session.analysisDocument,
-      reasoningUpdates: [
-        {
+    // One document per item, each holding only its own reasoning update.
+    component.session.analysisDocuments = {
+      n0: {
+        ...createRegressionAnalysisDocument('n0'),
+        reasoningUpdates: [{
           id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], itemId: 'n0',
           logicType: 'fof', ruleString: '', pruned: false, assignments: [{
             id: 'a1', premiseSemanticIds: [], hypothesisSemanticIds: [], checks: {} as any,
             verdict: { consistent: true, informative: false, relevant: false, glyph: '', computedAt: '' },
           }],
-        } as any,
-        {
+        } as any],
+      },
+      n1: {
+        ...createRegressionAnalysisDocument('n1'),
+        reasoningUpdates: [{
           id: 'ru-n1', premiseElementIds: ['S2'], hypothesisElementIds: ['S3'], itemId: 'n1',
           logicType: 'fof', ruleString: '', pruned: false, assignments: [],
           failure: 'pxq-n1-1-1: Http failure response for http://localhost:8081/merge_sequence_semantics: 500 OK',
-        } as any,
-      ],
+        } as any],
+      },
     };
 
     const failed = component.failedInferenceItems;
@@ -663,5 +670,70 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.inferenceResults).toEqual([{ id: 'item-1' } as any]);
     expect(component.loading).toBeFalse();
     expect(displaySpy).toHaveBeenCalledWith(jasmine.stringMatching(/failed/i), 'red');
+  });
+
+  describe('per-item documents (one document is one discourse)', () => {
+    const gswbOutput = (sentenceId: string) => ({
+      solutions: [{
+        id: `${sentenceId}-sol-1`, solution: 'x', semantic: 'A',
+        solutionKey: 'S0', graph: { id: `${sentenceId}-graph` },
+      }],
+      log: '', derivation: null, discriminants: [],
+    }) as any;
+
+    it('gives every NLI item its own document, holding only the sentences it quotes', () => {
+      component['regressionTestItems'] = [
+        { id: 'n0', premises: ['S1', 'S2'], conclusion: ['S3'] },
+        { id: 'n1', premises: ['S1'], conclusion: ['S4'] },
+      ];
+      component['sentenceMap'] = { S1: 'One.', S2: 'Two.', S3: 'Three.', S4: 'Four.' };
+
+      (component as any).registerAnalysisSentences(
+        { S1: gswbOutput('S1'), S2: gswbOutput('S2'), S3: gswbOutput('S3'), S4: gswbOutput('S4') },
+        {});
+
+      const documents = component.session.analysisDocuments;
+      expect(Object.keys(documents).sort()).toEqual(['n0', 'n1']);
+      expect(documents['n0'].sentences.map(s => s.id).sort()).toEqual(['S1', 'S2', 'S3']);
+      expect(documents['n1'].sentences.map(s => s.id).sort()).toEqual(['S1', 'S4']);
+    });
+
+    /** The reason per-item documents exist at all: the same sentence may be disambiguated
+     *  differently in different items, and one object cannot hold two selections. */
+    it('copies a sentence shared by two items instead of sharing one object', () => {
+      component['regressionTestItems'] = [
+        { id: 'n0', premises: ['S1'], conclusion: ['S2'] },
+        { id: 'n1', premises: ['S1'], conclusion: ['S3'] },
+      ];
+      component['sentenceMap'] = { S1: 'Shared.', S2: 'Two.', S3: 'Three.' };
+
+      (component as any).registerAnalysisSentences(
+        { S1: gswbOutput('S1'), S2: gswbOutput('S2'), S3: gswbOutput('S3') }, {});
+
+      const inN0 = component.session.analysisDocuments['n0'].sentences.find(s => s.id === 'S1')!;
+      const inN1 = component.session.analysisDocuments['n1'].sentences.find(s => s.id === 'S1')!;
+      expect(inN0).toBeTruthy();
+      expect(inN1).toBeTruthy();
+      expect(inN0).not.toBe(inN1);
+      expect(inN0.syntax).not.toBe(inN1.syntax);
+
+      // Disambiguating S1 in one item must leave the other untouched.
+      inN0.selectedSemanticIds = ['S1-sol-1'];
+      inN1.selectedSemanticIds = [];
+      expect(inN0.selectedSemanticIds).toEqual(['S1-sol-1']);
+      expect(inN1.selectedSemanticIds).toEqual([]);
+    });
+
+    it('falls back to one document per sentence when the testsuite has no NLI items', () => {
+      component['regressionTestItems'] = [];
+      component['sentenceMap'] = { S1: 'One.', S2: 'Two.' };
+
+      (component as any).registerAnalysisSentences(
+        { S1: gswbOutput('S1'), S2: gswbOutput('S2') }, {});
+
+      const documents = component.session.analysisDocuments;
+      expect(Object.keys(documents).sort()).toEqual(['S1', 'S2']);
+      expect(documents['S1'].sentences.map(s => s.id)).toEqual(['S1']);
+    });
   });
 });

@@ -15,12 +15,14 @@ import {
   SemanticAnalysis,
   SentenceAnalysis,
   SequenceAnalysis,
+  XlePlusGlueDocument,
   SynSemMapping,
   SyntacticAnalysis,
   RegressionInferenceResult,
   RegressionParseResult,
   RegressionSessionSummary,
   RegressionTestingSession,
+  createRegressionAnalysisDocument,
   createRegressionTestingSession,
   regressionDocumentToSession,
   regressionSessionToDocument,
@@ -1021,17 +1023,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`;
   }
 
-  /** Registers every parsed sentence in the session's XlePlusGlueDocument.
+  /** Builds the parse-phase documents: **one per NLI item**, holding that item's own
+   *  sentences -- or one per sentence when the testsuite has no NLI items at all.
    *
-   *  A ReasoningUpdate may only reference elements and readings the document actually
-   *  holds -- validateReasoningUpdate checks both, positionally -- so the sentence
-   *  registry has to exist before any reasoning result can be written. Regression's
-   *  element ids are the testsuite's sentence ids, and its reading ids are GSWB's
-   *  solution ids, which is what the ReasoningScope already carries.
+   *  One document is one discourse, exactly as in chat and glue-vis. Each item gets its
+   *  OWN `SentenceAnalysis` objects even where two items quote the same sentence id,
+   *  because the same sentence may legitimately be disambiguated differently per item and
+   *  one object cannot hold two selections. The duplication is the model working.
    *
-   *  Sequences are deliberately not registered: an NLI item's premises are merged per
-   *  (reading x reading) pair, so the merge is an artefact of one assignment rather than
-   *  a document element the user built. The update records the premise elements. */
+   *  A ReasoningUpdate may only reference elements and readings its document actually
+   *  holds -- validateReasoningUpdate checks both, positionally -- so this registry has to
+   *  exist before any reasoning result can be written. Regression's element ids are the
+   *  testsuite's sentence ids, and its reading ids are GSWB's solution ids, which is what
+   *  the ReasoningScope already carries.
+   *
+   *  Sequences are not registered here: an item's merged sequence is registered by
+   *  `registerFinalSequence` once its chain has been built. */
   private registerAnalysisSentences(
     gswbOutputs: Record<string, GswbOutput>,
     annotations: Record<string, LigerRuleAnnotation>
@@ -1092,15 +1099,59 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       });
     }
 
-    // Reasoning updates are kept: a re-parse replaces the readings, and an update that
-    // now references a reading that no longer exists is dropped by the validation on the
-    // next write rather than silently kept as a stale result.
-    this.session.analysisDocument = {
-      ...this.session.analysisDocument,
-      sentences,
-      elements: sentences.map(sentence => ({ kind: 'sentence' as const, id: sentence.id })),
-      updatedAt: new Date().toISOString(),
+    const sentencesById = new Map(sentences.map(sentence => [sentence.id, sentence]));
+    const items = this.regressionTestItems ?? [];
+    const updatedAt = new Date().toISOString();
+    const documents: Record<string, XlePlusGlueDocument> = {};
+
+    const buildDocument = (documentId: string, sentenceIds: string[]): void => {
+      // Deep-copied per document: two items quoting one sentence must not end up sharing
+      // a SentenceAnalysis object, or a selection made for one silently applies to both.
+      const own = sentenceIds
+        .map(id => sentencesById.get(id))
+        .filter((sentence): sentence is SentenceAnalysis => !!sentence)
+        .map(sentence => structuredClone(sentence));
+      if (!own.length) return;
+      documents[documentId] = {
+        ...createRegressionAnalysisDocument(`${this.session.id}-${documentId}`),
+        sentences: own,
+        elements: own.map(sentence => ({ kind: 'sentence' as const, id: sentence.id })),
+        updatedAt,
+      };
     };
+
+    if (items.length) {
+      for (const item of items) {
+        const itemId = String(item?.id ?? '');
+        if (!itemId) continue;
+        buildDocument(itemId, [...(item?.premises ?? []), ...(item?.conclusion ?? [])]);
+      }
+    } else {
+      // No NLI items: the unit is the sentence, so each parsed sentence is its own
+      // single-sentence discourse.
+      for (const sentence of sentences) {
+        buildDocument(sentence.id, [sentence.id]);
+      }
+    }
+
+    // Replaced wholesale rather than merged: a re-parse produces new readings, and an
+    // item's previous document describes readings that no longer exist. Reasoning results
+    // for items that are still present are re-derived by the next run; keeping a stale
+    // update pointing at a vanished reading is what validateReasoningUpdate exists to
+    // reject anyway.
+    this.session.analysisDocuments = documents;
+  }
+
+  /** The document for one NLI item (or one sentence, in a parse-only run). Created on
+   *  demand so a run that reaches an item the parse phase never registered still gets a
+   *  well-formed, empty discourse to build into rather than a missing one. */
+  private documentFor(documentId: string): XlePlusGlueDocument {
+    let document = this.session.analysisDocuments[documentId];
+    if (!document) {
+      document = createRegressionAnalysisDocument(`${this.session.id}-${documentId}`);
+      this.session.analysisDocuments = { ...this.session.analysisDocuments, [documentId]: document };
+    }
+    return document;
   }
 
   ngOnDestroy(): void {
@@ -1260,21 +1311,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  live when a 16-item run silently reported "13 of 16" with no indication of why the
    *  other 3 were missing. */
   get failedInferenceItems(): { id: string; sentences: string; reason: string }[] {
-    const updatesById = new Map(
-      (this.session.analysisDocument?.reasoningUpdates ?? []).map(update => [update.id, update]));
     const failed: { id: string; sentences: string; reason: string }[] = [];
 
-    // An item that simply has not been reached yet is PENDING, not failed. While a run is
-    // in flight every item starts without a reasoning update, so reporting those made the
-    // panel accuse the whole testsuite of failing for the first seconds of every run,
-    // clearing itself as results landed. Only an item that was actually attempted and
-    // produced no verdict belongs here; before any run has happened at all, nothing does.
+    // PENDING IS NOT FAILED. While a run is in flight, an item either has no reasoning
+    // update yet or has one whose assignments carry no verdict yet (the immediate
+    // loadAndRenderVampireState at submit time writes those). Reporting either made the
+    // panel accuse the entire testsuite for the first seconds of every run, clearing
+    // itself as verdicts landed. The one thing that IS known at that point and worth
+    // showing immediately is a preparation failure, so `update.failure` still reports.
     const runInFlight = this.activeVampireRunStartedAt !== null;
     for (const item of this.regressionTestItems) {
       const itemId = String(item?.id ?? '');
-      const update = updatesById.get(`ru-${itemId}`);
+      const update = (this.session.analysisDocuments[itemId]?.reasoningUpdates ?? [])
+        .find(candidate => candidate.id === `ru-${itemId}`);
       if (update && majorityVerdict(update.assignments ?? [])) continue;
-      if (!update && (runInFlight || !this.session.hasRunVampire)) continue;
+      if (runInFlight && !update?.failure) continue;
+      if (!update && !this.session.hasRunVampire) continue;
 
       const sentences = [...(item?.premises ?? []), ...(item?.conclusion ?? [])]
         .map((sid: string) => this.sentenceMap[sid])
@@ -1854,13 +1906,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const ruleString = this.session.rulesText;
     const gswbPreferences = this.session.gswbPreferences;
     const resolveDrs = !!this.session.gswbPreferences?.resolveDrs;
+    // This item's own discourse. Every registration below writes here and nowhere else,
+    // so one item's build cannot see or corrupt another's -- see registerAnalysisSentences.
+    const document = this.documentFor(build.itemId);
 
     const remaining: Array<{ sentenceId: string; side: 'premise' | 'hypothesis' }> = [
       ...build.premiseSentenceIds.slice(1).map(sentenceId => ({ sentenceId, side: 'premise' as const })),
       ...build.hypothesisSentenceIds.map(sentenceId => ({ sentenceId, side: 'hypothesis' as const })),
     ];
 
-    return this.seedNliChainBranches(build.premiseSentenceIds[0], gswbOutputs, useDisambiguated, ruleString, logicType).pipe(
+    return this.seedNliChainBranches(document, build.premiseSentenceIds[0], gswbOutputs, useDisambiguated, ruleString, logicType).pipe(
       map(seed => {
         if (!seed.length) {
           throw new Error(`No selected reading for ${build.premiseSentenceIds[0]}.`);
@@ -1870,11 +1925,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       switchMap(seedBranches => remaining.reduce(
         (branches$, next) => branches$.pipe(
           switchMap(branches => this.foldSentenceIntoBranches(
-            branches, next, ruleString, logicType, gswbPreferences, resolveDrs))),
+            document, branches, next, ruleString, logicType, gswbPreferences, resolveDrs))),
         of(seedBranches)
       )),
       switchMap(branches => {
-        this.registerFinalSequence(build, branches);
+        this.registerFinalSequence(document, build, branches);
         return from(branches).pipe(
           concatMap((branch, index) => this.prepareBranchChecks(build, branch, index, typed, pruning)),
           toArray(),
@@ -1909,13 +1964,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  and there are none yet -- but the SYNTAX still comes from a fresh one-sentence
    *  `ligerSequence` call; see `seedSentenceSyntax`. */
   private seedNliChainBranches(
+    document: XlePlusGlueDocument,
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean,
     ruleString: string,
     logicType: 'fof' | 'tff',
   ): Observable<NliChainBranch[]> {
-    return this.registerBatchParsedSentence(sentenceId, gswbOutputs, useDisambiguated, ruleString, logicType).pipe(
+    return this.registerBatchParsedSentence(document, sentenceId, gswbOutputs, useDisambiguated, ruleString, logicType).pipe(
       map(registered => {
         if (!registered) return [];
         return registered.semantics.map(semantic => ({
@@ -1978,6 +2034,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  `ligerSequence`-consistent structure; the selected GSWB solution's own reading is
    *  used verbatim, so there is no reading to match back against anything. */
   private registerBatchParsedSentence(
+    document: XlePlusGlueDocument,
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean,
@@ -2004,7 +2061,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }));
         const synSemMapping: SynSemMapping = { [syntax.synId]: semantics.map(semantic => semantic.semId) };
 
-        this.documentBuilder.upsertSentenceAnalyses(this.session.analysisDocument, [{
+        this.documentBuilder.upsertSentenceAnalyses(document, [{
           id: sentenceId,
           text: this.sentenceMap[sentenceId] ?? '',
           syntax: [syntax],
@@ -2024,6 +2081,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  Map, because several branches can legitimately share one elementId (several
    *  readings of the same prior). */
   private foldSentenceIntoBranches(
+    document: XlePlusGlueDocument,
     branches: NliChainBranch[],
     next: { sentenceId: string; side: 'premise' | 'hypothesis' },
     ruleString: string,
@@ -2031,7 +2089,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     gswbPreferences: GswbPreferences,
     resolveDrs: boolean,
   ): Observable<NliChainBranch[]> {
-    const document = this.session.analysisDocument;
     const branchByElement = new Map(branches.map(branch => [branch.element, branch]));
     const previousContexts: SequenceMergePreviousContext[] = branches.map(branch =>
       ({ semantic: branch.semantic, element: branch.element }));
@@ -2139,7 +2196,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  sequences along the chain are never registered as document elements -- nothing else
    *  needs to reference them, only the complete item sequence a ReasoningUpdate's
    *  sourceElementId points at. */
-  private registerFinalSequence(build: NliItemBuild, branches: NliChainBranch[]): void {
+  private registerFinalSequence(
+    document: XlePlusGlueDocument, build: NliItemBuild, branches: NliChainBranch[]
+  ): void {
     const allSentenceIds = [...build.premiseSentenceIds, ...build.hypothesisSentenceIds];
     const sequenceId = compositeAnalysisId(allSentenceIds);
     const syntaxById = new Map<string, SyntacticAnalysis>();
@@ -2166,7 +2225,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     if (!semanticsById.size) return;
 
-    this.documentBuilder.upsertSequenceAnalyses(this.session.analysisDocument, [{
+    this.documentBuilder.upsertSequenceAnalyses(document, [{
       id: sequenceId,
       text: allSentenceIds.map(id => this.sentenceMap[id] ?? '').join(' '),
       sentenceIds: allSentenceIds,
@@ -2541,7 +2600,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         // reaches that call, and validateReasoningUpdate throws on a sourceElementId that
         // does not resolve, which would drop this update's failure message too.
         const sequenceId = compositeAnalysisId([...(item.premises ?? []), ...(item.conclusion ?? [])]);
-        const sequenceRegistered = this.session.analysisDocument.sequences
+        const sequenceRegistered = (this.session.analysisDocuments[pair.itemId]?.sequences ?? [])
           .some(sequence => sequence.id === sequenceId);
         updates.set(updateId, {
           id: updateId,
@@ -2585,29 +2644,43 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }
     }
 
+    // Each update is written into ITS OWN item's document -- the item id is carried on the
+    // update, so no partitioning is needed here.
     updates.forEach(update => {
       update.verdict = majorityVerdict(update.assignments);
       update.updatedAt = computedAt;
+      const documentId = String(update.itemId ?? '');
+      const document = this.session.analysisDocuments[documentId];
+      if (!document) {
+        console.warn('[Regression] no document for this item; reasoning update not written',
+          { updateId: update.id, itemId: documentId });
+        return;
+      }
       const next = [
-        ...(this.session.analysisDocument.reasoningUpdates ?? []).filter(existing => existing.id !== update.id),
+        ...(document.reasoningUpdates ?? []).filter(existing => existing.id !== update.id),
         update,
       ];
       try {
         // Validated against a candidate document, so a rejected update leaves the stored
         // one exactly as it was rather than half-applied.
-        const candidate = { ...this.session.analysisDocument, reasoningUpdates: next };
+        const candidate = { ...document, reasoningUpdates: next };
         validateReasoningUpdate(candidate, update);
-        this.session.analysisDocument = { ...candidate, updatedAt: computedAt };
+        this.session.analysisDocuments = {
+          ...this.session.analysisDocuments,
+          [documentId]: { ...candidate, updatedAt: computedAt },
+        };
       } catch (error) {
         console.warn('[Regression] reasoning update rejected by document invariants',
-          { updateId: update.id, error });
+          { updateId: update.id, itemId: documentId, error });
       }
     });
 
     console.info('[Regression] reasoning updates written', {
       updateCount: updates.size,
       assignmentCount: [...updates.values()].reduce((sum, update) => sum + update.assignments.length, 0),
-      storedUpdateCount: (this.session.analysisDocument.reasoningUpdates ?? []).length,
+      documentCount: Object.keys(this.session.analysisDocuments).length,
+      storedUpdateCount: Object.values(this.session.analysisDocuments)
+        .reduce((sum, document) => sum + (document.reasoningUpdates ?? []).length, 0),
     });
   }
 
@@ -2635,8 +2708,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // Written before the loop below reads it: the loop prefers the document's verdict for
     // any item that has one, so the document is the record and `inferenceResults` the view.
     this.upsertReasoningUpdates(mergedResults);
-    const documentResults = inferenceResultsFromDocument(
-      this.session.analysisDocument, this.regressionTestItems, this.sentenceMap);
+    // Each item's verdict is read from its own document and the per-item results merged
+    // into one map, which is what the confusion matrix and the report below consume. The
+    // aggregation is the only place the per-item split has to be undone.
+    const documentResults: Record<string, RegressionInferenceResult> = {};
+    for (const item of this.regressionTestItems) {
+      const itemId = String(item?.id ?? '');
+      const document = this.session.analysisDocuments[itemId];
+      if (!document) continue;
+      Object.assign(documentResults,
+        inferenceResultsFromDocument(document, [item], this.sentenceMap));
+    }
 
     const currentInferenceResults: RegressionInferenceResult[] = [];
 

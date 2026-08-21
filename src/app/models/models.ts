@@ -676,12 +676,22 @@ export interface RegressionSessionAnalysis {
   system: RegressionSessionAnalysisSystem;
   human: RegressionSessionAnalysisHuman;
   save_state: RegressionSessionSaveState;
-  /** v3: the same XlePlusGlueDocument chat writes into, holding this run's reasoning
-   *  results. `system.inferenceResults` is a *view* over `document.reasoningUpdates` --
-   *  it is still written so a v2 reader and the confusion matrix keep working, but the
-   *  document is the record. `system.regressionTestItems`/`regressionTestResults` are not
-   *  views: they describe the testsuite and the parse phase, not reasoning. */
-  document: XlePlusGlueDocument;
+  /** v4: **one XlePlusGlueDocument per NLI item**, keyed by item id -- or per sentence id
+   *  when a run has no NLI items (a parse-only testsuite). Each is exactly the shape chat
+   *  builds per conversation and glue-vis per discourse: one document is one discourse.
+   *
+   *  v3 held a single session-wide document instead. That made every id have to be unique
+   *  across the whole testsuite, made one item's invalid registration invalidate the
+   *  document every other item lived in, and -- the reason it cannot stay -- forced two
+   *  items quoting the same sentence to share one `SentenceAnalysis`, when the same
+   *  sentence may legitimately be disambiguated differently per item. Every sentence is an
+   *  individual parse per document; that duplication is the model working, not a cost.
+   *
+   *  `system.inferenceResults` is a *view* over these documents' `reasoningUpdates` -- it
+   *  is still written so a v2 reader and the confusion matrix keep working, but the
+   *  documents are the record. `system.regressionTestItems`/`regressionTestResults` are
+   *  not views: they describe the testsuite and the parse phase, not reasoning. */
+  documents: Record<string, XlePlusGlueDocument>;
 }
 
 export interface RegressionSessionSaveState {
@@ -695,10 +705,11 @@ export interface RegressionSessionSaveState {
   sortedMCmap: Record<string, any>;
 }
 
-/** v3 embeds an XlePlusGlueDocument under `analysis.document`; v2 had the three parallel
- *  result arrays alone. The store (Redis/redis_store.py) dispatches on this on read: a v2
- *  session is upgraded in memory and flagged `upgradedFrom`, a newer one is refused. */
-export const REGRESSION_SESSION_SCHEMA_VERSION = 3;
+/** v4 holds one XlePlusGlueDocument per NLI item under `analysis.documents`; v3 had a
+ *  single session-wide document under `analysis.document`; v2 had the three parallel
+ *  result arrays alone. The store (Redis/redis_store.py) dispatches on this on read: an
+ *  older session is upgraded in memory and flagged `upgradedFrom`, a newer one is refused. */
+export const REGRESSION_SESSION_SCHEMA_VERSION = 4;
 
 export interface RegressionSessionDocument {
   schemaVersion: typeof REGRESSION_SESSION_SCHEMA_VERSION;
@@ -733,9 +744,11 @@ export interface RegressionTestingSession {
    *  Kept as a stored array either way: the confusion matrix and the saved-results view
    *  read it, and a v2 reader has nothing else. */
   inferenceResults: RegressionInferenceResult[];
-  /** v3: this run's reasoning results in the shared analysis model -- one ReasoningUpdate
-   *  per NLI item (`ru-n3`), one assignment per reading x rule branch x anaphora branch. */
-  analysisDocument: XlePlusGlueDocument;
+  /** v4: one document per NLI item (or per sentence, for a parse-only run), keyed by
+   *  item/sentence id. Each holds that item's own sentences, its merged sequence, and its
+   *  ReasoningUpdate (`ru-n3`) with one assignment per reading x rule branch x anaphora
+   *  branch. See RegressionSessionAnalysis.documents for why this is per item. */
+  analysisDocuments: Record<string, XlePlusGlueDocument>;
   selectedSolutionIdsBySentence: Record<string, string[]>;
   selectedScopeIdsBySentence: Record<string, string[]>;
   selectedMcIdsBySentence: Record<string, string[]>;
@@ -909,13 +922,31 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       // last change to the document, and the session snapshot is fingerprinted to decide
       // whether an autosave is needed. Re-stamping it on every snapshot would make every
       // fingerprint unique and turn autosave into a loop.
-      document: {
-        ...(session?.analysisDocument ?? createRegressionAnalysisDocument(sessionId)),
-        reasoningUpdates: (session?.analysisDocument?.reasoningUpdates ?? [])
-          .map(update => persistedReasoningUpdate(update)),
-      },
+      documents: Object.fromEntries(
+        Object.entries(session?.analysisDocuments ?? {}).map(([key, document]) => [key, {
+          ...document,
+          reasoningUpdates: (document?.reasoningUpdates ?? [])
+            .map(update => persistedReasoningUpdate(update)),
+        }])),
     },
   };
+}
+
+/** Reads `analysis.documents` (v4). Falls back to wrapping a v3 single `analysis.document`
+ *  under its own id so an unupgraded session still loads rather than losing its results --
+ *  the store's upgrade is the real partitioning step, this is only a safety net. */
+function regressionDocumentsFrom(analysis: any, sessionId: string): Record<string, XlePlusGlueDocument> {
+  const documents = analysis?.documents;
+  if (documents && typeof documents === 'object') {
+    return Object.fromEntries(Object.entries(documents).map(([key, value]) => [key, {
+      ...createRegressionAnalysisDocument(`${sessionId}-${key}`),
+      ...(value as XlePlusGlueDocument),
+    }]));
+  }
+  if (analysis?.document) {
+    return { [sessionId]: { ...createRegressionAnalysisDocument(sessionId), ...analysis.document } };
+  }
+  return {};
 }
 
 export function regressionDocumentToSession(document: any): RegressionTestingSession {
@@ -954,11 +985,11 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     regressionTestItems: Array.isArray(system?.regressionTestItems ?? document?.regressionTestItems) ? (system?.regressionTestItems ?? document?.regressionTestItems) : [],
     regressionTestResults: Array.isArray(system?.regressionTestResults ?? document?.regressionTestResults) ? (system?.regressionTestResults ?? document?.regressionTestResults).map((result: RegressionParseResult) => cloneRegressionParseResult(result)) : [],
     inferenceResults: Array.isArray(system?.inferenceResults ?? document?.inferenceResults) ? (system?.inferenceResults ?? document?.inferenceResults).map((result: RegressionInferenceResult) => cloneRegressionInferenceResult(result)) : [],
-    // Absent in a v2 session, and in a v3 one the store upgraded from v2. Both read back
-    // as an empty document rather than as a missing one.
-    analysisDocument: analysis?.document
-      ? { ...createRegressionAnalysisDocument(String(metadata?.id ?? base.id)), ...analysis.document }
-      : createRegressionAnalysisDocument(String(metadata?.id ?? base.id)),
+    // Absent in a v2 session. A v3 session's single `analysis.document` is partitioned
+    // into per-item documents by the store's v3->v4 upgrade, so by the time it reaches
+    // here it is already a `documents` map; the `document` fallback below only catches a
+    // session the store passed through unupgraded.
+    analysisDocuments: regressionDocumentsFrom(analysis, String(metadata?.id ?? base.id)),
     selectedSolutionIdsBySentence: { ...(human?.selectedSolutionIdsBySentence ?? document?.selectedSolutionIdsBySentence ?? {}) },
     selectedScopeIdsBySentence: { ...(human?.selectedScopeIdsBySentence ?? document?.selectedScopeIdsBySentence ?? {}) },
     selectedMcIdsBySentence: { ...(human?.selectedMcIdsBySentence ?? document?.selectedMcIdsBySentence ?? {}) },
@@ -1019,7 +1050,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     regressionTestItems: [],
     regressionTestResults: [],
     inferenceResults: [],
-    analysisDocument: createRegressionAnalysisDocument(sessionId),
+    analysisDocuments: {},
     selectedSolutionIdsBySentence: {},
     selectedScopeIdsBySentence: {},
     selectedMcIdsBySentence: {},
