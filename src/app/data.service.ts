@@ -243,8 +243,16 @@ callVampire(vampireRequest: vampireRequest){
     return this.withLargeReadTimeout(this.http.get<RegressionSessionDocument>(`${this.vampirepage}/regression_session/${sessionKey}`));
   }
 
-  saveRegressionSession(sessionKey: string, payload: RegressionSessionDocument): Observable<any> {
-    return this.withLargeReadTimeout(this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload));
+  /** `payload` may be a pre-serialized JSON string. Autosave already stringifies the
+   *  snapshot to fingerprint it, and a multi-megabyte session is expensive enough that
+   *  doing it a second time here is worth avoiding -- HttpClient sends a string body
+   *  as-is once the content type says JSON. */
+  saveRegressionSession(sessionKey: string, payload: RegressionSessionDocument | string): Observable<any> {
+    const options = typeof payload === 'string'
+      ? { headers: { 'Content-Type': 'application/json' } }
+      : {};
+    return this.withLargeReadTimeout(
+      this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload, options));
   }
 
   deleteRegressionSession(sessionKey: string): Observable<any> {

@@ -855,6 +855,27 @@ function persistedReasoningCheck(check: ReasoningCheck): ReasoningCheck {
     ? { canonicalSemantic: check.canonicalSemantic } : {}) };
 }
 
+/** The parse response as STORED: without the two fields nothing reads back.
+ *
+ *  Measured on an 11 MB session (`first-test`): `sentenceAnalysis` 1.93 MB and
+ *  `structureVariants` 1.19 MB, against `structureJson` 1.19 MB that IS read. The first
+ *  re-wraps the same structure the solution already carries; the second is not read
+ *  anywhere in the client at all. Together they were a quarter of every autosave for
+ *  nothing.
+ *
+ *  They stay on the in-memory session -- this narrows the persisted copy only, so live
+ *  proof-input building (which does use `sentenceAnalysis`, off the fresh response) is
+ *  unaffected. Same principle as persistedReasoningCheck dropping check graphs. */
+function persistedAnnotation(annotation: LigerSolutionAnnotationResponse): LigerSolutionAnnotationResponse {
+  return {
+    ...annotation,
+    solutions: (annotation?.solutions ?? []).map(solution => {
+      const { sentenceAnalysis, structureVariants, structureVariantGraphs, ...kept } = solution as any;
+      return kept;
+    }),
+  };
+}
+
 function persistedReasoningUpdate(update: ReasoningUpdate): ReasoningUpdate {
   return {
     ...update,
@@ -927,7 +948,10 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       },
       save_state: {
         lastGswbOutputs: session?.lastGswbOutputs ? Object.fromEntries(Object.entries(session.lastGswbOutputs).map(([key, value]) => [key, cloneGswbOutput(value)])) : null,
-        lastAnnotations: session?.lastAnnotations ? { ...session.lastAnnotations } : null,
+        lastAnnotations: session?.lastAnnotations
+          ? Object.fromEntries(Object.entries(session.lastAnnotations)
+            .map(([key, annotation]) => [key, persistedAnnotation(annotation)]))
+          : null,
         lastVampireResults: session?.lastVampireResults ? Object.fromEntries(Object.entries(session.lastVampireResults).map(([key, value]) => [key, (value ?? []).map(item => ({ ...item }))])) : null,
         lastLogicType: session?.lastLogicType ?? 'fof',
         lastVampireScopeIdsBySentence: { ...(session?.lastVampireScopeIdsBySentence ?? {}) },

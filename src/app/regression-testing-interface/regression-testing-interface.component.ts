@@ -553,7 +553,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.syncSessionStateFromUi();
     const snapshot = this.buildSessionSnapshot();
-    const fingerprint = this.buildSessionFingerprint(snapshot);
+    // Serialized ONCE and reused as both the change fingerprint and the request body.
+    // A saved session is routinely 8-12 MB, and stringifying it twice per autosave was
+    // pure duplicated work on the main thread.
+    const serialized = this.serializeSessionSnapshot(snapshot);
+    const fingerprint = serialized;
     if (fingerprint === this.lastSavedSessionFingerprint) {
       if (action === 'current') {
         this.setSessionLoadStatus('success', 'Nothing to save.', 'Current session is already up to date.');
@@ -573,7 +577,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.activeSaveAction = action === 'autosave' ? null : action;
     let saveSucceeded = false;
 
-    this.dataService.saveRegressionSession(this.redisSessionKey, snapshot).pipe(
+    this.dataService.saveRegressionSession(this.redisSessionKey, serialized).pipe(
       finalize(() => {
         this.saveOperationInProgress = false;
         this.activeSaveAction = null;
@@ -688,10 +692,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  private buildSessionFingerprint(snapshot: RegressionSessionDocument): string {
+  /** ONE pass over the snapshot, serving as both the request body and the change
+   *  fingerprint autosave compares against. A saved session is routinely 8-12 MB and this
+   *  used to be stringified twice per autosave.
+   *
+   *  `metadata.updatedAt` is dropped, which is what lets one string do both jobs: it
+   *  changes on every snapshot, so including it would make every fingerprint unique and
+   *  turn autosave into a loop -- and the store overwrites it server-side anyway
+   *  (`_prepare_regression_session_payload`: `metadata["updatedAt"] = now`), so sending it
+   *  was never load-bearing. `createdAt` is untouched and still sent. */
+  private serializeSessionSnapshot(snapshot: RegressionSessionDocument): string {
     const { metadata, ...rest } = snapshot;
     const { updatedAt, ...metadataRest } = metadata;
     return JSON.stringify({ ...rest, metadata: metadataRest });
+  }
+
+  private buildSessionFingerprint(snapshot: RegressionSessionDocument): string {
+    return this.serializeSessionSnapshot(snapshot);
   }
 
   private resetRuntimeStatus(): void {

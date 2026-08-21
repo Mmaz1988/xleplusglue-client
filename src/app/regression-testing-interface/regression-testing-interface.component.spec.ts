@@ -606,7 +606,11 @@ describe('RegressionTestingInterfaceComponent', () => {
     summarySubject.complete();
 
     expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
-    const [, snapshot] = dataServiceSpy.saveRegressionSession.calls.mostRecent().args;
+    // The payload is now the pre-serialized snapshot -- autosave stringifies once and
+    // uses that string as both the fingerprint and the body.
+    const [, payload] = dataServiceSpy.saveRegressionSession.calls.mostRecent().args;
+    expect(typeof payload).toBe('string');
+    const snapshot = JSON.parse(payload as string);
     expect(snapshot.analysis.save_state.lastVampireResults['item-1'][0].glyph).toBe('new');
     expect(component['abortRequestInFlight']).toBeFalse();
     expect(component.loading).toBeFalse();
@@ -783,6 +787,52 @@ describe('RegressionTestingInterfaceComponent', () => {
       (component as any).startVampireProgressIndicator(2, 8);
       component.vampireProgressProofCount = 3;
       expect(component.vampireProgressLabel).toContain('3/8 check bundles');
+    });
+  });
+
+  describe('autosave cost', () => {
+    /** A saved session is routinely 8-12 MB. Measured on `first-test`: `sentenceAnalysis`
+     *  1.93 MB and `structureVariants` 1.19 MB of an 11 MB payload -- the first re-wraps
+     *  the structure the solution already carries, the second is not read anywhere in the
+     *  client. A quarter of every autosave, for nothing. */
+    it('does not persist the parse fields nothing reads back', () => {
+      component.session.lastAnnotations = {
+        S0: {
+          sentence: 'a sentence',
+          solutions: [{
+            solutionKey: 'S0',
+            meaningConstructors: 'mc',
+            structureJson: { id: 'keep-me' },
+            graph: { graphElements: [] },
+            sentenceAnalysis: { id: 'sentence-1', syntax: [], semantics: [] },
+            structureVariants: [{ id: 'drop-me' }, { id: 'drop-me-too' }],
+          }],
+        },
+      } as any;
+
+      const stored: any = (component as any).buildSessionSnapshot();
+      const solution = stored.analysis.save_state.lastAnnotations.S0.solutions[0];
+
+      expect(solution.structureJson).toEqual({ id: 'keep-me' } as any);
+      expect(solution.meaningConstructors).toBe('mc');
+      expect(solution.sentenceAnalysis).toBeUndefined();
+      expect(solution.structureVariants).toBeUndefined();
+
+      // The in-memory session keeps them -- live proof-input building uses
+      // sentenceAnalysis off the fresh response.
+      expect(component.session.lastAnnotations!['S0'].solutions[0].sentenceAnalysis).toBeTruthy();
+    });
+
+    it('serializes the snapshot once, and the fingerprint IS the request body', () => {
+      const snapshot = (component as any).buildSessionSnapshot();
+      const serialized = (component as any).serializeSessionSnapshot(snapshot);
+
+      expect(typeof serialized).toBe('string');
+      expect((component as any).buildSessionFingerprint(snapshot)).toBe(serialized);
+      // updatedAt is excluded so the fingerprint is stable across snapshots of unchanged
+      // state -- otherwise every autosave would see a change and re-save forever.
+      expect(serialized).not.toContain('"updatedAt"');
+      expect(JSON.parse(serialized).metadata.createdAt).toBeDefined();
     });
   });
 });
