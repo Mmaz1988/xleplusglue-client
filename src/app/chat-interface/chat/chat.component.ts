@@ -342,28 +342,37 @@ export class ChatComponent {
       // structure for a later turn's new sentence was the actual root cause of chat's silent
       // anaphora-resolution failures.
       const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
-      this.dataService.ligerSequence({
-        sentences: [userMessage],
-        sentenceIds: ['sentence-1'],
+      // Same shared derivation every later turn uses, with no previous sentences --
+      // so turn 1 gets the full syntactic cross product by construction rather than by
+      // a second implementation that has to remember to. This is what used to be chat's
+      // own `calculateSequencePartSemantics`, whose `solutions[0]` discarded every parse
+      // but the first (docs/bug_reports/chat_single_syntax_variant_collapse.md).
+      this.documentBuilder.deriveSentenceInSequence([], {
+        newSentence: { id: 'sentence-1', text: userMessage },
         ruleString: this.ruleString,
-        logicType: typed ? 'tff' : 'fof'
-      }).pipe(
-        switchMap(sequence => this.calculateSequencePartSemantics(sequence).pipe(
-          map(currentSolutions => ({
-            currentSolutions,
-            syntax: sequence?.solutions?.[0]?.structureJson
-          }))
-        ))
-      ).subscribe({
-        next: ({ currentSolutions, syntax }) => {
+        logicType: typed ? 'tff' : 'fof',
+        gswbPreferences: this.gswbPreferences.gswbPreferences,
+      }).subscribe({
+        next: readings => {
           console.info('[Chat] Turn 1 sequence-sourced semantics ready', {
             sentence: userMessage,
-            solutionCount: currentSolutions.length,
-            solutionKeys: currentSolutions.map((solution: any) => solution.solutionKey),
+            solutionCount: readings.length,
+            syntaxVariants: new Set(readings.map(reading => reading.currentSyntax?.synId)).size,
+            solutionKeys: readings.map(reading => reading.solution.solutionKey),
           });
           this.acceptInitialLfgxdrtContext(
             userMessage,
-            currentSolutions.map(solution => ({ ...solution, syntax })),
+            // Each reading keeps ITS OWN variant's merged structure, instead of every
+            // reading being stamped with solutions[0]'s. Still the SEQUENCE structure,
+            // not the per-sentence one: `context.syntax` is what turn 2 supplies back as
+            // this element's `parsedSentences` entry, and that has always been the
+            // one-sentence sequence's assembled structure.
+            readings.map(reading => ({
+              ...reading.solution,
+              semanticAnalysis: reading.semantic,
+              syntax: reading.sequenceStructure,
+              sequenceSyntax: reading.sequenceStructure,
+            })),
             ligerSolutions);
         },
         error: error => {
@@ -514,6 +523,12 @@ export class ChatComponent {
     // sequence-rebased before merging, via the same addSentence() mechanism `rebase`
     // reproduces here. See docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md for the full
     // trace.
+    // A context that produced no pairs at all reports why (a LiGER 500, an unresolvable
+    // prior sentence, a reading GSWB stamped with an unknown origin) instead of just
+    // thinning the result silently. Collected here and surfaced alongside the per-branch
+    // failures below, so "fewer branches than expected" is never invisible.
+    let mergeFailures: string[] = [];
+
     this.documentBuilder.mergeSequence({
       current: [],
       previousContexts,
@@ -527,6 +542,7 @@ export class ChatComponent {
       },
     }).pipe(
       switchMap(result => {
+        mergeFailures = result.failures;
         // The rebase path derives the new sentence's own reading(s) fresh, scoped to
         // each previous context -- register them under the sentence's OWN document
         // entry now, or validateReasoningUpdate/validateSentenceAnalysis reject every
@@ -620,9 +636,13 @@ export class ChatComponent {
         // branch that could not be prepared at all just disappears from `expanded`. Neither
         // is visible in the answer that follows, so both are reported here: a partially
         // resolved discourse must never be presented as a cleanly resolved one.
-        this.reportUnresolvedBranches(userMessage, prepared);
+        this.reportUnresolvedBranches(userMessage, prepared, mergeFailures);
         if (!expanded.length) {
-          this.pushChatMessage({ text: 'No consistent continuation could be reasoned over.', sender: 'Bot' });
+          const detail = mergeFailures.length ? ` ${mergeFailures.join(' ')}` : '';
+          this.pushChatMessage({
+            text: `No consistent continuation could be reasoned over.${detail}`,
+            sender: 'Bot',
+          });
           this.loading = false;
           return;
         }
@@ -777,68 +797,35 @@ export class ChatComponent {
   /** Names the branches that were dropped or only partially resolved, in the chat itself.
    *  The reasons come from ReasoningPipelineService and name the mapping and the item that
    *  failed, so a degraded answer can be traced back to the referent that did not bind. */
-  private reportUnresolvedBranches(userMessage: string, prepared: any[]): void {
+  private reportUnresolvedBranches(
+    userMessage: string, prepared: any[], mergeFailures: string[] = []
+  ): void {
     const dropped: string[] = prepared.flatMap(item => item?.failures ?? []);
     const degraded: string[] = prepared.flatMap(item => item?.degradations ?? []);
-    if (!dropped.length && !degraded.length) {
+    if (!dropped.length && !degraded.length && !mergeFailures.length) {
       return;
     }
 
     console.warn('[Chat] some reasoning branches were not fully resolved',
-      { sentence: userMessage, dropped, degraded });
+      { sentence: userMessage, dropped, degraded, mergeFailures });
 
     const parts: string[] = [];
+    if (mergeFailures.length) {
+      parts.push(`${mergeFailures.length} discourse context(s) could not be merged at all`);
+    }
     if (degraded.length) {
       parts.push(`${degraded.length} branch(es) were reasoned over without their anaphora binding`);
     }
     if (dropped.length) {
       parts.push(`${dropped.length} branch(es) could not be prepared at all`);
     }
-    const reasons = [...degraded, ...dropped];
+    const reasons = [...mergeFailures, ...degraded, ...dropped];
     const shown = reasons.slice(0, 3).join('; ');
     const remainder = reasons.length > 3 ? ` (and ${reasons.length - 3} more)` : '';
     this.pushChatMessage({
       text: `Note: ${parts.join(' and ')}. ${shown}${remainder}`,
       sender: 'Bot'
     });
-  }
-
-  private calculateSequencePartSemantics(sequence: any): import('rxjs').Observable<any[]> {
-    const sequenceSolution = sequence?.solutions?.[0];
-    const parts = Array.isArray(sequenceSolution?.sequenceParts)
-      ? sequenceSolution.sequenceParts
-      : [];
-    const currentPart = parts[parts.length - 1];
-    if (!currentPart?.meaningConstructors?.trim()) {
-      throw new Error('The merged sequence has no source-indexed current sentence part.');
-    }
-
-    return this.dataService.gswbDeduce({
-      premises: currentPart.meaningConstructors,
-      gswbPreferences: this.gswbPreferences.gswbPreferences,
-      structure: sequenceSolution.structureJson,
-      proofs: [{
-        proofId: currentPart.solutionKey || 'sequence-current-sentence',
-        solutionKey: currentPart.solutionKey,
-        meaningConstructors: currentPart.meaningConstructors,
-        structure: sequenceSolution.structureJson
-      }]
-    }).pipe(
-      map(result => {
-        const solutions = (result?.solutions ?? [])
-          .filter((candidate: any) => typeof candidate?.semantic === 'string'
-            && candidate.semantic.trim().length > 0
-            && candidate.graph)
-          .map((candidate: any) => ({
-            ...candidate,
-            sequenceSyntax: sequenceSolution.structureJson
-          }));
-        if (!solutions.length) {
-          throw new Error('No source-indexed semantic analyses found for the current sentence.');
-        }
-        return solutions;
-      })
-    );
   }
 
   private acceptInitialLfgxdrtContext(userMessage: string, solutions: any[], ligerSolutions: any[] = []): void {
@@ -1213,7 +1200,13 @@ export class ChatComponent {
     const synSemMapping: Record<string, string[]> = {};
 
     solutions.forEach(solution => {
-      const synId = solution.solutionKey || solution.proofId || `${id}-syn`;
+      // The reading's own recorded origin wins. A sequence-derived reading carries
+      // `semanticAnalysis.syntacticOrigin` = the SENTENCE's syntax id (its structure's
+      // local_id), while `solution.solutionKey` is the SEQUENCE variant key that
+      // produced it -- keying the syntax entry off the latter while the semantic points
+      // at the former orphans every reading against validateSentenceAnalysis.
+      const synId = solution.semanticAnalysis?.syntacticOrigin
+        || solution.solutionKey || solution.proofId || `${id}-syn`;
       let syntax = syntaxByKey.get(synId);
       if (!syntax) {
         const ligerMatch = ligerSolutions.find(item => item.solutionKey === synId);

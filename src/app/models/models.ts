@@ -1124,13 +1124,6 @@ export interface nliItem {
   premises: string[];
   hypothesis: string[];
   axioms: string;
-  premise_groups?: string[][];
-  hypothesis_groups?: string[][];
-  /** Per premise/conclusion sentence, the readings this run selected -- the whole
-   *  solution, not just its graph, so the text, the graph and the id that names the
-   *  reading cannot drift apart. Client-side only; never sent to Vampire. */
-  premise_solution_groups?: GswbSolution[][];
-  hypothesis_solution_groups?: GswbSolution[][];
   premise_sentence_ids?: string[];
   hypothesis_sentence_ids?: string[];
   tptp_checks?: GswbReasoningChecksOutput[];

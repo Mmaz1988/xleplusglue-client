@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { DocumentBuilderService } from './document-builder.service';
 import { DataService } from '../data.service';
 import { validateSequenceAnalysis } from '../analysis-model';
@@ -348,8 +348,15 @@ describe('DocumentBuilderService', () => {
     });
 
     describe('rebase (chat\'s path: derive the new sentence\'s own reading, mirroring LigerVisComponent.addSentence())', () => {
-      const derivedSolution = (id: string, semantic: string): GswbSolution => ({
-        id, solution: semantic, semantic, graph: structure, solutionKey: id,
+      /** Models GSWB's real behaviour on an aggregate /deduce: every returned solution is
+       *  stamped with the ORIGINATING PROOF's solutionKey (GswbController's
+       *  runProofsOverLexicalEntries copies origin.solutionKey onto each SolutionObject),
+       *  not with an id of its own. That stamp is how a reading is mapped back to the
+       *  syntactic variant it was derived from. */
+      const derivedSolution = (
+        id: string, semantic: string, variantKey = 'sequence-1-S0'
+      ): GswbSolution => ({
+        id, solution: semantic, semantic, graph: structure, solutionKey: variantKey,
       });
 
       /** A LiGER sequence response carrying the rebased current-part meaning
@@ -361,6 +368,7 @@ describe('DocumentBuilderService', () => {
        *  reading under the new sentence's own document entry. */
       const rebaseLigerResponse = () => ({
         solutions: [{
+          solutionKey: 'sequence-1-S0',
           structureJson: structure,
           sequenceParts: [
             { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
@@ -440,6 +448,7 @@ describe('DocumentBuilderService', () => {
         expect(result.pairs.length).toBe(2);
         expect(result.pairs.map((pair: any) => pair.currentSemantic.semId).sort())
           .toEqual(['derived-1', 'derived-2']);
+        expect(result.failures).toEqual([]);
         expect(result.sequenceAnalyses).toEqual([]);
       });
 
@@ -451,8 +460,8 @@ describe('DocumentBuilderService', () => {
         // reasoningUpdates came back completely empty, every turn.
         dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
         dataServiceMock.gswbDeduce.and.returnValue(of({
-          // solutionKey deliberately differs from the sequence's own synId ('S1') --
-          // this is /deduce's own response-id namespace, unrelated to LiGER's.
+          // The stamped solutionKey is the SEQUENCE variant key, deliberately different
+          // from the sentence's own synId ('S1') that syntacticOrigin must end up as.
           solutions: [derivedSolution('derived-1', 'P(x)')],
         }));
         dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
@@ -512,6 +521,215 @@ describe('DocumentBuilderService', () => {
         expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(2);
         expect(dataServiceMock.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
         expect(result.pairs.length).toBe(2);
+      });
+
+      /** The regression this suite previously could not see: every mock returned ONE
+       *  ligerSequence solution, so `solutions[0]` and `solutions[*]` were the same
+       *  thing. `ligerSequence`'s solutions[] IS the syntactic-variant dimension.
+       *  See docs/bug_reports/chat_single_syntax_variant_collapse.md. */
+      describe('syntactic ambiguity (several ligerSequence solutions)', () => {
+        /** Three syntactic variants of the same appended sentence, as
+         *  LigerController.collectSequenceVariants would return them. */
+        const threeVariantResponse = () => ({
+          solutions: ['S1', 'S2', 'S3'].map((synId, index) => ({
+            solutionKey: `sequence-${index + 1}-S0+${synId}`,
+            structureJson: { ...structure, id: `merged-${synId}` } as any,
+            sequenceParts: [
+              { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
+              { sourceIndex: 1, solutionKey: synId, meaningConstructors: `mc-current-${synId}` },
+            ],
+            sequenceAnalysis: {
+              sentences: [
+                { id: 'sentence-1', syntax: [{ synId: 'S0', structure, graph: { graphElements: [] } }] },
+                { id: 'sentence-3', syntax: [{ synId, structure, graph: { graphElements: [] } }] },
+              ],
+            },
+          })),
+        });
+
+        const runRebase = () => {
+          let result: any;
+          service.mergeSequence({
+            current: [],
+            previousContexts: [previousContext],
+            knownSentences: [previousSentence],
+            resolveDrs: true,
+            rebase: {
+              newSentence: currentSentence,
+              ruleString: 'rules',
+              logicType: 'fof',
+              gswbPreferences: {} as any,
+            },
+          }).subscribe(r => result = r);
+          return result;
+        };
+
+        it('sends ONE aggregate /deduce carrying one proof per syntactic variant', () => {
+          dataServiceMock.ligerSequence.and.returnValue(of(threeVariantResponse()));
+          dataServiceMock.gswbDeduce.and.returnValue(of({
+            solutions: [derivedSolution('derived-1', 'P(x)', 'sequence-1-S0+S1')],
+          }));
+          dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+            of(mergedSolution(request.parentSolutionId)));
+
+          runRebase();
+
+          // One call, not three: /deduce is an aggregate endpoint over syntactic origins
+          // (GswbProofInput = "One syntactic origin and its MC input within an aggregate
+          // deduction"), which is what LigerVisComponent.proofInputsForSequencePart does.
+          expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(1);
+          const [request] = dataServiceMock.gswbDeduce.calls.mostRecent().args;
+          expect(request.proofs.length).toBe(3);
+          expect(request.proofs.map((proof: any) => proof.solutionKey))
+            .toEqual(['sequence-1-S0+S1', 'sequence-2-S0+S2', 'sequence-3-S0+S3']);
+          // Each proof carries ITS OWN variant's merged structure and rebased MCs.
+          expect(request.proofs.map((proof: any) => proof.meaningConstructors))
+            .toEqual(['mc-current-S1', 'mc-current-S2', 'mc-current-S3']);
+          expect(request.proofs.map((proof: any) => proof.structure.id))
+            .toEqual(['merged-S1', 'merged-S2', 'merged-S3']);
+        });
+
+        it('keeps every variant\'s readings, each tagged with its own syntax and merged structure', () => {
+          dataServiceMock.ligerSequence.and.returnValue(of(threeVariantResponse()));
+          dataServiceMock.gswbDeduce.and.returnValue(of({
+            solutions: [
+              derivedSolution('derived-S1-a', 'P(x)', 'sequence-1-S0+S1'),
+              derivedSolution('derived-S1-b', 'P2(x)', 'sequence-1-S0+S1'),
+              derivedSolution('derived-S2-a', 'Q(x)', 'sequence-2-S0+S2'),
+              derivedSolution('derived-S3-a', 'R(x)', 'sequence-3-S0+S3'),
+            ],
+          }));
+          dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+            of(mergedSolution(request.parentSolutionId)));
+
+          const result = runRebase();
+
+          expect(result.pairs.length).toBe(4);
+          // Readings are partitioned by their own variant, not bucketed under the first.
+          expect(result.pairs.map((pair: any) => pair.currentSyntax.synId))
+            .toEqual(['S1', 'S1', 'S2', 'S3']);
+          expect(result.pairs.map((pair: any) => pair.currentSemantic.syntacticOrigin))
+            .toEqual(['S1', 'S1', 'S2', 'S3']);
+          // And each carries ITS OWN variant's merged structure: pairing a reading with
+          // another variant's structure mis-joins SRC against SYN-ID silently.
+          expect(result.pairs.map((pair: any) => pair.sequenceStructure.id))
+            .toEqual(['merged-S1', 'merged-S1', 'merged-S2', 'merged-S3']);
+          expect(result.failures).toEqual([]);
+        });
+
+        it('refuses to guess when GSWB stamps a reading with an unknown origin', () => {
+          dataServiceMock.ligerSequence.and.returnValue(of(threeVariantResponse()));
+          dataServiceMock.gswbDeduce.and.returnValue(of({
+            solutions: [derivedSolution('derived-1', 'P(x)', 'some-unrelated-key')],
+          }));
+          dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+            of(mergedSolution(request.parentSolutionId)));
+
+          const result = runRebase();
+
+          // Reported, not silently attributed to variant 0.
+          expect(result.pairs).toEqual([]);
+          expect(result.failures.length).toBe(1);
+          expect(result.failures[0]).toContain('some-unrelated-key');
+        });
+      });
+
+      describe('failure reporting instead of silent empty results', () => {
+        it('reports the cause when the ligerSequence call fails, rather than just producing no pairs', () => {
+          dataServiceMock.ligerSequence.and.returnValue(
+            throwError(() => ({ status: 500, url: 'http://localhost:8080/apply_rules_xle_sequence' })));
+
+          let result: any;
+          service.mergeSequence({
+            current: [],
+            previousContexts: [previousContext],
+            knownSentences: [previousSentence],
+            resolveDrs: true,
+            rebase: {
+              newSentence: currentSentence,
+              ruleString: 'rules',
+              logicType: 'fof',
+              gswbPreferences: {} as any,
+            },
+          }).subscribe(r => result = r);
+
+          expect(result.pairs).toEqual([]);
+          expect(result.failures.length).toBe(1);
+          expect(result.failures[0]).toContain('HTTP 500');
+          expect(result.failures[0]).toContain(currentSentence.id);
+        });
+
+        it('never sends a null structure: a previous sentence with no parsed structure fails loudly', () => {
+          // A syntax entry registered from /apply_rules_to_batch carries no structure.
+          // Serialized inside parsedSentences it becomes `null`, and LiGER's
+          // LinguisticStructure.parseFromJson(null) 500s the whole call -- see
+          // docs/bug_reports/regression_second_fold_null_structure_500.md.
+          const structurelessSentence: SentenceAnalysis = {
+            ...previousSentence,
+            syntax: [{ synId: 'batch-syn', structure: undefined as any, graph: { graphElements: [] } }],
+          };
+
+          let result: any;
+          service.mergeSequence({
+            current: [],
+            previousContexts: [{ ...previousContext, element: structurelessSentence }],
+            knownSentences: [structurelessSentence],
+            resolveDrs: true,
+            rebase: {
+              newSentence: currentSentence,
+              ruleString: 'rules',
+              logicType: 'fof',
+              gswbPreferences: {} as any,
+            },
+          }).subscribe(r => result = r);
+
+          expect(dataServiceMock.ligerSequence).not.toHaveBeenCalled();
+          expect(result.pairs).toEqual([]);
+          expect(result.failures.length).toBe(1);
+          expect(result.failures[0]).toContain(structurelessSentence.id);
+        });
+      });
+
+      describe('deriveSentenceInSequence (the first-sentence case, shared with chat turn 1)', () => {
+        it('sends no parsedSentences and still fans out over every syntactic variant', () => {
+          dataServiceMock.ligerSequence.and.returnValue(of({
+            solutions: ['S0', 'S1'].map((synId, index) => ({
+              solutionKey: `sequence-${index + 1}-${synId}`,
+              structureJson: { ...structure, id: `seq-${synId}` } as any,
+              sequenceParts: [
+                { sourceIndex: 0, solutionKey: synId, meaningConstructors: `mc-${synId}` },
+              ],
+              sequenceAnalysis: {
+                sentences: [{ id: 'sentence-1', syntax: [{ synId, structure, graph: { graphElements: [] } }] }],
+              },
+            })),
+          }));
+          dataServiceMock.gswbDeduce.and.returnValue(of({
+            solutions: [
+              derivedSolution('r-1', 'P(x)', 'sequence-1-S0'),
+              derivedSolution('r-2', 'Q(x)', 'sequence-2-S1'),
+            ],
+          }));
+
+          let readings: any;
+          service.deriveSentenceInSequence([], {
+            newSentence: { id: 'sentence-1', text: 'A man saw a monkey with a telescope.' },
+            ruleString: 'rules',
+            logicType: 'fof',
+            gswbPreferences: {} as any,
+          }).subscribe(r => readings = r);
+
+          const [sequenceRequest] = dataServiceMock.ligerSequence.calls.mostRecent().args;
+          expect(sequenceRequest.sentences.length).toBe(1);
+          expect(sequenceRequest.parsedSentences).toBeUndefined();
+
+          expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(1);
+          expect(dataServiceMock.gswbDeduce.calls.mostRecent().args[0].proofs.length).toBe(2);
+          expect(readings.length).toBe(2);
+          expect(readings.map((reading: any) => reading.currentSyntax.synId)).toEqual(['S0', 'S1']);
+          expect(readings.map((reading: any) => reading.semantic.syntacticOrigin)).toEqual(['S0', 'S1']);
+          expect(readings.map((reading: any) => reading.sequenceStructure.id)).toEqual(['seq-S0', 'seq-S1']);
+        });
       });
     });
   });

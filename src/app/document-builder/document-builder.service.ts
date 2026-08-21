@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core';
-import { Observable, catchError, concatMap, from, map, of, switchMap, toArray } from 'rxjs';
+import { Observable, catchError, concatMap, defer, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { compositeAnalysisId } from '../analysis-model';
 import {
   GswbPreferences,
+  GswbProofInput,
   GswbSemanticMergePart,
   GswbSolution,
   LigerStructure,
@@ -116,11 +117,59 @@ export interface SequenceMergePair {
   currentSyntax?: SyntacticAnalysis;
 }
 
+/** One syntactic variant of the merged sequence, as returned by `ligerSequence`.
+ *
+ *  `ligerSequence`'s `solutions[]` IS the syntactic-ambiguity dimension:
+ *  `LigerController.applyRuleRequestXLESequence` builds `variants` as the cross product
+ *  of every sentence's syntactic candidates (`collectSequenceVariants`) and emits one
+ *  `LigerSolutionAnnotation` per variant. Indexing that list at `[0]` -- which this
+ *  service did until 2026-08-21, inherited verbatim from chat's
+ *  `calculateSequencePartSemantics` -- silently discarded every parse but the first.
+ *  See docs/bug_reports/chat_single_syntax_variant_collapse.md. */
+interface DerivedSequenceVariant {
+  /** The `ligerSequence` solution's own key (`sequence-<n>-<localIds>`), unique per
+   *  variant. Used as the proof's `solutionKey` so GSWB stamps it back onto every
+   *  reading it derives (`GswbController.runProofsOverLexicalEntries`), which is how a
+   *  returned reading is mapped to the variant it came from. */
+  variantKey: string;
+  /** This variant's own merged structure. Distinct per variant, and load-bearing:
+   *  post-processing joins the semantics' SRC values against the merged structure's
+   *  SYN-IDs, so pairing a reading with another variant's structure mis-joins silently
+   *  rather than erroring. */
+  sequenceStructure?: LigerStructure;
+  /** The new sentence's own syntax within this variant (`sequenceAnalysis.sentences[i]`,
+   *  mirroring `LigerVisComponent.proofInputsForSequencePart`'s `sentenceAnalysis`).
+   *  Its `synId` is the sentence structure's `local_id`, so variants that differ only in
+   *  a PREVIOUS sentence's parse legitimately share one `currentSyntax`. */
+  currentSyntax?: SyntacticAnalysis;
+}
+
+/** One reading of a sentence, derived inside a sequence and tagged with the syntactic
+ *  variant it actually came from. The output of `deriveSentenceInSequence`, shared by
+ *  chat's first turn, chat's later turns, and regression's chain folds. */
+export interface DerivedSentenceReading {
+  /** GSWB's raw derived solution -- for `parentSolutionId` on a later merge. */
+  solution: GswbSolution;
+  /** The reading itself, with `syntacticOrigin` already pointed at `currentSyntax`. */
+  semantic: SemanticAnalysis;
+  /** The merged structure of the variant THIS reading came from. */
+  sequenceStructure?: LigerStructure;
+  /** This sentence's own syntax within that variant. */
+  currentSyntax?: SyntacticAnalysis;
+}
+
 export interface SequenceMergeResult {
   /** Every (current x previous) pair -- never dropped just because its syntax merge
    *  could not be resolved; see the "no semantic alternative may be discarded" invariant
    *  in docs/analysis-data-model.md (xleplusglue-client). */
   pairs: SequenceMergePair[];
+  /** Human-readable reasons a previous context produced no pairs at all. Empty on a
+   *  fully successful merge. Populated instead of swallowing the cause into an empty
+   *  result: a caller that ends up with zero pairs has to be able to say WHY (a LiGER
+   *  500, an unresolvable sentence, a reading GSWB stamped with an unknown origin), and
+   *  before this existed `deriveAndMergeForContext`'s catchError hid a real
+   *  `/apply_rules_xle_sequence` 500 behind "no pairs produced". */
+  failures: string[];
   /** One SequenceAnalysis per distinct sentence PAIR (by composite id of the merged
    *  sentenceIds), holding every syntax variant that pair produced in its `.syntax[]` --
    *  not one per syntax variant. Fixes the "multiple sequences per sentence pair" defect
@@ -316,6 +365,10 @@ export class DocumentBuilderService {
       map(pairs => ({
         pairs,
         sequenceAnalyses: this.aggregateSequenceAnalyses(pairs),
+        // The non-rebase path has no per-context failure mode of its own: an unresolvable
+        // syntax merge leaves a pair without `sequenceStructure` rather than dropping it
+        // (see mergeSyntaxForPairs), and that is reported through the pair itself.
+        failures: [] as string[],
       }))
     );
   }
@@ -335,7 +388,11 @@ export class DocumentBuilderService {
       // Chat's own registration (registerSentence/upsertSequenceFromContexts) is driven
       // from Vampire's accepted results, not from every raw merge result the way
       // glue-vis's is -- so this path never builds SequenceAnalysis entries itself.
-      map(contextResults => ({ pairs: contextResults.flat(), sequenceAnalyses: [] }))
+      map(contextResults => ({
+        pairs: contextResults.flatMap(result => result.pairs),
+        sequenceAnalyses: [],
+        failures: contextResults.flatMap(result => result.failures),
+      }))
     );
   }
 
@@ -352,7 +409,7 @@ export class DocumentBuilderService {
     rebase: SequenceMergeRebase,
     resolveDrs: boolean,
     knownSentences: SentenceAnalysis[],
-  ): Observable<SequenceMergePair[]> {
+  ): Observable<{ pairs: SequenceMergePair[]; failures: string[] }> {
     const previousElement = previousContext.element;
     let previousSentences: SentenceAnalysis[];
     if ('sentenceIds' in previousElement) {
@@ -368,14 +425,106 @@ export class DocumentBuilderService {
         return sentence as SentenceAnalysis;
       });
       if (missingSentenceIds.length) {
+        const reason = `Cannot resolve previous sentences ${missingSentenceIds.join(', ')} of `
+          + `${previousElement.id} against the document's sentence registry.`;
         console.error('[DocumentBuilder] cannot resolve previous sentences for rebase merge; skipping this context', {
           previousElementId: previousElement.id, missingSentenceIds,
         });
-        return of([]);
+        return of({ pairs: [], failures: [reason] });
       }
     } else {
       previousSentences = [previousElement];
     }
+
+    return this.deriveSentenceInSequence(previousSentences, rebase).pipe(
+      concatMap(readings => from(readings).pipe(
+        concatMap(reading => this.dataService.gswbMergeSequenceSemantics({
+          parts: [
+            this.semanticPart(previousContext.semantic, previousElement.id),
+            this.semanticPart(reading.semantic, rebase.newSentence.id),
+          ],
+          parentSolutionId: reading.solution.id,
+          solutionKey: reading.semantic.syntacticOrigin,
+          mcSetId: reading.semantic.syntacticOrigin,
+          resolveDrs,
+        }).pipe(map((merged): SequenceMergePair => ({
+          merged,
+          previousElement,
+          // This reading's OWN variant's merged structure -- never another variant's.
+          sequenceStructure: reading.sequenceStructure,
+          currentSemantic: reading.semantic,
+          currentSyntax: reading.currentSyntax,
+        })))),
+        toArray()
+      )),
+      map(pairs => ({ pairs, failures: [] as string[] })),
+      catchError(error => {
+        // Report the cause instead of swallowing it. This handler previously returned
+        // `of([])`, which is how a real `/apply_rules_xle_sequence` 500 surfaced to the
+        // user as nothing but "no pairs produced".
+        const reason = `Rebasing ${rebase.newSentence.id} onto ${previousElement.id} failed: `
+          + `${this.describeError(error)}`;
+        console.error('[DocumentBuilder] syntax merge/derive failed for this context; no pairs produced', {
+          previousElementId: previousElement.id, newSentenceId: rebase.newSentence.id, error,
+        });
+        return of({ pairs: [] as SequenceMergePair[], failures: [reason] });
+      })
+    );
+  }
+
+  /** Derives one sentence's readings **inside a sequence**, across every syntactic
+   *  variant of that sequence. The single place this happens for chat and regression,
+   *  for the first sentence and for every later one alike.
+   *
+   *  `previousSentences` empty is the first-sentence case (chat's turn 1, mirroring the
+   *  analysis view's `LigerVisComponent.analyzeSentence()`, which also always goes
+   *  through `/apply_rules_xle_sequence` rather than the standalone `/apply_rules_xle`).
+   *  Non-empty is the append case (`addSentence()`): the prior sentences' structures are
+   *  supplied and the new one deliberately is not, so LiGER parses and rule-applies it
+   *  fresh, positionally numbered into this sequence.
+   *
+   *  Turn 1 and turn n used to be two separate implementations of this
+   *  (`chat.component.ts`'s `calculateSequencePartSemantics` and this service's own
+   *  copy of it). They drifted apart -- both acquired an independent `solutions[0]`, and
+   *  only one of them ever got the per-variant fix -- which is exactly the argument for
+   *  there being one. Throws rather than degrading: callers wrap this and report the
+   *  cause. */
+  deriveSentenceInSequence(
+    previousSentences: SentenceAnalysis[],
+    rebase: SequenceMergeRebase,
+  ): Observable<DerivedSentenceReading[]> {
+    // `defer` so the validation below fails through the OBSERVABLE's error channel, not
+    // as a synchronous throw at subscribe-construction time -- a caller's `catchError`
+    // is attached to the returned observable and cannot catch the latter.
+    return defer(() => {
+    // Every supplied structure must actually BE a structure. A SyntacticAnalysis
+    // registered from `/apply_rules_to_batch` carries `structure: undefined` (that
+    // endpoint never populates `structureJson`), and `upsertSentenceAnalyses` merges
+    // syntax by synId, so such an entry survives alongside a good one under a different
+    // id. `undefined` inside an array JSON-serializes to `null`, the array is still
+    // non-empty so LiGER's `suppliedThisSentence` guard passes, and
+    // `LinguisticStructure.parseFromJson(null)` 500s the whole call. That was the
+    // "Could not fold S2 into any branch" failure -- see
+    // docs/bug_reports/regression_second_fold_null_structure_500.md.
+    const parsedSentences: LigerStructure[][] = [];
+    const structurelessSentenceIds: string[] = [];
+    for (const sentence of previousSentences) {
+      const structures = sentence.syntax
+        .map(syntax => syntax.structure)
+        .filter((structure): structure is LigerStructure => !!structure);
+      if (!structures.length) {
+        structurelessSentenceIds.push(sentence.id);
+      }
+      parsedSentences.push(structures);
+    }
+    if (structurelessSentenceIds.length) {
+      throw new Error(
+        `Previous sentence(s) ${structurelessSentenceIds.join(', ')} have no parsed structure to `
+        + `supply, so ${rebase.newSentence.id} cannot be rebased onto them. (A syntax entry `
+        + `registered without a structure -- e.g. from a batch parse -- is not usable as parse input.)`);
+    }
+
+    const newSentenceIndex = previousSentences.length;
 
     return this.dataService.ligerSequence({
       sentences: [...previousSentences.map(sentence => sentence.text), rebase.newSentence.text],
@@ -388,91 +537,149 @@ export class DocumentBuilderService {
       // reuse its independent parse verbatim (skipping rule application for the WHOLE
       // call, and keeping whatever solution-key that independent parse had) instead of
       // letting LiGER parse and rule-apply it fresh, positionally numbered into this
-      // sequence.
-      parsedSentences: previousSentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
+      // sequence. Omitted entirely when there are no previous sentences.
+      parsedSentences: parsedSentences.length ? parsedSentences : undefined,
     }).pipe(
-      switchMap(sequence => this.deriveCurrentPart(sequence, rebase.gswbPreferences)),
-      concatMap(({ sequenceStructure, currentSyntax, derived }) => from(derived).pipe(
-        concatMap(candidate => {
-          const semantic = this.toSemanticAnalysis(candidate, rebase.newSentence.id);
-          // The reading's syntacticOrigin must resolve to a synId registered under the
-          // new sentence's OWN document entry (see SequenceMergePair.currentSyntax) --
-          // override whatever /deduce's response happened to carry (its own solutionKey/
-          // proofId namespace, unrelated to this) rather than merely falling back to it.
-          if (currentSyntax) {
-            semantic.syntacticOrigin = currentSyntax.synId;
-          }
-          return this.dataService.gswbMergeSequenceSemantics({
-            parts: [
-              this.semanticPart(previousContext.semantic, previousElement.id),
-              this.semanticPart(semantic, rebase.newSentence.id),
-            ],
-            parentSolutionId: candidate.id,
-            solutionKey: semantic.syntacticOrigin,
-            mcSetId: semantic.syntacticOrigin,
-            resolveDrs,
-          }).pipe(map((merged): SequenceMergePair => ({
-            merged, previousElement, sequenceStructure, currentSemantic: semantic, currentSyntax,
-          })));
-        }),
-        toArray()
-      )),
-      catchError(error => {
-        console.error('[DocumentBuilder] syntax merge/derive failed for this context; no pairs produced', {
-          previousElementId: previousElement.id, error,
-        });
-        return of([]);
-      })
+      switchMap(sequence => this.deriveCurrentPart(sequence, rebase, newSentenceIndex)),
+      map(({ variants, derived }) => derived.map(candidate => {
+        // Which syntactic variant did GSWB derive this reading from? It stamps the
+        // originating proof's solutionKey/proofId onto every solution
+        // (GswbController.java:1181-1188), so this is a lookup, not a guess.
+        const variantKey = candidate.solutionKey || candidate.proofId;
+        const variant = variantKey ? variants.get(variantKey) : undefined;
+        if (!variant) {
+          // Never fall back to "the first variant": that is exactly the silent
+          // mis-attribution this whole change exists to remove, and it would pair the
+          // reading with the wrong merged structure (see DerivedSequenceVariant).
+          throw new Error(
+            `GSWB returned a reading (${candidate.id}) stamped with origin `
+            + `"${variantKey ?? '<none>'}", which is not one of the ${variants.size} sequence `
+            + `variant(s) it was asked to derive from (${[...variants.keys()].join(', ')}). `
+            + `Refusing to guess which syntactic variant it belongs to.`);
+        }
+        const semantic = this.toSemanticAnalysis(candidate, rebase.newSentence.id);
+        // The reading's syntacticOrigin must resolve to a synId registered under the
+        // new sentence's OWN document entry (see SequenceMergePair.currentSyntax) --
+        // override whatever /deduce's response happened to carry (its own solutionKey/
+        // proofId namespace, unrelated to this) rather than merely falling back to it.
+        // Resolved per variant, so two readings from two different parses of the same
+        // sentence get two different origins instead of silently sharing one.
+        if (variant.currentSyntax) {
+          semantic.syntacticOrigin = variant.currentSyntax.synId;
+        }
+        return {
+          solution: candidate,
+          semantic,
+          sequenceStructure: variant.sequenceStructure,
+          currentSyntax: variant.currentSyntax,
+        };
+      }))
     );
+    });
   }
 
-  /** Extracts the newest sentence's own, sequence-rebased meaning constructors from a
-   *  ligerSequence response -- its last `sequenceParts[]` entry, since
-   *  SequenceGraphAssembler numbers parts positionally and the new sentence is always
-   *  appended last -- and proves them. Mirrors `LigerVisComponent`'s
-   *  `proofInputsForSequencePart` + the scoped `/deduce` chat's own turn-1 path already
-   *  runs (`calculateSequencePartSemantics`), so this is not new behavior, just reused
-   *  for turn 2+ as well. Also extracts the new sentence's own per-sentence syntax
-   *  fragment (`sequenceAnalysis.sentences[last]`, the same field
-   *  `proofInputsForSequencePart` exposes as `sentenceAnalysis`), so the caller can
-   *  register the derived reading under a synId that actually belongs to the new
-   *  sentence's own document entry. */
+  /** Best-effort one-line rendering of whatever an HttpClient/derivation failure carried,
+   *  so a caller can put a real cause in front of the user rather than "no pairs". */
+  private describeError(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    const httpError = error as { status?: number; url?: string; error?: unknown; message?: string };
+    if (httpError?.status) {
+      const detail = typeof httpError.error === 'string' && httpError.error.trim()
+        ? ` -- ${httpError.error.trim().split('\n')[0]}`
+        : '';
+      return `HTTP ${httpError.status} from ${httpError.url ?? 'the server'}${detail}`;
+    }
+    return httpError?.message ?? String(error);
+  }
+
+  /** Extracts the newest sentence's own, sequence-rebased meaning constructors from
+   *  EVERY syntactic variant in a `ligerSequence` response, and proves them all in one
+   *  aggregate `/deduce`.
+   *
+   *  Mirrors `LigerVisComponent.proofInputsForSequencePart` exactly: one
+   *  `GswbProofInput` per solution, each carrying that variant's own `structureJson` and
+   *  its own `sequenceParts` entry selected **by `sourceIndex`** (not by position --
+   *  equivalent for the newest sentence today, but it stops being equivalent the moment
+   *  anything folds a non-final sentence, and the explicit form is what the analysis
+   *  view uses).
+   *
+   *  One call, not one per variant: `/deduce` is an aggregate endpoint over syntactic
+   *  origins. `GswbProofInput` describes itself as "One syntactic origin and its MC input
+   *  within an aggregate deduction"; `parseProofInputs` gives each proof its own MC set,
+   *  the prover runs each independently, and each returned solution is stamped with its
+   *  origin's proofId/solutionKey/mcSetId/sentenceId. So the syn->sem link comes back
+   *  from the server; it does not have to be reconstructed here. */
   private deriveCurrentPart(
     sequence: {
       solutions?: Array<{
+        solutionKey?: string;
         structureJson?: LigerStructure;
-        sequenceParts?: Array<{ solutionKey?: string; meaningConstructors?: string }>;
-        sequenceAnalysis?: { sentences?: Array<{ syntax?: SyntacticAnalysis[] }> };
+        sequenceParts?: Array<{ sourceIndex?: number; solutionKey?: string; meaningConstructors?: string }>;
+        sequenceAnalysis?: { sentences?: Array<{ id?: string; syntax?: SyntacticAnalysis[] }> };
       }>;
     },
-    gswbPreferences: GswbPreferences,
-  ): Observable<{ sequenceStructure?: LigerStructure; currentSyntax?: SyntacticAnalysis; derived: GswbSolution[] }> {
-    const sequenceSolution = sequence?.solutions?.[0];
-    const sequenceStructure = sequenceSolution?.structureJson;
-    const parts = Array.isArray(sequenceSolution?.sequenceParts) ? sequenceSolution.sequenceParts : [];
-    const currentPart = parts[parts.length - 1];
-    if (!currentPart?.meaningConstructors?.trim()) {
+    rebase: SequenceMergeRebase,
+    newSentenceIndex: number,
+  ): Observable<{ variants: Map<string, DerivedSequenceVariant>; derived: GswbSolution[] }> {
+    const solutions = Array.isArray(sequence?.solutions) ? sequence.solutions : [];
+    const variants = new Map<string, DerivedSequenceVariant>();
+    const proofs: GswbProofInput[] = [];
+
+    solutions.forEach((solution, index) => {
+      const parts = Array.isArray(solution?.sequenceParts) ? solution.sequenceParts : [];
+      const currentPart = parts.find(part => part?.sourceIndex === newSentenceIndex)
+        // Positional fallback for a LiGER build that predates `sourceIndex` on the part.
+        ?? parts[parts.length - 1];
+      if (!currentPart?.meaningConstructors?.trim()) {
+        return;
+      }
+      // The SEQUENCE key, not the part key: variants that differ only in a previous
+      // sentence's parse share the new sentence's part key, so keying on that would
+      // collapse exactly the distinction this lookup exists to preserve.
+      const variantKey = solution.solutionKey || `sequence-variant-${index + 1}`;
+      const sentences = solution?.sequenceAnalysis?.sentences ?? [];
+      const currentSentence = sentences[newSentenceIndex] ?? sentences[sentences.length - 1];
+      variants.set(variantKey, {
+        variantKey,
+        sequenceStructure: solution.structureJson,
+        currentSyntax: currentSentence?.syntax?.[0],
+      });
+      proofs.push({
+        proofId: variantKey,
+        sentenceId: currentSentence?.id ?? rebase.newSentence.id,
+        solutionKey: variantKey,
+        mcSetId: variantKey,
+        meaningConstructors: currentPart.meaningConstructors,
+        structure: solution.structureJson,
+      });
+    });
+
+    if (!proofs.length) {
       throw new Error('The merged sequence has no source-indexed current sentence part.');
     }
-    const sentences = sequenceSolution?.sequenceAnalysis?.sentences ?? [];
-    const currentSyntax = sentences[sentences.length - 1]?.syntax?.[0];
+
+    console.info('[DocumentBuilder] deriving current sentence part across syntactic variants', {
+      newSentenceId: rebase.newSentence.id,
+      newSentenceIndex,
+      sequenceVariants: solutions.length,
+      proofs: proofs.length,
+      variantKeys: [...variants.keys()],
+    });
+
     return this.dataService.gswbDeduce({
-      premises: currentPart.meaningConstructors,
-      gswbPreferences,
-      structure: sequenceStructure,
-      proofs: [{
-        proofId: currentPart.solutionKey || 'sequence-current-sentence',
-        solutionKey: currentPart.solutionKey,
-        meaningConstructors: currentPart.meaningConstructors,
-        structure: sequenceStructure,
-      }],
+      // Unused by GSWB whenever `proofs` is non-empty (GswbController.java:102-114 takes
+      // the proofs branch); kept populated so a logged request is still readable.
+      premises: proofs.map(proof => proof.meaningConstructors).join('\n'),
+      gswbPreferences: rebase.gswbPreferences,
+      structure: proofs[0].structure,
+      proofs,
     }).pipe(map((result: { solutions?: GswbSolution[] }) => {
       const derived: GswbSolution[] = (result?.solutions ?? []).filter(candidate =>
         typeof candidate?.semantic === 'string' && candidate.semantic.trim().length > 0 && !!candidate.graph);
       if (!derived.length) {
         throw new Error('No source-indexed semantic analyses found for the current sentence.');
       }
-      return { sequenceStructure, currentSyntax, derived };
+      return { variants, derived };
     }));
   }
 

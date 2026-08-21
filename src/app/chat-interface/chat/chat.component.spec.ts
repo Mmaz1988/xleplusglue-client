@@ -205,6 +205,9 @@ describe('ChatComponent', () => {
      *  sentence's own document entry (see `currentSyntax` assertions below). */
     const ligerRebaseResponse = (mcSuffix = '') => ({
       solutions: [{
+        // The sequence VARIANT key. GSWB stamps it onto every reading derived from this
+        // variant's proof, which is how a reading is mapped back to its syntax.
+        solutionKey: 'sequence-1-S0+S1',
         structureJson: structure,
         sequenceParts: [
           { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
@@ -219,8 +222,12 @@ describe('ChatComponent', () => {
       }],
     });
 
-    const derivedSolution = (id: string, semantic: string): any => ({
-      id, solution: semantic, semantic, graph: structure, solutionKey: id,
+    /** Models GSWB's aggregate-/deduce behaviour: each returned solution carries the
+     *  ORIGINATING PROOF's solutionKey (the sequence variant key), not an id of its own. */
+    const derivedSolution = (
+      id: string, semantic: string, variantKey = 'sequence-1-S0+S1'
+    ): any => ({
+      id, solution: semantic, semantic, graph: structure, solutionKey: variantKey,
     });
 
     beforeEach(() => {
