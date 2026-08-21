@@ -180,6 +180,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   vampireProgressItemCount: number | null = null;
   vampireProgressProofCount: number | null = null;
   vampireProgressTotalCount: number | null = null;
+  /** Total check bundles this run submitted -- the unit the backend's `proofCount`
+   *  actually counts, and the only one that advances more than once per item.
+   *  `vampireProgressTotalCount` counts ITEMS, so a 3-item run could only ever move in
+   *  thirds and sat still through everything slow. Null when unknown (a rerun hydrated
+   *  from a stored session), in which case the bar falls back to items. */
+  private vampireExpectedProofCount: number | null = null;
+  private vampireProofBaselineCount = 0;
   private vampireProgressInProgress = false;
   private vampirePreserveExistingResults = false;
   private currentVampireRunKind: 'initial' | 'append' | 'rerun' = 'initial';
@@ -1245,6 +1252,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get vampireProgressPercent(): number {
+    // Prefer bundles over items: `proofCount` ticks on every check bundle the backend
+    // finishes, while `itemCount` only moves when a whole item completes. On a run whose
+    // items take minutes that is the difference between a bar that creeps and a bar that
+    // sits at 0% and then jumps by a third.
+    const expected = this.vampireExpectedProofCount;
+    if (expected !== null && expected > 0 && this.vampireProgressProofCount !== null) {
+      const proofs = Math.min(this.vampireProgressProofCount + this.vampireProofBaselineCount,
+        expected + this.vampireProofBaselineCount);
+      const total = expected + this.vampireProofBaselineCount;
+      return Math.max(0, Math.min(100, Math.round((proofs / total) * 100)));
+    }
+
     const total = this.vampireProgressTotalCount ?? 0;
     if (total <= 0) return 0;
     const count = Math.min(this.vampireProgressItemCount ?? 0, total);
@@ -1260,19 +1279,29 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const reprocessingCount = this.vampireReprocessingItemCount ?? 0;
     const newItemCount = this.vampireNewItemCount ?? 0;
 
+    let what: string;
     if (reprocessingCount > 0 && newItemCount > 0) {
-      return `Re-processing ${reprocessingCount} items and processing ${newItemCount} new items`;
+      what = `Re-processing ${reprocessingCount} items and processing ${newItemCount} new items`;
+    } else if (reprocessingCount > 0) {
+      what = `Re-processing ${reprocessingCount} items`;
+    } else if (newItemCount > 0) {
+      what = `Processing ${newItemCount} new items`;
+    } else {
+      what = 'Processing Vampire items';
     }
 
-    if (reprocessingCount > 0) {
-      return `Re-processing ${reprocessingCount} items`;
+    // Say where it is, in the unit that actually moves. Without this the label was
+    // constant for the whole run and the bar was the only signal -- and the bar could
+    // only change once per item.
+    const expected = this.vampireExpectedProofCount;
+    if (expected !== null && expected > 0 && this.vampireProgressProofCount !== null) {
+      return `${what} -- ${Math.min(this.vampireProgressProofCount, expected)}/${expected} check bundles`;
     }
-
-    if (newItemCount > 0) {
-      return `Processing ${newItemCount} new items`;
+    const totalItems = this.vampireProgressTotalCount ?? 0;
+    if (totalItems > 0 && this.vampireProgressItemCount !== null) {
+      return `${what} -- ${Math.min(this.vampireProgressItemCount, totalItems)}/${totalItems} items`;
     }
-
-    return 'Processing Vampire items';
+    return what;
   }
 
   private buildVampireCompletionDescription(summary: VampireSessionSummary | null | undefined): string {
@@ -2338,7 +2367,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampireProgressBaselineCount = this.currentVampireRunKind === 'initial'
       ? 0
       : Object.keys(this.session.lastVampireResults ?? {}).length;
-    this.startVampireProgressIndicator(this.vampireCurrentRunItemCount + this.vampireProgressBaselineCount);
+    // Bundles already on record for items this run is not redoing -- the same
+    // already-done offset vampireProgressBaselineCount applies at item granularity.
+    this.vampireProofBaselineCount = this.currentVampireRunKind === 'initial'
+      ? 0
+      : Object.values(this.session.lastVampireResults ?? {})
+        .reduce((sum, checks) => sum + (checks?.length ?? 0), 0);
+    this.startVampireProgressIndicator(
+      this.vampireCurrentRunItemCount + this.vampireProgressBaselineCount,
+      this.submittedProofBundleCount(vampireRequest));
 
     // Clear the PREVIOUS run's progress record before polling starts. It is only cleared
     // automatically on cancel, so after a normal run it stays in Redis describing a
@@ -2496,6 +2533,24 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return this.usesLfgxDrt() ? (solution.semantic || solution.solution) : solution.solution;
   }
 
+  /** How many check bundles this request actually submits -- the denominator the
+   *  backend's `proofCount` counts up to. Null when the request carries no per-item
+   *  bundles (the legacy Prolog/DRS path), so the bar falls back to item granularity. */
+  private submittedProofBundleCount(request: any): number | null {
+    const items = Object.values(request?.nli_items ?? {}) as any[];
+    if (!items.length) return null;
+    let total = 0;
+    let sawBundles = false;
+    for (const item of items) {
+      const bundles = item?.tptp_checks;
+      if (Array.isArray(bundles)) {
+        sawBundles = true;
+        total += bundles.length;
+      }
+    }
+    return sawBundles && total > 0 ? total : null;
+  }
+
   private startVampireSummaryPolling(vampireStartedAt: number, runToken: number): void {
     this.stopVampireSummaryPolling();
 
@@ -2538,10 +2593,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  private startVampireProgressIndicator(totalCount: number): void {
+  private startVampireProgressIndicator(totalCount: number, expectedProofCount: number | null = null): void {
     this.vampireProgressTotalCount = totalCount;
     this.vampireProgressItemCount = 0;
     this.vampireProgressProofCount = 0;
+    this.vampireExpectedProofCount = expectedProofCount;
     this.vampireProgressInProgress = true;
   }
 
@@ -2549,6 +2605,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampireProgressItemCount = null;
     this.vampireProgressProofCount = null;
     this.vampireProgressTotalCount = null;
+    this.vampireExpectedProofCount = null;
+    this.vampireProofBaselineCount = 0;
     this.vampireProgressInProgress = false;
     this.vampireProgressBaselineCount = 0;
   }

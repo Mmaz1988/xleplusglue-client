@@ -736,4 +736,53 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(documents['S1'].sentences.map(s => s.id)).toEqual(['S1']);
     });
   });
+
+  describe('Vampire progress bar', () => {
+    /** The bar used to be driven by completed ITEMS, so a 3-item run could only ever show
+     *  0/33/67/100 and sat motionless through everything slow. The backend already tracked
+     *  `proofCount` per check bundle; it was fetched and never used. */
+    it('advances per check bundle, not per item', () => {
+      const request: any = {
+        nli_items: {
+          n0: { tptp_checks: [{}, {}, {}, {}] },
+          n1: { tptp_checks: [{}, {}, {}, {}] },
+        },
+      };
+      expect((component as any).submittedProofBundleCount(request)).toBe(8);
+
+      (component as any).startVampireProgressIndicator(2, 8);
+      expect(component.vampireProgressPercent).toBe(0);
+
+      component.vampireProgressProofCount = 2;
+      expect(component.vampireProgressPercent).toBe(25);
+
+      component.vampireProgressProofCount = 6;
+      expect(component.vampireProgressPercent).toBe(75);
+
+      component.vampireProgressProofCount = 8;
+      expect(component.vampireProgressPercent).toBe(100);
+    });
+
+    it('never exceeds 100% if the backend reports more bundles than were submitted', () => {
+      (component as any).startVampireProgressIndicator(2, 4);
+      component.vampireProgressProofCount = 99;
+      expect(component.vampireProgressPercent).toBe(100);
+    });
+
+    it('falls back to item granularity when the request carries no bundles', () => {
+      // The legacy Prolog/DRS path submits no tptp_checks.
+      expect((component as any).submittedProofBundleCount({ nli_items: { n0: {} } })).toBeNull();
+
+      (component as any).startVampireProgressIndicator(4, null);
+      component.vampireProgressItemCount = 1;
+      expect(component.vampireProgressPercent).toBe(25);
+    });
+
+    it('reports where it is in the label, not just what it is doing', () => {
+      (component as any).vampireNewItemCount = 2;
+      (component as any).startVampireProgressIndicator(2, 8);
+      component.vampireProgressProofCount = 3;
+      expect(component.vampireProgressLabel).toContain('3/8 check bundles');
+    });
+  });
 });
