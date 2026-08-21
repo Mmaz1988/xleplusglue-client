@@ -845,9 +845,39 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.setPersistedActiveSessionKey('');
         }
         this.initializeBlankSession();
-        this.displayMessage('Previous session could not be restored. Started a new session.', 'blue');
+        // AFTER the reset, not before: initializeBlankSession() sets the session status
+        // to idle/'' , so a message posted first was wiped and the failure showed as a
+        // silent reset to a blank session -- indistinguishable from starting a new one on
+        // purpose. Reported live 2026-08-21 as "it simply resets, not even a failed load
+        // error message".
+        this.setSessionLoadStatus('error',
+          `Could not load session ${sessionKey}`,
+          `${this.describeLoadFailure(error)}\nStarted a new session instead; `
+          + `${sessionKey} is still stored and can be loaded again.`);
       }
     });
+  }
+
+  /** Why a session load failed, in the user's terms. A timeout and a 404 mean very
+   *  different things -- "the service is slow or down, try again" versus "this session is
+   *  gone" -- and a bare "could not restore" tells the user neither. */
+  private describeLoadFailure(error: any): string {
+    if (error?.name === 'TimeoutError') {
+      return 'The session service did not respond in time.';
+    }
+    if (error?.status === 0) {
+      return 'The session service is unreachable (is the vampire container running?).';
+    }
+    if (error?.status === 404) {
+      return 'No session is stored under that key.';
+    }
+    if (error?.status === 409) {
+      return `The stored session is not readable by this version: ${error?.error?.detail ?? 'schema mismatch'}.`;
+    }
+    if (error?.status) {
+      return `The session service answered HTTP ${error.status}.`;
+    }
+    return error?.message ?? 'Unknown error.';
   }
 
   saveSessionAs(): void {

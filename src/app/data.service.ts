@@ -63,8 +63,18 @@ export class DataService {
    *  would turn slow work into failed work. */
   private readonly sessionRequestTimeoutMs = 20000;
 
+  /** Loading a whole session or a completed run's results moves megabytes -- an 11 MB
+   *  regression session is ordinary. Measured at ~1.7s once the proxy stopped
+   *  deserializing it, so this is roughly 30x headroom rather than a guess; the point is
+   *  that a large READ should not share a limit sized for a status poll. */
+  private readonly largeReadTimeoutMs = 60000;
+
   private withSessionTimeout<T>(request: Observable<T>): Observable<T> {
     return request.pipe(timeout(this.sessionRequestTimeoutMs));
+  }
+
+  private withLargeReadTimeout<T>(request: Observable<T>): Observable<T> {
+    return request.pipe(timeout(this.largeReadTimeoutMs));
   }
 
   private vampirepage = 'http://localhost:8082'
@@ -198,7 +208,7 @@ callVampire(vampireRequest: vampireRequest){
   }
 
   getLastSession(sessionKey: string = this.defaultRedisSessionKey): Observable<vampireMultipleResponse> {
-    return this.withSessionTimeout(this.http.get<vampireMultipleResponse>(`${this.vampirepage}/last_session/${sessionKey}`));
+    return this.withLargeReadTimeout(this.http.get<vampireMultipleResponse>(`${this.vampirepage}/last_session/${sessionKey}`));
   }
 
   getLastSessionSummary(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireSessionSummary> {
@@ -230,11 +240,11 @@ callVampire(vampireRequest: vampireRequest){
   }
 
   loadRegressionSession(sessionKey: string): Observable<RegressionSessionDocument> {
-    return this.withSessionTimeout(this.http.get<RegressionSessionDocument>(`${this.vampirepage}/regression_session/${sessionKey}`));
+    return this.withLargeReadTimeout(this.http.get<RegressionSessionDocument>(`${this.vampirepage}/regression_session/${sessionKey}`));
   }
 
   saveRegressionSession(sessionKey: string, payload: RegressionSessionDocument): Observable<any> {
-    return this.withSessionTimeout(this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload));
+    return this.withLargeReadTimeout(this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload));
   }
 
   deleteRegressionSession(sessionKey: string): Observable<any> {
