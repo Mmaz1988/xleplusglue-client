@@ -493,9 +493,9 @@ describe('analysis model helpers', () => {
       expect(restored.analysisDocuments).toEqual({});
     });
 
-    it('wraps an unupgraded v3 single document rather than losing it', () => {
-      // The store's v3->v4 upgrade is the real partitioning step; this is the client-side
-      // safety net for a payload that reached it without one.
+    it('ignores a legacy v3 single document instead of guessing at a partition', () => {
+      // v2/v3 sessions are refused by the store, so this shape never reaches the client.
+      // If one somehow did, inventing a partition here would guess at item membership.
       const v3 = {
         schemaVersion: 3,
         metadata: { id: 'session-1', redisSessionKey: 'session-1' },
@@ -504,9 +504,7 @@ describe('analysis model helpers', () => {
       };
 
       const restored = regressionDocumentToSession(v3);
-      const documents = Object.values(restored.analysisDocuments);
-      expect(documents.length).toBe(1);
-      expect(documents[0].reasoningUpdates![0].id).toBe('ru-n3');
+      expect(restored.analysisDocuments).toEqual({});
     });
   });
 });

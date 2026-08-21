@@ -932,21 +932,20 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
   };
 }
 
-/** Reads `analysis.documents` (v4). Falls back to wrapping a v3 single `analysis.document`
- *  under its own id so an unupgraded session still loads rather than losing its results --
- *  the store's upgrade is the real partitioning step, this is only a safety net. */
+/** Reads `analysis.documents` -- one XlePlusGlueDocument per NLI item.
+ *
+ *  No v3 fallback: v2/v3 sessions are refused by the store (they were dropped along with
+ *  its contents on 2026-08-21), so a payload reaching here is always v4. Wrapping a
+ *  legacy single document would only mask a store that let something through. */
 function regressionDocumentsFrom(analysis: any, sessionId: string): Record<string, XlePlusGlueDocument> {
   const documents = analysis?.documents;
-  if (documents && typeof documents === 'object') {
-    return Object.fromEntries(Object.entries(documents).map(([key, value]) => [key, {
-      ...createRegressionAnalysisDocument(`${sessionId}-${key}`),
-      ...(value as XlePlusGlueDocument),
-    }]));
+  if (!documents || typeof documents !== 'object') {
+    return {};
   }
-  if (analysis?.document) {
-    return { [sessionId]: { ...createRegressionAnalysisDocument(sessionId), ...analysis.document } };
-  }
-  return {};
+  return Object.fromEntries(Object.entries(documents).map(([key, value]) => [key, {
+    ...createRegressionAnalysisDocument(`${sessionId}-${key}`),
+    ...(value as XlePlusGlueDocument),
+  }]));
 }
 
 export function regressionDocumentToSession(document: any): RegressionTestingSession {
@@ -985,10 +984,6 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     regressionTestItems: Array.isArray(system?.regressionTestItems ?? document?.regressionTestItems) ? (system?.regressionTestItems ?? document?.regressionTestItems) : [],
     regressionTestResults: Array.isArray(system?.regressionTestResults ?? document?.regressionTestResults) ? (system?.regressionTestResults ?? document?.regressionTestResults).map((result: RegressionParseResult) => cloneRegressionParseResult(result)) : [],
     inferenceResults: Array.isArray(system?.inferenceResults ?? document?.inferenceResults) ? (system?.inferenceResults ?? document?.inferenceResults).map((result: RegressionInferenceResult) => cloneRegressionInferenceResult(result)) : [],
-    // Absent in a v2 session. A v3 session's single `analysis.document` is partitioned
-    // into per-item documents by the store's v3->v4 upgrade, so by the time it reaches
-    // here it is already a `documents` map; the `document` fallback below only catches a
-    // session the store passed through unupgraded.
     analysisDocuments: regressionDocumentsFrom(analysis, String(metadata?.id ?? base.id)),
     selectedSolutionIdsBySentence: { ...(human?.selectedSolutionIdsBySentence ?? document?.selectedSolutionIdsBySentence ?? {}) },
     selectedScopeIdsBySentence: { ...(human?.selectedScopeIdsBySentence ?? document?.selectedScopeIdsBySentence ?? {}) },
