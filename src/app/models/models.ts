@@ -1220,16 +1220,24 @@ export interface VampireSessionSummary {
 export interface VampireProgress {
   sessionKey: string;
   runId: string | null;
-  state: 'idle' | 'running' | 'cancel_requested' | 'cancelled' | 'completed';
+  /** `failed` means the run died server-side. Without it a dead run kept its last
+   *  `running` snapshot forever and the client polled it indefinitely, so a crash
+   *  presented as a run that had merely stopped progressing. */
+  state: 'idle' | 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed';
   cancelRequested: boolean;
   activeItemId: string | null;
   completedItemIds: string[];
   changedItemIds: string[];
-  itemResults: { [key: string]: check[] };
+  /** Per item, how many check bundles have finished -- a count, not the results. The
+   *  results live in `last_session`; copying them here made every per-branch snapshot
+   *  rewrite the whole run's output. */
+  itemResults: { [key: string]: number };
   itemCount: number;
   proofCount: number;
   totalItemCount: number;
   updatedAt?: string;
+  /** Set when `state` is `failed`: what went wrong, for the user rather than the log. */
+  failure?: string;
 }
 
 export interface check {

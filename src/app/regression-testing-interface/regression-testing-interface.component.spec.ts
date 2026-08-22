@@ -849,4 +849,47 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(document.discourseUpdates).toEqual([]);
     });
   });
+
+  describe('a run that dies server-side', () => {
+    /** The run died with a 500 at 06:58 and the progress record kept its last "running"
+     *  snapshot; the client polled it for 43 minutes. A crash presented as a run that had
+     *  merely stopped progressing, with the real cause only in the service log. */
+    it('stops polling and reports the reason when progress says failed', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.getVampireProgress.and.returnValue(of({
+        sessionKey: 'k', runId: null, state: 'failed', cancelRequested: false,
+        activeItemId: null, completedItemIds: ['n0', 'n1'], changedItemIds: [],
+        itemResults: { n0: 2, n1: 2 }, itemCount: 2, proofCount: 4, totalItemCount: 5,
+        failure: 'socket.timeout talking to the session store',
+      } as any));
+      (component as any).activeVampireRunStartedAt = Date.now();
+      component.loading = true;
+      (component as any).startVampireProgressIndicator(5, 20);
+      const stopSpy = spyOn(component as any, 'stopVampireSummaryPolling').and.callThrough();
+
+      (component as any).pollVampireProgress((component as any).vampireRunToken);
+
+      expect(stopSpy).toHaveBeenCalled();
+      expect(component.loading).toBeFalse();
+      expect((component as any).activeVampireRunStartedAt).toBeNull();
+      expect(component.sessionLoadDetails).toContain('socket.timeout');
+    });
+
+    it('keeps polling while the run is still running', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.getVampireProgress.and.returnValue(of({
+        sessionKey: 'k', runId: null, state: 'running', cancelRequested: false,
+        activeItemId: 'n2', completedItemIds: ['n0', 'n1'], changedItemIds: [],
+        itemResults: { n0: 2, n1: 2 }, itemCount: 2, proofCount: 4, totalItemCount: 5,
+      } as any));
+      (component as any).activeVampireRunStartedAt = Date.now();
+      component.loading = true;
+      (component as any).startVampireProgressIndicator(5, 20);
+
+      (component as any).pollVampireProgress((component as any).vampireRunToken);
+
+      expect(component.loading).toBeTrue();
+      expect(component.vampireProgressProofCount).toBe(4);
+    });
+  });
 });

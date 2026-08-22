@@ -2647,6 +2647,24 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (runToken !== this.vampireRunToken) return;
         this.vampireProgressItemCount = (progress?.itemCount ?? 0) + this.vampireProgressBaselineCount;
         this.vampireProgressProofCount = progress?.proofCount ?? this.vampireProgressProofCount;
+
+        // A run that died server-side is terminal. Polling it forever is how a crash came
+        // to look like a run that had merely stopped progressing -- the request had 500'd
+        // half an hour earlier and only this service's log said so.
+        if (progress?.state === 'failed') {
+          this.stopVampireSummaryPolling();
+          this.vampirePendingItemCount = null;
+          this.activeVampireRunStartedAt = null;
+          this.loading = false;
+          this.clearVampireProgressIndicator();
+          const reason = progress.failure ?? 'the inference service reported no reason';
+          this.displayMessage(
+            `Vampire run failed after ${progress.itemCount ?? 0} of ${progress.totalItemCount ?? 0} items: ${reason}`,
+            'red');
+          this.setSessionLoadStatus('error', 'Vampire run failed',
+            `${reason}\nCompleted items are saved; re-running continues from them.`);
+          this.saveSessionSnapshot();
+        }
       },
       error: error => console.warn('Unable to load live Vampire progress.', error)
     });
