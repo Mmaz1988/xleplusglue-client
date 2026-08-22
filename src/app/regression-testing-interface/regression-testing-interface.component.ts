@@ -2523,7 +2523,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private batchProofInputs(
     sentenceId: string, annotation: LigerSolutionAnnotationResponse | undefined
   ): GswbProofInput[] {
-    return proofInputsFrom(annotation?.solutions, { idPrefix: sentenceId });
+    // The testsuite's own sentence id, stated rather than read back from the response:
+    // GSWB prefixes every reading id with it, and a solution key is not a sentence id.
+    return proofInputsFrom(annotation?.solutions, { idPrefix: sentenceId, sentenceId });
   }
 
   private selectedDiscriminantIdentifiers(

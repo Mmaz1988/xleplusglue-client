@@ -100,4 +100,33 @@ describe('proofInputsFrom', () => {
   it('handles a missing solution list', () => {
     expect(proofInputsFrom(undefined)).toEqual([]);
   });
+
+  describe('sentenceId', () => {
+    /** GSWB prefixes every reading id with `origin.sentenceId`, and LiGER's solution keys
+     *  are numbered GLOBALLY across a batch -- so a sentence with two analyses shifts every
+     *  later sentence's key by one. Reading the sentence id back off the response gave
+     *  sentence S3's readings the id `S4-s2` while sentence S4's were `S5-s0`; both
+     *  namespaces look like `S<n>`, so it read as belonging to another sentence. */
+    it('states the caller\'s sentence id rather than trusting the response', () => {
+      const drifted = solution({
+        solutionKey: 'S4',
+        sentenceAnalysis: { id: 'S4', text: 'All boxers are slow.' } as any,
+      });
+
+      const proofs = proofInputsFrom([drifted], { sentenceId: 'S3', idPrefix: 'S3' });
+
+      expect(proofs[0].sentenceId).toBe('S3');
+      // The solution key is untouched -- it identifies the ANALYSIS, which is a different
+      // thing from the sentence.
+      expect(proofs[0].solutionKey).toBe('S4');
+    });
+
+    it('falls back to the response when the caller has no id to state', () => {
+      const withEmbedded = solution({
+        solutionKey: 'S4',
+        sentenceAnalysis: { id: 'S4', text: 'x' } as any,
+      });
+      expect(proofInputsFrom([withEmbedded])[0].sentenceId).toBe('S4');
+    });
+  });
 });
