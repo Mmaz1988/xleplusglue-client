@@ -935,6 +935,30 @@ export function persistedAnalysisDocument(document: XlePlusGlueDocument): XlePlu
   };
 }
 
+/** Whether two ReasoningUpdates say the same thing, ignoring the fields that move on
+ *  their own: the update's own `createdAt`/`updatedAt` and each verdict's `computedAt`.
+ *
+ *  Regression rebuilds every update from `preparedNliPairs` on each 15s results poll, so
+ *  the overwhelming majority of rebuilds are identical to what is already stored. Without
+ *  this the timestamps alone made every rebuild differ, and since the autosave diffs by
+ *  section path with `analysis.documents` as one path, that re-uploaded every item's
+ *  document each poll -- 4.9 MB on a 6-item ambiguous session, roughly 200 MB over a
+ *  ten-minute run, none of it new. */
+export function sameReasoningUpdate(left: ReasoningUpdate, right: ReasoningUpdate): boolean {
+  const comparable = (update: ReasoningUpdate) => {
+    const { createdAt, updatedAt, ...rest } = update ?? ({} as ReasoningUpdate);
+    return {
+      ...rest,
+      assignments: (rest.assignments ?? []).map(assignment => {
+        if (!assignment?.verdict) return assignment;
+        const { computedAt, ...verdict } = assignment.verdict as any;
+        return { ...assignment, verdict };
+      }),
+    };
+  };
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
+}
+
 function persistedReasoningUpdate(update: ReasoningUpdate): ReasoningUpdate {
   return {
     ...update,

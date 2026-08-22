@@ -25,6 +25,8 @@ import {
   createRegressionTestingSession,
   regressionDocumentToSession,
   regressionSessionToDocument,
+  ReasoningUpdate,
+  sameReasoningUpdate,
 } from './models/models';
 
 describe('analysis model helpers', () => {
@@ -464,6 +466,40 @@ describe('analysis model helpers', () => {
       expect(persisted.info_pos_check.tptp).toBe(heavy.info_pos_check.tptp);
       expect(persisted.info_pos_check.graph).toBeUndefined();
       expect(persisted.info_pos_check.semanticSvg).toBeUndefined();
+    });
+
+    it('treats a rebuilt update as unchanged when only its timestamps moved', () => {
+      const base = regressionDocument(true).reasoningUpdates![0];
+      const rebuilt: ReasoningUpdate = JSON.parse(JSON.stringify(base));
+      rebuilt.createdAt = '2030-01-01T00:00:00.000Z';
+      rebuilt.updatedAt = '2030-01-01T00:00:00.000Z';
+      rebuilt.assignments.forEach(assignment => {
+        if (assignment.verdict) (assignment.verdict as any).computedAt = '2030-01-01T00:00:00.000Z';
+      });
+
+      // Regression rebuilds every update on each 15s results poll. If a rebuild that says
+      // exactly the same thing counts as a change, the autosave re-uploads every item's
+      // document each poll -- which is what these three fields alone used to force.
+      expect(sameReasoningUpdate(base, rebuilt)).toBeTrue();
+    });
+
+    it('treats a rebuilt update as changed when anything substantive moved', () => {
+      const base = regressionDocument(true).reasoningUpdates![0];
+
+      const extraAssignment: ReasoningUpdate = JSON.parse(JSON.stringify(base));
+      extraAssignment.assignments.push({
+        ...JSON.parse(JSON.stringify(base.assignments[0])), id: `${base.assignments[0].id}-second`,
+      });
+      expect(sameReasoningUpdate(base, extraAssignment)).toBeFalse();
+
+      const flippedVerdict: ReasoningUpdate = JSON.parse(JSON.stringify(base));
+      const verdict = flippedVerdict.assignments[0].verdict;
+      if (verdict) verdict.consistent = !verdict.consistent;
+      expect(sameReasoningUpdate(base, flippedVerdict)).toBeFalse();
+
+      const newFailure: ReasoningUpdate = JSON.parse(JSON.stringify(base));
+      newFailure.failure = 'a branch failed to prepare';
+      expect(sameReasoningUpdate(base, newFailure)).toBeFalse();
     });
 
     it('does not persist syntax graphs, which no stored document is ever read back for', () => {

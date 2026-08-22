@@ -149,15 +149,19 @@ export const APP_DEFAULTS = {
     } as GswbPreferences,
   },
   chat: {
-    axioms: `tff(fast_type, type, fast: ($i * $int) > $o).
-tff(kind_type, type, kind: ($i * $i) > $o).
-tff(arg1_type, type, arg1: ($i * $i) > $o).
-tff(arg2_type, type, arg2: ($i * $i) > $o).
-tff(computer_type, type, computer: $i > $o).
-tff(be_type, type, be: $i > $o).
-
-tff(pn_type1, type, 'pc-6082': $i).
-tff(pn_type2, type, 'itel-zx': $i).`,
+    axioms: "tff(fast_type, type, fast: ($i * $int) > $o).\n" +
+      "tff(kind_type, type, kind: ($i * $i) > $o).\n" +
+      "tff(arg1_type, type, arg1: ($i * $i) > $o).\n" +
+      "tff(arg2_type, type, arg2: ($i * $i) > $o).\n" +
+      "tff(be_type, type, be: $i > $o).\n" +
+      "\n" +
+      "tff(computer_type, type, computer: $i > $o).\n" +
+      "tff(processor_type, type, processor: $i > $o).\n" +
+      "\n" +
+      "tff(pn_type1, type, 'pc-6082': $i).\n" +
+      "tff(pn_type2, type, 'itel-xz': $i).\n" +
+      "\n" +
+      "tff(th_fast_type, type, th_fast: $i > $int)."
   },
   inference: {
     axioms: '',

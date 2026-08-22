@@ -36,7 +36,8 @@ import {
   nliItem,
   vampireMultipleRequest,
   check,
-  VampireSessionSummary
+  VampireSessionSummary,
+  sameReasoningUpdate,
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
@@ -2931,7 +2932,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           ruleString: APP_DEFAULTS.graphInspector.rulesText,
           pruned: this.contextPruning?.nativeElement?.checked ?? false,
           assignments: [],
-          createdAt: computedAt,
         });
       }
       const update = updates.get(updateId)!;
@@ -2965,9 +2965,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     // Each update is written into ITS OWN item's document -- the item id is carried on the
     // update, so no partitioning is needed here.
+    let unchanged = 0;
     updates.forEach(update => {
       update.verdict = majorityVerdict(update.assignments);
-      update.updatedAt = computedAt;
       const documentId = String(update.itemId ?? '');
       const document = this.session.analysisDocuments[documentId];
       if (!document) {
@@ -2975,6 +2975,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           { updateId: update.id, itemId: documentId });
         return;
       }
+
+      // This runs on every 15s results poll and rebuilds each update from scratch, so most
+      // rebuilds are byte-identical to what is already stored. Leaving them alone matters:
+      // the autosave diffs by section path and `analysis.documents` is one path, so a
+      // rewrite re-uploads every item's document -- 4.9 MB on a 6-item ambiguous session,
+      // once per poll, for nothing. Re-stamped timestamps alone were enough to force that,
+      // which is why they are decided HERE rather than at construction.
+      const existing = (document.reasoningUpdates ?? []).find(entry => entry.id === update.id);
+      if (existing && sameReasoningUpdate(existing, update)) {
+        unchanged++;
+        return;
+      }
+      // `createdAt` means created: it survives every later rebuild. `updatedAt` moves only
+      // when the content actually did, which is what makes it worth storing at all.
+      update.createdAt = existing?.createdAt ?? computedAt;
+      update.updatedAt = computedAt;
+
       const next = [
         ...(document.reasoningUpdates ?? []).filter(existing => existing.id !== update.id),
         update,
@@ -2996,6 +3013,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     console.info('[Regression] reasoning updates written', {
       updateCount: updates.size,
+      unchanged,
       assignmentCount: [...updates.values()].reduce((sum, update) => sum + update.assignments.length, 0),
       documentCount: Object.keys(this.session.analysisDocuments).length,
       storedUpdateCount: Object.values(this.session.analysisDocuments)
