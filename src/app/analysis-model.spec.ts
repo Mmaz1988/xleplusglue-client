@@ -466,6 +466,36 @@ describe('analysis model helpers', () => {
       expect(persisted.info_pos_check.semanticSvg).toBeUndefined();
     });
 
+    it('does not persist syntax graphs, which no stored document is ever read back for', () => {
+      const session: RegressionTestingSession = {
+        ...createRegressionTestingSession(),
+        analysisDocuments: { n3: regressionDocument(true) },
+      };
+      const doc = session.analysisDocuments['n3'];
+      doc.sentences.forEach(sentence =>
+        sentence.syntax.forEach(syntax => (syntax as any).graph = { graphElements: [{ data: { id: 'n' } }] }));
+      (doc.sequences ?? []).forEach(sequence =>
+        sequence.syntax.forEach(syntax => (syntax as any).graph = { graphElements: [{ data: { id: 'n' } }] }));
+
+      const stored = regressionSessionToDocument(session).analysis.documents['n3'];
+
+      // The graph is a rendering companion LiGER builds from the very structure stored
+      // beside it, and nothing reads it back: chat/analysis documents are never rehydrated
+      // (data.service has no GET for them), and regression's only renderer of one is
+      // called from glue-vis against the live document.
+      stored.sentences.forEach(sentence => sentence.syntax.forEach(syntax => {
+        expect((syntax as any).graph).toBeUndefined();
+        expect(syntax.structure).toBeTruthy();
+      }));
+      (stored.sequences ?? []).forEach(sequence => sequence.syntax.forEach(syntax => {
+        expect((syntax as any).graph).toBeUndefined();
+        expect(syntax.structure).toBeTruthy();
+      }));
+
+      // Narrowing the STORED copy only -- the in-memory document still renders.
+      expect((session.analysisDocuments['n3'].sentences[0].syntax[0] as any).graph).toBeTruthy();
+    });
+
     it('reads a v2 session, which has no documents, as an empty map', () => {
       const v2 = {
         schemaVersion: 2,

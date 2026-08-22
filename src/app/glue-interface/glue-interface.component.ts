@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -313,7 +313,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     const document = this.pendingDocumentSave;
     this.pendingDocumentSave = null;
     this.documentSaveInProgress = true;
-    this.dataService.saveAnalysisDocument(this.analysisDocumentSessionKey, document).subscribe({
+    // Narrowed the same way chat and regression narrow theirs, so the three surfaces keep
+    // producing one stored shape.
+    this.dataService.saveAnalysisDocument(this.analysisDocumentSessionKey, persistedAnalysisDocument(document)).subscribe({
       next: response => {
         this.analysisDocument.revision = response.document.revision;
         this.analysisDocument.createdAt = response.document.createdAt;

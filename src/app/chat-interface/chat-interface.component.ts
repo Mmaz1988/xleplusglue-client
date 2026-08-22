@@ -1,6 +1,6 @@
 import {Component, ViewChild, OnInit, AfterViewInit, OnDestroy} from '@angular/core';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
-import {context, GswbPreferences, XlePlusGlueDocument} from "../models/models";
+import {context, GswbPreferences, persistedAnalysisDocument, XlePlusGlueDocument} from "../models/models";
 import {ChatComponent} from "./chat/chat.component";
 import {HistoryComponent} from "./history/history.component";
 import {EditorComponent} from "../editor/editor.component";
@@ -191,7 +191,9 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
     const document = this.pendingChatDocumentSave;
     this.pendingChatDocumentSave = null;
     this.chatDocumentSaveInProgress = true;
-    this.dataService.saveChatDocument(this.chatDocumentSessionKey, document).subscribe({
+    // Narrowed the same way analysis and regression narrow theirs, so the three surfaces
+    // keep producing one stored shape.
+    this.dataService.saveChatDocument(this.chatDocumentSessionKey, persistedAnalysisDocument(document)).subscribe({
       next: response => {
         this.chatDocument.revision = response.document.revision;
         this.chatDocument.createdAt = response.document.createdAt;

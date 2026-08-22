@@ -869,13 +869,18 @@ function persistedReasoningCheck(check: ReasoningCheck): ReasoningCheck {
     ? { canonicalSemantic: check.canonicalSemantic } : {}) };
 }
 
-/** The parse response as STORED: without the two fields nothing reads back.
+/** The parse response as STORED: without these fields nothing reads back.
  *
  *  Measured on an 11 MB session (`first-test`): `sentenceAnalysis` 1.93 MB and
  *  `structureVariants` 1.19 MB, against `structureJson` 1.19 MB that IS read. The first
  *  re-wraps the same structure the solution already carries; the second is not read
  *  anywhere in the client at all. Together they were a quarter of every autosave for
  *  nothing.
+ *
+ *  `graph` joins them (0.82 MB of `first-test-ambig`). It is a LigerWebGraph rendering
+ *  companion, derivable from the `structureJson` stored beside it, and its one reader --
+ *  seedSentenceSyntax, which copies it onto a SyntacticAnalysis -- feeds a field that no
+ *  persisted document is ever read back for. See persistedAnalysisDocument.
  *
  *  They stay on the in-memory session -- this narrows the persisted copy only, so live
  *  proof-input building (which does use `sentenceAnalysis`, off the fresh response) is
@@ -884,9 +889,49 @@ function persistedAnnotation(annotation: LigerSolutionAnnotationResponse): Liger
   return {
     ...annotation,
     solutions: (annotation?.solutions ?? []).map(solution => {
-      const { sentenceAnalysis, structureVariants, structureVariantGraphs, ...kept } = solution as any;
+      const { sentenceAnalysis, structureVariants, structureVariantGraphs, graph, ...kept } = solution as any;
       return kept;
     }),
+  };
+}
+
+/** The document as STORED: without the syntax graphs, which nothing ever reads back.
+ *
+ *  Every SyntacticAnalysis carries a `graph` (LigerWebGraph) beside its `structure`. It is
+ *  a rendering companion LiGER builds from that same structure's constraints and
+ *  annotations, so it is derivable from what sits next to it -- the same argument that
+ *  removed the tier-A/tier-B joins from DiscourseUpdate.
+ *
+ *  Nothing reads it back from persistence, on any surface:
+ *   - chat and analysis documents are never rehydrated at all -- `data.service` has only
+ *     PUT and DELETE for `analysis_document`/`chat_document`, no GET;
+ *   - a regression session IS rehydrated, but its only renderer of a stored syntax graph
+ *     (`LigerVisComponent.displaySequenceAnalysis`) is called from glue-vis alone, against
+ *     the live in-memory document, never from regression.
+ *
+ *  Measured on `first-test-ambig`: 0.65 MB across sentence syntax and 1.17 MB across
+ *  sequence syntax, of an 11.8 MB session.
+ *
+ *  Applied uniformly by all three surfaces, so the stored shape stays identical across
+ *  them -- narrowing this in one place only would break exactly the parity the shared
+ *  pipeline exists to keep. The in-memory document is untouched, so everything that does
+ *  render a graph goes on rendering it. */
+export function persistedAnalysisDocument(document: XlePlusGlueDocument): XlePlusGlueDocument {
+  const withoutGraphs = (entries: SyntacticAnalysis[] | undefined) =>
+    (entries ?? []).map(entry => {
+      const { graph, ...kept } = entry as any;
+      return kept as SyntacticAnalysis;
+    });
+  return {
+    ...document,
+    sentences: (document?.sentences ?? []).map(sentence => ({
+      ...sentence,
+      syntax: withoutGraphs(sentence.syntax),
+    })),
+    sequences: (document?.sequences ?? []).map(sequence => ({
+      ...sequence,
+      syntax: withoutGraphs(sequence.syntax),
+    })),
   };
 }
 
@@ -979,7 +1024,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       // fingerprint unique and turn autosave into a loop.
       documents: Object.fromEntries(
         Object.entries(session?.analysisDocuments ?? {}).map(([key, document]) => [key, {
-          ...document,
+          ...persistedAnalysisDocument(document),
           reasoningUpdates: (document?.reasoningUpdates ?? [])
             .map(update => persistedReasoningUpdate(update)),
         }])),
