@@ -518,6 +518,64 @@ describe('ChatComponent', () => {
       expect(component.loading).toBe(false);
     });
 
+    it('renders turn 1\'s DRS as branches, not as a bare string', () => {
+      reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(of([
+        {
+          mapping: {
+            id: 'pcdrs-1', semantic: 'drs-1', solution: '<svg>one</svg>',
+            anaphoraRelations: [{ pronoun: 'x2', antecedent: 'x1' }],
+          },
+          ruleBranchIndex: 1,
+        },
+        {
+          mapping: { id: 'pcdrs-2', semantic: 'drs-2', solution: '<svg>two</svg>', anaphoraRelations: [] },
+          ruleBranchIndex: 2,
+        },
+      ] as any));
+
+      (component as any).acceptInitialLfgxdrtContext('a man saw himself', [{
+        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        syntax: structure, solutionKey: 'S0',
+        semanticAnalysis: {
+          syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
+          graph: structure, semType: 'lfgxdrt',
+        },
+      }], []);
+
+      // The template picks the DRS pill over the text pill on `branchSolutions`, so turn 1
+      // showed a bare string purely because nothing ever filled this in: the reply is
+      // pushed before post-processing runs, and the result was never written back.
+      const reply = component.chatHistory.find(m => m.sender === 'Bot')!;
+      expect(reply.branchSolutions?.map(s => s.solution)).toEqual(['<svg>one</svg>', '<svg>two</svg>']);
+      expect(reply.branchLabels?.length).toBe(2);
+      expect(reply.branchLabels?.[0]).toContain('1 binding(s)');
+      expect(reply.branchLabels?.[1]).toContain('no binding');
+      // Cleared for the same reason every later turn clears it -- otherwise the same DRS
+      // appears twice, once rendered and once as text.
+      expect(reply.semanticText).toBe('');
+    });
+
+    it('leaves turn 1\'s text pill alone when no branch was rendered', () => {
+      reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(of([
+        { mapping: { id: 'pcdrs-1', semantic: 'drs-1', anaphoraRelations: [] }, ruleBranchIndex: 1 },
+      ] as any));
+
+      (component as any).acceptInitialLfgxdrtContext('a man appeared', [{
+        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        syntax: structure, solutionKey: 'S0',
+        semanticAnalysis: {
+          syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
+          graph: structure, semType: 'lfgxdrt',
+        },
+      }], []);
+
+      // GSWB returned no rendering for this branch, so the text pill is all there is --
+      // clearing it would leave the turn showing nothing at all.
+      const reply = component.chatHistory.find(m => m.sender === 'Bot')!;
+      expect(reply.branchSolutions?.length ?? 0).toBe(0);
+      expect(reply.semanticText).toBeTruthy();
+    });
+
     it('still answers the turn when post-processing fails', () => {
       reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(
         throwError(() => new Error('rules blew up')));

@@ -105,8 +105,12 @@ export class ChatComponent {
 
   /** Stamps and appends a chat message. Centralizing this (instead of pushing onto
    *  chatHistory directly at every call site) keeps the timestamp assignment in one place. */
-  private pushChatMessage(message: Omit<ChatMessage, 'timestamp'>): void {
-    this.chatHistory.push({ ...message, timestamp: new Date().toISOString() });
+  /** Returns the stored message so a caller can fill in fields that only become available
+   *  after an async step -- turn 1's DRS branches are the case that needs it. */
+  private pushChatMessage(message: Omit<ChatMessage, 'timestamp'>): ChatMessage {
+    const stored: ChatMessage = { ...message, timestamp: new Date().toISOString() };
+    this.chatHistory.push(stored);
+    return stored;
   }
 
   sendMessage() {
@@ -879,13 +883,19 @@ export class ChatComponent {
     this.history.push(contexts);
     this.historyChange.emit(this.history);
     this.clearSelected();
-    this.pushChatMessage({
+    // Turn 1's reply goes out before post-processing has run, so it can only carry the
+    // raw semantic text at this point. The message object is kept so the PCDRS branches
+    // can replace that text pill with the rendered DRS pill once they arrive -- see
+    // postProcessInitialContext. Without this, turn 1 was the only turn that never showed
+    // a rendered DRS, because the template falls back to the text pill whenever
+    // `branchSolutions` is empty and nothing ever filled it in.
+    const turnOneMessage = this.pushChatMessage({
       text: 'Okay ...',
       sender: 'Bot',
       semanticText: contexts.map(item => item.semantic).join('\n')
     });
     this.changeDetector.detectChanges();
-    this.postProcessInitialContext(sentenceId, contexts, solutions);
+    this.postProcessInitialContext(sentenceId, contexts, solutions, turnOneMessage);
   }
 
   /** Turn 1's post-processing: apply the rules over each reading's syntax+semantics union
@@ -902,7 +912,7 @@ export class ChatComponent {
    *  Runs after the reply is already on screen and never blocks it: a failure here costs
    *  the anaphora view for this turn, not the turn. */
   private postProcessInitialContext(
-    sentenceId: string, contexts: context[], solutions: any[]
+    sentenceId: string, contexts: context[], solutions: any[], message?: ChatMessage
   ): void {
     const readings = contexts
       .map((entry, index) => ({ entry, solution: solutions[index] }))
@@ -915,6 +925,10 @@ export class ChatComponent {
 
     const discourse: DiscourseAnalysis[] = [];
     const semDiscourseMapping: Record<string, string[]> = {};
+    // The rendered DRS for each branch, for turn 1's message pill. Same shape branchDetail
+    // builds for every later turn: index-aligned solutions and captions.
+    const branchSolutions: GswbSolution[] = [];
+    const branchLabels: string[] = [];
 
     // Serialized, same rationale as everywhere else on this path.
     from(readings).pipe(
@@ -949,6 +963,16 @@ export class ChatComponent {
         results.forEach(({ semId, scopeId, mappings }) => {
           mappings.forEach(({ mapping, ruleBranchIndex }) => {
             const discourseId = mapping?.id ?? `${semId}-pcdrs-${ruleBranchIndex}`;
+            if (mapping?.solution) {
+              branchSolutions.push(mapping as GswbSolution);
+              // No verdict to report on turn 1 -- nothing has been reasoned about yet --
+              // so the caption states what the branch bound, which is the whole point of
+              // showing turn 1's branches at all.
+              const bound = mapping.anaphoraRelations?.length
+                ? `${mapping.anaphoraRelations.length} binding(s)`
+                : 'no binding';
+              branchLabels.push(`${discourseId} — ${bound}`);
+            }
             const mapped = semDiscourseMapping[semId] ?? [];
             if (!mapped.includes(discourseId)) mapped.push(discourseId);
             semDiscourseMapping[semId] = mapped;
@@ -968,12 +992,23 @@ export class ChatComponent {
           });
         });
 
+        // Swap the placeholder text pill for the rendered branches, exactly as every later
+        // turn does. `semanticText` is cleared for the same reason handleVampireResponse
+        // clears it: the template shows the text pill only when there are no branches, and
+        // showing both would put the same DRS on screen twice.
+        if (message && branchSolutions.length) {
+          message.branchSolutions = branchSolutions;
+          message.branchLabels = branchLabels;
+          message.semanticText = '';
+        }
+
         if (discourse.length) {
           console.info('[Chat] turn 1 post-processing complete', {
             sentenceId,
             readings: results.length,
             discourseBranches: discourse.length,
             anaphoraResolvedCount: discourse.filter(item => item.collapsed).length,
+            renderedBranches: branchSolutions.length,
           });
           this.upsertDiscourseUpdate({
             id: `du-${sentenceId}`,
