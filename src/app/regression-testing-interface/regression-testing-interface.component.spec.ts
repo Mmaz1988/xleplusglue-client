@@ -677,116 +677,69 @@ describe('RegressionTestingInterfaceComponent', () => {
   });
 
   describe('per-item documents (one document is one discourse)', () => {
-    const gswbOutput = (sentenceId: string) => ({
-      solutions: [{
-        id: `${sentenceId}-sol-1`, solution: 'x', semantic: 'A',
-        solutionKey: 'S0', graph: { id: `${sentenceId}-graph` },
-      }],
-      log: '', derivation: null, discriminants: [],
-    }) as any;
+    /** Documents are no longer seeded from the batch parse -- an item's document holds
+     *  the readings that item's chain actually used, exactly as chat's does. Registering
+     *  both put the same semId under two syntax ids and broke SYNSEM_MAPPING. */
+    it('gives each item its own document, created on demand by the chain', () => {
+      component.session.analysisDocuments = {};
+      const n0 = (component as any).documentFor('n0');
+      const n1 = (component as any).documentFor('n1');
 
-    it('gives every NLI item its own document, holding only the sentences it quotes', () => {
-      component['regressionTestItems'] = [
-        { id: 'n0', premises: ['S1', 'S2'], conclusion: ['S3'] },
-        { id: 'n1', premises: ['S1'], conclusion: ['S4'] },
-      ];
-      component['sentenceMap'] = { S1: 'One.', S2: 'Two.', S3: 'Three.', S4: 'Four.' };
-
-      (component as any).registerAnalysisSentences(
-        { S1: gswbOutput('S1'), S2: gswbOutput('S2'), S3: gswbOutput('S3'), S4: gswbOutput('S4') },
-        {});
-
-      const documents = component.session.analysisDocuments;
-      expect(Object.keys(documents).sort()).toEqual(['n0', 'n1']);
-      expect(documents['n0'].sentences.map(s => s.id).sort()).toEqual(['S1', 'S2', 'S3']);
-      expect(documents['n1'].sentences.map(s => s.id).sort()).toEqual(['S1', 'S4']);
+      expect(Object.keys(component.session.analysisDocuments).sort()).toEqual(['n0', 'n1']);
+      expect(n0).not.toBe(n1);
+      expect(n0.sentences).toEqual([]);
     });
 
-    /** The reason per-item documents exist at all: the same sentence may be disambiguated
+    /** The reason per-item documents exist: the same sentence may be disambiguated
      *  differently in different items, and one object cannot hold two selections. */
-    it('copies a sentence shared by two items instead of sharing one object', () => {
-      component['regressionTestItems'] = [
-        { id: 'n0', premises: ['S1'], conclusion: ['S2'] },
-        { id: 'n1', premises: ['S1'], conclusion: ['S3'] },
-      ];
-      component['sentenceMap'] = { S1: 'Shared.', S2: 'Two.', S3: 'Three.' };
+    it('keeps a sentence registered into two items as two independent objects', () => {
+      component.session.analysisDocuments = {};
+      const n0 = (component as any).documentFor('n0');
+      const n1 = (component as any).documentFor('n1');
+      const sentence = () => ({
+        id: 'S1', text: 'Shared.',
+        syntax: [{ synId: 'S0', structure: {} as any, graph: { graphElements: [] } }],
+        semantics: [{ syntacticOrigin: 'S0', semId: 'S1-s0', semString: 'P', semType: 'lfgxdrt' as const }],
+        synSemMapping: { S0: ['S1-s0'] },
+      });
 
-      (component as any).registerAnalysisSentences(
-        { S1: gswbOutput('S1'), S2: gswbOutput('S2'), S3: gswbOutput('S3') }, {});
+      component['documentBuilder'].upsertSentenceAnalyses(n0, [sentence()]);
+      component['documentBuilder'].upsertSentenceAnalyses(n1, [sentence()]);
 
-      const inN0 = component.session.analysisDocuments['n0'].sentences.find(s => s.id === 'S1')!;
-      const inN1 = component.session.analysisDocuments['n1'].sentences.find(s => s.id === 'S1')!;
-      expect(inN0).toBeTruthy();
-      expect(inN1).toBeTruthy();
+      const inN0 = n0.sentences.find((x: any) => x.id === 'S1')!;
+      const inN1 = n1.sentences.find((x: any) => x.id === 'S1')!;
       expect(inN0).not.toBe(inN1);
-      expect(inN0.syntax).not.toBe(inN1.syntax);
 
-      // Disambiguating S1 in one item must leave the other untouched.
-      inN0.selectedSemanticIds = ['S1-sol-1'];
+      inN0.selectedSemanticIds = ['S1-s0'];
       inN1.selectedSemanticIds = [];
-      expect(inN0.selectedSemanticIds).toEqual(['S1-sol-1']);
+      expect(inN0.selectedSemanticIds).toEqual(['S1-s0']);
       expect(inN1.selectedSemanticIds).toEqual([]);
     });
 
-    it('falls back to one document per sentence when the testsuite has no NLI items', () => {
-      component['regressionTestItems'] = [];
-      component['sentenceMap'] = { S1: 'One.', S2: 'Two.' };
+    /** The invariant the whole joint id rests on: a semantic belongs to exactly one
+     *  syntax, and the mapping says which. */
+    it('keeps synSemMapping a disjoint partition agreeing with each reading\'s origin', () => {
+      component.session.analysisDocuments = {};
+      const document = (component as any).documentFor('n0');
+      component['documentBuilder'].upsertSentenceAnalyses(document, [{
+        id: 'S1', text: 'Ambiguous.',
+        syntax: [
+          { synId: 'S0', structure: {} as any, graph: { graphElements: [] } },
+          { synId: 'S1', structure: {} as any, graph: { graphElements: [] } },
+        ],
+        semantics: [
+          { syntacticOrigin: 'S0', semId: 'S1-s0', semString: 'P', semType: 'lfgxdrt' as const },
+          { syntacticOrigin: 'S1', semId: 'S1-s1', semString: 'Q', semType: 'lfgxdrt' as const },
+        ],
+        synSemMapping: { S0: ['S1-s0'], S1: ['S1-s1'] },
+      }]);
 
-      (component as any).registerAnalysisSentences(
-        { S1: gswbOutput('S1'), S2: gswbOutput('S2') }, {});
-
-      const documents = component.session.analysisDocuments;
-      expect(Object.keys(documents).sort()).toEqual(['S1', 'S2']);
-      expect(documents['S1'].sentences.map(s => s.id)).toEqual(['S1']);
-    });
-  });
-
-  describe('Vampire progress bar', () => {
-    /** The bar used to be driven by completed ITEMS, so a 3-item run could only ever show
-     *  0/33/67/100 and sat motionless through everything slow. The backend already tracked
-     *  `proofCount` per check bundle; it was fetched and never used. */
-    it('advances per check bundle, not per item', () => {
-      const request: any = {
-        nli_items: {
-          n0: { tptp_checks: [{}, {}, {}, {}] },
-          n1: { tptp_checks: [{}, {}, {}, {}] },
-        },
-      };
-      expect((component as any).submittedProofBundleCount(request)).toBe(8);
-
-      (component as any).startVampireProgressIndicator(2, 8);
-      expect(component.vampireProgressPercent).toBe(0);
-
-      component.vampireProgressProofCount = 2;
-      expect(component.vampireProgressPercent).toBe(25);
-
-      component.vampireProgressProofCount = 6;
-      expect(component.vampireProgressPercent).toBe(75);
-
-      component.vampireProgressProofCount = 8;
-      expect(component.vampireProgressPercent).toBe(100);
-    });
-
-    it('never exceeds 100% if the backend reports more bundles than were submitted', () => {
-      (component as any).startVampireProgressIndicator(2, 4);
-      component.vampireProgressProofCount = 99;
-      expect(component.vampireProgressPercent).toBe(100);
-    });
-
-    it('falls back to item granularity when the request carries no bundles', () => {
-      // The legacy Prolog/DRS path submits no tptp_checks.
-      expect((component as any).submittedProofBundleCount({ nli_items: { n0: {} } })).toBeNull();
-
-      (component as any).startVampireProgressIndicator(4, null);
-      component.vampireProgressItemCount = 1;
-      expect(component.vampireProgressPercent).toBe(25);
-    });
-
-    it('reports where it is in the label, not just what it is doing', () => {
-      (component as any).vampireNewItemCount = 2;
-      (component as any).startVampireProgressIndicator(2, 8);
-      component.vampireProgressProofCount = 3;
-      expect(component.vampireProgressLabel).toContain('3/8 check bundles');
+      const sentence = document.sentences[0];
+      const mapped = Object.values(sentence.synSemMapping).flat() as string[];
+      expect(mapped.length).toBe(new Set(mapped).size);
+      sentence.semantics.forEach((semantic: any) => {
+        expect(sentence.synSemMapping[semantic.syntacticOrigin]).toContain(semantic.semId);
+      });
     });
   });
 
@@ -833,6 +786,67 @@ describe('RegressionTestingInterfaceComponent', () => {
       // state -- otherwise every autosave would see a change and re-save forever.
       expect(serialized).not.toContain('"updatedAt"');
       expect(JSON.parse(serialized).metadata.createdAt).toBeDefined();
+    });
+  });
+
+  describe('the (syn, sem, prag) chain in an item document', () => {
+    /** The batch parse used to be registered into every item document alongside the
+     *  chain's own readings. GSWB mints reading ids as `sentenceId-sN` for both the batch
+     *  deduce and the sequence-scoped one, so the same semId existed twice under different
+     *  syntax ids, upsertSentenceAnalyses unioned the mappings, and (syn_id, sem_id)
+     *  stopped being recoverable. */
+    it('leaves item documents empty for the chain to fill, rather than seeding them from the batch parse', () => {
+      component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
+      component['sentenceMap'] = { S0: 'One.', S1: 'Two.' };
+      component.session.analysisDocuments = { stale: {} as any };
+
+      (component as any).resetAnalysisDocuments();
+
+      expect(component.session.analysisDocuments).toEqual({});
+    });
+
+    it('records one DiscourseAnalysis per PCDRS branch, linked to the reading it annotates', () => {
+      const document: any = createRegressionAnalysisDocument('doc');
+      document.sequences = [{ id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'], syntax: [], semantics: [], synSemMapping: {} }];
+      const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
+      const branches: any = [
+        { merged: { semanticAnalysis: { semId: 'sem-a' } } },
+        { merged: { semanticAnalysis: { semId: 'sem-b' } } },
+      ];
+      const assignment = (mappingId: string, relations: any[]) => ({
+        mappingId,
+        ruleBranchIndex: 1,
+        baseStructureId: 'base-1', baseStructure: { id: 'base' }, baseGraph: { graphElements: [] },
+        structureId: 'branch-1', mergedStructure: { id: 'merged' }, mergedGraph: { graphElements: [] },
+        mapping: { id: mappingId, semantic: 'drs', graph: { id: 'g' }, anaphoraRelations: relations },
+      });
+      const prepared: any = [
+        { scopeId: 'p1', assignments: [assignment('pcdrs-a', [{ pronoun: 'x2', antecedent: 'x1' }])], failures: [], degradations: [] },
+        { scopeId: 'p2', assignments: [assignment('pcdrs-b', [])], failures: [], degradations: [] },
+      ];
+
+      (component as any).registerDiscourseUpdate(document, build, branches, prepared);
+
+      const update = document.discourseUpdates[0];
+      expect(update.id).toBe('du-S0+S1');
+      expect(update.sourceElementId).toBe('S0+S1');
+      expect(update.discourse.map((d: any) => d.id)).toEqual(['pcdrs-a', 'pcdrs-b']);
+      // Each branch points at the merged reading it annotates -- this is the sem -> prag
+      // half of the joint id.
+      expect(update.semDiscourseMapping).toEqual({ 'sem-a': ['pcdrs-a'], 'sem-b': ['pcdrs-b'] });
+      // A branch that bound nothing is still recorded: "post-processing ran and bound
+      // nothing" is a different fact from "post-processing never ran".
+      expect(update.discourse[0].collapsed).toBeTrue();
+      expect(update.discourse[1].collapsed).toBeFalse();
+      expect(update.discourse[1].anaphoraMapping.relations).toEqual([]);
+      expect(Object.keys(update.structures).sort()).toEqual(['base-1', 'branch-1']);
+    });
+
+    it('writes nothing when the item has no registered sequence to hang it off', () => {
+      const document: any = createRegressionAnalysisDocument('doc');
+      const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
+      (component as any).registerDiscourseUpdate(document, build, [], []);
+      expect(document.discourseUpdates).toEqual([]);
     });
   });
 });

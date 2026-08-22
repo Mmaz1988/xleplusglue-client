@@ -14,8 +14,11 @@ import {
   ReasoningCheckSet,
   ReasoningUpdate,
   SemanticAnalysis,
+  AnaphoraMappingModel,
+  DiscourseAnalysis,
   GswbProofInput,
   GswbRequest,
+  LigerWebGraph,
   LigerSolutionAnnotationResponse,
   SentenceAnalysis,
   SequenceAnalysis,
@@ -1087,7 +1090,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.regressionTestResults = currentRegressionTestResults;
     this.session.lastGswbOutputs = outputs;
     this.session.regressionTestResults = currentRegressionTestResults;
-    this.registerAnalysisSentences(outputs, annotations);
+    this.resetAnalysisDocuments();
     if (!this.isHydratingSession) {
       this.scheduleSessionSave();
     }
@@ -1097,118 +1100,31 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`;
   }
 
-  /** Builds the parse-phase documents: **one per NLI item**, holding that item's own
-   *  sentences -- or one per sentence when the testsuite has no NLI items at all.
+  /** Resets the per-item documents for a fresh parse.
    *
-   *  One document is one discourse, exactly as in chat and glue-vis. Each item gets its
-   *  OWN `SentenceAnalysis` objects even where two items quote the same sentence id,
-   *  because the same sentence may legitimately be disambiguated differently per item and
-   *  one object cannot hold two selections. The duplication is the model working.
+   *  Deliberately does NOT populate them. An item's document holds the readings that
+   *  item's chain actually used -- registered by `registerBatchParsedSentence` for the
+   *  seed and `foldSentenceIntoBranches`/`registerFinalSequence` for the rest -- exactly
+   *  as chat's document holds the readings its turns used.
    *
-   *  A ReasoningUpdate may only reference elements and readings its document actually
-   *  holds -- validateReasoningUpdate checks both, positionally -- so this registry has to
-   *  exist before any reasoning result can be written. Regression's element ids are the
-   *  testsuite's sentence ids, and its reading ids are GSWB's solution ids, which is what
-   *  the ReasoningScope already carries.
+   *  Registering the batch parse here as well was the root cause of a broken
+   *  `SYNSEM_MAPPING`. Both registrations write the SAME sentence into the same document
+   *  entry under different syntax ids: GSWB mints reading ids as
+   *  `sentenceId + "-s" + index` for both the batch deduce and the sequence-scoped one,
+   *  so `S1-s1` exists in both, and `upsertSentenceAnalyses` unions their mappings. The
+   *  result was a semantic listed under two syntax ids and a syntax owning readings whose
+   *  `syntacticOrigin` named a different one -- so `(syn_id, sem_id)` stopped being
+   *  recoverable, which is the whole point of the mapping.
    *
-   *  Sequences are not registered here: an item's merged sequence is registered by
-   *  `registerFinalSequence` once its chain has been built. */
-  private registerAnalysisSentences(
-    gswbOutputs: Record<string, GswbOutput>,
-    annotations: Record<string, LigerSolutionAnnotationResponse>
-  ): void {
-    const sentences: SentenceAnalysis[] = [];
-    for (const sentenceId of Object.keys(this.sentenceMap)) {
-      const solutions = gswbOutputs[sentenceId]?.solutions ?? [];
-      if (!solutions.length) continue;
-
-      const annotation = annotations[sentenceId];
-      const syntaxByKey = new Map<string, SyntacticAnalysis>();
-      const semantics: SemanticAnalysis[] = [];
-      const synSemMapping: SynSemMapping = {};
-
-      solutions.forEach(solution => {
-        const synId = solution.solutionKey || solution.proofId || `${sentenceId}-syn`;
-        if (!syntaxByKey.has(synId)) {
-          // The batch endpoint now returns one annotation per syntactic analysis, so this
-          // registers each reading's OWN structure instead of a structureless placeholder.
-          // Matched by solutionKey -- the GSWB solution carries the proof origin's key,
-          // which is exactly the LiGER solution key the proof was built from.
-          const variant = (annotation?.solutions ?? []).find(candidate =>
-            candidate.solutionKey === synId) ?? annotation?.solutions?.[0];
-          syntaxByKey.set(synId, {
-            synId,
-            structure: variant?.structureJson as LigerStructure,
-            graph: variant?.graph,
-            meaningConstructors: variant?.meaningConstructors,
-            numberOfMCsets: variant?.numberOfMCsets,
-            appliedRules: variant?.appliedRules,
-            axioms: variant?.axioms,
-          });
-        }
-        const semantic: SemanticAnalysis = solution.semanticAnalysis ?? {
-          syntacticOrigin: synId,
-          semId: solution.id,
-          semString: solution.semantic || solution.solution || '',
-          graph: solution.graph,
-          semType: this.usesLfgxDrt() ? 'lfgxdrt' : 'prolog-drt',
-        };
-        semantics.push(semantic);
-        synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semantic.semId]));
-      });
-
-      sentences.push({
-        id: sentenceId,
-        text: this.sentenceMap[sentenceId],
-        syntax: Array.from(syntaxByKey.values()),
-        semantics,
-        synSemMapping,
-        discriminants: gswbOutputs[sentenceId]?.discriminants,
-        selectedSemanticIds: this.session.selectedSolutionIdsBySentence[sentenceId],
-      });
-    }
-
-    const sentencesById = new Map(sentences.map(sentence => [sentence.id, sentence]));
-    const items = this.regressionTestItems ?? [];
-    const updatedAt = new Date().toISOString();
-    const documents: Record<string, XlePlusGlueDocument> = {};
-
-    const buildDocument = (documentId: string, sentenceIds: string[]): void => {
-      // Deep-copied per document: two items quoting one sentence must not end up sharing
-      // a SentenceAnalysis object, or a selection made for one silently applies to both.
-      const own = sentenceIds
-        .map(id => sentencesById.get(id))
-        .filter((sentence): sentence is SentenceAnalysis => !!sentence)
-        .map(sentence => structuredClone(sentence));
-      if (!own.length) return;
-      documents[documentId] = {
-        ...createRegressionAnalysisDocument(`${this.session.id}-${documentId}`),
-        sentences: own,
-        elements: own.map(sentence => ({ kind: 'sentence' as const, id: sentence.id })),
-        updatedAt,
-      };
-    };
-
-    if (items.length) {
-      for (const item of items) {
-        const itemId = String(item?.id ?? '');
-        if (!itemId) continue;
-        buildDocument(itemId, [...(item?.premises ?? []), ...(item?.conclusion ?? [])]);
-      }
-    } else {
-      // No NLI items: the unit is the sentence, so each parsed sentence is its own
-      // single-sentence discourse.
-      for (const sentence of sentences) {
-        buildDocument(sentence.id, [sentence.id]);
-      }
-    }
-
+   *  The batch parse is not lost: it is the parse phase's own record, and lives where it
+   *  belongs -- `session.lastGswbOutputs`/`lastAnnotations` for the semvis dialog and
+   *  disambiguation, `regressionTestResults` for the parsing report. It is simply not an
+   *  item's discourse.
+   */
+  private resetAnalysisDocuments(): void {
     // Replaced wholesale rather than merged: a re-parse produces new readings, and an
-    // item's previous document describes readings that no longer exist. Reasoning results
-    // for items that are still present are re-derived by the next run; keeping a stale
-    // update pointing at a vanished reading is what validateReasoningUpdate exists to
-    // reject anyway.
-    this.session.analysisDocuments = documents;
+    // item's previous document describes readings that no longer exist.
+    this.session.analysisDocuments = {};
   }
 
   /** The document for one NLI item (or one sentence, in a parse-only run). Created on
@@ -2041,6 +1957,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         return from(branches).pipe(
           concatMap((branch, index) => this.prepareBranchChecks(build, branch, index, typed, pruning)),
           toArray(),
+          // The pragmatic layer. Written BEFORE the reasoning updates, because a
+          // ReasoningAssignment's id names the anaphora branch it was built from and
+          // validateReasoningUpdate resolves that hop.
+          tap(prepared => this.registerDiscourseUpdate(document, build, branches, prepared)),
           map(prepared => ({
             itemId: build.itemId,
             scopeId: build.updateId,
@@ -2352,6 +2272,95 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   /** One branch's final reasoning call, isolated so one branch's failure never drops the
    *  others -- mirrors the old per-pair catchError, just at branch instead of pair
    *  granularity now that the syntax merge and per-sentence deduce run once per item. */
+  /** Records this item's pragmatic analyses -- one `DiscourseAnalysis` per PCDRS branch,
+   *  linked to the merged reading it annotates.
+   *
+   *  Regression never wrote these. The data was always there: `prepareReasoningChecks`
+   *  returns each assignment's `mapping`, `baseStructure`/`mergedStructure` and their
+   *  graphs, and regression consumed them to build the Vampire bundles and then dropped
+   *  them. Chat and glue-vis take the same values and register them, which is why only
+   *  regression's documents had no `prag` layer at all -- and it was categorical, not a
+   *  property of the examples: chat writes a DiscourseUpdate even for a pronoun-free
+   *  discourse, where `anaphoraMapping.relations` is legitimately empty. "Post-processing
+   *  ran and bound nothing" is a different fact from "post-processing never ran", and
+   *  only the first is recoverable from a stored document.
+   *
+   *  With this, `(syn_id, sem_id, prag_id)` is recoverable for an item without
+   *  materialising the triples: syntax -> semantics via the sentence/sequence
+   *  `synSemMapping`, semantics -> pragmatics via `semDiscourseMapping`. */
+  private registerDiscourseUpdate(
+    document: XlePlusGlueDocument,
+    build: NliItemBuild,
+    branches: NliChainBranch[],
+    prepared: PreparedReasoningPair[],
+  ): void {
+    const sequenceId = compositeAnalysisId([...build.premiseSentenceIds, ...build.hypothesisSentenceIds]);
+    if (!document.sequences.some(sequence => sequence.id === sequenceId)) {
+      return;
+    }
+
+    const structures: Record<string, LigerStructure> = {};
+    const mergedGraphs: Record<string, LigerWebGraph> = {};
+    const discourse: DiscourseAnalysis[] = [];
+    const semDiscourseMapping: Record<string, string[]> = {};
+
+    // `prepared` is built by concatMap over `branches`, so index i belongs to branch i.
+    prepared.forEach((pair, index) => {
+      const semId = branches[index]?.merged?.semanticAnalysis?.semId;
+      if (!semId) return;
+
+      (pair.assignments ?? []).forEach(assignment => {
+        if (assignment.baseStructure) {
+          structures[assignment.baseStructureId] = assignment.baseStructure;
+          if (assignment.baseGraph) mergedGraphs[assignment.baseStructureId] = assignment.baseGraph;
+        }
+        if (assignment.mergedStructure) {
+          structures[assignment.structureId] = assignment.mergedStructure;
+          if (assignment.mergedGraph) mergedGraphs[assignment.structureId] = assignment.mergedGraph;
+        }
+
+        const discourseId = assignment.mappingId
+          ?? `${semId}-pcdrs-${assignment.ruleBranchIndex}`;
+        if (discourse.some(entry => entry.id === discourseId)) return;
+
+        const mapped = semDiscourseMapping[semId] ?? [];
+        if (!mapped.includes(discourseId)) mapped.push(discourseId);
+        semDiscourseMapping[semId] = mapped;
+
+        discourse.push({
+          id: discourseId,
+          semanticOrigin: semId,
+          drsString: assignment.mapping?.semantic ?? '',
+          drsGraph: assignment.mapping?.graph,
+          structureId: assignment.structureId,
+          anaphoraMapping: {
+            relations: assignment.mapping?.anaphoraRelations ?? [],
+          } as AnaphoraMappingModel,
+          collapsed: (assignment.mapping?.anaphoraRelations?.length ?? 0) > 0,
+        });
+      });
+    });
+
+    if (!discourse.length) return;
+
+    document.discourseUpdates = [
+      ...(document.discourseUpdates ?? []).filter(existing => existing.id !== `du-${sequenceId}`),
+      {
+        id: `du-${sequenceId}`,
+        sourceElementId: sequenceId,
+        sourceElementKind: 'sequence',
+        structures,
+        mergedGraphs,
+        discourse,
+        semDiscourseMapping,
+      },
+    ];
+    console.info('[Regression] discourse update registered', {
+      itemId: build.itemId, sequenceId, branches: discourse.length,
+      anaphoraResolved: discourse.filter(entry => entry.collapsed).length,
+    });
+  }
+
   private prepareBranchChecks(
     build: NliItemBuild,
     branch: NliChainBranch,
