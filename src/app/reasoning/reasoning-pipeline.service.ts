@@ -12,10 +12,10 @@ import {
 } from '../models/models';
 
 /** One post-processing rule branch: the tier-B interconnected structure the rules
- *  produced, plus the graph LiGER rendered for it. */
+ *  produced. LiGER also renders a graph for it, which this path does not take -- nothing
+ *  downstream displays a tier-B graph now that it is no longer persisted. */
 interface RuleBranch {
   structure: LigerStructure;
-  graph?: LigerWebGraph;
 }
 
 /** What a prepared assignment needs in order to carry a document-level id.
@@ -181,7 +181,7 @@ export class ReasoningPipelineService {
     return this.dataService.ligerMergeStructure({
       syntax: sequenceStructure, drs: merged.graph
     }).pipe(
-      switchMap(base => this.applyNliRules(base.structureJson, ruleString, base.graph).pipe(
+      switchMap(base => this.applyNliRules(base.structureJson, ruleString).pipe(
         map(branches => ({ base, branches }))
       )),
       switchMap(({ branches }) => forkJoin(branches.map((branch, index) =>
@@ -385,7 +385,6 @@ export class ReasoningPipelineService {
   private applyNliRules(
     structure: any,
     ruleString: string,
-    graph?: LigerWebGraph
   ): Observable<RuleBranch[]> {
     return this.dataService.ligerApplyRulesToStructure({
       content: JSON.stringify(structure),
@@ -396,8 +395,17 @@ export class ReasoningPipelineService {
       map(response => {
         const branches = (response.annotations ?? [])
           .filter(annotation => !!annotation.structureJson)
-          .map(annotation => ({ structure: annotation.structureJson, graph: annotation.graph }));
-        return branches.length ? branches : [{ structure, graph }];
+          .map(annotation => ({ structure: annotation.structureJson }));
+        // No annotations means the rules matched nothing; the caller still gets a branch
+        // so the pipeline continues, but it is the UNRULED tier-A union -- no SYNSEM, so
+        // GSWB will find no POSSIBLE-ANT facts and bind nothing. Worth knowing when a
+        // turn resolves no pronoun: an empty or wrong rule string lands exactly here.
+        if (!branches.length) {
+          console.warn('[Reasoning] post-processing rules produced no annotations; '
+            + 'falling back to the unlinked union, so no anaphora can be bound',
+            { ruleStringLength: ruleString?.length ?? 0 });
+        }
+        return branches.length ? branches : [{ structure }];
       })
     );
   }

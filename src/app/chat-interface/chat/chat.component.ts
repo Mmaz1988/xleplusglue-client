@@ -925,7 +925,15 @@ export class ChatComponent {
           scopeId,
           merged: { semantic: entry.semantic, graph: entry.semanticGraph, ...(solution ?? {}) },
           sequenceStructure: entry.syntax as LigerStructure,
-          ruleString: this.ruleString,
+          // The post-processing rules, NOT `this.ruleString`. That input is the LiGER
+          // *parse* rule file (it feeds /parse and the sequence syntax merge) and is ''
+          // until the user loads one, so turn 1 was applying no rules at all: LiGER
+          // returned no annotations, applyNliRules fell back to the unruled tier-A union,
+          // and with no SYNSEM there were no POSSIBLE-ANT facts for GSWB to branch on --
+          // one empty mapping, no pronoun bound, however many pronouns the turn had.
+          // Turn 2 onwards already uses this same source, so turn 1 was also the only
+          // turn whose pragmatic layer came from a different rule set than the rest.
+          ruleString: APP_DEFAULTS.graphInspector.rulesText,
         }).pipe(
           map(mappings => ({ semId, scopeId, mappings })),
           catchError(error => {
@@ -950,6 +958,10 @@ export class ChatComponent {
               drsString: mapping?.semantic ?? '',
               drsGraph: mapping?.graph,
               ruleBranch: ruleBranchIndex,
+              // GSWB renders every PCDRS branch to SVG and returns it as `solution`.
+              // Chat never read it, so its discourse branches were text-only while the
+              // analysis view showed the rendered DRS for the same data.
+              svg: mapping?.solution,
               anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
               collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
             });
@@ -967,6 +979,8 @@ export class ChatComponent {
             id: `du-${sentenceId}`,
             sourceElementId: sentenceId,
             sourceElementKind: 'sentence',
+            // Now that the joins are not stored, this is what makes them recomputable.
+            ruleString: APP_DEFAULTS.graphInspector.rulesText,
             discourse,
             semDiscourseMapping,
           });
@@ -1225,6 +1239,7 @@ export class ChatComponent {
         semanticOrigin: semId,
         drsString: mapping?.semantic ?? item.merged.semantic,
         drsGraph: mapping?.graph,
+        svg: mapping?.solution,
         // 1-based, as minted by the pipeline. Provenance only: a branch is identified by
         // its PCDRS mapping id above, so two pairs that share a semantic id but come from
         // different premise contexts stay distinct entries even when both are branch 1.
@@ -1256,6 +1271,7 @@ export class ChatComponent {
         id: `du-${sequenceId}`,
         sourceElementId: sequenceId,
         sourceElementKind: 'sequence',
+        ruleString: APP_DEFAULTS.graphInspector.rulesText,
         discourse: group.discourse,
         semDiscourseMapping: group.semDiscourseMapping,
       });

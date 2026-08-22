@@ -6,6 +6,7 @@ import { of, throwError } from 'rxjs';
 import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
+import { APP_DEFAULTS } from '../../app-defaults';
 
 describe('ChatComponent', () => {
   let component: ChatComponent;
@@ -473,6 +474,7 @@ describe('ChatComponent', () => {
       reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(of([{
         mapping: {
           id: 'pcdrs-1', semantic: 'drs-with-binding', graph: { id: 'pcdrs-graph' },
+          solution: '<svg>pcdrs-1</svg>',
           anaphoraRelations: [{ pronoun: 'x2', antecedent: 'x1' }],
         },
         ruleBranchIndex: 1,
@@ -490,7 +492,11 @@ describe('ChatComponent', () => {
       expect(reasoningPipelineSpy.generateDiscourseMappings).toHaveBeenCalledTimes(1);
       const [request] = reasoningPipelineSpy.generateDiscourseMappings.calls.mostRecent().args;
       expect(request.sequenceStructure).toBe(structure);
-      expect(request.ruleString).toBe('rules');
+      // The post-processing rules, not `component.ruleString` ('rules' above) -- that
+      // input is the LiGER *parse* rule file and is '' until the user loads one. Sending
+      // it applied no rules, so there was no SYNSEM, no POSSIBLE-ANT, and turn 1 bound no
+      // pronoun however many it had. Turn 2 onwards already used this source.
+      expect(request.ruleString).toBe(APP_DEFAULTS.graphInspector.rulesText);
 
       const update = component.chatDocument.discourseUpdates?.[0] as any;
       expect(update).toBeTruthy();
@@ -502,6 +508,11 @@ describe('ChatComponent', () => {
       expect(update.semDiscourseMapping['sem-1']).toEqual(['pcdrs-1']);
       // Rule-branch provenance is kept; the tier-A/tier-B joins it was read off are not.
       expect(update.discourse[0].ruleBranch).toBe(1);
+      // GSWB renders every branch to SVG and returns it as `solution`; chat never read
+      // it, so its branches were text-only while analysis showed the rendered DRS.
+      expect(update.discourse[0].svg).toBe('<svg>pcdrs-1</svg>');
+      // Recorded now that the joins are not stored -- this is what makes them recomputable.
+      expect(update.ruleString).toBe(APP_DEFAULTS.graphInspector.rulesText);
       expect(update.structures).toBeUndefined();
       expect(update.mergedGraphs).toBeUndefined();
       expect(component.loading).toBe(false);
