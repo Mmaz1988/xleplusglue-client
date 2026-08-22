@@ -255,6 +255,18 @@ callVampire(vampireRequest: vampireRequest){
       this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload, options));
   }
 
+  /** Replace only the named paths of a stored session.
+   *
+   *  `payload` is a pre-serialized `{"paths": {"<dotted.path>": value, ...}}`. Autosave
+   *  during a run used to rewrite the whole 8-12 MB session every few seconds; the parse
+   *  phase inside it (`lastAnnotations` alone is ~5 MB) is immutable once parsing is done,
+   *  so re-sending it was most of the write volume. */
+  patchRegressionSession(sessionKey: string, payload: string): Observable<any> {
+    return this.withLargeReadTimeout(this.http.patch(
+      `${this.vampirepage}/regression_session/${sessionKey}/patch`, payload,
+      { headers: { 'Content-Type': 'application/json' } }));
+  }
+
   deleteRegressionSession(sessionKey: string): Observable<any> {
     return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`));
   }

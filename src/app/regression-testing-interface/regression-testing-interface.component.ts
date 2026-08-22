@@ -115,6 +115,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     private documentBuilder: DocumentBuilderService,
   ) {
     this.lastSavedSessionFingerprint = this.buildSessionFingerprint(regressionSessionToDocument(this.session));
+    // Deliberately no per-path baseline here: nothing is stored yet, so the first save
+    // must be a full PUT rather than a patch against a session that does not exist.
+    this.lastSavedSectionFingerprints = {};
   }
 
   session: RegressionTestingSession = this.createInitialSession();
@@ -189,6 +192,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  `vampireProgressTotalCount` counts ITEMS, so a 3-item run could only ever move in
    *  thirds and sat still through everything slow. Null when unknown (a rerun hydrated
    *  from a stored session), in which case the bar falls back to items. */
+  /** Per-path fingerprints of what is actually stored, so an autosave can send only the
+   *  paths that changed. Empty means "no baseline" -- the next save is a full PUT. */
+  private lastSavedSectionFingerprints: Record<string, string> = {};
   private vampireExpectedProofCount: number | null = null;
   private vampireProofBaselineCount = 0;
   private vampireProgressInProgress = false;
@@ -580,7 +586,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.activeSaveAction = action === 'autosave' ? null : action;
     let saveSucceeded = false;
 
-    this.dataService.saveRegressionSession(this.redisSessionKey, serialized).pipe(
+    // A full PUT only when there is no baseline to diff against (a first save, a
+    // save-as, or a fresh load). Otherwise send just the paths that changed -- during a
+    // run that is the reasoning results, not the ~7 MB of immutable parse phase sitting
+    // next to them. This is what stopped autosave producing ~25 MB of Redis AOF a minute.
+    const changed = this.changedSessionPaths(snapshot);
+    const request$ = changed === null
+      ? this.dataService.saveRegressionSession(this.redisSessionKey, serialized)
+      : this.dataService.patchRegressionSession(this.redisSessionKey,
+          JSON.stringify({ paths: changed.paths }));
+
+    request$.pipe(
       finalize(() => {
         this.saveOperationInProgress = false;
         this.activeSaveAction = null;
@@ -597,6 +613,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       next: (response: any) => {
         saveSucceeded = true;
         this.lastSavedSessionFingerprint = fingerprint;
+        this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(snapshot);
         this.setPersistedActiveSessionKey(this.redisSessionKey);
         if (response?.recent_sessions) {
           this.recentSessions = response.recent_sessions;
@@ -710,6 +727,79 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return JSON.stringify({ ...rest, metadata: metadataRest });
   }
 
+  /** Fingerprint each path separately, so a save can tell which ones moved. */
+  private sessionSectionFingerprints(snapshot: RegressionSessionDocument): Record<string, string> {
+    const paths = this.sessionSectionPaths(snapshot);
+    const fingerprints: Record<string, string> = {};
+    for (const [path, value] of Object.entries(paths)) {
+      fingerprints[path] = JSON.stringify(value ?? null);
+    }
+    return fingerprints;
+  }
+
+  /** The paths whose contents differ from what is stored, or `null` when there is no
+   *  baseline and the whole session has to be written. */
+  private changedSessionPaths(
+    snapshot: RegressionSessionDocument
+  ): { paths: Record<string, unknown> } | null {
+    if (!Object.keys(this.lastSavedSectionFingerprints).length) {
+      return null;
+    }
+    const current = this.sessionSectionPaths(snapshot);
+    const paths: Record<string, unknown> = {};
+    for (const [path, value] of Object.entries(current)) {
+      const fingerprint = JSON.stringify(value ?? null);
+      if (fingerprint !== this.lastSavedSectionFingerprints[path]) {
+        paths[path] = value ?? null;
+      }
+    }
+    // A path that vanished from the snapshot entirely is not patched away -- replacing a
+    // stored value requires a value, and dropping keys is not something autosave should
+    // be doing silently.
+    return { paths };
+  }
+
+  /** The session split by how often each part actually changes.
+   *
+   *  A session is 8-12 MB and rewriting all of it on every autosave produced ~25 MB of
+   *  Redis AOF per minute during a run -- enough to force AOF rewrites, which fork Redis
+   *  and transiently double its memory. But almost none of it changes during a run: the
+   *  parse phase (`lastAnnotations` alone is ~5 MB, plus `regressionTestResults` and
+   *  `lastGswbOutputs`) is written once and immutable thereafter, and the human's
+   *  disambiguation choices cannot change while a run is in flight.
+   *
+   *  Paths are leaf-level where the size is, so the immutable bulk can be skipped
+   *  independently of the small things next to it in the same section. */
+  private sessionSectionPaths(snapshot: RegressionSessionDocument): Record<string, unknown> {
+    const analysis: any = snapshot.analysis ?? {};
+    const saveState: any = analysis.save_state ?? {};
+    const system: any = analysis.system ?? {};
+    const { updatedAt, ...metadataRest } = snapshot.metadata ?? ({} as any);
+    const { lastGswbOutputs, lastAnnotations, sortedMCmap, ...saveStateRest } = saveState;
+
+    return {
+      'metadata': metadataRest,
+      'inputs': snapshot.inputs,
+      // Parse phase -- immutable once parsing is done, and the bulk of the payload.
+      'analysis.system.sentenceMap': system.sentenceMap,
+      'analysis.system.regressionTestItems': system.regressionTestItems,
+      'analysis.system.regressionTestResults': system.regressionTestResults,
+      'analysis.save_state.lastGswbOutputs': lastGswbOutputs,
+      'analysis.save_state.lastAnnotations': lastAnnotations,
+      'analysis.save_state.sortedMCmap': sortedMCmap,
+      // The human's choices -- cannot change while a run is in flight.
+      'analysis.human': analysis.human,
+      // Reasoning -- what a run actually rewrites.
+      'analysis.system.inferenceResults': system.inferenceResults,
+      'analysis.save_state.lastVampireResults': saveState.lastVampireResults,
+      'analysis.documents': analysis.documents,
+      // Everything else in save_state, all small.
+      ...Object.fromEntries(Object.entries(saveStateRest)
+        .filter(([key]) => key !== 'lastVampireResults')
+        .map(([key, value]) => [`analysis.save_state.${key}`, value])),
+    };
+  }
+
   private buildSessionFingerprint(snapshot: RegressionSessionDocument): string {
     return this.serializeSessionSnapshot(snapshot);
   }
@@ -735,6 +825,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.activeSaveAction = null;
 
     this.session = createRegressionTestingSession();
+    // Nothing is stored under the new key, so there is no baseline to patch against --
+    // the next save must be a full PUT or it would patch a session that does not exist.
+    this.lastSavedSectionFingerprints = {};
     this.selectedSessionKey = this.redisSessionKey;
     this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
     this.testsuiteUpdateMode = this.session.testsuiteUpdateMode;
@@ -754,7 +847,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.axiomEdit.updateContent('');
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
-    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.buildSessionSnapshot());
+    const hydrated = this.buildSessionSnapshot();
+    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(hydrated);
+    // What was just loaded IS what is stored, so it is a valid patch baseline.
+    this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(hydrated);
     this.sessionPersistenceEnabled = true;
     this.isHydratingSession = false;
     this.setPersistedActiveSessionKey('');
@@ -824,7 +920,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
-    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.buildSessionSnapshot());
+    const restored = this.buildSessionSnapshot();
+    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(restored);
+    this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(restored);
 
     this.isHydratingSession = false;
     this.sessionPersistenceEnabled = true;
@@ -937,6 +1035,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.saveAsSessionName = '';
         this.hydrateSession(savedSession);
         this.selectedSessionKey = this.redisSessionKey;
+        // The full snapshot was just written under the new key, so it is a valid patch
+        // baseline for it. Without this the next autosave would patch the new key against
+        // fingerprints describing the old one.
+        this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(snapshot);
         this.setPersistedActiveSessionKey(this.selectedSessionKey);
         this.loadRecentSessions();
         this.setSessionLoadStatus('success', `Saved session as ${sessionKey}`, `Session key: ${sessionKey}`);
