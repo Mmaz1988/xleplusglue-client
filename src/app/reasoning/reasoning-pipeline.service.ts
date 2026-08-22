@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, forkJoin, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { APP_DEFAULTS } from '../app-defaults';
-import { discourseStructureId, reasoningAssignmentId } from '../analysis-model';
+import { reasoningAssignmentId } from '../analysis-model';
 import {
   LigerStructure,
   LigerWebGraph,
@@ -74,20 +74,13 @@ export interface PreparedAssignment {
   mappingId: string;
   /** GSWB's PCDRS solution: carries `semantic`, `graph` and `anaphoraRelations`. */
   mapping: any;
-  /** 1-based, matching the parentSolutionId sent to GSWB. */
+  /** Which post-processing rule branch this mapping came from, 1-based, matching the
+   *  parentSolutionId sent to GSWB -- and the value recorded as DiscourseAnalysis.ruleBranch.
+   *  The tier-A and tier-B structures the branch was derived from are deliberately not
+   *  carried here: nothing consumed them but the document writers, which no longer persist
+   *  them, and holding them on every assignment kept the whole cross product alive in memory
+   *  for the length of a run. */
   ruleBranchIndex: number;
-  /** Tier A -- the unlinked union of merged syntax and merged semantics. */
-  baseStructureId: string;
-  baseStructure?: LigerStructure;
-  baseGraph?: LigerWebGraph;
-  /** Tier B -- the interconnected structure this mapping was derived from.
-   *  Keyed on the pair scope, NOT on the merged semantic id: several pairs can share
-   *  one merged semantic id while having genuinely different structures (they come
-   *  from different premise contexts), so keying by semantic id makes them overwrite
-   *  one another. The scope id is the same value sent to GSWB as parentSolutionId. */
-  structureId: string;
-  mergedStructure?: LigerStructure;
-  mergedGraph?: LigerWebGraph;
   checks: Record<string, ReasoningCheck>;
   /** TPTP for the PRIOR alone (`Q`), collapsed against this branch's mapping. Sent to
    *  Vampire as `contextTptp` and emitted there as `fof(context, axiom, ...)`. */
@@ -120,17 +113,16 @@ export interface PreparedReasoningPair {
   degradations: string[];
 }
 
-/** One PCDRS/anaphora mapping together with the rule branch and tier-A union it came
- *  from -- the output of the post-processing half of the pipeline, before any reasoning
- *  checks are built on top. */
+/** One PCDRS/anaphora mapping together with the number of the rule branch it came from --
+ *  the output of the post-processing half of the pipeline, before any reasoning checks are
+ *  built on top. The tier-A union and the tier-B branch themselves stay inside the pipeline:
+ *  they are consumed to produce this mapping and then dropped, since no consumer persists
+ *  them any more and holding them would keep the whole cross product in memory. */
 export interface MappingWithStructure {
   /** GSWB's PCDRS solution: `.id`, `.semantic`, `.graph`, `.anaphoraRelations`. */
   mapping: any;
-  /** The tier-B rule branch this mapping was generated from. */
-  branch: { structure?: any; graph?: LigerWebGraph };
+  /** 1-based, matching the parentSolutionId sent to GSWB. */
   ruleBranchIndex: number;
-  /** The tier-A syntax+semantics union the branches were derived from. */
-  base: { structureJson?: any; graph?: LigerWebGraph };
 }
 
 /**
@@ -183,24 +175,25 @@ export class ReasoningPipelineService {
     // /merge_uploaded_structures only UNIONS the merged syntax with the merged
     // semantics -- both sides end up in one graph with no edges between them. The
     // post-processing rules below are what interconnect them (they join SRC to SYN-ID
-    // and emit SYNSEM). Tier A is kept alongside the tier-B branches so the discourse
-    // layer can record both.
+    // and emit SYNSEM), and that interconnected form is what the anaphora mappings are
+    // read off. Neither join outlives this method: both are derivable again from the
+    // element's stored syntax and semantics plus the rule string.
     return this.dataService.ligerMergeStructure({
       syntax: sequenceStructure, drs: merged.graph
     }).pipe(
       switchMap(base => this.applyNliRules(base.structureJson, ruleString, base.graph).pipe(
         map(branches => ({ base, branches }))
       )),
-      switchMap(({ base, branches }) => forkJoin(branches.map((branch, index) =>
+      switchMap(({ branches }) => forkJoin(branches.map((branch, index) =>
         this.dataService.gswbGeneratePcdrs({
           semantic: merged.semantic,
           parentSolutionId: `${scopeId}-rule-${index + 1}`,
           mergedStructure: branch.structure as any
-        }).pipe(map(result => ({ result, branch, ruleBranchIndex: index + 1 })))
-      )).pipe(map(pcdrsResults => ({ base, pcdrsResults })))),
-      map(({ base, pcdrsResults }) => {
-        let mappingsWithStructure = pcdrsResults.flatMap(({ result, branch, ruleBranchIndex }) =>
-          (result?.solutions ?? []).map(mapping => ({ mapping, branch, ruleBranchIndex, base }))
+        }).pipe(map(result => ({ result, ruleBranchIndex: index + 1 })))
+      ))),
+      map(pcdrsResults => {
+        let mappingsWithStructure = pcdrsResults.flatMap(({ result, ruleBranchIndex }) =>
+          (result?.solutions ?? []).map(mapping => ({ mapping, ruleBranchIndex }))
         );
         if (!mappingsWithStructure.length) {
           throw new Error('No post-processed sequence interpretations were generated.');
@@ -285,7 +278,7 @@ export class ReasoningPipelineService {
         // Shared across every mapping below -- each mapping only varies in which
         // anaphoraRelations it uses to collapse these same four check ASTs.
         const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
-        return forkJoin(mappingsWithStructure.map(({ mapping, branch, ruleBranchIndex, base }) => {
+        return forkJoin(mappingsWithStructure.map(({ mapping, ruleBranchIndex }) => {
           // The mapping is computed once by generate_pcdrs above and reused as-is across
           // the context collapse and all four checks. gswbCollapseAndTptpBatch re-parses
           // each item's semantic from scratch server-side and carries no mapping of its
@@ -352,12 +345,6 @@ export class ReasoningPipelineService {
                   mappingId: mapping.id,
                   mapping,
                   ruleBranchIndex,
-                  baseStructureId: discourseStructureId(scopeId),
-                  baseStructure: base.structureJson as unknown as LigerStructure,
-                  baseGraph: base.graph,
-                  structureId: discourseStructureId(scopeId, ruleBranchIndex),
-                  mergedStructure: branch.structure,
-                  mergedGraph: branch.graph,
                   checks,
                   contextTptp,
                   sequenceTptp,

@@ -10,7 +10,6 @@ import {
   GswbSolution,
   ReasoningUpdate,
   LigerStructure,
-  LigerWebGraph,
   SemanticAnalysis,
   SentenceAnalysis,
   SequenceAnalysis,
@@ -25,7 +24,6 @@ import { catchError, concatMap, from, map, of, switchMap, toArray } from 'rxjs';
 import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
 import {
   compositeAnalysisId,
-  discourseStructureId,
   majorityVerdict,
   reasoningUpdateId,
   validateAnalysisDocument,
@@ -915,8 +913,6 @@ export class ChatComponent {
       return;
     }
 
-    const structures: Record<string, LigerStructure> = {};
-    const mergedGraphs: Record<string, LigerWebGraph> = {};
     const discourse: DiscourseAnalysis[] = [];
     const semDiscourseMapping: Record<string, string[]> = {};
 
@@ -943,17 +939,7 @@ export class ChatComponent {
     ).subscribe({
       next: results => {
         results.forEach(({ semId, scopeId, mappings }) => {
-          mappings.forEach(({ mapping, branch, ruleBranchIndex, base }) => {
-            const baseStructureId = discourseStructureId(scopeId);
-            const structureId = discourseStructureId(scopeId, ruleBranchIndex);
-            if (base?.structureJson) {
-              structures[baseStructureId] = base.structureJson as LigerStructure;
-              if (base.graph) mergedGraphs[baseStructureId] = base.graph;
-            }
-            if (branch?.structure) {
-              structures[structureId] = branch.structure as LigerStructure;
-              if (branch.graph) mergedGraphs[structureId] = branch.graph;
-            }
+          mappings.forEach(({ mapping, ruleBranchIndex }) => {
             const discourseId = mapping?.id ?? `${semId}-pcdrs-${ruleBranchIndex}`;
             const mapped = semDiscourseMapping[semId] ?? [];
             if (!mapped.includes(discourseId)) mapped.push(discourseId);
@@ -963,7 +949,7 @@ export class ChatComponent {
               semanticOrigin: semId,
               drsString: mapping?.semantic ?? '',
               drsGraph: mapping?.graph,
-              structureId,
+              ruleBranch: ruleBranchIndex,
               anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
               collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
             });
@@ -981,8 +967,6 @@ export class ChatComponent {
             id: `du-${sentenceId}`,
             sourceElementId: sentenceId,
             sourceElementKind: 'sentence',
-            structures,
-            mergedGraphs,
             discourse,
             semDiscourseMapping,
           });
@@ -1141,8 +1125,6 @@ export class ChatComponent {
        *  semantic ids, and keying the whole map off the first one silently hid the
        *  branches belonging to the others. */
       semDiscourseMapping: Record<string, string[]>;
-      structures: Record<string, LigerStructure>;
-      mergedGraphs: Record<string, LigerWebGraph>;
       discourse: DiscourseAnalysis[];
     }
     const groups = new Map<string, DiscourseGroup>();
@@ -1224,31 +1206,9 @@ export class ChatComponent {
       }
 
       if (!groups.has(sequenceId)) {
-        groups.set(sequenceId, { semDiscourseMapping: {}, structures: {}, mergedGraphs: {}, discourse: [] });
+        groups.set(sequenceId, { semDiscourseMapping: {}, discourse: [] });
       }
       const group = groups.get(sequenceId)!;
-
-      // Keyed on the pair scope + rule branch, as minted by the pipeline. Not by the
-      // PCDRS mapping id -- every mapping off one rule branch shares that branch's
-      // structure, so that would store one copy per mapping and defeat the dedup these
-      // maps exist for. And not by the merged semantic id either: several pairs can
-      // share one semantic id while having different structures (different premise
-      // contexts), so that key makes them silently overwrite each other.
-      const baseStructureId = item.checks?.baseStructureId ?? discourseStructureId(semId);
-      const structureId = item.checks?.structureId ?? baseStructureId;
-
-      if (item.checks?.baseStructure) {
-        group.structures[baseStructureId] = item.checks.baseStructure;
-        if (item.checks.baseGraph) {
-          group.mergedGraphs[baseStructureId] = item.checks.baseGraph;
-        }
-      }
-      if (item.checks?.mergedStructure) {
-        group.structures[structureId] = item.checks.mergedStructure;
-        if (item.checks.mergedGraph) {
-          group.mergedGraphs[structureId] = item.checks.mergedGraph;
-        }
-      }
 
       const mapping = item.checks?.mapping;
       const discourseId = mapping?.id ?? `${semId}-pcdrs-${index}`;
@@ -1265,7 +1225,10 @@ export class ChatComponent {
         semanticOrigin: semId,
         drsString: mapping?.semantic ?? item.merged.semantic,
         drsGraph: mapping?.graph,
-        structureId,
+        // 1-based, as minted by the pipeline. Provenance only: a branch is identified by
+        // its PCDRS mapping id above, so two pairs that share a semantic id but come from
+        // different premise contexts stay distinct entries even when both are branch 1.
+        ruleBranch: item.checks?.ruleBranchIndex ?? 1,
         anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
         collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
       });
@@ -1293,8 +1256,6 @@ export class ChatComponent {
         id: `du-${sequenceId}`,
         sourceElementId: sequenceId,
         sourceElementKind: 'sequence',
-        structures: group.structures,
-        mergedGraphs: group.mergedGraphs,
         discourse: group.discourse,
         semDiscourseMapping: group.semDiscourseMapping,
       });

@@ -75,8 +75,7 @@ describe('ChatComponent', () => {
     syntax: { id: overrides.syntacticOrigin ?? 'syn-1' },
     checks: {
       assignmentId: `${semId}/r${ruleBranch}/pcdrs-${mappingIndex}`,
-      structureId: `${semId}-rule-${ruleBranch}`,
-      baseStructureId: `${semId}-base`,
+      ruleBranchIndex: ruleBranch,
       sequenceTptp: overrides.sequenceTptp !== undefined
         ? overrides.sequenceTptp
         : `fof(seq_${ruleBranch}_${mappingIndex}, axiom, $true).`,
@@ -167,6 +166,12 @@ describe('ChatComponent', () => {
       expect(updates[0].discourse.length).toBe(24);
       expect(Object.keys(updates[0].semDiscourseMapping).sort())
         .toEqual(['sem-1+sem-3', 'sem-2+sem-3']);
+      // 24 branches used to mean 24 stored tier-B joins plus their tier-A unions, on the
+      // surface with the highest tier-B ratio of the three. The analyses stay; the joins
+      // behind them are recomputable from the sequence's own syntax and semantics.
+      expect((updates[0] as any).structures).toBeUndefined();
+      expect((updates[0] as any).mergedGraphs).toBeUndefined();
+      expect(updates[0].discourse.every(entry => entry.ruleBranch >= 1)).toBeTrue();
     });
 
     it('drops a reading whose assignments were all rejected', () => {
@@ -470,9 +475,7 @@ describe('ChatComponent', () => {
           id: 'pcdrs-1', semantic: 'drs-with-binding', graph: { id: 'pcdrs-graph' },
           anaphoraRelations: [{ pronoun: 'x2', antecedent: 'x1' }],
         },
-        branch: { structure: { id: 'branch-struct' }, graph: { graphElements: [] } },
         ruleBranchIndex: 1,
-        base: { structureJson: { id: 'base-struct' }, graph: { graphElements: [] } },
       }] as any));
 
       (component as any).acceptInitialLfgxdrtContext('a man saw himself', [{
@@ -497,6 +500,10 @@ describe('ChatComponent', () => {
       expect(update.discourse[0].collapsed).toBe(true);
       expect(update.discourse[0].anaphoraMapping.relations.length).toBe(1);
       expect(update.semDiscourseMapping['sem-1']).toEqual(['pcdrs-1']);
+      // Rule-branch provenance is kept; the tier-A/tier-B joins it was read off are not.
+      expect(update.discourse[0].ruleBranch).toBe(1);
+      expect(update.structures).toBeUndefined();
+      expect(update.mergedGraphs).toBeUndefined();
       expect(component.loading).toBe(false);
     });
 

@@ -400,6 +400,44 @@ describe('GlueInterfaceComponent', () => {
       .toEqual([{ sourceNode: 'd8', relationLabel: 'POSSIBLE-ANT', targetNode: 'd6' }]);
   });
 
+  it('records the discourse layer with its rule branch and neither derived join', () => {
+    const sentence: SentenceAnalysis = {
+      id: 'sentence-1', text: 'a man saw himself', syntax: [], semantics: [], synSemMapping: {},
+    } as any;
+    (component as any).analysisDocument.sentences = [sentence];
+    (component as any).analysisDocument.elements = [{ kind: 'sentence', id: 'sentence-1' }];
+
+    component.showInlinePostProcessing = true;
+    component.mergedStructureContent = JSON.stringify({ constraints: [], annotations: [] });
+    // Two rule branches off one reading: the case where storing tier B once per branch
+    // used to multiply the update by the rule fan-out.
+    component.postProcessingResults = [{
+      semanticSolution: { id: 'sol-1', semantic: '([x],[])', sentenceAnalysis: sentence },
+      structureContent: '{"constraints":[],"annotations":[]}',
+      graphElements: [],
+      ruleAnnotations: [
+        { structureJson: { id: 'branch-1' } },
+        { structureJson: { id: 'branch-2' } },
+      ],
+      rulesApplied: true,
+    }] as any;
+    dataServiceMock.gswbGeneratePcdrs.and.callFake((request: any) => of({
+      solutions: [{ id: `${request.parentSolutionId}-m1`, solution: '<svg></svg>', semantic: 'drs' }],
+    }));
+
+    component.generatePcdrs();
+
+    const update = (component as any).analysisDocument.discourseUpdates[0];
+    expect(update.sourceElementId).toBe('sentence-1');
+    expect(update.sourceElementKind).toBe('sentence');
+    expect(update.discourse.length).toBe(2);
+    // 1-based, matching the parentSolutionId sent to GSWB -- the same numbering chat and
+    // regression record, which is what keeps the three documents comparable.
+    expect(update.discourse.map((entry: any) => entry.ruleBranch)).toEqual([1, 2]);
+    expect(update.structures).toBeUndefined();
+    expect(update.mergedGraphs).toBeUndefined();
+  });
+
   it('collapses all PCDRS solutions and switches their display', () => {
     component.pcdrsSolutions = [{
       id: 's1-pcdrs-1',

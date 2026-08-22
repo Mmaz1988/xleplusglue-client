@@ -18,7 +18,6 @@ import {
   DiscourseAnalysis,
   GswbProofInput,
   GswbRequest,
-  LigerWebGraph,
   LigerSolutionAnnotationResponse,
   SentenceAnalysis,
   SequenceAnalysis,
@@ -2378,9 +2377,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  linked to the merged reading it annotates.
    *
    *  Regression never wrote these. The data was always there: `prepareReasoningChecks`
-   *  returns each assignment's `mapping`, `baseStructure`/`mergedStructure` and their
-   *  graphs, and regression consumed them to build the Vampire bundles and then dropped
-   *  them. Chat and glue-vis take the same values and register them, which is why only
+   *  returns each assignment's `mapping` and rule branch, and regression consumed them to
+   *  build the Vampire bundles and then dropped them. Chat and glue-vis take the same
+   *  values and register them, which is why only
    *  regression's documents had no `prag` layer at all -- and it was categorical, not a
    *  property of the examples: chat writes a DiscourseUpdate even for a pronoun-free
    *  discourse, where `anaphoraMapping.relations` is legitimately empty. "Post-processing
@@ -2401,8 +2400,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
-    const structures: Record<string, LigerStructure> = {};
-    const mergedGraphs: Record<string, LigerWebGraph> = {};
     const discourse: DiscourseAnalysis[] = [];
     const semDiscourseMapping: Record<string, string[]> = {};
 
@@ -2412,15 +2409,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       if (!semId) return;
 
       (pair.assignments ?? []).forEach(assignment => {
-        if (assignment.baseStructure) {
-          structures[assignment.baseStructureId] = assignment.baseStructure;
-          if (assignment.baseGraph) mergedGraphs[assignment.baseStructureId] = assignment.baseGraph;
-        }
-        if (assignment.mergedStructure) {
-          structures[assignment.structureId] = assignment.mergedStructure;
-          if (assignment.mergedGraph) mergedGraphs[assignment.structureId] = assignment.mergedGraph;
-        }
-
         const discourseId = assignment.mappingId
           ?? `${semId}-pcdrs-${assignment.ruleBranchIndex}`;
         if (discourse.some(entry => entry.id === discourseId)) return;
@@ -2434,7 +2422,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           semanticOrigin: semId,
           drsString: assignment.mapping?.semantic ?? '',
           drsGraph: assignment.mapping?.graph,
-          structureId: assignment.structureId,
+          ruleBranch: assignment.ruleBranchIndex,
           anaphoraMapping: {
             relations: assignment.mapping?.anaphoraRelations ?? [],
           } as AnaphoraMappingModel,
@@ -2451,8 +2439,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         id: `du-${sequenceId}`,
         sourceElementId: sequenceId,
         sourceElementKind: 'sequence',
-        structures,
-        mergedGraphs,
         discourse,
         semDiscourseMapping,
       },

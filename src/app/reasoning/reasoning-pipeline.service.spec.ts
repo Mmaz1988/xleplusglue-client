@@ -206,7 +206,7 @@ describe('ReasoningPipelineService', () => {
     });
   });
 
-  it('keys tier B by rule branch so mappings sharing a branch do not duplicate it', done => {
+  it('numbers rule branches 1-based and carries neither tier on the assignment', done => {
     // Two rule branches, two mappings each -- the classic duplication case.
     dataService.ligerApplyRulesToStructure.and.returnValue(of({
       annotations: [
@@ -227,38 +227,40 @@ describe('ReasoningPipelineService', () => {
       expect(pair.assignments.map(a => a.ruleBranchIndex)).toEqual([1, 1, 2, 2]);
       expect(dataService.gswbGeneratePcdrs.calls.allArgs().map((args: any[]) => args[0].parentSolutionId))
         .toEqual(['pxq-1-1-rule-1', 'pxq-1-1-rule-2']);
-      // Mappings off one branch share that branch's structure identity and its key.
-      expect((pair.assignments[0].mergedStructure as any).id).toBe('branch-1');
-      expect((pair.assignments[1].mergedStructure as any).id).toBe('branch-1');
-      expect((pair.assignments[2].mergedStructure as any).id).toBe('branch-2');
-      expect(pair.assignments[0].structureId).toBe(pair.assignments[1].structureId);
-      expect(pair.assignments[0].structureId).not.toBe(pair.assignments[2].structureId);
+      // Neither derived join rides along on the assignment. They are computed (the two
+      // calls above prove it) and consumed to produce the mappings, then dropped: keeping
+      // them here is what used to hold the whole cross product in memory for a run, and
+      // what the document writers then persisted.
+      pair.assignments.forEach(assignment => {
+        ['baseStructure', 'baseGraph', 'mergedStructure', 'mergedGraph', 'structureId', 'baseStructureId']
+          .forEach(field => expect((assignment as any)[field]).toBeUndefined());
+      });
       done();
     });
   });
 
-  it('scopes structure keys per pair so concurrent contexts cannot overwrite each other', done => {
+  it('scopes assignments per pair so concurrent contexts stay distinct', done => {
     // Several pairs routinely share one merged semantic id while having genuinely
-    // different structures, because each comes from a different premise context.
-    // Keying on the semantic id silently collapsed them onto one entry.
+    // different structures, because each comes from a different premise context. The
+    // pair scope is what keeps them apart -- it used to also be the structure key.
     service.prepareReasoningChecksSequentially([request('pxq-1'), request('pxq-2')])
       .subscribe(pairs => {
         const [first, second] = pairs.map(p => p.assignments[0]);
-        expect(first.structureId).toBe('pxq-1-rule-1');
-        expect(second.structureId).toBe('pxq-2-rule-1');
-        expect(first.baseStructureId).toBe('pxq-1');
-        expect(second.baseStructureId).toBe('pxq-2');
+        expect(first.pairId).toBe('pxq-1');
+        expect(second.pairId).toBe('pxq-2');
+        expect(first.ruleBranchIndex).toBe(1);
+        expect(second.ruleBranchIndex).toBe(1);
         done();
       });
   });
 
-  it('keeps tier A alongside tier B on every assignment', done => {
+  it('computes both tiers even though it stores neither', done => {
     service.prepareReasoningChecks(request()).subscribe(pair => {
-      expect(pair.assignments[0].baseStructure).toBeTruthy();
-      expect(pair.assignments[0].baseGraph).toBeTruthy();
-      // Tier A comes from the union endpoint, tier B from rule application.
+      // Tier A comes from the union endpoint, tier B from rule application. Both still
+      // run -- the anaphora mappings below are read off tier B -- they are just not kept.
       expect(dataService.ligerMergeStructure).toHaveBeenCalledTimes(1);
       expect(dataService.ligerApplyRulesToStructure).toHaveBeenCalledTimes(1);
+      expect(pair.assignments[0].mapping).toBeTruthy();
       done();
     });
   });

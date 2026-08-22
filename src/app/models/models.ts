@@ -135,10 +135,11 @@ export interface DiscourseAnalysis {
   semanticOrigin: string;            // the SemanticAnalysis.semId this branch enriches
   drsString: string;                 // enriched DRS text
   drsGraph?: LigerStructure;         // enriched DRS graph (semantic side; carries the ANT edges + SRC provenance)
-  structureId: string;               // key into DiscourseUpdate.structures -- see note there. NOT the
-                                      // same thing as drsGraph: this is the LinguisticStructure side,
-                                      // needed for further LiGER querying/rule application
-                                      // (QueryParser/RuleParser).
+  // Which post-processing rule branch this mapping came from, 1-based, matching the
+  // parentSolutionId sent to GSWB. Provenance within its semanticOrigin, NOT identity:
+  // `id` is identity. It replaces the former `structureId`, which was only ever a key
+  // into the tier-B structure map that is no longer persisted (see DiscourseUpdate).
+  ruleBranch: number;
   svg?: string;
   anaphoraMapping: AnaphoraMappingModel;  // structured, mirrors LFGxDRT's AnaphoraMapping
   collapsed: boolean;                // true once /collapse_anaphora has resolved this branch
@@ -151,14 +152,14 @@ export interface DiscourseUpdate {
   sourceElementId: string;           // Sentence.id or Sequence.id (XlePlusGlueElement.id) -- not a duplicated copy
   sourceElementKind: 'sentence' | 'sequence';
   ruleString?: string;               // the pronoun-binding rule text applied, for reproducibility
-  // Deduplicated LinguisticStructures, keyed by structureId. A single semantic origin can fan out
-  // into several rule-annotation variants, and each variant can fan out into several PCDRS/anaphora
-  // candidates that all share the SAME LinguisticStructure -- storing structures here once and
-  // having DiscourseAnalysis.structureId reference them avoids duplicating multi-KB structures per
-  // candidate when persisted.
-  structures: Record<string, LigerStructure>;
-  mergedGraphs?: Record<string, LigerWebGraph>;  // keyed the same way as `structures` -- rendering companion
-  discourse: DiscourseAnalysis[];    // candidate branches, referencing `structures`/`mergedGraphs` by structureId
+  // Stores pragmatic content only. The two joins post-processing computes on the way here --
+  // tier A (merged syntax + merged semantics, unlinked) and tier B (tier A after the
+  // post-processing rules, which is what carries the SYNSEM edges the anaphora rules gate on) --
+  // are deliberately NOT persisted. Both are joins over the source element's own stored syntax
+  // and semantics and are recomputable on demand; tier B cannot be reused for a later discourse
+  // update anyway, so storing it bought nothing and cost the cross product: the persisted side
+  // grows with the sentence count, the joins grew with readings x rule branches.
+  discourse: DiscourseAnalysis[];    // candidate branches; each carries its own drsGraph
   semDiscourseMapping: SemDiscourseMapping;
   createdAt?: string;
   updatedAt?: string;
@@ -168,9 +169,11 @@ export interface DiscourseUpdate {
 // Stacks on Sentence/Sequence exactly the way DiscourseUpdate does -- a parallel,
 // id-referenced structure, never new fields on SentenceAnalysis/SequenceAnalysis.
 //
-// Deliberately stores NO structures of its own: the merged structures a check was
-// computed over live in the DiscourseUpdate, and an assignment points at the branch it
-// used via discourseUpdateId/discourseId. The anaphora mapping is computed exactly once
+// Deliberately stores NO structures of its own -- and neither does the DiscourseUpdate it
+// points into: an assignment names the branch it was computed over via
+// discourseUpdateId/discourseId, and the structures behind that branch are recomputed from
+// the element's stored syntax and semantics if they are ever wanted again. The anaphora
+// mapping, by contrast, is computed exactly once
 // by GSWB /generate_pcdrs and threaded through; re-deriving it against a duplicated
 // premise context makes the mapping ambiguous (see docs/plans/LFGXDRT_NLI_CHECK_COMPOSITION_PLAN.md).
 
@@ -726,7 +729,7 @@ export interface RegressionSessionSaveState {
  *  single session-wide document under `analysis.document`; v2 had the three parallel
  *  result arrays alone. The store (Redis/redis_store.py) dispatches on this on read: an
  *  older session is upgraded in memory and flagged `upgradedFrom`, a newer one is refused. */
-export const REGRESSION_SESSION_SCHEMA_VERSION = 4;
+export const REGRESSION_SESSION_SCHEMA_VERSION = 5;
 
 export interface RegressionSessionDocument {
   schemaVersion: typeof REGRESSION_SESSION_SCHEMA_VERSION;

@@ -8,7 +8,7 @@ import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, Liger
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
-import { discourseStructureId, validateAnalysisDocument } from '../analysis-model';
+import { validateAnalysisDocument } from '../analysis-model';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 
 interface PostProcessingResult {
@@ -375,33 +375,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         rulesApplied: false,
       }));
 
-      const sourceElement = semanticSolutions
-        .map(solution => solution.sequenceAnalysis ?? solution.sentenceAnalysis)
-        .find((analysis): analysis is SentenceAnalysis | SequenceAnalysis => !!analysis);
-      if (sourceElement) {
-        const existingUpdate = this.discourseUpdateFor(sourceElement.id);
-        const structures = { ...(existingUpdate?.structures ?? {}) };
-        const mergedGraphs = { ...(existingUpdate?.mergedGraphs ?? {}) };
-        responses.forEach((response, index) => {
-          const semanticSolutionId = semanticSolutions[index].id;
-          if (response?.structureJson) {
-            structures[discourseStructureId(semanticSolutionId)] = response.structureJson as unknown as LigerStructure;
-          }
-          if (response?.graph) {
-            mergedGraphs[discourseStructureId(semanticSolutionId)] = response.graph;
-          }
-        });
-        this.upsertDiscourseUpdate({
-          id: `du-${sourceElement.id}`,
-          sourceElementId: sourceElement.id,
-          sourceElementKind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence',
-          ruleString: existingUpdate?.ruleString,
-          structures,
-          mergedGraphs,
-          discourse: existingUpdate?.discourse ?? [],
-          semDiscourseMapping: existingUpdate?.semDiscourseMapping ?? {},
-        });
-      }
+      // No DiscourseUpdate is written here. This step produces tier A -- merged syntax and
+      // merged semantics co-present but unlinked -- which is a derived join over the
+      // element's own stored syntax and semantics and carries no pragmatic content of its
+      // own. The discourse layer for this element starts at generatePcdrs().
 
       this.selectedPostProcessingIndex = 0;
       this.postProcessingResultsReady = true;
@@ -550,31 +527,17 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         .map(result => result.semanticSolution.sequenceAnalysis ?? result.semanticSolution.sentenceAnalysis)
         .find((analysis): analysis is SentenceAnalysis | SequenceAnalysis => !!analysis);
       if (sourceElement) {
+        // Records the rule text and nothing else. The tier-B structures these rules just
+        // produced are not persisted: they exist to give the anaphora rules SYNSEM edges to
+        // gate on, cannot be reused by a later discourse update, and are recomputable from
+        // this element's stored syntax and semantics. The rule string is what makes that
+        // recomputation reproducible, so it is the part worth keeping.
         const existingUpdate = this.discourseUpdateFor(sourceElement.id);
-        const structures = { ...(existingUpdate?.structures ?? {}) };
-        const mergedGraphs = { ...(existingUpdate?.mergedGraphs ?? {}) };
-        this.postProcessingResults.forEach(result => {
-          const semanticSolutionId = result.semanticSolution.id;
-          result.ruleAnnotations.forEach((annotation, annotationIndex) => {
-            // 1-based, matching the parentSolutionId sent to GSWB in generatePcdrs -- the two
-            // used to disagree (structures 0-based, parentSolutionId 1-based), which made the
-            // rule branch a given structure belonged to needlessly hard to read off.
-            const structureId = discourseStructureId(semanticSolutionId, annotationIndex + 1);
-            if (annotation?.structureJson) {
-              structures[structureId] = annotation.structureJson;
-            }
-            if (annotation?.graph) {
-              mergedGraphs[structureId] = annotation.graph;
-            }
-          });
-        });
         this.upsertDiscourseUpdate({
           id: `du-${sourceElement.id}`,
           sourceElementId: sourceElement.id,
           sourceElementKind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence',
           ruleString,
-          structures,
-          mergedGraphs,
           discourse: existingUpdate?.discourse ?? [],
           semDiscourseMapping: existingUpdate?.semDiscourseMapping ?? {},
         });
@@ -669,27 +632,21 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         .find((analysis): analysis is SentenceAnalysis | SequenceAnalysis => !!analysis);
       if (sourceElement) {
         const existingUpdate = this.discourseUpdateFor(sourceElement.id);
-        const structures = { ...(existingUpdate?.structures ?? {}) };
         const semDiscourseMapping: SemDiscourseMapping = {};
         const discourse: DiscourseAnalysis[] = [];
         candidates.forEach((candidate, candidateIndex) => {
           const semanticSolutionId = candidate.result.semanticSolution.id;
-          // Rule-applied candidates were already stored by onRulesApplied under this key (tier B,
-          // the interconnected structure); the no-rules fallback candidate reuses the tier-A
-          // union stored by handlePostProcessing, since without rules there is no tier B.
-          const structureId = candidate.result.rulesApplied
-            ? discourseStructureId(semanticSolutionId, candidate.annotationIndex + 1)
-            : discourseStructureId(semanticSolutionId);
-          if (!structures[structureId] && candidate.annotation.structureJson) {
-            structures[structureId] = candidate.annotation.structureJson;
-          }
+          // 1-based, matching the parentSolutionId sent to GSWB above. The no-rules fallback
+          // builds exactly one candidate, so it is branch 1 -- chat and regression number
+          // their branches the same way, which is what keeps the three documents comparable.
+          const ruleBranch = candidate.annotationIndex + 1;
           (responses[candidateIndex]?.solutions ?? []).forEach(solution => {
             discourse.push({
               id: solution.id,
               semanticOrigin: semanticSolutionId,
               drsString: solution.semantic ?? solution.solution,
               drsGraph: solution.graph,
-              structureId,
+              ruleBranch,
               svg: solution.solution,
               anaphoraMapping: { relations: solution.anaphoraRelations ?? [] },
               collapsed: false,
@@ -705,8 +662,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
           sourceElementId: sourceElement.id,
           sourceElementKind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence',
           ruleString: existingUpdate?.ruleString,
-          structures,
-          mergedGraphs: existingUpdate?.mergedGraphs ?? {},
           discourse,
           semDiscourseMapping,
         });

@@ -1,6 +1,5 @@
 import {
   compositeAnalysisId,
-  discourseStructureId,
   findElementById,
   inferenceResultsFromDocument,
   majorityVerdict,
@@ -163,20 +162,6 @@ describe('analysis model helpers', () => {
     });
   });
 
-  describe('discourseStructureId', () => {
-    it('keys tier A by the semantic id alone and tier B by semantic id + rule branch', () => {
-      expect(discourseStructureId('sem-1+sem-3')).toBe('sem-1+sem-3');
-      expect(discourseStructureId('sem-1+sem-3', 1)).toBe('sem-1+sem-3-rule-1');
-    });
-
-    it('separates rule branches so mappings sharing a branch collapse onto one key', () => {
-      // Two PCDRS mappings off rule branch 2 must produce the same structure key -- that is
-      // the deduplication DiscourseUpdate.structures exists for.
-      expect(discourseStructureId('sem-1', 2)).toBe(discourseStructureId('sem-1', 2));
-      expect(discourseStructureId('sem-1', 2)).not.toBe(discourseStructureId('sem-1', 3));
-    });
-  });
-
   describe('reasoning layer', () => {
     const checks = (): ReasoningCheckSet => ({
       info_pos_check: { tptp: 'fof(a).' },
@@ -196,12 +181,11 @@ describe('analysis model helpers', () => {
         id: 'du-seq-1',
         sourceElementId: 'seq-1',
         sourceElementKind: 'sequence',
-        structures: { 'sem-1+sem-3-rule-1': structure },
         discourse: [{
           id: 'mapping-7',
           semanticOrigin: 'sem-1+sem-3',
           drsString: 'P & Q',
-          structureId: 'sem-1+sem-3-rule-1',
+          ruleBranch: 1,
           anaphoraMapping: { relations: [] },
           collapsed: true,
         }],
@@ -443,7 +427,7 @@ describe('analysis model helpers', () => {
       };
 
       const stored = regressionSessionToDocument(session);
-      expect(stored.schemaVersion).toBe(4);
+      expect(stored.schemaVersion).toBe(5);
       expect(stored.analysis.documents['n3'].reasoningUpdates!.length).toBe(1);
 
       const restored = regressionDocumentToSession(stored);

@@ -816,8 +816,6 @@ describe('RegressionTestingInterfaceComponent', () => {
       const assignment = (mappingId: string, relations: any[]) => ({
         mappingId,
         ruleBranchIndex: 1,
-        baseStructureId: 'base-1', baseStructure: { id: 'base' }, baseGraph: { graphElements: [] },
-        structureId: 'branch-1', mergedStructure: { id: 'merged' }, mergedGraph: { graphElements: [] },
         mapping: { id: mappingId, semantic: 'drs', graph: { id: 'g' }, anaphoraRelations: relations },
       });
       const prepared: any = [
@@ -839,7 +837,13 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(update.discourse[0].collapsed).toBeTrue();
       expect(update.discourse[1].collapsed).toBeFalse();
       expect(update.discourse[1].anaphoraMapping.relations).toEqual([]);
-      expect(Object.keys(update.structures).sort()).toEqual(['base-1', 'branch-1']);
+      // Rule-branch provenance is recorded; the joins it was read off are not. Storing
+      // them made the update scale with the cross product (180 structures, 37 MB, in one
+      // measured item) while adding nothing recoverable that the element's own syntax and
+      // semantics do not already hold.
+      expect(update.discourse.map((d: any) => d.ruleBranch)).toEqual([1, 1]);
+      expect(update.structures).toBeUndefined();
+      expect(update.mergedGraphs).toBeUndefined();
     });
 
     it('writes nothing when the item has no registered sequence to hang it off', () => {
