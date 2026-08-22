@@ -281,7 +281,9 @@ export interface ReasoningUpdate {
 
 export interface LigerRuleAnnotation {
   sentence?: string;
-  graph: LigerWebGraph;
+  // Absent when the request set `includeGraph: false` -- LiGER then skips rendering
+  // entirely. Only callers that display a branch ask for it; see LigerStructureRuleRequest.
+  graph?: LigerWebGraph;
   structureJson?: LigerStructure;
   structureVariants?: LigerStructure[];
   structureVariantGraphs?: LigerWebGraph[];
@@ -361,6 +363,11 @@ export interface LigerStructureUploadRequest {
 
 export interface LigerStructureRuleRequest extends LigerStructureUploadRequest {
   ruleString: string;
+  /** Opt OUT of LiGER rendering each rule branch to a graph. Omitted means rendered, so
+   *  callers that display branches need no change. The rendering is roughly a third of
+   *  the response and is paid PER BRANCH, so a caller that only feeds the branch into the
+   *  next request should always set this false. */
+  includeGraph?: boolean;
 }
 
 export interface LigerStructureQueryRequest {
@@ -414,10 +421,14 @@ export interface LigerStructureMergeRequest {
   syntax?: LigerStructure;
   syntaxGraph?: LigerWebGraph;
   drs: LigerStructure;
+  /** Opt OUT of LiGER rendering the merged structure to a graph. See
+   *  LigerStructureRuleRequest.includeGraph. */
+  includeGraph?: boolean;
 }
 
 export interface LigerMergeResponse {
-  graph: LigerWebGraph;
+  // Absent when the request set `includeGraph: false`.
+  graph?: LigerWebGraph;
   structureJson?: Record<string, unknown>;
 }
 

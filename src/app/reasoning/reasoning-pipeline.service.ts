@@ -179,7 +179,11 @@ export class ReasoningPipelineService {
     // read off. Neither join outlives this method: both are derivable again from the
     // element's stored syntax and semantics plus the rule string.
     return this.dataService.ligerMergeStructure({
-      syntax: sequenceStructure, drs: merged.graph
+      syntax: sequenceStructure, drs: merged.graph,
+      // Nothing on this path displays a graph: tier A is consumed by the rule application
+      // below and then dropped. Rendering it was ~36% of the response, fetched and
+      // discarded on every pair.
+      includeGraph: false,
     }).pipe(
       switchMap(base => this.applyNliRules(base.structureJson, ruleString).pipe(
         map(branches => ({ base, branches }))
@@ -390,7 +394,11 @@ export class ReasoningPipelineService {
       content: JSON.stringify(structure),
       format: 'json',
       ruleString,
-      id: 'nli-post-processing'
+      id: 'nli-post-processing',
+      // Same, and this one is paid per rule branch: only `structureJson` is used, to feed
+      // GSWB's /generate_pcdrs. On a 90-branch regression item the discarded rendering was
+      // ~22 MB for one NLI item.
+      includeGraph: false,
     }).pipe(
       map(response => {
         const branches = (response.annotations ?? [])
