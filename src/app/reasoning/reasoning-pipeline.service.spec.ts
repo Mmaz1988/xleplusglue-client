@@ -214,10 +214,13 @@ describe('ReasoningPipelineService', () => {
         { structureJson: { ...structure, id: 'branch-2' }, graph },
       ]
     }) as any);
+    // The semantic varies per branch: two branches yielding the IDENTICAL mapping are
+    // deduplicated now (see the dedup test below), which would make this fixture measure
+    // that instead of the branch numbering it is here for.
     dataService.gswbGeneratePcdrs.and.callFake((payload: any) => of({
       solutions: [
-        { id: `${payload.parentSolutionId}-m1`, semantic: 'a', anaphoraRelations: [] },
-        { id: `${payload.parentSolutionId}-m2`, semantic: 'b', anaphoraRelations: [] },
+        { id: `${payload.parentSolutionId}-m1`, semantic: `${payload.parentSolutionId}-a`, anaphoraRelations: [] },
+        { id: `${payload.parentSolutionId}-m2`, semantic: `${payload.parentSolutionId}-b`, anaphoraRelations: [] },
       ]
     }) as any);
 
@@ -235,6 +238,61 @@ describe('ReasoningPipelineService', () => {
         ['baseStructure', 'baseGraph', 'mergedStructure', 'mergedGraph', 'structureId', 'baseStructureId']
           .forEach(field => expect((assignment as any)[field]).toBeUndefined());
       });
+      done();
+    });
+  });
+
+  it('drops a duplicate anaphora mapping before any check is built for it', done => {
+    // LiGER forks a rule branch per rule solution, and the anaphora rule's disjointness
+    // conjunct ends in `?=> #z KEEP +` with `#z` unbound -- so it mints a fresh introduced
+    // node per solution and the branches come back identical apart from which anonymous
+    // node carries that marker. Measured live on "a man saw a man"/"he saw him": 12
+    // branches, 12 distinct structures, 6 distinct POSSIBLE-ANT sets, each twice.
+    dataService.ligerApplyRulesToStructure.and.returnValue(of({
+      annotations: [
+        { structureJson: { ...structure, id: 'branch-1' }, graph },
+        { structureJson: { ...structure, id: 'branch-2' }, graph },
+      ]
+    }) as any);
+    // Both branches produce the same binding over the same DRS -- the duplication case.
+    dataService.gswbGeneratePcdrs.and.callFake((payload: any) => of({
+      solutions: [{
+        id: `${payload.parentSolutionId}-m1`,
+        semantic: 'drs',
+        anaphoraRelations: [{ pronounReferentId: 'x2', antecedent: 'x1', stateLabel: 's1' }],
+      }]
+    }) as any);
+
+    service.prepareReasoningChecks(request()).subscribe(pair => {
+      expect(pair.assignments.length).toBe(1);
+      // The point of deduplicating here rather than where the document is written: a
+      // duplicate that reaches this far has already cost a collapse/TPTP batch and four
+      // Vampire runs. Filtering at the document layer would have hidden that, not saved it.
+      expect(dataService.gswbCollapseAndTptpBatch).toHaveBeenCalledTimes(1);
+      done();
+    });
+  });
+
+  it('keeps mappings that differ only in their binding', done => {
+    dataService.ligerApplyRulesToStructure.and.returnValue(of({
+      annotations: [
+        { structureJson: { ...structure, id: 'branch-1' }, graph },
+        { structureJson: { ...structure, id: 'branch-2' }, graph },
+      ]
+    }) as any);
+    // Same DRS, different antecedent: two genuinely different readings of the discourse,
+    // which is exactly what the cross-product enumeration exists to produce.
+    let antecedent = 0;
+    dataService.gswbGeneratePcdrs.and.callFake((payload: any) => of({
+      solutions: [{
+        id: `${payload.parentSolutionId}-m1`,
+        semantic: 'drs',
+        anaphoraRelations: [{ pronounReferentId: 'x2', antecedent: `x${++antecedent}`, stateLabel: 's1' }],
+      }]
+    }) as any);
+
+    service.prepareReasoningChecks(request()).subscribe(pair => {
+      expect(pair.assignments.length).toBe(2);
       done();
     });
   });

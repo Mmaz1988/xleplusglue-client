@@ -202,6 +202,46 @@ export class ReasoningPipelineService {
         if (!mappingsWithStructure.length) {
           throw new Error('No post-processed sequence interpretations were generated.');
         }
+
+        // Two rule branches routinely yield the SAME anaphora mapping over the same DRS.
+        // The anaphora rule's disjointness conjunct ends in `?=> #z KEEP +` with `#z`
+        // unbound, so LiGER mints a fresh introduced node (`a1`, `a2`, ...) per rule
+        // solution and forks a branch for each. The branches are then identical apart
+        // from which anonymous node carries that marker -- measured on
+        // "a man saw a man"/"he saw him": 12 branches, 12 distinct structures, but only
+        // 6 distinct POSSIBLE-ANT sets, each appearing exactly twice.
+        //
+        // Deduplicating HERE rather than where the document is written is deliberate.
+        // This is upstream of the collapse/TPTP batch and of Vampire, so a duplicate
+        // costs nothing further: dropping it at the document layer would have left the
+        // whole check-building and proving cost in place and merely hidden it.
+        //
+        // The key is what makes two branches the same *discourse analysis*: the binding
+        // it asserts, over the DRS it asserts it about. Rule-branch index is deliberately
+        // NOT part of it -- being reached via a different branch is exactly the
+        // distinction that carries no meaning here.
+        const seen = new Map<string, number>();
+        const deduplicated = mappingsWithStructure.filter(({ mapping }) => {
+          const relations = (mapping.anaphoraRelations ?? [])
+            .map((relation: any) => `${relation?.pronounReferentId}>${relation?.antecedent}@${relation?.stateLabel ?? ''}`)
+            .sort()
+            .join('|');
+          const key = `${relations}::${mapping.semantic ?? ''}`;
+          const hits = seen.get(key) ?? 0;
+          seen.set(key, hits + 1);
+          return hits === 0;
+        });
+        const duplicateCount = mappingsWithStructure.length - deduplicated.length;
+        if (duplicateCount) {
+          console.info('[Reasoning] dropped duplicate anaphora mappings', {
+            scopeId,
+            generated: mappingsWithStructure.length,
+            distinct: deduplicated.length,
+            dropped: duplicateCount,
+          });
+        }
+        mappingsWithStructure = deduplicated;
+
         console.info('[Reasoning] PCDRS candidates generated', {
           scopeId,
           ruleBranchCount: pcdrsResults.length,
