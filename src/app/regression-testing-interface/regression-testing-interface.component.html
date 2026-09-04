@@ -4,6 +4,38 @@
     <span>Autosaving</span>
   </div>
 
+  <!-- Always visible while autosave is off, because the sidebar holding the switch is
+       collapsed almost all the time. An off switch nobody can see is how a run's work goes
+       missing without anyone noticing until they reload. -->
+  <div *ngIf="!autosaveEnabled" class="autosave-indicator autosave-off" aria-live="polite">
+    <span>Autosave off &mdash; changes are not being saved</span>
+  </div>
+
+  <app-hover-sidebar label="Session options">
+    <h3>Session options</h3>
+
+    <label class="sidebar-toggle-row" title="Explicit saves still work while this is off">
+      <input type="checkbox" [checked]="autosaveEnabled"
+             (change)="setAutosaveEnabled($any($event.target).checked)" />
+      <span>Autosave</span>
+    </label>
+    <p class="sidebar-hint">
+      Off lets you reparse, rerun or re-disambiguate without any of it reaching Redis, so
+      the stored session stays as it is. &ldquo;Save current session&rdquo; and
+      &ldquo;Save as&rdquo; still work. Turning it back on saves what changed meanwhile.
+      Resets to on when the page reloads.
+    </p>
+
+    <button type="button" (click)="downloadSessionJson()">Download JSON</button>
+    <p class="sidebar-hint">
+      The session as it is in the browser, in the same format the inference-bank dashboard
+      exports and imports &mdash; so this file can be loaded back there. Does not re-read
+      the stored copy, so it works with autosave off, or with the services down.
+    </p>
+
+    <div class="session-id-row" title="Redis session key">{{ redisSessionKey }}</div>
+  </app-hover-sidebar>
+
   <div class="container">
 
     <div class="session-controls">

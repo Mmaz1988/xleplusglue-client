@@ -322,3 +322,41 @@ div.errorhandling {
     margin-right: auto;
   }
 }
+
+/* Same pill as .autosave-indicator, in a warning colour: this one is a standing state,
+   not a transient spinner, so it has to read as a caution rather than as progress. */
+.autosave-off {
+  border-color: rgba(191, 110, 0, 0.28);
+  background: rgba(255, 243, 224, 0.96);
+  color: #bf6e00;
+}
+
+/* Contents of the "Session options" hover sidebar. The panel's own layout, handle and
+   slide-out live in app-hover-sidebar; these are only the bits specific to this panel. */
+.sidebar-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar-toggle-row input {
+  margin: 0;
+}
+
+.sidebar-hint {
+  font-size: 0.75rem;
+  color: #555;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Discreet: helps correlate a live session with the stored key. Mirrors
+   glue-interface.component.css's .session-id-row. */
+.session-id-row {
+  font-family: monospace;
+  font-size: 11px;
+  color: #888;
+  word-break: break-all;
+}

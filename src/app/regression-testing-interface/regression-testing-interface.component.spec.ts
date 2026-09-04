@@ -1019,4 +1019,104 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(component['saveOperationInProgress']).toBeFalse();
     });
   });
+  describe('autosave toggle and JSON download', () => {
+    let dataServiceSpy: jasmine.SpyObj<DataService>;
+
+    beforeEach(() => {
+      dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      component.createNewSession();
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.calls.reset();
+    });
+
+    const dirtyTheSession = () => {
+      component.session.grammarPath = `grammar-${Math.random()}.lfg`;
+    };
+    const autoSave = () => component['saveSessionSnapshot'](undefined, undefined, undefined, 'autosave');
+
+    it('writes nothing automatically while autosave is off', () => {
+      component.setAutosaveEnabled(false);
+      dirtyTheSession();
+
+      autoSave();
+      component['scheduleSessionSave'](true);
+
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+      expect(dataServiceSpy.patchRegressionSession).not.toHaveBeenCalled();
+    });
+
+    it('still writes the post-run snapshot suppressed, even though it passes action "current"', () => {
+      // The post-abort snapshot passes 'current' only to get past the abortRequestInFlight
+      // guard; it is still an automatic save and must respect the switch.
+      component.setAutosaveEnabled(false);
+      dirtyTheSession();
+
+      component['saveSessionSnapshot'](undefined, undefined, undefined, 'current');
+
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+      expect(dataServiceSpy.patchRegressionSession).not.toHaveBeenCalled();
+    });
+
+    it('still saves on an explicit "Save current session" while autosave is off', () => {
+      component.setAutosaveEnabled(false);
+      dirtyTheSession();
+
+      component.saveCurrentSession();
+
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('flushes what changed when autosave is switched back on', () => {
+      component.setAutosaveEnabled(false);
+      dirtyTheSession();
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+
+      component.setAutosaveEnabled(true);
+
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('autosaves as usual once it is back on', () => {
+      dirtyTheSession();
+      autoSave();
+
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('downloads the live session, not the stored one, in the dashboard export shape', async () => {
+      const link = document.createElement('a');
+      spyOn(link, 'click');
+      spyOn(document, 'createElement').and.returnValue(link as any);
+      let blob: Blob | null = null;
+      spyOn(window.URL, 'createObjectURL').and.callFake((given: Blob | MediaSource) => {
+        blob = given as Blob;
+        return 'blob:probe';
+      });
+      spyOn(window.URL, 'revokeObjectURL');
+
+      component.session.grammarPath = './grammars/dev/probe.lfg';
+      // The per-NLI-item XlePlusGlueDocuments are the part of a bank that matters --
+      // analysis.documents is the record, system.inferenceResults only a view over it.
+      component.session.analysisDocuments = {
+        n0: { ...createRegressionAnalysisDocument('n0'), id: 'n0' } as any,
+      };
+      component.downloadSessionJson();
+
+      const captured = blob ? await (blob as Blob).text() : '';
+
+      // Never re-reads the store: this has to work with the services down.
+      expect(dataServiceSpy.loadRegressionSession).not.toHaveBeenCalled();
+      expect(link.click).toHaveBeenCalled();
+      expect(link.download).toBe(`${component.redisSessionKey}.json`);
+
+      const parsed = JSON.parse(captured);
+      // The RegressionSessionDocument shape the dashboard exports and imports.
+      expect(parsed.schemaVersion).toBeDefined();
+      expect(parsed.metadata.redisSessionKey).toBe(component.redisSessionKey);
+      expect(parsed.inputs.grammarPath).toBe('./grammars/dev/probe.lfg');
+      expect(Object.keys(parsed.analysis.documents)).toEqual(['n0']);
+      expect(parsed.analysis.documents.n0.elements).toBeDefined();
+      expect(parsed.analysis.documents.n0.reasoningUpdates).toBeDefined();
+    });
+  });
 });

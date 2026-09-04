@@ -167,6 +167,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private vampireProgressBaselineCount = 0;
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionPersistenceEnabled = false;
+  /** Whether automatic saves are allowed to write. Off lets a session be poked at --
+   *  reparsed, rerun, disambiguated differently -- without any of it reaching Redis, so
+   *  the stored session stays as it was. Explicit "Save current session"/"Save as" ignore
+   *  this: turning autosave off means "do not save behind my back", not "refuse to save".
+   *
+   *  Deliberately NOT persisted to localStorage or into the session document. A save
+   *  switch that silently stays off across reloads is how a run's work goes missing, which
+   *  this codebase has already done once the hard way (2026-09-04, every save a 404). It
+   *  resets to on with every page load, and while it is off the view says so. */
+  autosaveEnabled = true;
   private isBootstrapping = true;
   private lastSavedSessionFingerprint = '';
   private saveOperationInProgress = false;
@@ -499,6 +509,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private scheduleSessionSave(immediate = false): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
+    if (!this.autosaveEnabled) return;
 
     if (this.abortRequestInFlight) {
       if (this.sessionSaveTimer !== null) {
@@ -549,9 +560,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     successMessage?: string,
     onComplete?: () => void,
     action: 'autosave' | 'current' | 'as' = 'autosave',
-    lockAlreadyHeld = false
+    lockAlreadyHeld = false,
+    userInitiated = false
   ): void {
     if (this.isHydratingSession || !this.sessionPersistenceEnabled) return;
+
+    // `action` cannot answer this. The post-run and post-abort snapshots pass 'current'
+    // only to get past the `abortRequestInFlight` guard above -- they are still automatic
+    // saves, and suppressing autosave has to suppress them too, or aborting a run would
+    // write the very results the user turned saving off to avoid. Only saveCurrentSession
+    // sets userInitiated.
+    if (!this.autosaveEnabled && !userInitiated) return;
 
     if (this.abortRequestInFlight && action === 'autosave') return;
 
@@ -700,6 +719,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.activeSaveAction = null;
       },
       'current',
+      true,
       true
     );
   }
@@ -1102,6 +1122,41 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.setSessionLoadStatus('error', `Failed to save session as ${sessionKey}`, 'The session could not be stored.');
       }
     });
+  }
+
+  /** Turn automatic saving on or off.
+   *
+   *  Switching it back on flushes whatever changed while it was off, rather than waiting
+   *  for the next edit to trigger a save -- otherwise re-enabling would look like it took
+   *  effect while the work done in the meantime sat unsaved until something happened to
+   *  touch the session again. */
+  setAutosaveEnabled(enabled: boolean): void {
+    if (this.autosaveEnabled === enabled) return;
+    this.autosaveEnabled = enabled;
+    if (enabled) {
+      this.scheduleSessionSave(true);
+    }
+  }
+
+  /** Download the session as JSON, in the same shape the inference-bank dashboard exports
+   *  and imports (a RegressionSessionDocument), so a file saved here can be loaded back
+   *  there.
+   *
+   *  Deliberately the LIVE session, not a re-read of what is stored: with autosave off --
+   *  or after a failed save -- the browser holds work Redis does not, and downloading the
+   *  stored copy would hand back the stale one at exactly the moment the fresh one matters.
+   *  That is also why this needs no request and works while the services are down. */
+  downloadSessionJson(): void {
+    const snapshot = this.buildSessionSnapshot();
+    const name = snapshot.metadata?.redisSessionKey || snapshot.metadata?.id || this.redisSessionKey;
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name}.json`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+    this.displayMessage(`Downloaded ${name}.json`, 'green');
   }
 
   createNewSession(): void {

@@ -51,6 +51,7 @@ import { InferenceResultComponent } from './regression-testing-interface/inferen
 import { FileLoaderComponent } from './utilities/file-loader/file-loader.component';
 import { SemVisComponent } from './sem-vis/sem-vis.component';
 import { PillComponent } from './utilities/pill/pill.component';
+import {HoverSidebarComponent} from "./utilities/hover-sidebar/hover-sidebar.component";
 import {OverlayModule} from "@angular/cdk/overlay";
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.component';
@@ -96,7 +97,8 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     FileLoaderComponent,
     SemVisComponent,
     PillComponent,
-    SemvisDialogComponent
+    SemvisDialogComponent,
+    HoverSidebarComponent
   ],
   imports: [
     BrowserModule,
