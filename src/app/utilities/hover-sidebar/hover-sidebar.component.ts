@@ -2,11 +2,16 @@ import { Component, Input } from '@angular/core';
 
 /** A fixed-position panel that slides out from the right edge on hover.
  *
- *  The pattern was written twice already, verbatim in both places --
- *  glue-interface's `.data-model-sidebar` and chat-interface's `.chat-toolbar-sidebar`,
- *  each with its own copy of the same 40 lines of CSS. This is that pattern once, so a
- *  third view does not mean a third copy. The other two still have theirs; they can be
- *  migrated onto this component separately.
+ *  The pattern had been written twice, verbatim in both places -- glue-interface's
+ *  `.data-model-sidebar` and chat-interface's `.chat-toolbar-sidebar`, each with its own
+ *  copy of the same 40 lines of CSS, and drifting (220px wide in one, 240px in the
+ *  other). This is that pattern once; all three views use it and none of them carries
+ *  sidebar CSS of its own any more.
+ *
+ *  It also styles what is projected into it -- headings, `.sidebar-hint`,
+ *  `.session-id-row`, buttons -- so a panel reads the same in every view. A view adds
+ *  rules only for rows specific to it; those work because projected content keeps the
+ *  consuming component's style scoping.
  *
  *  `position: fixed` is load-bearing, not decoration: it takes the sidebar out of the
  *  host's layout entirely, so hovering it can never reflow or squeeze the view behind it.

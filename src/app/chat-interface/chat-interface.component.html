@@ -19,16 +19,11 @@
 <mat-tab-group *ngIf="tabsInitialized" (selectedIndexChange)="onTabChange($event)">
   <mat-tab label="Chat">
     <div class="tab-content">
-      <!-- Fixed-position, off-flow like glue-interface's .data-model-sidebar: never affects
-           app-chat's layout/width, regardless of hover state. -->
-      <div class="chat-toolbar-sidebar">
-        <div class="chat-toolbar-handle">Chat options</div>
-        <div class="chat-toolbar-panel">
-          <button type="button" (click)="startNewConversation()">New conversation</button>
-          <button type="button" (click)="downloadChatDocumentSnapshot()">Download JSON snapshot</button>
-          <div class="session-id-row" title="Chat session id -- matches tmp/log file names on the inference backend">{{ chatDocumentSessionKey }}</div>
-        </div>
-      </div>
+      <app-hover-sidebar label="Chat options">
+        <button type="button" (click)="startNewConversation()">New conversation</button>
+        <button type="button" (click)="downloadChatDocumentSnapshot()">Download JSON snapshot</button>
+        <div class="session-id-row" title="Chat session id -- matches tmp/log file names on the inference backend">{{ chatDocumentSessionKey }}</div>
+      </app-hover-sidebar>
       <app-chat #chat [ruleString]="ruleFile"
                 [axioms]="axioms"
                 [gswbPreferences]="gswbPrefs"

@@ -345,18 +345,6 @@ div.errorhandling {
   margin: 0;
 }
 
-.sidebar-hint {
-  font-size: 0.75rem;
-  color: #555;
-  margin: 0;
-  line-height: 1.3;
-}
-
-/* Discreet: helps correlate a live session with the stored key. Mirrors
-   glue-interface.component.css's .session-id-row. */
-.session-id-row {
-  font-family: monospace;
-  font-size: 11px;
-  color: #888;
-  word-break: break-all;
-}
+/* .sidebar-hint and .session-id-row are styled by app-hover-sidebar for whatever is
+   projected into it, so every panel reads the same. Only the rows specific to this
+   panel are above. */

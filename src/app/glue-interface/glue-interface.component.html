@@ -102,17 +102,14 @@
   </div>
 </section>
 
-<div class="data-model-sidebar">
-  <div class="data-model-sidebar-handle">Data model</div>
-  <div class="data-model-sidebar-panel">
-    <h3>Data model snapshot</h3>
-    <p class="data-model-sidebar-hint">
-      Downloads the current XlePlusGlueDocument (sentences, elements, discourseUpdates)
-      as JSON, with its validateAnalysisDocument() status, so you can inspect how the
-      data model evolves at each analysis step.
-    </p>
-    <button type="button" (click)="downloadDataModelSnapshot()">Download JSON snapshot</button>
-    <button type="button" (click)="startNewDiscourse()" title="Parse and rewrite already starts a new discourse automatically -- use this to clear everything without typing a sentence first">Clear discourse</button>
-    <div class="session-id-row" title="Analysis session id -- matches tmp/log file names on the inference backend">{{ analysisDocumentSessionId }}</div>
-  </div>
-</div>
+<app-hover-sidebar label="Data model">
+  <h3>Data model snapshot</h3>
+  <p class="sidebar-hint">
+    Downloads the current XlePlusGlueDocument (sentences, elements, discourseUpdates)
+    as JSON, with its validateAnalysisDocument() status, so you can inspect how the
+    data model evolves at each analysis step.
+  </p>
+  <button type="button" (click)="downloadDataModelSnapshot()">Download JSON snapshot</button>
+  <button type="button" (click)="startNewDiscourse()" title="Parse and rewrite already starts a new discourse automatically -- use this to clear everything without typing a sentence first">Clear discourse</button>
+  <div class="session-id-row" title="Analysis session id -- matches tmp/log file names on the inference backend">{{ analysisDocumentSessionId }}</div>
+</app-hover-sidebar>

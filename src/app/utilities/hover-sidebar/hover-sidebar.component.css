@@ -1,6 +1,6 @@
-/* Lifted from glue-interface's .data-model-sidebar, which chat-interface had already
-   copied once. position: fixed keeps it out of the host's flow so hover can never
-   resize what is behind it. */
+/* The container, handle and slide-out. position: fixed is load-bearing, not decoration:
+   it takes the sidebar out of the host's flow, so hovering can never reflow or squeeze
+   the view behind it. */
 .hover-sidebar {
   position: fixed;
   right: 0;
@@ -45,6 +45,38 @@
   overflow-y: auto;
 }
 
-.hover-sidebar-panel button {
+/* Projected content keeps the CONSUMING component's style scoping, not this one's, so a
+   plain descendant selector here would never match it -- `.hover-sidebar-panel button`
+   compiles to `button[_ngcontent-hoversidebar]` and a projected button carries the
+   host's attribute instead. `:host ::ng-deep` is how the wrapper styles what is slotted
+   into it (the pattern graph-inspector.component.css already uses), and scoping it to
+   :host keeps it from leaking past this component.
+
+   These are here rather than in each view so a panel looks the same in every view --
+   which is the point of having one component instead of three copies. A view still adds
+   its own rules for anything specific to it. */
+:host ::ng-deep .hover-sidebar-panel h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+:host ::ng-deep .hover-sidebar-panel button {
   width: 100%;
+}
+
+/* Explanatory text under a control. */
+:host ::ng-deep .hover-sidebar-panel .sidebar-hint {
+  font-size: 0.75rem;
+  color: #555;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Discreet session identifier, so a live session can be matched to stored keys and to
+   tmp/log file names on the backend. */
+:host ::ng-deep .hover-sidebar-panel .session-id-row {
+  font-family: monospace;
+  font-size: 11px;
+  color: #888;
+  word-break: break-all;
 }

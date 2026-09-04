@@ -37,63 +37,8 @@ app-chat {
 
 .container { padding: 15px; }
 
-/* Same fixed/off-flow hover-reveal pattern as glue-interface's .data-model-sidebar --
-   position: fixed removes it from .tab-content's flex row entirely, so it can never
-   squeeze or resize app-chat regardless of hover state. */
-.chat-toolbar-sidebar {
-  position: fixed;
-  top: 45%;
-  right: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: stretch;
-  transform: translate(calc(100% - 34px), -50%);
-  transition: transform 0.2s ease;
-}
-
-.chat-toolbar-sidebar:hover,
-.chat-toolbar-sidebar:focus-within {
-  transform: translate(0, -50%);
-}
-
-.chat-toolbar-handle {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  background: #00a9e0;
-  color: white;
-  padding: 12px 8px;
-  border-radius: 8px 0 0 8px;
-  font-weight: bold;
-  font-size: 0.8rem;
-  letter-spacing: 0.03em;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.chat-toolbar-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: white;
-  border: 1px solid #00a9e0;
-  border-right: none;
-  border-radius: 8px 0 0 8px;
-  padding: 12px;
-  width: 220px;
-  box-shadow: -2px 2px 10px rgba(0, 0, 0, 0.18);
-}
-
-.chat-toolbar-panel button {
-  width: 100%;
-}
-
-/* Discreet: helps correlate a live session with tmp/log files on disk. */
-.session-id-row {
-  font-family: monospace;
-  font-size: 11px;
-  color: #888;
-  word-break: break-all;
-}
+/* The sidebar's chrome, its hover behaviour and its panel contents' styling all live in
+   app-hover-sidebar now, including .session-id-row. */
 
 /*Center editor in the page*/
 .editor-restr {
