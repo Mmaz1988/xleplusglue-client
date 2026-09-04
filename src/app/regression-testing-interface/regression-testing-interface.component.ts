@@ -566,8 +566,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // A saved session is routinely 8-12 MB, and stringifying it twice per autosave was
     // pure duplicated work on the main thread.
     const serialized = this.serializeSessionSnapshot(snapshot);
-    const fingerprint = serialized;
-    if (fingerprint === this.lastSavedSessionFingerprint) {
+    if (serialized === this.lastSavedSessionFingerprint) {
       if (action === 'current') {
         this.setSessionLoadStatus('success', 'Nothing to save.', 'Current session is already up to date.');
       } else if (successMessage) {
@@ -584,13 +583,39 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.saveOperationInProgress = true;
     this.activeSaveAction = action === 'autosave' ? null : action;
-    let saveSucceeded = false;
 
     // A full PUT only when there is no baseline to diff against (a first save, a
     // save-as, or a fresh load). Otherwise send just the paths that changed -- during a
     // run that is the reasoning results, not the ~7 MB of immutable parse phase sitting
     // next to them. This is what stopped autosave producing ~25 MB of Redis AOF a minute.
-    const changed = this.changedSessionPaths(snapshot);
+    this.issueSessionWrite(snapshot, serialized, this.changedSessionPaths(snapshot),
+      successMessage, onSuccess, onComplete);
+  }
+
+  /** One session write, plus the recovery for when the store says there is no such session.
+   *
+   *  `changed === null` writes the whole session with a PUT; otherwise only the named
+   *  paths go as a PATCH. A PATCH is refused with a 404 whenever the per-path baseline
+   *  describes a session Redis does not have -- deleted from another tab, the store
+   *  cleared under a running session, or a baseline that was wrong to begin with. That is
+   *  recovered from by dropping the baseline and retrying once as a full PUT, not
+   *  surfaced: an unrecoverable 404 here means every save for the rest of the run fails
+   *  the same way and the run's results are never stored at all, which is exactly what
+   *  happened before (observed 2026-09-04: a 322s run, every save a 404, nothing kept).
+   *
+   *  Bounded at one retry -- the retry passes `changed === null`, so its own failure
+   *  cannot re-enter this branch. */
+  private issueSessionWrite(
+    snapshot: RegressionSessionDocument,
+    serialized: string,
+    changed: { paths: Record<string, unknown> } | null,
+    successMessage?: string,
+    onSuccess?: () => void,
+    onComplete?: () => void
+  ): void {
+    let saveSucceeded = false;
+    let retryingAsFullSave = false;
+
     const request$ = changed === null
       ? this.dataService.saveRegressionSession(this.redisSessionKey, serialized)
       : this.dataService.patchRegressionSession(this.redisSessionKey,
@@ -598,6 +623,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     request$.pipe(
       finalize(() => {
+        // The retry owns the save lock and the callbacks from here on; releasing them now
+        // would report the save finished while it is still in flight.
+        if (retryingAsFullSave) return;
         this.saveOperationInProgress = false;
         this.activeSaveAction = null;
         const shouldRetry = saveSucceeded && this.pendingAutosave && !this.abortRequestInFlight;
@@ -612,7 +640,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     ).subscribe({
       next: (response: any) => {
         saveSucceeded = true;
-        this.lastSavedSessionFingerprint = fingerprint;
+        this.lastSavedSessionFingerprint = serialized;
         this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(snapshot);
         this.setPersistedActiveSessionKey(this.redisSessionKey);
         if (response?.recent_sessions) {
@@ -630,6 +658,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }
       },
       error: error => {
+        if (changed !== null && error?.status === 404) {
+          console.warn('Patched a session the store does not have; saving it in full instead.', error);
+          // Drop the baseline so this write -- and every later one -- is a full PUT.
+          this.lastSavedSectionFingerprints = {};
+          retryingAsFullSave = true;
+          this.issueSessionWrite(snapshot, serialized, null, successMessage, onSuccess, onComplete);
+          return;
+        }
+
         console.warn("Unable to save regression session.", error);
         // Surfaced, not just logged. A save that silently does nothing is how a session's
         // work goes missing without anyone noticing until they reload -- and the previous
@@ -825,9 +862,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.activeSaveAction = null;
 
     this.session = createRegressionTestingSession();
-    // Nothing is stored under the new key, so there is no baseline to patch against --
-    // the next save must be a full PUT or it would patch a session that does not exist.
-    this.lastSavedSectionFingerprints = {};
     this.selectedSessionKey = this.redisSessionKey;
     this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
     this.testsuiteUpdateMode = this.session.testsuiteUpdateMode;
@@ -847,10 +881,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.axiomEdit.updateContent('');
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
-    const hydrated = this.buildSessionSnapshot();
-    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(hydrated);
-    // What was just loaded IS what is stored, so it is a valid patch baseline.
-    this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(hydrated);
+    // The two fingerprints mean different things and a blank session is exactly where
+    // they come apart, so they are set together here rather than in two places.
+    // `lastSavedSessionFingerprint` describes what is in the BROWSER -- the blank session
+    // is not dirty yet, so autosave has nothing to write. The per-path baseline describes
+    // what is in REDIS, and nothing is: the new key has never been PUT. Giving it the
+    // blank session's fingerprints made the first save a PATCH against a session that does
+    // not exist, which the store refuses with a 404 -- so nothing was ever stored, for the
+    // whole run.
+    this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.buildSessionSnapshot());
+    this.lastSavedSectionFingerprints = {};
     this.sessionPersistenceEnabled = true;
     this.isHydratingSession = false;
     this.setPersistedActiveSessionKey('');
@@ -939,6 +979,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.dataService.loadRegressionSession(sessionKey).subscribe({
       next: snapshot => {
+        // A key that is not in the store comes back as 200 `{}`, not a 404
+        // (Redis/redis_store.py `load_regression_session` returns {} on a miss). Taken as a
+        // session, that empty document hydrated a patch baseline for something that does
+        // not exist, and every later save 404'd against it. Treated as the miss it is.
+        if (!snapshot || !Object.keys(snapshot).length) {
+          this.failSessionLoad(sessionKey, { status: 404 });
+          return;
+        }
         const runtimeSnapshot = regressionDocumentToSession(snapshot);
         this.hydrateSession(runtimeSnapshot);
         this.setPersistedActiveSessionKey(sessionKey);
@@ -957,23 +1005,29 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           ].join('\n')
         );
       },
-      error: error => {
-        console.warn("Unable to load regression session.", error);
-        if (this.getPersistedActiveSessionKey() === sessionKey) {
-          this.setPersistedActiveSessionKey('');
-        }
-        this.initializeBlankSession();
-        // AFTER the reset, not before: initializeBlankSession() sets the session status
-        // to idle/'' , so a message posted first was wiped and the failure showed as a
-        // silent reset to a blank session -- indistinguishable from starting a new one on
-        // purpose. Reported live 2026-08-21 as "it simply resets, not even a failed load
-        // error message".
-        this.setSessionLoadStatus('error',
-          `Could not load session ${sessionKey}`,
-          `${this.describeLoadFailure(error)}\nStarted a new session instead; `
-          + `${sessionKey} is still stored and can be loaded again.`);
-      }
+      error: error => this.failSessionLoad(sessionKey, error)
     });
+  }
+
+  /** Reset to a blank session and say why, for a load that did not produce one. */
+  private failSessionLoad(sessionKey: string, error: any): void {
+    console.warn("Unable to load regression session.", error);
+    if (this.getPersistedActiveSessionKey() === sessionKey) {
+      this.setPersistedActiveSessionKey('');
+    }
+    this.initializeBlankSession();
+    // AFTER the reset, not before: initializeBlankSession() sets the session status
+    // to idle/'' , so a message posted first was wiped and the failure showed as a
+    // silent reset to a blank session -- indistinguishable from starting a new one on
+    // purpose. Reported live 2026-08-21 as "it simply resets, not even a failed load
+    // error message".
+    // Only say the session survives when it actually does: a 404 means it is gone, and
+    // telling the user it "is still stored" would send them back to reload nothing.
+    const stillStored = error?.status !== 404;
+    this.setSessionLoadStatus('error',
+      `Could not load session ${sessionKey}`,
+      `${this.describeLoadFailure(error)}\nStarted a new session instead`
+      + (stillStored ? `; ${sessionKey} is still stored and can be loaded again.` : '.'));
   }
 
   /** Why a session load failed, in the user's terms. A timeout and a 404 mean very

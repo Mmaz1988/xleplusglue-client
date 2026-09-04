@@ -25,6 +25,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       'listRegressionSessions',
       'loadRegressionSession',
       'saveRegressionSession',
+      'patchRegressionSession',
       'deleteRegressionSession',
       'requestVampireCancel',
       'getLastSession',
@@ -37,6 +38,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.listRegressionSessions.and.returnValue(of([]));
     dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.saveRegressionSession.and.returnValue(of({} as any));
+    dataServiceSpy.patchRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.deleteRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));
     dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
@@ -894,6 +896,127 @@ describe('RegressionTestingInterfaceComponent', () => {
 
       expect(component.loading).toBeTrue();
       expect(component.vampireProgressProofCount).toBe(4);
+    });
+  });
+  /** Whether a save goes out as a full PUT or a partial PATCH is decided purely from the
+   *  client's per-path baseline, and a baseline that describes a session Redis does not
+   *  have makes every save 404 forever. Observed live 2026-09-04: a 322s run whose every
+   *  save was refused with "no stored session under ...", so none of it was ever stored. */
+  describe('session save: full PUT vs. partial PATCH', () => {
+    let dataServiceSpy: jasmine.SpyObj<DataService>;
+
+    beforeEach(() => {
+      dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    });
+
+    /** Make the session differ from the last-saved fingerprint, or the save is skipped as
+     *  "nothing to save". */
+    const dirtyTheSession = () => {
+      component.session.grammarPath = `grammar-${Math.random()}.lfg`;
+    };
+
+    const save = () => component['saveSessionSnapshot'](undefined, undefined, undefined, 'autosave');
+
+    it('writes a brand-new session in full, because nothing is stored under its key yet', () => {
+      component.createNewSession();
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.calls.reset();
+
+      dirtyTheSession();
+      save();
+
+      expect(dataServiceSpy.patchRegressionSession).not.toHaveBeenCalled();
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes in full after a load failure reset the session to a blank one', () => {
+      dataServiceSpy.loadRegressionSession.and.returnValue(
+        throwError(() => ({ status: 404 })) as any);
+
+      component.loadSessionFromRecent('gone', true);
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.calls.reset();
+
+      dirtyTheSession();
+      save();
+
+      expect(dataServiceSpy.patchRegressionSession).not.toHaveBeenCalled();
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a 200 empty document as a missing session rather than loading it', () => {
+      // The store answers a miss with 200 `{}`, not a 404, so this arrives as a success.
+      dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
+
+      component.loadSessionFromRecent('gone', true);
+
+      expect(component.sessionLoadState).toBe('error');
+      expect(component['lastSavedSectionFingerprints']).toEqual({});
+
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.calls.reset();
+      dirtyTheSession();
+      save();
+
+      expect(dataServiceSpy.patchRegressionSession).not.toHaveBeenCalled();
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('patches only the paths that changed once a session is stored', () => {
+      component.createNewSession();
+      dirtyTheSession();
+      save();                                   // the full PUT that creates it
+      dataServiceSpy.saveRegressionSession.calls.reset();
+
+      component.session.axiomsFilename = 'degree_axioms.txt';
+      save();
+
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+      expect(dataServiceSpy.patchRegressionSession).toHaveBeenCalledTimes(1);
+      const [key, body] = dataServiceSpy.patchRegressionSession.calls.mostRecent().args;
+      expect(key).toBe(component.redisSessionKey);
+      const paths = JSON.parse(body).paths;
+      // Only `inputs` moved; the immutable parse-phase bulk must not be re-sent.
+      expect(Object.keys(paths)).toEqual(['inputs']);
+      expect(paths.inputs.axioms.filename).toBe('degree_axioms.txt');
+    });
+
+    it('re-saves in full when the store says the patched session is not there', () => {
+      component.createNewSession();
+      dirtyTheSession();
+      save();                                   // the full PUT that creates it
+      dataServiceSpy.saveRegressionSession.calls.reset();
+
+      // The session goes missing behind the client's back: deleted from another tab, or
+      // the store cleared under a running session.
+      dataServiceSpy.patchRegressionSession.and.returnValue(
+        throwError(() => ({ status: 404, error: { detail: "no stored session under 'k'" } })) as any);
+
+      component.session.axiomsFilename = 'degree_axioms.txt';
+      save();
+
+      expect(dataServiceSpy.patchRegressionSession).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+      const [, payload] = dataServiceSpy.saveRegressionSession.calls.mostRecent().args;
+      // The whole session, not the patch fragment.
+      expect(JSON.parse(payload as string).analysis).toBeDefined();
+      // Recovered, so no error banner -- and the save lock is released, not stranded.
+      expect(component.sessionLoadState).not.toBe('error');
+      expect(component['saveOperationInProgress']).toBeFalse();
+    });
+
+    it('does not retry a full save that fails, and says why', () => {
+      component.createNewSession();
+      dataServiceSpy.saveRegressionSession.and.returnValue(
+        throwError(() => ({ status: 503, message: 'service unavailable' })) as any);
+
+      dirtyTheSession();
+      save();
+
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.patchRegressionSession).not.toHaveBeenCalled();
+      expect(component.sessionLoadState).toBe('error');
+      expect(component['saveOperationInProgress']).toBeFalse();
     });
   });
 });
