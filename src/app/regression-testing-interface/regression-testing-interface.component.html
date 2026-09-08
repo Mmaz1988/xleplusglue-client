@@ -200,10 +200,6 @@
     <input type="checkbox" #contextPruning id="contextPruning" />
     <label for="contextPruning">Pruning</label> <br>
     <label>
-      <input type="checkbox" [(ngModel)]="enableDisambiguation">
-      Disambiguate before Vampire
-    </label>
-    <label>
       <input type="checkbox" [(ngModel)]="enableInference">
       Run inference after parsing
     </label>
@@ -235,16 +231,8 @@
     <button (click)="runInference()" [disabled]="!canRunInference">
       Run inference
     </button>
-    <label class="run-inference-option" title="Reason over every reading instead of the ones you selected">
-      <input type="checkbox" [checked]="!useDisambiguatedSelections"
-             (change)="useDisambiguatedSelections = !$any($event.target).checked">
-      Ignore discriminant selections
-    </label>
     <span *ngIf="selectedNliItemCount > 0" class="run-inference-scope">
       {{ selectedNliItemCount }} item(s) selected — only those will run.
-    </span>
-    <span *ngIf="selectedNliItemCount === 0" class="run-inference-scope">
-      Nothing selected — every item will run.
     </span>
     <br>
     <span class="vampire-rerun-status">{{ vampireDiscriminantStatus }}</span>
@@ -320,7 +308,7 @@
               {{ allSelectableNliItemsSelected ? 'Select none' : 'Select all' }}
             </button>
             <span class="report-selection-hint">
-              Tick the items "Run inference" should run. With nothing ticked it runs them all.
+              Tick the items "Run inference" should run.
             </span>
           </div>
           <div class="results-list">

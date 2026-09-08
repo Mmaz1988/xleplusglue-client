@@ -363,11 +363,6 @@ div.errorhandling {
   font-size: 0.8rem;
 }
 
-.run-inference-option {
-  margin-left: 10px;
-  font-size: 0.85rem;
-}
-
 .report-row-select {
   display: flex;
   align-items: center;

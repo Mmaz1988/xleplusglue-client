@@ -262,20 +262,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     Array.from({ length: 3 }, () => [])
   );
 
-  // UI toggle for the disambiguation flow. Persisted alongside disambiguationMode (not
-  // component-local) so a reload during a paused run does not leave disambiguationMode
-  // true with no visible way to see or exit the pause.
-  get enableDisambiguation(): boolean {
-    return this.session.enableDisambiguation;
-  }
-
-  set enableDisambiguation(value: boolean) {
-    this.session.enableDisambiguation = value;
-  }
-
   /** Whether "Parse all" continues into Vampire on its own. Off means parsing stops when
    *  parsing is done, and inference is a separate act -- the "Run inference" button.
-   *  Persisted like enableDisambiguation, and true by default so an existing session
+   *  Persisted with the session, and true by default so an existing session
    *  behaves as it always did. */
   get enableInference(): boolean {
     return this.session.enableInference;
@@ -283,21 +272,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   set enableInference(value: boolean) {
     this.session.enableInference = value;
-  }
-
-  /** Whether a run honours the discriminant selections. This was the difference between
-   *  the old Continue button (true) and Skip (false); it is now a checkbox next to "Run
-   *  inference", so the choice is visible and reusable instead of living in two buttons
-   *  that only existed during a disambiguation pause. Not persisted: it describes the next
-   *  run, not the session. */
-  useDisambiguatedSelections = true;
-
-  get disambiguationMode(): boolean {
-    return this.session.disambiguationMode;
-  }
-
-  set disambiguationMode(value: boolean) {
-    this.session.disambiguationMode = value;
   }
 
   get regressionTestResults(): RegressionParseResult[] {
@@ -906,6 +880,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private resetRuntimeStatus(): void {
     this.clearStatusMessage();
+    // The item selection belongs to the session on screen, and item ids are per-session
+    // names (n0, n1, ...) that recur across sessions -- so pruning against the new items
+    // does NOT catch a stale one, it keeps it. Observed live: a selection made in one
+    // session silently narrowed the next session's run to the two items that happened to
+    // share their ids, and the other fourteen came back "Never attempted". 2026-09-08.
+    this.selectedNliItemIds.clear();
     this.clearVampireProgressIndicator();
     this.pendingVampireFinalSnapshot = null;
     this.vampireSummaryRequestInFlight = false;
@@ -1405,29 +1385,26 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   /** What a finished parse does next.
    *
-   *  Parsing used to continue into Vampire unless disambiguation was on, so there was no
-   *  way to parse a testsuite, look at the readings and stop. Both stopping conditions here
-   *  leave a complete, saved parse behind and hand the next step to "Run inference" -- there
-   *  is no pending chain to resume, which is why Continue/Skip no longer exist. */
+   *  Parsing used to continue into Vampire unless the disambiguation pause was on, so there
+   *  was no way to parse a testsuite, look at the readings and stop. Stopping here leaves a
+   *  complete, saved parse behind and hands the next step to "Run inference" -- there is no
+   *  pending chain to resume, which is why Continue/Skip no longer exist.
+   *
+   *  A separate "disambiguate before Vampire" flag used to make this same decision. Once
+   *  its Continue/Skip buttons were gone it said nothing more than "do not run inference
+   *  yet", which is this switch: selecting discriminants is something you do to a parsed
+   *  session, not a mode the session has to be put into first. */
   private continueAfterParse(): void {
-    if (this.enableDisambiguation) {
-      this.session.disambiguationMode = true;
-      this.displayMessage(
-        "Disambiguation enabled: open the solutions dialogs, select discriminants, then click Run inference.",
-        "blue"
-      );
-      return;
-    }
-
     if (!this.enableInference) {
       this.displayMessage(
-        "Parsing complete. Inference was not run \u2014 click Run inference when you want it.",
+        "Parsing complete. Inference was not run \u2014 select discriminants if you want to, "
+        + "then click Run inference.",
         "blue"
       );
       return;
     }
 
-    this.runVampireFromCurrentState(this.useDisambiguatedSelections);
+    this.runVampireFromCurrentState(/*useDisambiguated*/ true);
   }
 
   /** Run inference over the parsed state that is already stored -- the NLI items that are
@@ -1438,7 +1415,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  Replaces Continue/Skip, whose only difference was the argument below. */
   runInference(): void {
     if (!this.hasParsedExamples) return;
-    this.runVampireFromCurrentState(this.useDisambiguatedSelections);
+    this.runVampireFromCurrentState(/*useDisambiguated*/ true);
   }
 
   abortCurrentRun(): void {
@@ -1464,7 +1441,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.pendingVampireFinalSnapshot = null;
         this.vampireSummaryRequestInFlight = false;
         this.pendingAutosave = false;
-        this.session.disambiguationMode = false;
 
         this.loadAndRenderVampireState(true, this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
       },
@@ -1898,8 +1874,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     }
 
-    // reset disambiguation state per run
-    this.session.disambiguationMode = false;
     if (this.testsuiteUpdateMode === 'write') {
       this.session.selectedSolutionIdsBySentence = {};
       this.session.lastGswbOutputs = null;
@@ -2114,7 +2088,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const previousVampireSolutionIdsBySentence = this.cloneSelectionRecord(this.session.lastVampireSolutionIdsBySentence ?? {});
     const previousVampireResults = this.session.lastVampireResults ?? {};
 
-    this.session.disambiguationMode = false;
 
     this.displayMessage("Sending NLI items to Vampire ...", "blue");
     console.log("Preparing call to Vampire ...");
@@ -3993,11 +3966,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.selectedIds.clear();
   }
 
-  /** Deliberately no `enableDisambiguation && disambiguationMode` clause. That clause used
-   *  to hold "Parse all" shut for the duration of the pause, on the assumption that the
-   *  pause always ends by pressing Continue or Skip. Nothing ends it now -- a paused
-   *  session is simply a parsed one waiting for a decision -- so keeping the clause would
-   *  disable parsing for good the first time a run stopped for disambiguation. */
+  /** Deliberately no disambiguation clause. Parsing used to be held shut for the whole of
+   *  the disambiguation pause, on the assumption that the pause always ends by pressing
+   *  Continue or Skip. There is no pause any more -- a session that stopped after parsing is
+   *  simply a parsed one -- and keeping the clause would have disabled parsing for good the
+   *  first time a run stopped. */
   get runLocked(): boolean {
     return this.loading || this.saveOperationInProgress;
   }

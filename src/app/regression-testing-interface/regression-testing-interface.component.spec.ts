@@ -1208,7 +1208,6 @@ describe('RegressionTestingInterfaceComponent', () => {
     });
 
     it('runs inference after a parse by default', () => {
-      component.enableDisambiguation = false;
       component.enableInference = true;
 
       (component as any).continueAfterParse();
@@ -1217,7 +1216,6 @@ describe('RegressionTestingInterfaceComponent', () => {
     });
 
     it('stops after parsing when inference is switched off', () => {
-      component.enableDisambiguation = false;
       component.enableInference = false;
 
       (component as any).continueAfterParse();
@@ -1225,35 +1223,25 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(ran).not.toHaveBeenCalled();
     });
 
-    it('stops after parsing for disambiguation, without calling Vampire', () => {
-      component.enableDisambiguation = true;
-      component.enableInference = true;
-
+    it('leaves a session that stopped after parsing able to parse again', () => {
+      // Parsing used to be locked for the whole disambiguation pause, on the assumption
+      // that Continue or Skip would end it. Nothing ends it now, so a lock like that would
+      // disable "Parse all" for good the first time a run stopped.
+      component.enableInference = false;
       (component as any).continueAfterParse();
-
-      expect(ran).not.toHaveBeenCalled();
-      expect(component.disambiguationMode).toBeTrue();
-    });
-
-    it('does not lock parsing for the life of a disambiguation pause', () => {
-      // Nothing ends the pause now that Continue/Skip are gone, so a runLocked that counted
-      // the pause would disable "Parse all" for good the first time a run stopped for one.
-      component.enableDisambiguation = true;
-      component.disambiguationMode = true;
       component.loading = false;
 
       expect(component.runLocked).toBeFalse();
     });
 
-    it('carries the "ignore discriminant selections" choice into the run', () => {
-      // What Skip used to mean, as a checkbox rather than a second button.
-      component.enableDisambiguation = false;
-      component.useDisambiguatedSelections = false;
+    it('always honours the discriminant selections', () => {
+      // Selecting discriminants IS the commitment to using them, so there is no second
+      // mode: what Skip used to mean has no button and no checkbox.
       component['session'].regressionTestResults = [{ sentence_id: 'S1' } as any];
 
       component.runInference();
 
-      expect(ran).toHaveBeenCalledWith(false);
+      expect(ran).toHaveBeenCalledWith(true);
     });
   });
 
@@ -1322,6 +1310,18 @@ describe('RegressionTestingInterfaceComponent', () => {
       component['session'].regressionTestResults = [];
 
       expect(component.inferenceReportRows).toEqual([]);
+    });
+
+    it('forgets the selection when another session is loaded', () => {
+      // Item ids repeat across sessions (n0, n1, ...), so pruning against the new items
+      // keeps a stale selection rather than catching it -- and the next run is silently
+      // narrowed to whichever ids happen to exist in both.
+      component.toggleAllNliItems();
+      expect(component.selectedNliItemCount).toBe(2);
+
+      (component as any).resetRuntimeStatus();
+
+      expect(component.selectedNliItemCount).toBe(0);
     });
 
     it('drops a selection whose item no longer exists', () => {

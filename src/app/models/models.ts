@@ -692,13 +692,6 @@ export interface RegressionSessionMetadata {
   updatedAt: string;
   testsuiteUpdateMode: 'write' | 'append';
   hasRunVampire: boolean;
-  disambiguationMode: boolean;
-  /** The "Disambiguate before Vampire" checkbox. Component-local before this field
-   *  existed, so a reload while `disambiguationMode` was still true (a paused, unfinished
-   *  run) restored the pause with no way to see it: Continue/Skip are only rendered when
-   *  `enableDisambiguation && disambiguationMode` both hold. Persisted alongside
-   *  `disambiguationMode` so the two travel together. */
-  enableDisambiguation: boolean;
   /** The "Run inference after parsing" checkbox. Parsing used to continue into Vampire
    *  unconditionally, so there was no way to parse a testsuite, look at the readings and
    *  stop. Defaults to TRUE everywhere it is read, including for stored sessions written
@@ -818,8 +811,6 @@ export interface RegressionTestingSession {
   lastVampireSolutionIdsBySentence: Record<string, string[]>;
   sortedMCmap: Record<string, any>;
   hasRunVampire: boolean;
-  disambiguationMode: boolean;
-  enableDisambiguation: boolean;
   /** See RegressionSessionMetadata.enableInference. Defaults to true. */
   enableInference: boolean;
   timing: RegressionRunTiming;
@@ -1022,8 +1013,6 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       updatedAt,
       testsuiteUpdateMode: session?.testsuiteUpdateMode ?? 'write',
       hasRunVampire: Boolean(session?.hasRunVampire),
-      disambiguationMode: Boolean(session?.disambiguationMode),
-      enableDisambiguation: Boolean(session?.enableDisambiguation),
       enableInference: session?.enableInference ?? true,
     },
     inputs: {
@@ -1150,8 +1139,6 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     lastVampireSolutionIdsBySentence: { ...(saveState?.lastVampireSolutionIdsBySentence ?? document?.lastVampireSolutionIdsBySentence ?? {}) },
     sortedMCmap: { ...(saveState?.sortedMCmap ?? document?.sortedMCmap ?? {}) },
     hasRunVampire: Boolean(metadata?.hasRunVampire ?? document?.hasRunVampire),
-    disambiguationMode: Boolean(metadata?.disambiguationMode ?? document?.disambiguationMode),
-    enableDisambiguation: Boolean(metadata?.enableDisambiguation ?? document?.enableDisambiguation),
     enableInference: metadata?.enableInference ?? document?.enableInference ?? true,
     timing: document?.timing ?? base.timing,
   };
@@ -1212,8 +1199,6 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     lastVampireSolutionIdsBySentence: {},
     sortedMCmap: {},
     hasRunVampire: false,
-    disambiguationMode: false,
-    enableDisambiguation: false,
     enableInference: true,
     timing: {
       startedAt: null,
