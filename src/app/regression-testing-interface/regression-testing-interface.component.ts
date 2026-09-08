@@ -2834,15 +2834,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.loading = true;
     this.vampirePendingItemCount = Object.keys(inference_items).length;
     this.activeVampireRunStartedAt = vampireStartedAt;
-    this.vampireProgressBaselineCount = this.currentVampireRunKind === 'initial'
-      ? 0
-      : Object.keys(this.session.lastVampireResults ?? {}).length;
+    // Only results this run is NOT redoing are a head start. Counting every prior result
+    // double-counted the redone ones -- they are already in vampireCurrentRunItemCount --
+    // so re-running a whole 26-item suite showed "26 / 52" from the first poll and
+    // finished at "52 / 52". Keyed off inference_items, which IS the set being redone.
+    const carriedOverResults = this.currentVampireRunKind === 'initial'
+      ? []
+      : Object.entries(this.session.lastVampireResults ?? {})
+        .filter(([itemId]) => !(itemId in inference_items));
+    this.vampireProgressBaselineCount = carriedOverResults.length;
     // Bundles already on record for items this run is not redoing -- the same
     // already-done offset vampireProgressBaselineCount applies at item granularity.
-    this.vampireProofBaselineCount = this.currentVampireRunKind === 'initial'
-      ? 0
-      : Object.values(this.session.lastVampireResults ?? {})
-        .reduce((sum, checks) => sum + (checks?.length ?? 0), 0);
+    this.vampireProofBaselineCount = carriedOverResults
+      .reduce((sum, [, checks]) => sum + (checks?.length ?? 0), 0);
     this.startVampireProgressIndicator(
       this.vampireCurrentRunItemCount + this.vampireProgressBaselineCount,
       this.submittedProofBundleCount(vampireRequest));

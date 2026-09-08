@@ -1254,6 +1254,63 @@ describe('RegressionTestingInterfaceComponent', () => {
     });
   });
   /** Parsing and inference are two operations, not one chain. */
+  /** The progress denominator counts ITEMS THIS RUN WILL ACCOUNT FOR: the ones it submits,
+   *  plus the ones it is leaving alone because they already have a verdict. An item that is
+   *  both on record AND being redone belongs to the first group only. Counting every prior
+   *  result as a head start put it in both, so re-running a whole suite showed twice its
+   *  size -- a 26-item suite reported "26 / 52" from the first poll. */
+  describe('progress totals on a re-run', () => {
+    const priorChecks = () => [{ glyph: 'x', informative: true, consistent: true, relevant: true, proof_files: [] }];
+    const submittable = (ids: string[]) => Object.fromEntries(
+      ids.map(id => [id, { premises: ['p'], hypothesis: ['h'], axioms: '', tptp_checks: ['c'] }]));
+
+    // The default spy resolves the batch instantly, which completes the run and clears the
+    // indicator before anything can be read off it. Hold the submission open instead.
+    const submitAndHold = (kind: 'initial' | 'rerun', priorIds: string[], submittedIds: string[]) => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.callBatchVampire.and.returnValue(new Subject<any>().asObservable() as any);
+      component.session.lastVampireResults = Object.fromEntries(
+        priorIds.map(id => [id, priorChecks()])) as any;
+      component['currentVampireRunKind'] = kind;
+      component['vampireCurrentRunItemCount'] = submittedIds.length;
+      (component as any).submitVampireRequest(
+        submittable(submittedIds), false, Date.now(), component['vampireRunToken'], true);
+    };
+
+    const runRerunOver = (priorIds: string[], submittedIds: string[]) =>
+      submitAndHold('rerun', priorIds, submittedIds);
+
+    afterEach(() => {
+      (component as any).endVampireRun();
+    });
+
+    it('does not double-count items that are both on record and being redone', () => {
+      runRerunOver(['a', 'b', 'c'], ['a', 'b', 'c']);
+
+      // Every prior item is being redone, so nothing is carried over: the total is the
+      // suite, not the suite twice, and the bar starts at zero rather than half full.
+      expect(component['vampireProgressTotalCount']).toBe(3);
+      expect(component['vampireProgressBaselineCount']).toBe(0);
+      expect(component['vampireProofBaselineCount']).toBe(0);
+    });
+
+    it('still credits results the run is leaving alone', () => {
+      runRerunOver(['a', 'b', 'c'], ['c']);
+
+      // 'a' and 'b' keep their verdicts and are real progress; only 'c' is resubmitted.
+      expect(component['vampireProgressTotalCount']).toBe(3);
+      expect(component['vampireProgressBaselineCount']).toBe(2);
+      expect(component['vampireProofBaselineCount']).toBe(2);
+    });
+
+    it('counts nothing as already done on an initial run', () => {
+      submitAndHold('initial', ['a'], ['a']);
+
+      expect(component['vampireProgressTotalCount']).toBe(1);
+      expect(component['vampireProgressBaselineCount']).toBe(0);
+    });
+  });
+
   describe('inference as a separate step', () => {
     let ran: jasmine.Spy;
 
