@@ -33,8 +33,12 @@ describe('RegressionTestingInterfaceComponent', () => {
       'getLastGswbSession',
       'getLastGswbSessionSummary',
       'gswbReasoningChecks',
-      'getVampireProgress'
+      'getVampireProgress',
+      'clearVampireProgress',
+      'callBatchVampire'
     ]);
+    dataServiceSpy.clearVampireProgress.and.returnValue(of({} as any));
+    dataServiceSpy.callBatchVampire.and.returnValue(of({ status: 'ok' } as any));
     dataServiceSpy.listRegressionSessions.and.returnValue(of([]));
     dataServiceSpy.loadRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.saveRegressionSession.and.returnValue(of({} as any));
@@ -1117,6 +1121,82 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(Object.keys(parsed.analysis.documents)).toEqual(['n0']);
       expect(parsed.analysis.documents.n0.elements).toBeDefined();
       expect(parsed.analysis.documents.n0.reasoningUpdates).toBeDefined();
+    });
+  });
+  /** The 2s vampire_progress poll must not outlive the run that started it. Diagnosed
+   *  2026-09-08 (xleplusglue docs/bug_reports/redis_traffic_with_autosave_off.md): a poll
+   *  loop was observed still running against a session whose run had long finished. */
+  describe('progress poll lifetime', () => {
+    const progressRecord = (state: string) => ({
+      sessionKey: 'k', runId: null, state, cancelRequested: false, activeItemId: null,
+      completedItemIds: [], changedItemIds: [], itemResults: {}, itemCount: 0, proofCount: 0,
+      totalItemCount: 1,
+    } as any);
+
+    const pollTimer = () => component['vampireProgressPollTimer'];
+
+    afterEach(() => {
+      (component as any).endVampireRun();
+    });
+
+    it('stops polling when the record says the run finished', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      (component as any).startVampireSummaryPolling(Date.now(), component['vampireRunToken']);
+
+      dataServiceSpy.getVampireProgress.and.returnValue(of(progressRecord('running')));
+      (component as any).pollVampireProgress(component['vampireRunToken']);
+      expect(pollTimer()).not.toBeNull();
+
+      dataServiceSpy.getVampireProgress.and.returnValue(of(progressRecord('completed')));
+      (component as any).pollVampireProgress(component['vampireRunToken']);
+
+      expect(pollTimer()).toBeNull();
+    });
+
+    it('ignores a PREVIOUS run\'s leftover completed record', () => {
+      // The record is cleared before polling starts, but that clear is allowed to fail --
+      // it must never block a run. One failed clear must not stop the new run's polling.
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      (component as any).startVampireSummaryPolling(Date.now(), component['vampireRunToken']);
+
+      dataServiceSpy.getVampireProgress.and.returnValue(of(progressRecord('completed')));
+      (component as any).pollVampireProgress(component['vampireRunToken']);
+
+      expect(pollTimer()).not.toBeNull();
+    });
+
+    it('tears the run down when the submission fails, even though the error is swallowed', () => {
+      // batchVampire() catches its own errors and returns EMPTY, so a failed submission
+      // emits nothing and merely completes: `error` never fires. Before the `complete`
+      // handler, nothing stopped the poll and `loading` stayed true forever.
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.callBatchVampire.and.returnValue(
+        throwError(() => ({ status: 500, message: 'vampire is down' })) as any);
+
+      (component as any).submitVampireRequest({}, false, Date.now(), component['vampireRunToken'], true);
+
+      expect(pollTimer()).toBeNull();
+      expect(component['vampireRunInFlight']).toBeFalse();
+      expect(component.loading).toBeFalse();
+    });
+
+    it('does not let the progress clear arm a poll for a run that already ended', () => {
+      // The clear and the submission are separate requests with no ordering between them.
+      // A submission that fails instantly (a refused connection) used to tear down a poller
+      // that had not started yet, and the clear's callback then armed one nothing would stop.
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      const clearResponse = new Subject<any>();
+      dataServiceSpy.clearVampireProgress.and.returnValue(clearResponse.asObservable() as any);
+      dataServiceSpy.callBatchVampire.and.returnValue(
+        throwError(() => ({ status: 500, message: 'vampire is down' })) as any);
+
+      (component as any).submitVampireRequest({}, false, Date.now(), component['vampireRunToken'], true);
+      expect(component['vampireRunInFlight']).toBeFalse();
+
+      clearResponse.next({});
+      clearResponse.complete();
+
+      expect(pollTimer()).toBeNull();
     });
   });
 });

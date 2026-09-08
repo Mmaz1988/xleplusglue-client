@@ -191,6 +191,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private vampireNewItemCount: number = 0;
   private activeVampireRunStartedAt: number | null = null;
   private vampireRunToken = 0;
+  /** True from the moment a Vampire submission begins until every terminal path for it has
+   *  run. It exists because `submitVampireRequest` ARMS the progress poll in the callback of
+   *  one request (the progress-record clear) and DISARMS it in the callback of another (the
+   *  batch POST), with no ordering between them: a POST that settles first -- a refused
+   *  connection returns in microseconds while the DELETE is still in flight -- stopped a
+   *  poller that had not started yet, and the clear's callback then armed an interval
+   *  nothing would ever clear. `vampireRunToken` cannot stand in for this: no terminal path
+   *  bumps it, so its guard passes for exactly the run being torn down. 2026-09-08. */
+  private vampireRunInFlight = false;
+  /** Whether the progress poll has seen THIS run reported as running yet. Guards the
+   *  terminal states in `pollVampireProgress` against a previous run's leftover record. */
+  private vampireProgressSawRunning = false;
   private vampireSummaryRequestInFlight = false;
   private pendingVampireFinalSnapshot: { startedAt: number; runToken: number } | null = null;
   private readonly vampireSummaryRequestTimeoutMs = 30000;
@@ -1352,7 +1364,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   ngOnDestroy(): void {
     this.stopGswbSummaryPolling();
-    this.stopVampireSummaryPolling();
+    this.endVampireRun();
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
       this.sessionSaveTimer = null;
@@ -1389,7 +1401,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.gswbRunToken++;
         this.vampireRunToken++;
         this.stopGswbSummaryPolling();
-        this.stopVampireSummaryPolling();
+        this.endVampireRun();
         this.pendingVampireFinalSnapshot = null;
         this.vampireSummaryRequestInFlight = false;
         this.pendingAutosave = false;
@@ -2644,6 +2656,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.vampireCurrentRunItemCount + this.vampireProgressBaselineCount,
       this.submittedProofBundleCount(vampireRequest));
 
+    this.vampireRunInFlight = true;
+
     // Clear the PREVIOUS run's progress record before polling starts. It is only cleared
     // automatically on cancel, so after a normal run it stays in Redis describing a
     // completed run (itemCount == totalItemCount) -- and the first poll below fires
@@ -2658,24 +2672,48 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       })
     ).subscribe(() => {
       if (vampireRunToken !== this.vampireRunToken) return;
+      // The run may already be over: this callback and the POST's are unordered, and the
+      // POST's error path is instant when the service is unreachable. Arming here anyway
+      // left a 2s poll running for the life of the tab, against a run nobody was waiting on.
+      if (!this.vampireRunInFlight) return;
       this.startVampireSummaryPolling(vampireStartedAt, vampireRunToken);
     });
     this.loadAndRenderVampireState(false, vampireStartedAt, vampireRunToken);
 
+    // `complete` is not belt-and-braces here, it is the failure path. `batchVampire`
+    // catches its own errors and returns EMPTY, so a run that fails -- a 500, a service
+    // that is not up -- emits NOTHING and simply completes: `error` never fires, and
+    // neither did any teardown. That is how a poll loop came to outlive its run entirely.
+    let responded = false;
     this.batchVampire(vampireRequest).subscribe({
       next: () => {
-        this.stopVampireSummaryPolling();
+        responded = true;
+        this.endVampireRun();
         this.loadAndRenderVampireState(true, vampireStartedAt, vampireRunToken);
       },
-      error: () => {
-        this.stopVampireSummaryPolling();
-        this.vampirePendingItemCount = null;
-        this.activeVampireRunStartedAt = null;
-        this.loading = false;
-        this.clearVampireProgressIndicator();
-        this.saveSessionSnapshot();
+      error: () => this.failVampireRun(),
+      complete: () => {
+        if (!responded) this.failVampireRun();
       }
     });
+  }
+
+  /** The one way a Vampire run ends: stop the polling and record that it is over, so a
+   *  callback still in flight cannot restart it. Every terminal path goes through here. */
+  private endVampireRun(): void {
+    this.vampireRunInFlight = false;
+    this.stopVampireSummaryPolling();
+  }
+
+  /** A submission that never came back with results: tear the run down and stop claiming
+   *  to be busy. */
+  private failVampireRun(): void {
+    this.endVampireRun();
+    this.vampirePendingItemCount = null;
+    this.activeVampireRunStartedAt = null;
+    this.loading = false;
+    this.clearVampireProgressIndicator();
+    this.saveSessionSnapshot();
   }
 
   private itemTouchesUpdatedSentences(item: any, updatedSentenceIds: Set<string>): boolean {
@@ -2810,6 +2848,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private startVampireSummaryPolling(vampireStartedAt: number, runToken: number): void {
     this.stopVampireSummaryPolling();
+    this.vampireProgressSawRunning = false;
 
     // Results (last_session) poll: infrequent, since it drives the parse/inference report
     // panel, not the moving bar.
@@ -2850,7 +2889,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         // to look like a run that had merely stopped progressing -- the request had 500'd
         // half an hour earlier and only this service's log said so.
         if (progress?.state === 'failed') {
-          this.stopVampireSummaryPolling();
+          this.endVampireRun();
           this.vampirePendingItemCount = null;
           this.activeVampireRunStartedAt = null;
           this.loading = false;
@@ -2862,6 +2901,25 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.setSessionLoadStatus('error', 'Vampire run failed',
             `${reason}\nCompleted items are saved; re-running continues from them.`);
           this.saveSessionSnapshot();
+          return;
+        }
+
+        // So is a run that finished. `failed` used to be the only terminal state here, which
+        // left the batch POST's response as the sole thing that could stop this loop -- and
+        // when that response never arrived, the 2s poll outlived the run by hours. Stopping
+        // on the record's own word costs nothing: the results are rendered from the POST's
+        // final snapshot, not from these ticks.
+        //
+        // Only once this run has been SEEN running, though. The record is cleared before
+        // polling starts precisely because a finished run leaves its `completed` snapshot
+        // behind, and that clear is allowed to fail (it must never block a run). Without
+        // this guard, one failed clear would let the previous run's record stop the new
+        // run's polling on its first tick.
+        if (progress?.state === 'running') {
+          this.vampireProgressSawRunning = true;
+        } else if (this.vampireProgressSawRunning
+                   && (progress?.state === 'completed' || progress?.state === 'cancelled')) {
+          this.stopVampireSummaryPolling();
         }
       },
       error: error => console.warn('Unable to load live Vampire progress.', error)
@@ -2932,7 +2990,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.vampirePendingItemCount = null;
           this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
-          this.stopVampireSummaryPolling();
+          this.endVampireRun();
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
@@ -2969,7 +3027,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.vampirePendingItemCount = null;
           this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
-          this.stopVampireSummaryPolling();
+          this.endVampireRun();
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
@@ -2984,7 +3042,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.vampirePendingItemCount = null;
           this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
-          this.stopVampireSummaryPolling();
+          this.endVampireRun();
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
