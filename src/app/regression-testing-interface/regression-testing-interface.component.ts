@@ -1185,6 +1185,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   createNewSession(): void {
     if (this.isSessionActionLocked) return;
     this.initializeBlankSession();
+    // AFTER the reset, for the same reason the failed-load path stamps after it:
+    // initializeBlankSession() clears the status to idle/'', so a message posted first is
+    // wiped. Starting a session is an action and says so -- leaving the box blank made it
+    // the one action that reported nothing, which reads the same as a click that missed.
+    this.setSessionLoadStatus('success', `Started new session ${this.redisSessionKey}`,
+      `Session key: ${this.redisSessionKey}`);
   }
 
   private renderSavedInferenceResults(results: RegressionInferenceResult[]): void {

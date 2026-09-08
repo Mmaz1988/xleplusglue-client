@@ -1123,6 +1123,60 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(parsed.analysis.documents.n0.reasoningUpdates).toBeDefined();
     });
   });
+  /** The status box under the session controls is an ACTION log: it says what the user
+   *  just did. Autosave is not an action -- it has its own in-flight indicator -- and
+   *  before the save fix its failures were stamping the box every few seconds, which is
+   *  the only reason it ever looked lively during a run. */
+  describe('session status box', () => {
+    let dataServiceSpy: jasmine.SpyObj<DataService>;
+
+    beforeEach(() => {
+      dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    });
+
+    it('reports a new session instead of leaving the box blank', () => {
+      component.createNewSession();
+
+      expect(component.sessionLoadState).toBe('success');
+      expect(component.sessionLoadMessage).toContain(`Started new session ${component.redisSessionKey}`);
+    });
+
+    it('reports a loaded session', () => {
+      dataServiceSpy.loadRegressionSession.and.returnValue(of({
+        schemaVersion: 5, metadata: { id: 'stored', redisSessionKey: 'stored' },
+        inputs: {}, analysis: {},
+      } as any));
+
+      component.loadSessionFromRecent('stored', true);
+
+      expect(component.sessionLoadState).toBe('success');
+      expect(component.sessionLoadMessage).toContain('Loaded stored');
+    });
+
+    it('says nothing on an autosave that succeeds', () => {
+      component.createNewSession();
+      const afterAction = component.sessionLoadMessage;
+
+      component.session.grammarPath = './grammars/dev/probe.lfg';
+      component['saveSessionSnapshot'](undefined, undefined, undefined, 'autosave');
+
+      // Unchanged: the box still shows the last real action, not save chatter.
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalled();
+      expect(component.sessionLoadMessage).toBe(afterAction);
+    });
+
+    it('still reports an autosave that FAILS, which has no other visible signal', () => {
+      component.createNewSession();
+      dataServiceSpy.saveRegressionSession.and.returnValue(
+        throwError(() => ({ status: 503, message: 'service unavailable' })) as any);
+
+      component.session.grammarPath = './grammars/dev/probe.lfg';
+      component['saveSessionSnapshot'](undefined, undefined, undefined, 'autosave');
+
+      expect(component.sessionLoadState).toBe('error');
+      expect(component.sessionLoadMessage).toContain('Could not save session');
+    });
+  });
   /** The 2s vampire_progress poll must not outlive the run that started it. Diagnosed
    *  2026-09-08 (xleplusglue docs/bug_reports/redis_traffic_with_autosave_off.md): a poll
    *  loop was observed still running against a session whose run had long finished. */
