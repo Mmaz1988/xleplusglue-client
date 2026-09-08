@@ -1,4 +1,4 @@
-<div class="inf-block" [ngClass]="{ 'highlight-block': mismatch }">
+<div class="inf-block" [ngClass]="{ 'highlight-block': mismatch, 'awaiting-block': !hasPrediction }">
   <span *ngIf="displayIndex !== null" class="index-badge">{{ displayIndex }}</span>
   <div class="row">
     <span class="title">Premises:</span>
@@ -28,15 +28,16 @@
 
     <div class="label-row">
       <span class="title">Pred:</span>
-      <span [ngClass]="[labelClass(predictedLabel), mismatch ? 'mismatch' : '']">
+      <span *ngIf="hasPrediction" [ngClass]="[labelClass(predictedLabel), mismatch ? 'mismatch' : '']">
         {{ labelName(predictedLabel) }} ({{ predictedLabel }})
       </span>
+      <span *ngIf="!hasPrediction" class="label-awaiting">{{ statusText }}</span>
 
       <span *ngIf="mismatch" class="mismatch-note">— mismatch</span>
     </div>
   </div>
 
-  <div class="pill-container">
+  <div class="pill-container" *ngIf="hasPrediction">
     <app-pill
       badge="V"
       variant="glyph-grid"

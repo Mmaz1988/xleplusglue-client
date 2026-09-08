@@ -11,6 +11,11 @@ type Label = '1' | '0' | '-1';
 export class InferenceResultComponent implements OnChanges {
   @Input() data: any;
   @Input() displayIndex: number | null = null;
+  /** Where this item stands. The report lists every NLI item, not only the ones with a
+   *  verdict, so `data` is often a placeholder whose predicted label is empty -- and an
+   *  empty label differs from the gold one, which would otherwise mark every unrun item as
+   *  a mismatch. Anything but `done` means there is no prediction to compare. */
+  @Input() status: 'unparsed' | 'pending' | 'running' | 'done' | 'failed' = 'done';
 
   premises: string[] = [];
   conclusion = '';
@@ -46,8 +51,23 @@ export class InferenceResultComponent implements OnChanges {
     this.glyphGridSize = Math.max(1, Math.ceil(Math.sqrt(this.glyphs.length)));
   }
 
+  get hasPrediction(): boolean {
+    return this.status === 'done' && this.predictedLabel.trim() !== '';
+  }
+
   get mismatch(): boolean {
+    if (!this.hasPrediction) return false;
     return this.normLabel(this.predictedLabel) !== this.normLabel(this.goldLabel);
+  }
+
+  /** What to show in place of a verdict. */
+  get statusText(): string {
+    switch (this.status) {
+      case 'unparsed': return 'not fully parsed';
+      case 'running': return 'running...';
+      case 'failed': return 'no verdict';
+      default: return 'not run yet';
+    }
   }
 
   labelName(l: string): string {

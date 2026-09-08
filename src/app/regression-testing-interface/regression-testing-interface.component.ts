@@ -24,6 +24,7 @@ import {
   XlePlusGlueDocument,
   SynSemMapping,
   SyntacticAnalysis,
+  InferenceReportRow,
   RegressionInferenceResult,
   RegressionParseResult,
   RegressionSessionSummary,
@@ -41,7 +42,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, toArray } from "rxjs";
+import { catchError, EMPTY, Observable, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, toArray } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -203,6 +204,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   /** Whether the progress poll has seen THIS run reported as running yet. Guards the
    *  terminal states in `pollVampireProgress` against a previous run's leftover record. */
   private vampireProgressSawRunning = false;
+  /** The item the progress record currently names, so the report can show the run walking
+   *  down the list. Null whenever no run is in flight. */
+  private vampireActiveItemId: string | null = null;
+  /** Which NLI items "Run inference" should run. Empty means all of them -- the selection
+   *  narrows a run, it does not gate one. Deliberately NOT persisted: it describes the next
+   *  run, not the session, and a stored selection would silently narrow a reloaded one. */
+  private readonly selectedNliItemIds = new Set<string>();
+  /** The in-flight NLI preparation chain, so abort and teardown can stop it. */
+  private nliPreparationSubscription: Subscription | null = null;
   private vampireSummaryRequestInFlight = false;
   private pendingVampireFinalSnapshot: { startedAt: number; runToken: number } | null = null;
   private readonly vampireSummaryRequestTimeoutMs = 30000;
@@ -254,8 +264,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   // UI toggle for the disambiguation flow. Persisted alongside disambiguationMode (not
   // component-local) so a reload during a paused run does not leave disambiguationMode
-  // true with no visible way to see or exit the pause -- Continue/Skip render only when
-  // both are true.
+  // true with no visible way to see or exit the pause.
   get enableDisambiguation(): boolean {
     return this.session.enableDisambiguation;
   }
@@ -263,6 +272,25 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   set enableDisambiguation(value: boolean) {
     this.session.enableDisambiguation = value;
   }
+
+  /** Whether "Parse all" continues into Vampire on its own. Off means parsing stops when
+   *  parsing is done, and inference is a separate act -- the "Run inference" button.
+   *  Persisted like enableDisambiguation, and true by default so an existing session
+   *  behaves as it always did. */
+  get enableInference(): boolean {
+    return this.session.enableInference;
+  }
+
+  set enableInference(value: boolean) {
+    this.session.enableInference = value;
+  }
+
+  /** Whether a run honours the discriminant selections. This was the difference between
+   *  the old Continue button (true) and Skip (false); it is now a checkbox next to "Run
+   *  inference", so the choice is visible and reusable instead of living in two buttons
+   *  that only existed during a disambiguation pause. Not persisted: it describes the next
+   *  run, not the session. */
+  useDisambiguatedSelections = true;
 
   get disambiguationMode(): boolean {
     return this.session.disambiguationMode;
@@ -467,6 +495,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private commitParsedRegressionSnapshot(): void {
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
+    // A parse can replace the items outright (write mode). Anything selected that no longer
+    // exists has to go, or the next run is narrowed to items nobody can see.
+    this.pruneNliItemSelection();
   }
 
   private logBackendPayload(stage: string, mode: 'write' | 'append', payload: unknown): void {
@@ -1364,6 +1395,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   ngOnDestroy(): void {
     this.stopGswbSummaryPolling();
+    this.stopNliPreparation();
     this.endVampireRun();
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
@@ -1371,25 +1403,52 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
-  // Button handler (appears only when disambiguationMode is true)
-  continueAfterDisambiguation(): void {
-    this.runVampireFromCurrentState(/*useDisambiguated*/ true);
+  /** What a finished parse does next.
+   *
+   *  Parsing used to continue into Vampire unless disambiguation was on, so there was no
+   *  way to parse a testsuite, look at the readings and stop. Both stopping conditions here
+   *  leave a complete, saved parse behind and hand the next step to "Run inference" -- there
+   *  is no pending chain to resume, which is why Continue/Skip no longer exist. */
+  private continueAfterParse(): void {
+    if (this.enableDisambiguation) {
+      this.session.disambiguationMode = true;
+      this.displayMessage(
+        "Disambiguation enabled: open the solutions dialogs, select discriminants, then click Run inference.",
+        "blue"
+      );
+      return;
+    }
+
+    if (!this.enableInference) {
+      this.displayMessage(
+        "Parsing complete. Inference was not run \u2014 click Run inference when you want it.",
+        "blue"
+      );
+      return;
+    }
+
+    this.runVampireFromCurrentState(this.useDisambiguatedSelections);
   }
 
-  // Optional: allow skipping disambiguation
-  skipDisambiguation(): void {
-    this.runVampireFromCurrentState(/*useDisambiguated*/ false);
-  }
-
-  resendVampire(): void {
+  /** Run inference over the parsed state that is already stored -- the NLI items that are
+   *  selected, or all of them when nothing is selected. Nothing is re-parsed: the
+   *  preparation and Vampire legs read `lastGswbOutputs`/`lastAnnotations`, which is what
+   *  makes inference an operation in its own right rather than the tail of a parse.
+   *
+   *  Replaces Continue/Skip, whose only difference was the argument below. */
+  runInference(): void {
     if (!this.hasParsedExamples) return;
-    this.runVampireFromCurrentState(/*useDisambiguated*/ true);
+    this.runVampireFromCurrentState(this.useDisambiguatedSelections);
   }
 
   abortCurrentRun(): void {
     if (!this.loading || (this.saveOperationInProgress && this.activeSaveAction !== null) || this.abortRequestInFlight) return;
 
     this.abortRequestInFlight = true;
+    // Bumped BEFORE the cancel request goes out: the preparation chain checks this token,
+    // and the cancel is a round trip it could otherwise finish inside.
+    this.vampireRunToken++;
+    this.stopNliPreparation();
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
       this.sessionSaveTimer = null;
@@ -1410,9 +1469,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.loadAndRenderVampireState(true, this.activeVampireRunStartedAt ?? Date.now(), this.vampireRunToken);
       },
       error: error => {
+        // The local half of the abort has already happened -- the preparation chain is
+        // unsubscribed and the run token bumped, so nothing here will submit or render any
+        // more. Leaving `loading` true (which is what this branch used to do) left the UI
+        // waiting on a run that could no longer finish. Say what was actually stopped.
         console.warn('Unable to request Vampire cancel.', error);
-        this.displayMessage('Unable to abort current run.', 'red');
+        this.stopGswbSummaryPolling();
+        this.endVampireRun();
+        this.vampirePendingItemCount = null;
+        this.activeGswbRunStartedAt = null;
+        this.activeVampireRunStartedAt = null;
+        this.loading = false;
+        this.clearVampireProgressIndicator();
         this.abortRequestInFlight = false;
+        this.displayMessage(
+          'Run stopped here, but the inference service could not be told to cancel — '
+          + 'anything already submitted may still be running.', 'red');
       }
     });
   }
@@ -1430,7 +1502,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       : 'Discriminant selections are unchanged since the last Vampire call.';
   }
 
-  get canResendVampire(): boolean {
+  get canRunInference(): boolean {
     return this.hasParsedExamples && !this.isSessionActionLocked && !!this.session.lastGswbOutputs;
   }
 
@@ -1567,6 +1639,134 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
 
     return failed;
+  }
+
+  /** The inference report, as one row per NLI item rather than one per verdict.
+   *
+   *  The report used to render `inferenceResults` directly, and
+   *  `inferenceResultsFromDocument` drops every item without a majority verdict -- so an
+   *  item that had not run, or had run and produced nothing, was simply absent, and the
+   *  list grew out of an empty panel as results landed. There was no way to see what was
+   *  still owed. This is the container: every item is listed from the moment parsing
+   *  finishes, and a row fills in when its verdict arrives.
+   *
+   *  A VIEW only. `session.inferenceResults` still holds nothing but real verdicts, so the
+   *  "N of M" count, the confusion matrix and the saved session are unaffected. */
+  get inferenceReportRows(): InferenceReportRow[] {
+    if (!this.hasParsedExamples) return [];
+
+    const resultsById = new Map(
+      (this.inferenceResults ?? []).map(result => [String(result?.id ?? ''), result]));
+    const failuresById = new Map(this.failedInferenceItems.map(failure => [failure.id, failure]));
+
+    return this.regressionTestItems.map(item => {
+      const id = String(item?.id ?? '');
+      const result = resultsById.get(id);
+      const unparsed = this.unparsedSentencesFor(item);
+
+      let status: InferenceReportRow['status'];
+      if (unparsed.length > 0) {
+        // First, even ahead of a verdict: a sentence with no reading cannot be reasoned
+        // over now, so any verdict still sitting next to it describes an earlier parse.
+        status = 'unparsed';
+      } else if (result) {
+        status = 'done';
+      } else if (this.vampireActiveItemId === id) {
+        status = 'running';
+      } else if (failuresById.has(id)) {
+        status = 'failed';
+      } else {
+        status = 'pending';
+      }
+
+      return {
+        id,
+        status,
+        selectable: status !== 'unparsed',
+        data: result ?? this.placeholderInferenceResult(item),
+        reason: status === 'failed' ? (failuresById.get(id)?.reason ?? '') : '',
+        unparsedSentences: unparsed,
+      };
+    });
+  }
+
+  /** The item's sentences that came back from parsing with no reading to reason over --
+   *  exactly the condition `runVampireFromCurrentState` applies when it builds premises,
+   *  so a greyed row means "this item cannot contribute", not merely "this looks odd". */
+  private unparsedSentencesFor(item: any): string[] {
+    const outputs = this.session.lastGswbOutputs;
+    if (!outputs) return [];
+
+    return [...(item?.premises ?? []), ...(item?.conclusion ?? [])]
+      .map((sentenceId: any) => String(sentenceId ?? ''))
+      .filter(sentenceId => !(outputs[sentenceId]?.solutions?.length))
+      .map(sentenceId => this.sentenceMap[sentenceId] || sentenceId);
+  }
+
+  /** A row for an item with no verdict: the same shape `app-inference-result` renders, with
+   *  the predicted label left empty. The component reads `status` to keep an empty label
+   *  from counting as a mismatch. */
+  private placeholderInferenceResult(item: any): RegressionInferenceResult {
+    const textsFor = (ids: any[]) => (ids ?? [])
+      .map((sentenceId: any) => this.sentenceMap[String(sentenceId ?? '')])
+      .filter((text: any) => typeof text === 'string' && text.trim().length > 0);
+
+    return {
+      id: String(item?.id ?? ''),
+      premises: textsFor(item?.premises),
+      conclusion: textsFor(item?.conclusion).join(' '),
+      predictedLabel: '',
+      goldLabel: String(item?.gold_label ?? 'unknown'),
+      premiseIds: (item?.premises ?? []).map((sentenceId: any) => String(sentenceId ?? '')),
+      conclusionIds: (item?.conclusion ?? []).map((sentenceId: any) => String(sentenceId ?? '')),
+      mismatch: false,
+      glyphs: [],
+    };
+  }
+
+  get selectedNliItemCount(): number {
+    return this.selectedNliItemIds.size;
+  }
+
+  get allSelectableNliItemsSelected(): boolean {
+    const selectable = this.inferenceReportRows.filter(row => row.selectable);
+    return selectable.length > 0 && selectable.every(row => this.selectedNliItemIds.has(row.id));
+  }
+
+  isNliItemSelected(id: string): boolean {
+    return this.selectedNliItemIds.has(id);
+  }
+
+  setNliItemSelected(id: string, selected: boolean): void {
+    if (selected) {
+      this.selectedNliItemIds.add(id);
+    } else {
+      this.selectedNliItemIds.delete(id);
+    }
+  }
+
+  /** Select every item that could run, or clear the selection. Unparsed items are skipped:
+   *  selecting one would narrow a run down to items that cannot produce anything. */
+  toggleAllNliItems(): void {
+    if (this.allSelectableNliItemsSelected) {
+      this.selectedNliItemIds.clear();
+      return;
+    }
+
+    for (const row of this.inferenceReportRows) {
+      if (row.selectable) this.selectedNliItemIds.add(row.id);
+    }
+  }
+
+  /** Drop ids that no longer name an item. A selection that outlives the items it named
+   *  would silently narrow the next run to nothing. */
+  private pruneNliItemSelection(): void {
+    if (this.selectedNliItemIds.size === 0) return;
+
+    const known = new Set(this.regressionTestItems.map(item => String(item?.id ?? '')));
+    for (const id of [...this.selectedNliItemIds]) {
+      if (!known.has(id)) this.selectedNliItemIds.delete(id);
+    }
   }
 
   get processingTimingSummary(): string {
@@ -1825,18 +2025,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             "green"
           );
 
-          // ========= PAUSE HERE if flag is set =========
-          if (this.enableDisambiguation) {
-            this.session.disambiguationMode = true;
-            this.displayMessage(
-              "Disambiguation enabled: open solutions dialogs, select discriminants, then click Continue.",
-              "blue"
-            );
-            return;
-          }
-
-          // Otherwise proceed immediately using the selected solutions.
-          this.runVampireFromCurrentState(true);
+          this.continueAfterParse();
         });
       },
       error => {
@@ -1932,7 +2121,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     const inference_items: Record<string, nliItem> = {};
 
-    const itemsToConsider = this.regressionTestItems;
+    // An explicit selection narrows the run to the items that were ticked; no selection
+    // runs everything, which is what "Run inference" does straight after a parse.
+    this.pruneNliItemSelection();
+    const explicitSelection = this.selectedNliItemIds.size > 0;
+    const itemsToConsider = explicitSelection
+      ? this.regressionTestItems.filter(item => this.selectedNliItemIds.has(String(item?.id ?? '')))
+      : this.regressionTestItems;
 
     for (let item of itemsToConsider) {
       const itemId = String(item?.id ?? '');
@@ -1946,8 +2141,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       );
       const parseChanged = appendMode && this.itemTouchesUpdatedSentences(item, updatedSentenceIds);
 
-      if (!isNewlyAppended && isAlreadyProcessed && !selectionChanged && !parseChanged) continue;
-      if (appendMode && !isNewlyAppended && !selectionChanged && !parseChanged) continue;
+      // Ticking an item IS the request to redo it. These two skips exist to avoid redoing
+      // work nobody asked for -- an item that already has a verdict and whose readings have
+      // not changed -- which is exactly the item someone selects when they want it rerun.
+      if (!explicitSelection) {
+        if (!isNewlyAppended && isAlreadyProcessed && !selectionChanged && !parseChanged) continue;
+        if (appendMode && !isNewlyAppended && !selectionChanged && !parseChanged) continue;
+      }
 
       let axioms = this.axiomEdit.getContent();
       let axiomCounter = 0;
@@ -2068,11 +2268,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // forkJoin over every pair of every item at once. concatMap over the whole per-item
     // chain also serializes the sequence/merge calls that precede the pipeline, which the
     // service's own sequential driver cannot do because they happen before its input exists.
-    from(itemBuilds).pipe(
+    // Held so an abort can actually stop it. Without this the chain ran to completion in
+    // the browser after the abort and then submitted to Vampire anyway -- "abort" cancelled
+    // a batch that had not been sent yet, so it cancelled nothing, and the run the user
+    // stopped started a few seconds later. 2026-09-08.
+    this.nliPreparationSubscription?.unsubscribe();
+    this.nliPreparationSubscription = from(itemBuilds).pipe(
       concatMap(build => this.prepareNliItem(build, gswbOutputs, useDisambiguated, typed, logicType, pruning)),
       toArray()
     ).subscribe({
       next: prepared => {
+        // Preparation is long and entirely client-side, so a run can be superseded or
+        // aborted while it is still going. Nothing below may reach Vampire in that case.
+        if (vampireRunToken !== this.vampireRunToken) return;
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
         const failures: string[] = [];
         const degradations: string[] = [];
@@ -2631,6 +2839,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       session_key: this.redisSessionKey
     };
 
+    // The last line of defence: every caller reaches here through an async chain that may
+    // have been aborted or superseded meanwhile, and a submission cannot be taken back.
+    if (vampireRunToken !== this.vampireRunToken) return;
+
     this.logBackendPayload('Vampire batch request', this.testsuiteUpdateMode, vampireRequest);
     console.log("Vampire request: ", vampireRequest);
 
@@ -2702,7 +2914,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  callback still in flight cannot restart it. Every terminal path goes through here. */
   private endVampireRun(): void {
     this.vampireRunInFlight = false;
+    this.vampireActiveItemId = null;
     this.stopVampireSummaryPolling();
+  }
+
+  /** Stop the client-side NLI preparation chain. Safe to call when none is running. */
+  private stopNliPreparation(): void {
+    this.nliPreparationSubscription?.unsubscribe();
+    this.nliPreparationSubscription = null;
   }
 
   /** A submission that never came back with results: tear the run down and stop claiming
@@ -2884,6 +3103,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (runToken !== this.vampireRunToken) return;
         this.vampireProgressItemCount = (progress?.itemCount ?? 0) + this.vampireProgressBaselineCount;
         this.vampireProgressProofCount = progress?.proofCount ?? this.vampireProgressProofCount;
+        this.vampireActiveItemId = progress?.activeItemId ? String(progress.activeItemId) : null;
 
         // A run that died server-side is terminal. Polling it forever is how a crash came
         // to look like a run that had merely stopped progressing -- the request had 500'd
@@ -3773,18 +3993,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.selectedIds.clear();
   }
 
+  /** Deliberately no `enableDisambiguation && disambiguationMode` clause. That clause used
+   *  to hold "Parse all" shut for the duration of the pause, on the assumption that the
+   *  pause always ends by pressing Continue or Skip. Nothing ends it now -- a paused
+   *  session is simply a parsed one waiting for a decision -- so keeping the clause would
+   *  disable parsing for good the first time a run stopped for disambiguation. */
   get runLocked(): boolean {
-    return this.loading || this.saveOperationInProgress || (this.enableDisambiguation && this.disambiguationMode);
-  }
-
-  /** Continue/Skip are only ever shown *during* the disambiguation pause -- gating them on
-   *  the same `enableDisambiguation && disambiguationMode` clause `runLocked` uses for
-   *  Parse all/Multistage made them permanently disabled the moment they appeared, since
-   *  that condition is exactly when they are visible. This is the narrower lock: still
-   *  blocked while an actual run/save/abort is in flight, never by the pause itself. */
-  get disambiguationActionLocked(): boolean {
-    return this.loading || this.saveOperationInProgress || this.abortRequestInFlight
-      || this.sessionLoadState === 'loading';
+    return this.loading || this.saveOperationInProgress;
   }
 
   get isSessionActionLocked(): boolean {

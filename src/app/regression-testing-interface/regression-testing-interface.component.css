@@ -348,3 +348,51 @@ div.errorhandling {
 /* .sidebar-hint and .session-id-row are styled by app-hover-sidebar for whatever is
    projected into it, so every panel reads the same. Only the rows specific to this
    panel are above. */
+
+/* --- Inference report: one row per NLI item, selectable for the next run --- */
+.report-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.report-selection-hint,
+.run-inference-scope {
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.run-inference-option {
+  margin-left: 10px;
+  font-size: 0.85rem;
+}
+
+.report-row-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.report-row-status {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.report-row-status.status-done { color: #2e7d32; }
+.report-row-status.status-running { color: #1565c0; }
+.report-row-status.status-failed { color: #b71c1c; }
+
+/* Greyed, never red: an unparsed item is not a wrong answer, it is a missing one. */
+.unparsed-row {
+  opacity: 0.6;
+}
+
+.report-row-note {
+  color: #6b7280;
+  font-size: 0.78rem;
+  margin: 2px 0 6px 22px;
+}

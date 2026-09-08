@@ -638,6 +638,26 @@ export interface RegressionInferenceResult {
   glyphs: string[];
 }
 
+/** One line of the inference report: an NLI item, and whatever is known about it so far.
+ *
+ *  The report lists every item from the moment parsing finishes, so `data` is often a
+ *  placeholder with no predicted label rather than a real verdict -- `status` is what
+ *  says which, and keeps an empty label from being rendered as a mismatch. */
+export interface InferenceReportRow {
+  id: string;
+  /** `unparsed`: at least one of the item's sentences has no reading, so the item cannot
+   *  contribute to a run at all. `pending`: parsed, not yet run. `running`: the item the
+   *  progress record currently names. `done`: has a verdict. `failed`: ran, no verdict. */
+  status: 'unparsed' | 'pending' | 'running' | 'done' | 'failed';
+  /** False for `unparsed` items, which cannot be run and so cannot be selected. */
+  selectable: boolean;
+  data: RegressionInferenceResult;
+  /** Why the item produced no verdict; empty unless `status` is `failed`. */
+  reason: string;
+  /** The sentence texts that have no reading; empty unless `status` is `unparsed`. */
+  unparsedSentences: string[];
+}
+
 export interface RegressionRunTiming {
   startedAt: string | null;
   parseMs: number | null;
@@ -679,6 +699,12 @@ export interface RegressionSessionMetadata {
    *  `enableDisambiguation && disambiguationMode` both hold. Persisted alongside
    *  `disambiguationMode` so the two travel together. */
   enableDisambiguation: boolean;
+  /** The "Run inference after parsing" checkbox. Parsing used to continue into Vampire
+   *  unconditionally, so there was no way to parse a testsuite, look at the readings and
+   *  stop. Defaults to TRUE everywhere it is read, including for stored sessions written
+   *  before the field existed -- those ran inference, and reading a missing field as
+   *  `false` would silently turn it off for every one of them. */
+  enableInference: boolean;
 }
 
 export interface RegressionSessionInputs {
@@ -794,6 +820,8 @@ export interface RegressionTestingSession {
   hasRunVampire: boolean;
   disambiguationMode: boolean;
   enableDisambiguation: boolean;
+  /** See RegressionSessionMetadata.enableInference. Defaults to true. */
+  enableInference: boolean;
   timing: RegressionRunTiming;
 }
 
@@ -996,6 +1024,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       hasRunVampire: Boolean(session?.hasRunVampire),
       disambiguationMode: Boolean(session?.disambiguationMode),
       enableDisambiguation: Boolean(session?.enableDisambiguation),
+      enableInference: session?.enableInference ?? true,
     },
     inputs: {
       grammarPath: String(session?.grammarPath ?? ''),
@@ -1123,6 +1152,7 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     hasRunVampire: Boolean(metadata?.hasRunVampire ?? document?.hasRunVampire),
     disambiguationMode: Boolean(metadata?.disambiguationMode ?? document?.disambiguationMode),
     enableDisambiguation: Boolean(metadata?.enableDisambiguation ?? document?.enableDisambiguation),
+    enableInference: metadata?.enableInference ?? document?.enableInference ?? true,
     timing: document?.timing ?? base.timing,
   };
 }
@@ -1184,6 +1214,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     hasRunVampire: false,
     disambiguationMode: false,
     enableDisambiguation: false,
+    enableInference: true,
     timing: {
       startedAt: null,
       parseMs: null,

@@ -203,6 +203,10 @@
       <input type="checkbox" [(ngModel)]="enableDisambiguation">
       Disambiguate before Vampire
     </label>
+    <label>
+      <input type="checkbox" [(ngModel)]="enableInference">
+      Run inference after parsing
+    </label>
   </div> <br>
 
   </app-toggle-display>
@@ -226,17 +230,23 @@
     <span *ngIf="!isAbortInProgress">Abort and save</span>
     <span *ngIf="isAbortInProgress">Aborting...</span>
   </button>
-  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()" [disabled]="disambiguationActionLocked">
-  Continue
-</button>
-  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()" [disabled]="disambiguationActionLocked">
-    Skip
-  </button>
 
   <div *ngIf="hasParsedExamples" class="vampire-rerun-panel">
-    <button (click)="resendVampire()" [disabled]="!canResendVampire">
-      Resend to Vampire
-    </button> <br>
+    <button (click)="runInference()" [disabled]="!canRunInference">
+      Run inference
+    </button>
+    <label class="run-inference-option" title="Reason over every reading instead of the ones you selected">
+      <input type="checkbox" [checked]="!useDisambiguatedSelections"
+             (change)="useDisambiguatedSelections = !$any($event.target).checked">
+      Ignore discriminant selections
+    </label>
+    <span *ngIf="selectedNliItemCount > 0" class="run-inference-scope">
+      {{ selectedNliItemCount }} item(s) selected — only those will run.
+    </span>
+    <span *ngIf="selectedNliItemCount === 0" class="run-inference-scope">
+      Nothing selected — every item will run.
+    </span>
+    <br>
     <span class="vampire-rerun-status">{{ vampireDiscriminantStatus }}</span>
   </div>
 
@@ -305,11 +315,31 @@
       </div>
       <app-toggle-display type="liger" showText="Show inference results" hideText="Hide inference results">
         <div>
+          <div *ngIf="inferenceReportRows.length" class="report-selection-bar">
+            <button type="button" (click)="toggleAllNliItems()">
+              {{ allSelectableNliItemsSelected ? 'Select none' : 'Select all' }}
+            </button>
+            <span class="report-selection-hint">
+              Tick the items "Run inference" should run. With nothing ticked it runs them all.
+            </span>
+          </div>
           <div class="results-list">
             <div class="result-container"
-                 *ngFor="let element of inferenceResults; let i = index; trackBy: trackByInferenceId"
-                 [class.highlight]="selectedIds.has(element.id)">
-              <app-inference-result [data]="element" [displayIndex]="i + 1"></app-inference-result>
+                 *ngFor="let row of inferenceReportRows; let i = index; trackBy: trackByInferenceId"
+                 [class.highlight]="selectedIds.has(row.id)"
+                 [class.unparsed-row]="row.status === 'unparsed'">
+              <label class="report-row-select"
+                     [title]="row.selectable ? 'Include this item in the next run' : 'Not fully parsed — cannot be run'">
+                <input type="checkbox" [checked]="isNliItemSelected(row.id)" [disabled]="!row.selectable"
+                       (change)="setNliItemSelected(row.id, $any($event.target).checked)">
+                <span class="report-row-status" [ngClass]="'status-' + row.status">{{ row.status }}</span>
+              </label>
+              <app-inference-result [data]="row.data" [displayIndex]="i + 1" [status]="row.status">
+              </app-inference-result>
+              <div *ngIf="row.status === 'unparsed'" class="report-row-note">
+                No reading for: {{ row.unparsedSentences.join(' / ') }}
+              </div>
+              <div *ngIf="row.status === 'failed'" class="report-row-note">{{ row.reason }}</div>
             </div>
           </div>
         </div>

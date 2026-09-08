@@ -111,3 +111,15 @@
   z-index: 10;          /* above block content */
   pointer-events: auto; /* ensure clickable */
 }
+
+/* An item with no verdict yet. Deliberately grey, not red: red already means "the
+   prediction disagrees with the gold label", and an item that has not run disagrees with
+   nothing. */
+.awaiting-block {
+  opacity: 0.72;
+}
+
+.label-awaiting {
+  color: #6b7280;
+  font-style: italic;
+}

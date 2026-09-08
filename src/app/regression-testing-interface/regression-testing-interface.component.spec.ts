@@ -598,14 +598,14 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.loading).toBeTrue();
     expect(component['abortRequestInFlight']).toBeTrue();
     expect(component.canAbortRun).toBeFalse();
-    expect(component.canResendVampire).toBeFalse();
+    expect(component.canRunInference).toBeFalse();
 
     cancelSubject.next({});
     cancelSubject.complete();
 
     expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
     expect(component['abortRequestInFlight']).toBeTrue();
-    expect(component.canResendVampire).toBeFalse();
+    expect(component.canRunInference).toBeFalse();
     sessionSubject.next({ results: { 'item-1': [{ glyph: 'new', informative: true, consistent: true, relevant: true, proof_files: ['p1'] }] } });
     summarySubject.next({ item_count: 1, proof_count: 1 });
     sessionSubject.complete();
@@ -620,7 +620,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(snapshot.analysis.save_state.lastVampireResults['item-1'][0].glyph).toBe('new');
     expect(component['abortRequestInFlight']).toBeFalse();
     expect(component.loading).toBeFalse();
-    expect(component.canResendVampire).toBeTrue();
+    expect(component.canRunInference).toBeTrue();
   });
 
   it('surfaces items that produced no verdict instead of silently dropping them from the count', () => {
@@ -1197,6 +1197,227 @@ describe('RegressionTestingInterfaceComponent', () => {
       clearResponse.complete();
 
       expect(pollTimer()).toBeNull();
+    });
+  });
+  /** Parsing and inference are two operations, not one chain. */
+  describe('inference as a separate step', () => {
+    let ran: jasmine.Spy;
+
+    beforeEach(() => {
+      ran = spyOn<any>(component, 'runVampireFromCurrentState');
+    });
+
+    it('runs inference after a parse by default', () => {
+      component.enableDisambiguation = false;
+      component.enableInference = true;
+
+      (component as any).continueAfterParse();
+
+      expect(ran).toHaveBeenCalledWith(true);
+    });
+
+    it('stops after parsing when inference is switched off', () => {
+      component.enableDisambiguation = false;
+      component.enableInference = false;
+
+      (component as any).continueAfterParse();
+
+      expect(ran).not.toHaveBeenCalled();
+    });
+
+    it('stops after parsing for disambiguation, without calling Vampire', () => {
+      component.enableDisambiguation = true;
+      component.enableInference = true;
+
+      (component as any).continueAfterParse();
+
+      expect(ran).not.toHaveBeenCalled();
+      expect(component.disambiguationMode).toBeTrue();
+    });
+
+    it('does not lock parsing for the life of a disambiguation pause', () => {
+      // Nothing ends the pause now that Continue/Skip are gone, so a runLocked that counted
+      // the pause would disable "Parse all" for good the first time a run stopped for one.
+      component.enableDisambiguation = true;
+      component.disambiguationMode = true;
+      component.loading = false;
+
+      expect(component.runLocked).toBeFalse();
+    });
+
+    it('carries the "ignore discriminant selections" choice into the run', () => {
+      // What Skip used to mean, as a checkbox rather than a second button.
+      component.enableDisambiguation = false;
+      component.useDisambiguatedSelections = false;
+      component['session'].regressionTestResults = [{ sentence_id: 'S1' } as any];
+
+      component.runInference();
+
+      expect(ran).toHaveBeenCalledWith(false);
+    });
+  });
+
+  /** The inference report lists every NLI item, not only the ones with a verdict. */
+  describe('inference report rows', () => {
+    beforeEach(() => {
+      component['session'].regressionTestResults = [{ sentence_id: 'S1' } as any];
+      component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
+      component['session'].regressionTestItems = [
+        { id: 'n1', premises: ['S1'], conclusion: ['S2'], gold_label: '1' },
+        { id: 'n2', premises: ['S1'], conclusion: ['S2'], gold_label: '0' },
+      ];
+      component['session'].lastGswbOutputs = {
+        S1: { solutions: [{ id: 'a' }], log: '', derivation: null, discriminants: [] },
+        S2: { solutions: [{ id: 'b' }], log: '', derivation: null, discriminants: [] },
+      } as any;
+    });
+
+    it('lists items that have not run, with no predicted label', () => {
+      const rows = component.inferenceReportRows;
+
+      expect(rows.map(row => row.id)).toEqual(['n1', 'n2']);
+      expect(rows.every(row => row.status === 'pending')).toBeTrue();
+      expect(rows[0].data.predictedLabel).toBe('');
+      expect(rows[0].data.premises).toEqual(['A dog barks.']);
+      expect(rows[0].data.goldLabel).toBe('1');
+    });
+
+    it('shows the verdict once one exists, leaving the others pending', () => {
+      component['session'].inferenceResults = [
+        { id: 'n1', premises: [], conclusion: '', predictedLabel: '1', goldLabel: '1',
+          premiseIds: [], conclusionIds: [], mismatch: false, glyphs: [] },
+      ];
+
+      const rows = component.inferenceReportRows;
+
+      expect(rows[0].status).toBe('done');
+      expect(rows[0].data.predictedLabel).toBe('1');
+      expect(rows[1].status).toBe('pending');
+    });
+
+    it('greys out an item whose sentence has no reading, and refuses to select it', () => {
+      component['session'].lastGswbOutputs = {
+        S1: { solutions: [{ id: 'a' }], log: '', derivation: null, discriminants: [] },
+        S2: { solutions: [], log: '', derivation: null, discriminants: [] },
+      } as any;
+
+      const rows = component.inferenceReportRows;
+
+      expect(rows[0].status).toBe('unparsed');
+      expect(rows[0].selectable).toBeFalse();
+      expect(rows[0].unparsedSentences).toEqual(['A dog exists.']);
+
+      component.toggleAllNliItems();
+
+      expect(component.selectedNliItemCount).toBe(0);
+    });
+
+    it('marks the item the run is currently on', () => {
+      component['vampireActiveItemId'] = 'n2';
+
+      expect(component.inferenceReportRows[1].status).toBe('running');
+    });
+
+    it('lists nothing before a parse has produced anything', () => {
+      component['session'].regressionTestResults = [];
+
+      expect(component.inferenceReportRows).toEqual([]);
+    });
+
+    it('drops a selection whose item no longer exists', () => {
+      component.toggleAllNliItems();
+      expect(component.selectedNliItemCount).toBe(2);
+
+      component['session'].regressionTestItems = [
+        { id: 'n2', premises: ['S1'], conclusion: ['S2'], gold_label: '0' },
+      ];
+      component['pruneNliItemSelection']();
+
+      expect(component.selectedNliItemCount).toBe(1);
+      expect(component.isNliItemSelected('n2')).toBeTrue();
+    });
+  });
+  /** "Run inference" runs the items you ticked, and nothing else. */
+  describe('running a subset of the NLI items', () => {
+    let submitted: jasmine.Spy;
+
+    const itemsSubmitted = () => Object.keys(submitted.calls.mostRecent().args[0]);
+
+    beforeEach(() => {
+      submitted = spyOn<any>(component, 'submitVampireRequest');
+      component['axiomEdit'] = { getContent: () => '', updateContent: () => {} } as any;
+      component['contextPruning'] = { nativeElement: { checked: false } } as any;
+      component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
+      component['session'].regressionTestItems = [
+        { id: 'n1', premises: ['S1'], conclusion: ['S2'], gold_label: '1' },
+        { id: 'n2', premises: ['S1'], conclusion: ['S2'], gold_label: '0' },
+      ];
+      component['session'].lastAnnotations = {} as any;
+      component['session'].lastGswbOutputs = {
+        S1: { solutions: [{ id: 'a', solution: 'p' }], log: '', derivation: null, discriminants: [] },
+        S2: { solutions: [{ id: 'b', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+      } as any;
+    });
+
+    it('submits every item when nothing is selected', () => {
+      (component as any).runVampireFromCurrentState(false);
+
+      expect(itemsSubmitted()).toEqual(['n1', 'n2']);
+    });
+
+    it('submits only the selected items', () => {
+      component.setNliItemSelected('n1', true);
+
+      (component as any).runVampireFromCurrentState(false);
+
+      expect(itemsSubmitted()).toEqual(['n1']);
+    });
+
+    it('reruns a selected item that already has a verdict', () => {
+      // The skip that spares unchanged, already-processed items is exactly what would drop
+      // the item someone ticked in order to redo it.
+      component['session'].inferenceResults = [
+        { id: 'n1', premises: [], conclusion: '', predictedLabel: '1', goldLabel: '1',
+          premiseIds: [], conclusionIds: [], mismatch: false, glyphs: [] },
+      ];
+      component.setNliItemSelected('n1', true);
+
+      (component as any).runVampireFromCurrentState(false);
+
+      expect(itemsSubmitted()).toEqual(['n1']);
+    });
+
+    it('still skips an unchanged, already-processed item when nothing is selected', () => {
+      component['session'].inferenceResults = [
+        { id: 'n1', premises: [], conclusion: '', predictedLabel: '1', goldLabel: '1',
+          premiseIds: [], conclusionIds: [], mismatch: false, glyphs: [] },
+      ];
+
+      (component as any).runVampireFromCurrentState(false);
+
+      expect(itemsSubmitted()).toEqual(['n2']);
+    });
+  });
+
+  /** Aborting must stop a run that has not been submitted yet. */
+  describe('aborting during NLI preparation', () => {
+    it('stops the preparation chain and refuses its late submission', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.requestVampireCancel.and.returnValue(new Subject<any>().asObservable() as any);
+      const preparation = jasmine.createSpyObj('Subscription', ['unsubscribe']);
+      component['nliPreparationSubscription'] = preparation;
+      component.loading = true;
+      const staleToken = component['vampireRunToken'];
+
+      component.abortCurrentRun();
+
+      expect(preparation.unsubscribe).toHaveBeenCalled();
+      expect(component['vampireRunToken']).not.toBe(staleToken);
+
+      // What the aborted chain would do if it ran to completion in the browser anyway.
+      (component as any).submitVampireRequest({}, false, Date.now(), staleToken, true);
+
+      expect(dataServiceSpy.callBatchVampire).not.toHaveBeenCalled();
     });
   });
 });
