@@ -328,8 +328,9 @@
               <app-inference-result [data]="row.data" [displayIndex]="i + 1" [status]="row.status">
               </app-inference-result>
               <button type="button" class="report-row-discourses" *ngIf="hasDiscourses(row.id)"
+                      [disabled]="discourseDialogLoadingItemId !== null"
                       (click)="openDiscourseDialog(row.id)">
-                Open discourses
+                {{ discourseDialogLoadingItemId === row.id ? 'Rendering…' : 'Open discourses' }}
               </button>
               <div *ngIf="row.status === 'unparsed'" class="report-row-note">
                 No reading for: {{ row.unparsedSentences.join(' / ') }}

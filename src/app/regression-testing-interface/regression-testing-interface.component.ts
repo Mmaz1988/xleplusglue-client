@@ -4128,18 +4128,43 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return !!this.session.analysisDocuments[itemId]?.discourseUpdates?.some(update => update.discourse.length);
   }
 
+  /** Item whose discourses are being rendered, for the button's loading state. */
+  discourseDialogLoadingItemId: string | null = null;
+
   /** The item's full discourses -- every anaphora branch of its merged sequence, by rank, with
-   *  the verdicts reasoned over each -- as text DRSs. */
+   *  the verdicts reasoned over each. Rendered to SVG by GSWB on opening, like the PCDRS the
+   *  other views show; regression does not store the SVGs. If GSWB cannot render, the text DRSs
+   *  are shown instead. */
   openDiscourseDialog(itemId: string): void {
     const document = this.session.analysisDocuments[itemId];
-    if (!document) return;
-    const { solutions, labels } = discourseBranchesForDisplay(document);
-    this.discourseDialog.open({
+    if (!document || this.discourseDialogLoadingItemId) return;
+    const { solutions, labels, render } = discourseBranchesForDisplay(document);
+    const open = (items: GswbSolution[], svgSolutions: boolean, itemLabels: string[]) => this.discourseDialog.open({
       sentenceId: itemId,
       title: `Discourses — ${itemId}`,
-      items: solutions,
-      itemLabels: labels,
-      svgSolutions: false,
+      items,
+      itemLabels,
+      svgSolutions,
+    });
+
+    this.discourseDialogLoadingItemId = itemId;
+    this.dataService.gswbRenderPcdrs({ items: render }).pipe(
+      timeout(60_000),
+      finalize(() => this.discourseDialogLoadingItemId = null),
+    ).subscribe({
+      next: output => {
+        const svgById = new Map((output?.solutions ?? []).map(solution => [solution.id, solution.solution]));
+        if (solutions.length && solutions.every(solution => !!svgById.get(solution.id))) {
+          open(solutions.map(solution => ({ ...solution, solution: svgById.get(solution.id)! })), true, labels);
+        } else {
+          console.warn('[Regression] some discourses could not be rendered; showing text', { itemId });
+          open(solutions, false, labels);
+        }
+      },
+      error: error => {
+        console.warn('[Regression] could not render discourses; showing text', { itemId, error });
+        open(solutions, false, labels);
+      },
     });
   }
 

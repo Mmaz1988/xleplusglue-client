@@ -209,6 +209,12 @@ export interface LmRankAnaphoraRequest {
   branches: { discourseId: string; semanticOrigin: string; relations: { pronoun: string; antecedent: string }[] }[];
 }
 
+/** GSWB `/render_pcdrs`: branches to render to SVG again. `semantic` is the DRS the branch was
+ *  generated from (the semantic origin's semString), which reproduces /generate_pcdrs exactly. */
+export interface GswbRenderPcdrsRequest {
+  items: { id: string; semantic: string; anaphoraRelations: AnaphoraRelation[] }[];
+}
+
 // Reasoning layer (consistency/informativity NLI checks over a premise/conclusion pair).
 // Stacks on Sentence/Sequence exactly the way DiscourseUpdate does -- a parallel,
 // id-referenced structure, never new fields on SentenceAnalysis/SequenceAnalysis.

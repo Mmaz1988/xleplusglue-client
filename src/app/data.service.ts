@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, timeout } from 'rxjs';
 import {
   AnaphoraRanking,
+  GswbRenderPcdrsRequest,
   LmRankAnaphoraRequest,
   GswbRequest,
   GswbMultipleRequest,
@@ -104,7 +105,11 @@ export class DataService {
     return this.http.post<AnaphoraRanking>(`${this.lmpage}/rank_anaphora`, request);
   }
 
-  gswbCollapseAnaphora(request: GswbCollapseAnaphoraRequest): Observable<GswbSolution> {
+  gswbRenderPcdrs(request: GswbRenderPcdrsRequest): Observable<GswbPcdrsOutput> {
+    return this.http.post<GswbPcdrsOutput>(`${this.gswbpage}/render_pcdrs`, request);
+  }
+
+    gswbCollapseAnaphora(request: GswbCollapseAnaphoraRequest): Observable<GswbSolution> {
     return this.http.post<GswbSolution>(`${this.gswbpage}/collapse_anaphora`, request);
   }
 

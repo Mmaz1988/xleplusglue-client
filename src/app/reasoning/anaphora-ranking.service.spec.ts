@@ -157,8 +157,9 @@ describe('discourseBranchesForDisplay', () => {
       ] as any,
     }];
 
-    const { solutions, labels } = discourseBranchesForDisplay(document);
+    const { solutions, labels, render } = discourseBranchesForDisplay(document);
 
+    expect(render.map(item => [item.id, item.semantic])).toEqual([['b-cat', 'P'], ['b-dog', 'P'], ['b2-cat', 'drs-2']]);
     expect(solutions.map(solution => [solution.id, solution.solution]))
       .toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
     expect(labels[0]).toBe('reading 1/2 · rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2) · Vampire: neutral ×2, entailment ×1');

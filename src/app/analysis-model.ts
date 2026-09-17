@@ -2,6 +2,7 @@ import {
   AnaphoraRanking,
   DiscourseAnalysis,
   DiscourseUpdate,
+  GswbRenderPcdrsRequest,
   GswbSolution,
   LmRankAnaphoraRequest,
   NliLabel,
@@ -578,12 +579,19 @@ const NLI_LABEL_NAMES: Record<NliLabel, string> = { '1': 'entailment', '0': 'neu
  *  reading (in the order the readings first appear), each reading's branches by anaphora rank
  *  (generation order when unranked), captioned with the ranking and with the Vampire verdicts
  *  of the reasoning assignments computed over that branch. Reads the document only. */
-export function discourseBranchesForDisplay(document: XlePlusGlueDocument): { solutions: GswbSolution[]; labels: string[] } {
+export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
+  solutions: GswbSolution[];
+  labels: string[];
+  /** Index-aligned with `solutions`: what GSWB /render_pcdrs needs to render each as SVG. */
+  render: GswbRenderPcdrsRequest['items'];
+} {
   const assignments = (document.reasoningUpdates ?? []).flatMap(update => update.assignments);
   const solutions: GswbSolution[] = [];
   const labels: string[] = [];
+  const render: GswbRenderPcdrsRequest['items'] = [];
 
   (document.discourseUpdates ?? []).forEach(update => {
+    const semantics = findElementById(document, update.sourceElementId)?.semantics ?? [];
     const origins = [...new Set(update.discourse.map(branch => branch.semanticOrigin))];
     origins.forEach((origin, readingIndex) => {
       const branches = orderByAnaphoraRanking(
@@ -609,9 +617,16 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): { so
 
         solutions.push({ id: branch.id, solution: branch.drsString } as GswbSolution);
         labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].join(' · '));
+        render.push({
+          id: branch.id,
+          // The semantic /generate_pcdrs was sent; the branch's own flattened string renders
+          // without the sentence dividers.
+          semantic: semantics.find(semantic => semantic.semId === origin)?.semString || branch.drsString,
+          anaphoraRelations: branch.anaphoraMapping.relations,
+        });
       });
     });
   });
 
-  return { solutions, labels };
+  return { solutions, labels, render };
 }

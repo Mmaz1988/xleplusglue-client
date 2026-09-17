@@ -888,38 +888,74 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(scheduleSessionSave).toHaveBeenCalled();
     });
 
-    it('opens an item\'s discourses as text DRSs, ranked and captioned, without touching sentence selections', () => {
-      const document: any = createRegressionAnalysisDocument('doc');
-      document.sequences = [{ id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'], syntax: [], semantics: [{ semId: 'sem-a' }], synSemMapping: {} }];
-      const binding = (antecedent: string) => ({ relations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent }] });
-      document.discourseUpdates = [{
-        id: 'du-S0+S1', sourceElementId: 'S0+S1', sourceElementKind: 'sequence', semDiscourseMapping: {},
-        discourse: [
-          { id: 'pcdrs-1', semanticOrigin: 'sem-a', drsString: 'drs-1', ruleBranch: 1, collapsed: true, anaphoraMapping: binding('x2') },
-          { id: 'pcdrs-2', semanticOrigin: 'sem-a', drsString: 'drs-2', ruleBranch: 1, collapsed: true, anaphoraMapping: binding('x1') },
-        ],
-        anaphoraRanking: {
-          method: 'cosine-description', model: 'm', layers: [-1], pooling: 'mean', createdAt: 'now', relations: [], warnings: [],
-          branches: [{ discourseId: 'pcdrs-1', score: 0.5, rank: 2 }, { discourseId: 'pcdrs-2', score: 0.9, rank: 1 }],
-        },
-      }];
-      component.session.analysisDocuments = { n0: document, n1: createRegressionAnalysisDocument('empty') };
-      const open = jasmine.createSpy('open');
-      (component as any).discourseDialog = { open };
-      const selectionsBefore = JSON.stringify(component.session.selectedScopeIdsBySentence);
+    describe('the discourse dialog', () => {
+      let document: any;
+      let open: jasmine.Spy;
+      let dataService: any;
 
-      expect(component.hasDiscourses('n0')).toBeTrue();
-      expect(component.hasDiscourses('n1')).toBeFalse();
-      expect(component.hasDiscourses('missing')).toBeFalse();
+      beforeEach(() => {
+        document = createRegressionAnalysisDocument('doc');
+        document.sequences = [{
+          id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'], syntax: [], synSemMapping: {},
+          semantics: [{ semId: 'sem-a', semString: '(A) + (B)' }],
+        }];
+        const binding = (antecedent: string) => ({ relations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent }] });
+        document.discourseUpdates = [{
+          id: 'du-S0+S1', sourceElementId: 'S0+S1', sourceElementKind: 'sequence', semDiscourseMapping: {},
+          discourse: [
+            { id: 'pcdrs-1', semanticOrigin: 'sem-a', drsString: 'drs-1', ruleBranch: 1, collapsed: true, anaphoraMapping: binding('x2') },
+            { id: 'pcdrs-2', semanticOrigin: 'sem-a', drsString: 'drs-2', ruleBranch: 1, collapsed: true, anaphoraMapping: binding('x1') },
+          ],
+          anaphoraRanking: {
+            method: 'cosine-description', model: 'm', layers: [-1], pooling: 'mean', createdAt: 'now', relations: [], warnings: [],
+            branches: [{ discourseId: 'pcdrs-1', score: 0.5, rank: 2 }, { discourseId: 'pcdrs-2', score: 0.9, rank: 1 }],
+          },
+        }];
+        component.session.analysisDocuments = { n0: document, n1: createRegressionAnalysisDocument('empty') };
+        open = jasmine.createSpy('open');
+        (component as any).discourseDialog = { open };
+        dataService = TestBed.inject(DataService);
+      });
 
-      component.openDiscourseDialog('n0');
+      it('is offered only for items with discourse branches', () => {
+        expect(component.hasDiscourses('n0')).toBeTrue();
+        expect(component.hasDiscourses('n1')).toBeFalse();
+        expect(component.hasDiscourses('missing')).toBeFalse();
+      });
 
-      const payload = open.calls.mostRecent().args[0];
-      expect(payload.title).toBe('Discourses — n0');
-      expect(payload.svgSolutions).toBeFalse();
-      expect(payload.items.map((item: any) => item.solution)).toEqual(['drs-2', 'drs-1']);
-      expect(payload.itemLabels[0]).toContain('rank 1');
-      expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
+      it('renders the branches to SVG from the reading they came from, in rank order, without touching sentence selections', () => {
+        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
+          solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
+        }));
+        const selectionsBefore = JSON.stringify(component.session.selectedScopeIdsBySentence);
+
+        component.openDiscourseDialog('n0');
+
+        const request = dataService.gswbRenderPcdrs.calls.mostRecent().args[0];
+        expect(request.items.map((item: any) => item.id)).toEqual(['pcdrs-2', 'pcdrs-1']);
+        // The semantic /generate_pcdrs was sent, not the branch's flattened string.
+        expect(request.items[0].semantic).toBe('(A) + (B)');
+        expect(request.items[0].anaphoraRelations[0].antecedent).toBe('x1');
+
+        const payload = open.calls.mostRecent().args[0];
+        expect(payload.title).toBe('Discourses — n0');
+        expect(payload.svgSolutions).toBeTrue();
+        expect(payload.items.map((item: any) => item.solution)).toEqual(['<svg>pcdrs-2</svg>', '<svg>pcdrs-1</svg>']);
+        expect(payload.itemLabels[0]).toContain('rank 1');
+        expect(component.discourseDialogLoadingItemId).toBeNull();
+        expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
+      });
+
+      it('falls back to the text DRSs when GSWB cannot render them', () => {
+        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.returnValue(throwError(() => ({ status: 0 })));
+
+        component.openDiscourseDialog('n0');
+
+        const payload = open.calls.mostRecent().args[0];
+        expect(payload.svgSolutions).toBeFalse();
+        expect(payload.items.map((item: any) => item.solution)).toEqual(['drs-2', 'drs-1']);
+        expect(component.discourseDialogLoadingItemId).toBeNull();
+      });
     });
 
     it('points each reasoning assignment at the discourse branch it was reasoned over', () => {
