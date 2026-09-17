@@ -177,21 +177,23 @@ export interface AnaphoraRankedRelation {
   semanticOrigin: string;
   pronoun: string;
   antecedent: string;
-  pronounText: string;       // the pronoun's description in the input, e.g. "it"
-  antecedentText: string;    // the antecedent's description, e.g. "the black dog"
-  cosine: number | null;     // null when either side has no embedding
+  pronounText: string;       // the pronoun's lexical description in the input, e.g. "it"
+  antecedentText: string;    // the antecedent's lexical description, e.g. "black dog"
+  score?: number | null;     // method-specific, higher is better (a cosine, or a log-probability)
+  cosine: number | null;     // cosine rankings only; null otherwise or without an embedding
+  substitution?: string | null; // mlm-substitution: the words that replaced the pronoun
   recencyRank: number | null; // symbolic baseline: 1 = nearest admitted antecedent before the pronoun
 }
 
 export interface AnaphoraRankedBranch {
   discourseId: string;
-  score: number | null;      // mean cosine over the branch's relations; null if it has none scored
+  score: number | null;      // mean relation score over the branch; null if it has none scored
   rank: number;              // 1-based, highest score first; equal scores share a rank
 }
 
 /** lm `/rank_anaphora` response, stored as-is on the DiscourseUpdate it ranks. */
 export interface AnaphoraRanking {
-  method: string;            // "cosine-description"
+  method: string;            // "mlm-substitution", "cosine-lexical" or "cosine-description"
   model: string;
   layers: number[];
   pooling: string;

@@ -672,16 +672,19 @@ export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: str
   const branch = ranking?.branches.find(candidate => candidate.discourseId === discourseId);
   const discourse = update.discourse.find(candidate => candidate.id === discourseId);
   if (!ranking || !branch || !discourse) return '';
+  const isCosine = ranking.method.startsWith('cosine');
 
   const bindings = discourse.anaphoraMapping.relations.map(relation => {
     const pronoun = relation.pronounDisplay ?? relation.pronounReferentId;
     const scored = ranking.relations.find(candidate => candidate.semanticOrigin === discourse.semanticOrigin
       && candidate.pronoun === pronoun && candidate.antecedent === relation.antecedent);
-    const cosine = scored?.cosine == null ? 'n/a' : scored.cosine.toFixed(2);
     const recency = scored?.recencyRank == null ? 'n/a' : scored.recencyRank;
-    return `${scored?.pronounText || pronoun} → ${scored?.antecedentText || relation.antecedent} (cos ${cosine}, recency ${recency})`;
+    const value = scored?.cosine ?? scored?.score;
+    const scoreText = `${isCosine ? 'cos' : 'score'} ${value == null ? 'n/a' : value.toFixed(2)}`;
+    const substitution = scored?.substitution ? `, "${scored.substitution}"` : '';
+    return `${scored?.pronounText || pronoun} → ${scored?.antecedentText || relation.antecedent} (${scoreText}${substitution}, recency ${recency})`;
   });
-  const score = branch.score == null ? 'no score' : `mean cos ${branch.score.toFixed(3)}`;
+  const score = branch.score == null ? 'no score' : `mean ${isCosine ? 'cos' : 'score'} ${branch.score.toFixed(3)}`;
   return [`rank ${branch.rank}`, score, ...bindings].join(' · ');
 }
 

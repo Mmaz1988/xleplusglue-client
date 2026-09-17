@@ -140,6 +140,17 @@ describe('anaphora ranking document helpers', () => {
       .toBe('rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2)');
     expect(anaphoraRankingCaption(twoBranches(), 'b-cat')).toBe('');
   });
+
+  it('captions a substitution ranking with its score and the words substituted', () => {
+    const substitution: AnaphoraRanking = {
+      ...ranking([['b-dog', 2, -5.668], ['b-cat', 1, -5.258]]),
+      method: 'mlm-substitution',
+      relations: [{ semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'big cat',
+        score: -5.258, cosine: null, substitution: 'The big cat', recencyRank: 2 }],
+    };
+    expect(anaphoraRankingCaption({ ...twoBranches(), anaphoraRanking: substitution }, 'b-cat'))
+      .toBe('rank 1 · mean score -5.258 · it → big cat (score -5.26, "The big cat", recency 2)');
+  });
 });
 
 describe('discourseBranchesForDisplay', () => {
