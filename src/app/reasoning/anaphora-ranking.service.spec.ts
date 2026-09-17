@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Subject, throwError } from 'rxjs';
 import { DataService } from '../data.service';
 import { FormBuilder } from '@angular/forms';
+import { SemVisComponent } from '../sem-vis/sem-vis.component';
 import { InferenceSettingsComponent } from '../inference-interface/inference-settings/inference-settings.component';
 import {
   anaphoraRankingCaption,
@@ -264,6 +265,35 @@ describe('anaphora branch selection for verdicts', () => {
       .toEqual({ mode: 'all', k: 1 });
     expect(anaphoraSelectionPolicy({ logic_type: 0, model_building: true, max_duration: 10, layered: false,
       anaphora_selection: 'top_k', anaphora_top_k: 2.7 })).toEqual({ mode: 'top_k', k: 2 });
+  });
+
+  it('lists the branches a run counted, and marks the ones it did not', () => {
+    const document = reasoningOver(ranked(), [
+      ['b-dog', 'neutral'], ['b-cat', 'neutral'], ['b-event', 'entailment'], ['b2-cat', 'entailment'],
+    ]);
+    expect(discourseBranchesForDisplay(document).counted).toEqual(['b-event', 'b-cat', 'b-dog', 'b2-cat']);
+
+    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1 };
+    const { solutions, labels, counted } = discourseBranchesForDisplay(document);
+    // b2-dog has no verdict at all, so it is not counted either.
+    expect(counted).toEqual(['b-event', 'b2-cat']);
+    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('Vampire: neutral ×1 (not counted)');
+    expect(labels[solutions.findIndex(solution => solution.id === 'b-event')]).not.toContain('not counted');
+
+    expect(discourseBranchesForDisplay(documentWith(ranked())).counted).toBeUndefined();
+  });
+
+  it('narrows sem-vis items to an id filter like a discriminant selection, and back', () => {
+    const semVis = new SemVisComponent({ bypassSecurityTrustHtml: (value: string) => value } as any, { detectChanges: () => {} } as any);
+    semVis.svgSolutions = true;
+    semVis.setItems(['a', 'b', 'c'].map(id => ({ id, solution: `<svg>${id}</svg>` }) as any));
+
+    semVis.setItemFilter(['c', 'a']);
+    expect(semVis.items.map(item => item.id)).toEqual(['a', 'c']);
+    expect(semVis.allItems.length).toBe(3);
+
+    semVis.setItemFilter(null);
+    expect(semVis.items.map(item => item.id)).toEqual(['a', 'b', 'c']);
   });
 
   it('carries the selection through the settings form', () => {

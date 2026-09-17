@@ -19,6 +19,10 @@ export class SemvisDialogComponent {
 
   private activeSentenceId: string | null = null;
   title = 'Solutions';
+  /** Ids the dialog can narrow the items to, with a checkbox to show all; null: no such filter. */
+  filterIds: string[] | null = null;
+  filterLabel = '';
+  filterActive = false;
 
   open(payload: {
     sentenceId: string;
@@ -32,9 +36,14 @@ export class SemvisDialogComponent {
     /** Caption per item, index-aligned with `items`. */
     itemLabels?: string[];
     title?: string;
+    /** When given, the dialog opens showing only these items, with a checkbox to show all. */
+    filter?: { ids: string[]; label: string };
   }): void {
     this.activeSentenceId = payload.sentenceId;
     this.title = payload.title ?? 'Solutions';
+    this.filterIds = payload.filter ? [...payload.filter.ids] : null;
+    this.filterLabel = payload.filter?.label ?? '';
+    this.filterActive = !!payload.filter;
     this.dialog.nativeElement.show();
 
     const items = Array.isArray(payload.items) ? payload.items : [];
@@ -69,6 +78,7 @@ export class SemvisDialogComponent {
         this.semVis.setItems(items, startIndex);
 
       // restore selection and re-filter
+      this.semVis.setItemFilter(this.filterActive ? this.filterIds : null);
       this.semVis.setSelectedDiscriminants(scopeIds, mcIds);
     }, 0);
   }
@@ -80,6 +90,11 @@ export class SemvisDialogComponent {
       sentenceId: this.activeSentenceId,  // ✅ key the event
       ...ev
     });
+  }
+
+  toggleFilter(active: boolean): void {
+    this.filterActive = active;
+    this.semVis?.setItemFilter(active ? this.filterIds : null);
   }
 
   close(): void {

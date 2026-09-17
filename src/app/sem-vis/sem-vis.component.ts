@@ -222,7 +222,18 @@ export class SemVisComponent implements AfterViewInit {
     this.applyFiltersAndResetIndex(0);
   }
 
+  /** Ids an owner restricts the items to, on top of any discriminant selection; null shows all.
+   *  Narrows `items` the way discriminants do, so the counter reads "n / m out of total". */
+  private itemIdFilter: Set<string> | null = null;
+
+  public setItemFilter(ids: string[] | null): void {
+    this.itemIdFilter = ids ? new Set(ids) : null;
+    this.applyFiltersAndResetIndex(0);
+  }
+
   private filterItemsBySelectedDiscriminants(items: GswbSolution[]): GswbSolution[] {
+    const idFilter = this.itemIdFilter;
+    if (idFilter) items = items.filter(item => idFilter.has(item.id));
     const selectedDiscriminants = this.getSelectedDiscriminants();
 
     // No selection => no filtering

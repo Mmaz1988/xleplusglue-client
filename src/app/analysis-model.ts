@@ -662,10 +662,18 @@ const NLI_LABEL_NAMES: Record<NliLabel, string> = { '1': 'entailment', '0': 'neu
 export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   solutions: GswbSolution[];
   labels: string[];
+  /** Branches whose Vampire verdicts count toward the item's verdict under the selection each
+   *  run recorded; undefined when nothing has a verdict yet. */
+  counted?: string[];
   /** Index-aligned with `solutions`: what GSWB /render_pcdrs needs to render each as SVG. */
   render: GswbRenderPcdrsRequest['items'];
 } {
   const assignments = (document.reasoningUpdates ?? []).flatMap(update => update.assignments);
+  const countedIds = new Set((document.reasoningUpdates ?? []).flatMap(update =>
+    selectReasoningAssignments(document, update, update.anaphoraSelection ?? ALL_ANAPHORA_BRANCHES).assignments
+      .filter(assignment => !!assignment.verdict && !!assignment.discourseId)
+      .map(assignment => assignment.discourseId!)));
+  const anyVerdict = assignments.some(assignment => !!assignment.verdict);
   const solutions: GswbSolution[] = [];
   const labels: string[] = [];
   const render: GswbRenderPcdrsRequest['items'] = [];
@@ -693,6 +701,7 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         });
         const verdicts = own.length
           ? `Vampire: ${[...counts].map(([outcome, count]) => `${outcome} ×${count}`).join(', ')}`
+            + (own.some(assignment => !!assignment.verdict) && !countedIds.has(branch.id) ? ' (not counted)' : '')
           : 'no reasoning over this branch';
 
         solutions.push({ id: branch.id, solution: branch.drsString } as GswbSolution);
@@ -708,5 +717,5 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
     });
   });
 
-  return { solutions, labels, render };
+  return { solutions, labels, render, counted: anyVerdict ? solutions.map(s => s.id).filter(id => countedIds.has(id)) : undefined };
 }

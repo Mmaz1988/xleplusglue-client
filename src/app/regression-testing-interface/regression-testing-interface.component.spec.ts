@@ -946,6 +946,25 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
       });
 
+      it('opens on the branches the verdict counted once there are verdicts', () => {
+        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
+          solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
+        }));
+        component.openDiscourseDialog('n0');
+        expect(open.calls.mostRecent().args[0].filter).toBeUndefined();
+
+        document.reasoningUpdates = [{
+          id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], logicType: 'fof',
+          anaphoraSelection: { mode: 'top_k', k: 1 },
+          assignments: ['pcdrs-1', 'pcdrs-2'].map(discourseId => ({
+            id: `a-${discourseId}`, premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {},
+            discourseUpdateId: 'du-S0+S1', discourseId, verdict: { consistent: true, informative: true, relevant: true },
+          })),
+        }];
+        component.openDiscourseDialog('n0');
+        expect(open.calls.mostRecent().args[0].filter).toEqual({ ids: ['pcdrs-2'], label: 'Only branches counted in the verdict' });
+      });
+
       it('falls back to the text DRSs when GSWB cannot render them', () => {
         dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.returnValue(throwError(() => ({ status: 0 })));
 
