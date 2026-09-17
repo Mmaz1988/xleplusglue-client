@@ -45,18 +45,14 @@
   </div>
 
   <div *ngIf="showAnaphoraSelection" class="anaphora-selection">
-    <label for="anaphora-selection">Anaphora branches counted in the verdict:</label>
+    <label for="anaphora-selection">Anaphora branches:</label>
     <select formControlName="anaphora_selection" id="anaphora-selection" name="anaphora-selection">
-      <option value="all">all formally generated branches</option>
-      <option value="top_k">top k per reading, by language-model ranking</option>
+      <option value="all">all</option>
+      <option value="top_k">top k</option>
     </select>
     <label *ngIf="vampirePreferencesForm.value.anaphora_selection === 'top_k'" for="anaphora-top-k">
       k:
       <input type="number" min="1" step="1" formControlName="anaphora_top_k" id="anaphora-top-k" name="anaphora-top-k">
     </label>
-    <div class="setting-hint">
-      Every branch is still sent to Vampire; this only selects whose verdicts count. Items
-      without a ranking count all their branches.
-    </div>
   </div>
 </form>

@@ -322,6 +322,10 @@ export interface ReasoningUpdate {
   logicType: 'fof' | 'tff';
   ruleString?: string;               // NLI post-processing rules applied, for reproducibility
   pruned?: boolean;                  // true when only the first candidate was reasoned over
+  /** Which anaphora branches the verdict counts, as set when the Vampire run started (see
+   *  VampirePreferences.anaphora_selection). Absent: every branch. Fixed per run, so changing
+   *  the setting afterwards never changes an existing verdict. */
+  anaphoraSelection?: { mode: AnaphoraSelectionMode; k: number };
   assignments: ReasoningAssignment[];
   verdict?: ReasoningItemVerdict;    // majority vote across assignments
   failure?: string;
@@ -1284,10 +1288,10 @@ export interface VampirePreferences {
   model_building: boolean;
   max_duration: number;
   layered: boolean; //Processes with and without additional axioms
-  /** Which anaphora branches an item's verdict is taken over. 'all' (the default, and what a
-   *  session saved without this field means): every formally generated branch. 'top_k': per
-   *  reading, only the `anaphora_top_k` best branches by language-model ranking. Every branch
-   *  is still sent to Vampire; this selects which verdicts count. */
+  /** Which anaphora branches the verdicts of the NEXT Vampire run count. 'all' (the default, and
+   *  what a session saved without this field means): every formally generated branch. 'top_k':
+   *  per reading, only the `anaphora_top_k` best branches by language-model ranking. Every
+   *  branch is still sent to Vampire. Recorded on the run's ReasoningUpdates when it starts. */
   anaphora_selection?: AnaphoraSelectionMode;
   anaphora_top_k?: number;
 }

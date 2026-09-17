@@ -244,6 +244,10 @@ describe('anaphora branch selection for verdicts', () => {
     expect(top1.predictedLabel).toBe('1');
     expect(top1.mismatch).toBeFalse();
     expect(top1.anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 3, total: 5 });
+
+    // Without an override, the selection stored on the reasoning update by its run applies.
+    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1 };
+    expect(inferenceResultsFromDocument(document, [item], {})['n0'].predictedLabel).toBe('1');
   });
 
   it('counts unlinked assignments, and says when there was no ranking to apply', () => {

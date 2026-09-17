@@ -584,11 +584,14 @@ export function selectReasoningAssignments(
   return { assignments, applied };
 }
 
+/** Each item's verdict as its document records it. The anaphora selection is the one stored on
+ *  the item's reasoning update by the run that produced it; `override` evaluates the same
+ *  stored verdicts under another selection instead (for comparisons, never for the report). */
 export function inferenceResultsFromDocument(
   document: XlePlusGlueDocument | undefined,
   items: any[],
   sentenceMap: Record<string, string>,
-  policy: AnaphoraSelectionPolicy = ALL_ANAPHORA_BRANCHES,
+  override?: AnaphoraSelectionPolicy,
 ): Record<string, RegressionInferenceResult> {
   const results: Record<string, RegressionInferenceResult> = {};
   const updatesById = new Map((document?.reasoningUpdates ?? []).map(update => [update.id, update]));
@@ -597,6 +600,7 @@ export function inferenceResultsFromDocument(
     const itemId = String(item?.id ?? '');
     const update = updatesById.get(`ru-${itemId}`);
     if (!document || !update) continue;
+    const policy = override ?? update.anaphoraSelection ?? ALL_ANAPHORA_BRANCHES;
     const selection = selectReasoningAssignments(document, update, policy);
     const verdict = majorityVerdict(selection.assignments);
     if (!verdict) continue;

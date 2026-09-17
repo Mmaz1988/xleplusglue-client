@@ -362,14 +362,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.scheduleSessionSave();
     });
 
-    let lastAnaphoraSelection = JSON.stringify(this.anaphoraSelection());
     this.vampirePreferences.vampirePreferencesForm.valueChanges.subscribe(() => {
       this.syncSessionStateFromUi();
-      const selection = JSON.stringify(this.anaphoraSelection());
-      if (selection !== lastAnaphoraSelection) {
-        lastAnaphoraSelection = selection;
-        this.refreshInferenceFromDocuments();
-      }
       this.scheduleSessionSave();
     });
 
@@ -2791,8 +2785,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (!ranked || !document) return;
         document.discourseUpdates = (document.discourseUpdates ?? [])
           .map(existing => existing.id === ranked.id ? ranked : existing);
-        // The counted verdict can change under top-k, and the summary's per-selection
-        // comparison changes either way.
+        // A run that asked for top-k counts the ranking once it is there; the summary's
+        // comparison changes either way. Verdicts of other runs keep their own selection.
         this.refreshInferenceFromDocuments();
         this.scheduleSessionSave();
       });
@@ -2861,6 +2855,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // The last line of defence: every caller reaches here through an async chain that may
     // have been aborted or superseded meanwhile, and a submission cannot be taken back.
     if (vampireRunToken !== this.vampireRunToken) return;
+    // Fixed for this run: the setting can change while it runs, or afterwards, without
+    // touching the verdicts this run produces.
+    this.runAnaphoraSelection = { ...this.anaphoraSelection() };
 
     this.logBackendPayload('Vampire batch request', this.testsuiteUpdateMode, vampireRequest);
     console.log("Vampire request: ", vampireRequest);
@@ -3341,6 +3338,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           logicType: this.session.lastLogicType === 'tff' ? 'tff' : 'fof',
           ruleString: APP_DEFAULTS.graphInspector.rulesText,
           pruned: this.contextPruning?.nativeElement?.checked ?? false,
+          anaphoraSelection: this.runAnaphoraSelection
+            ?? this.session.analysisDocuments[pair.itemId]?.reasoningUpdates?.find(existing => existing.id === updateId)?.anaphoraSelection
+            ?? { ...ALL_ANAPHORA_BRANCHES },
           assignments: [],
         });
       }
@@ -3465,8 +3465,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // Each item's verdict is read from its own document and the per-item results merged
     // into one map, which is what the confusion matrix and the report below consume. The
     // aggregation is the only place the per-item split has to be undone.
-    const policy = this.anaphoraSelection();
-    const documentResults = this.documentInferenceResults(policy);
+    const documentResults = this.documentInferenceResults();
 
     const currentInferenceResults: RegressionInferenceResult[] = [];
 
@@ -3561,46 +3560,53 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       `Successful contradiction prediction ratio: ${formatRatio(successful_contradiction_predictions, all_contradiction_predictions)} ` +
       `(${successful_contradiction_predictions} of ${all_contradiction_predictions})\n` +
       `Overall accuracy: ${totalSessionItems === 0 ? 'n/a' : String(totalCorrectItems / totalSessionItems)}\n` +
-      this.anaphoraSelectionSummary(policy);
+      this.anaphoraSelectionSummary();
 
     if (finalSnapshot) {
       this.commitParsedRegressionSnapshot();
     }
   }
 
+  /** The selection the current (or last) Vampire run of this page started with. */
+  private runAnaphoraSelection: AnaphoraSelectionPolicy | null = null;
+
+  /** The selection the settings ask for -- applied to the next run, not to existing verdicts. */
   private anaphoraSelection(): AnaphoraSelectionPolicy {
     return anaphoraSelectionPolicy(this.vampirePreferences?.vampirePreferences ?? this.session.vampirePreferences);
   }
 
-  /** Every item's verdict as its document gives it under `policy`, merged into one map. */
-  private documentInferenceResults(policy: AnaphoraSelectionPolicy): Record<string, RegressionInferenceResult> {
+  /** Every item's verdict as its document records it (its run's selection, or `override`). */
+  private documentInferenceResults(override?: AnaphoraSelectionPolicy): Record<string, RegressionInferenceResult> {
     const results: Record<string, RegressionInferenceResult> = {};
     for (const item of this.regressionTestItems) {
       const document = this.session.analysisDocuments[String(item?.id ?? '')];
-      if (document) Object.assign(results, inferenceResultsFromDocument(document, [item], this.sentenceMap, policy));
+      if (document) Object.assign(results, inferenceResultsFromDocument(document, [item], this.sentenceMap, override));
     }
     return results;
   }
 
-  /** Accuracy of the same Vampire results under every-branch and ranked selection, so a run
-   *  shows what the ranking changes without running anything twice. */
-  private anaphoraSelectionSummary(policy: AnaphoraSelectionPolicy): string {
-    const policies: [string, AnaphoraSelectionPolicy][] = [['all branches', ALL_ANAPHORA_BRANCHES], ['top-1', { mode: 'top_k', k: 1 }]];
-    if (policy.mode === 'top_k' && policy.k > 1) policies.push([`top-${policy.k}`, policy]);
-    const parts = policies.map(([name, candidate]) => {
-      const results = Object.values(this.documentInferenceResults(candidate));
-      const correct = results.filter(result => !result.mismatch).length;
-      return `${name} ${correct}/${results.length}`;
+  /** What the report's verdicts counted, and accuracy of the same stored Vampire results under
+   *  every-branch and ranked selection -- a comparison only; the report keeps each run's own. */
+  private anaphoraSelectionSummary(): string {
+    const counted = Object.values(this.documentInferenceResults());
+    const topK = counted.find(result => result.anaphoraSelection?.mode === 'top_k')?.anaphoraSelection?.k;
+    const describe = (mode?: string, k?: number) => mode === 'top_k' ? `top ${k}` : 'all';
+    const countedModes = [...new Set(counted.map(result => describe(result.anaphoraSelection?.mode, result.anaphoraSelection?.k)))];
+
+    const policies: [string, AnaphoraSelectionPolicy][] = [['all', ALL_ANAPHORA_BRANCHES], ['top 1', { mode: 'top_k', k: 1 }]];
+    if (topK && topK > 1) policies.push([`top ${topK}`, { mode: 'top_k', k: topK }]);
+    const parts = policies.map(([name, policy]) => {
+      const results = Object.values(this.documentInferenceResults(policy));
+      return `${name} ${results.filter(result => !result.mismatch).length}/${results.length}`;
     });
     const ranked = Object.values(this.documentInferenceResults({ mode: 'top_k', k: 1 }))
       .filter(result => result.anaphoraSelection?.applied).length;
-    const counted = policy.mode === 'top_k' ? `top-${policy.k} per reading` : 'all branches';
-    return `Anaphora branches counted: ${counted}. Correct under each selection: ${parts.join(' · ')} `
-      + `(ranking available for ${ranked} item(s))`;
+    return `Anaphora branches counted: ${countedModes.join(', ') || 'n/a'}. `
+      + `Same results under each selection: ${parts.join(' · ')} (ranking available for ${ranked} item(s))`;
   }
 
-  /** Re-derives the report from the stored documents -- after a ranking arrives or the
-   *  selection setting changes -- without asking Vampire for anything. */
+  /** Re-derives the report from the stored documents after a ranking arrives, without asking
+   *  Vampire for anything. Each item keeps the selection its run recorded. */
   private refreshInferenceFromDocuments(): void {
     const results = this.session.lastVampireResults;
     if (!results || !Object.keys(results).length) return;

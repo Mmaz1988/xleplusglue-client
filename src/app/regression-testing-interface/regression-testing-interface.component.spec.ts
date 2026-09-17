@@ -958,7 +958,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       });
     });
 
-    it('reports accuracy under every selection and counts only the ranked top branches when asked', () => {
+    it('keeps each run\'s anaphora selection and compares the same results under every selection', () => {
       const branchOf = (id: string, antecedent: string) => ({
         id, semanticOrigin: 'sem-a', drsString: id, ruleBranch: 1, collapsed: true,
         anaphoraMapping: { relations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent }] },
@@ -988,13 +988,20 @@ describe('RegressionTestingInterfaceComponent', () => {
       component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'all' };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('0');
-      expect(component.inferenceSummary).toContain('Correct under each selection: all branches 0/1 · top-1 1/1');
+      expect(component.inferenceSummary).toContain('Anaphora branches counted: all.');
+      expect(component.inferenceSummary).toContain('Same results under each selection: all 0/1 · top 1 1/1');
 
+      // Changing the setting afterwards leaves the existing verdict alone.
       component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'top_k', anaphora_top_k: 1 };
+      (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
+      expect(component.inferenceResults[0].predictedLabel).toBe('0');
+
+      // A run that started with top-1 recorded it, and its verdict counts only that branch.
+      document.reasoningUpdates[0].anaphoraSelection = { mode: 'top_k', k: 1 };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('1');
       expect(component.inferenceResults[0].anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 1, total: 3 });
-      expect(component.inferenceSummary).toContain('Anaphora branches counted: top-1 per reading');
+      expect(component.inferenceSummary).toContain('Anaphora branches counted: top 1.');
     });
 
     it('points each reasoning assignment at the discourse branch it was reasoned over', () => {
@@ -1030,9 +1037,15 @@ describe('RegressionTestingInterfaceComponent', () => {
         ],
       }];
 
+      (component as any).runAnaphoraSelection = { mode: 'top_k', k: 2 };
+      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'all' };
+
       (component as any).upsertReasoningUpdates({
         n0: [{ assignment_id: assignmentId('pcdrs-a'), consistent: true, informative: false, relevant: true }],
       });
+
+      // The selection the run started with, not whatever the setting says now.
+      expect(component.session.analysisDocuments['n0'].reasoningUpdates![0].anaphoraSelection).toEqual({ mode: 'top_k', k: 2 });
 
       const assignments = component.session.analysisDocuments['n0'].reasoningUpdates![0].assignments;
       expect(assignments[0].discourseUpdateId).toBe('du-S0+S1');
