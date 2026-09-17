@@ -43,7 +43,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, toArray } from "rxjs";
+import { catchError, EMPTY, Observable, ReplaySubject, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, toArray } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -54,6 +54,7 @@ import {
   anaphoraSelectionPolicy,
   carryAnaphoraRanking,
   compositeAnalysisId,
+  selectForVampire,
   discourseBranchesForDisplay,
   inferenceResultsFromDocument,
   majorityVerdict,
@@ -2219,6 +2220,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
+    // Fixed for this run: which anaphora branches go to Vampire. The setting can change while
+    // the run prepares or afterwards without touching it.
+    this.runAnaphoraSelection = { ...this.anaphoraSelection() };
+    this.runAnaphoraSelectionApplied = {};
+
     if (Number(this.session.gswbPreferences.outputstyle) !== 5) {
       this.submitVampireRequest(
         inference_items,
@@ -2273,6 +2279,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
         const failures: string[] = [];
         const degradations: string[] = [];
+        const policy = this.runAnaphoraSelection ?? ALL_ANAPHORA_BRANCHES;
+        prepared = prepared.map(pair => {
+          const itemBuild = itemBuilds.find(candidate => candidate.itemId === pair.itemId);
+          const sequenceId = itemBuild
+            ? compositeAnalysisId([...itemBuild.premiseSentenceIds, ...itemBuild.hypothesisSentenceIds]) : '';
+          const discourseUpdate = this.session.analysisDocuments[pair.itemId]?.discourseUpdates
+            ?.find(update => update.id === `du-${sequenceId}`);
+          const selection = selectForVampire(discourseUpdate, pair.assignments, policy);
+          this.runAnaphoraSelectionApplied[pair.itemId] = selection.applied;
+          return { ...pair, assignments: selection.items };
+        });
         for (const preparedPair of prepared) {
           failures.push(...preparedPair.failures);
           degradations.push(...preparedPair.degradations);
@@ -2381,6 +2398,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           // ReasoningAssignment's id names the anaphora branch it was built from and
           // validateReasoningUpdate resolves that hop.
           tap(prepared => this.registerDiscourseUpdate(document, build, branches, prepared)),
+          // Top-k selects branches before Vampire, so it needs the ranking first. With every
+          // branch sent, nothing waits on lm.
+          concatMap(prepared => this.runAnaphoraSelection?.mode === 'top_k'
+            ? this.rankingOf(build.itemId).pipe(map(() => prepared))
+            : of(prepared)),
           map(prepared => ({
             itemId: build.itemId,
             scopeId: build.updateId,
@@ -2779,18 +2801,36 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  document is looked up again on arrival, so a session replaced in the meantime is left
    *  alone. */
   private rankDiscourseUpdate(itemId: string, update: DiscourseUpdate): void {
+    const done = new ReplaySubject<void>(1);
+    this.pendingRankings.set(itemId, done);
     this.anaphoraRanking.rankAndAttach(() => this.session.analysisDocuments[itemId], update)
-      .subscribe(({ update: ranked }) => {
-        const document = this.session.analysisDocuments[itemId];
-        if (!ranked || !document) return;
-        document.discourseUpdates = (document.discourseUpdates ?? [])
-          .map(existing => existing.id === ranked.id ? ranked : existing);
-        // A run that asked for top-k counts the ranking once it is there; the summary's
-        // comparison changes either way. Verdicts of other runs keep their own selection.
-        this.refreshInferenceFromDocuments();
-        this.scheduleSessionSave();
+      .subscribe({
+        next: ({ update: ranked }) => {
+          const document = this.session.analysisDocuments[itemId];
+          if (!ranked || !document) return;
+          document.discourseUpdates = (document.discourseUpdates ?? [])
+            .map(existing => existing.id === ranked.id ? ranked : existing);
+          // Verdicts do not change -- the branches were selected before Vampire -- but the
+          // summary's comparison does.
+          this.refreshInferenceFromDocuments();
+          this.scheduleSessionSave();
+        },
+        complete: () => {
+          if (this.pendingRankings.get(itemId) === done) this.pendingRankings.delete(itemId);
+          done.next();
+          done.complete();
+        },
       });
   }
+
+  /** Completes once the item's ranking has been attached or found unavailable (the ranking
+   *  service times out, so this always completes); at once when none is pending. */
+  private rankingOf(itemId: string): Observable<void> {
+    return this.pendingRankings.get(itemId)?.asObservable() ?? of(undefined);
+  }
+
+  /** Ranking requests still running, per item. */
+  private readonly pendingRankings = new Map<string, ReplaySubject<void>>();
 
   private prepareBranchChecks(
     build: NliItemBuild,
@@ -2855,9 +2895,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // The last line of defence: every caller reaches here through an async chain that may
     // have been aborted or superseded meanwhile, and a submission cannot be taken back.
     if (vampireRunToken !== this.vampireRunToken) return;
-    // Fixed for this run: the setting can change while it runs, or afterwards, without
-    // touching the verdicts this run produces.
-    this.runAnaphoraSelection = { ...this.anaphoraSelection() };
 
     this.logBackendPayload('Vampire batch request', this.testsuiteUpdateMode, vampireRequest);
     console.log("Vampire request: ", vampireRequest);
@@ -3339,8 +3376,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           ruleString: APP_DEFAULTS.graphInspector.rulesText,
           pruned: this.contextPruning?.nativeElement?.checked ?? false,
           anaphoraSelection: this.runAnaphoraSelection
-            ?? this.session.analysisDocuments[pair.itemId]?.reasoningUpdates?.find(existing => existing.id === updateId)?.anaphoraSelection
-            ?? { ...ALL_ANAPHORA_BRANCHES },
+            ? { ...this.runAnaphoraSelection, applied: this.runAnaphoraSelectionApplied[pair.itemId] ?? true }
+            : this.session.analysisDocuments[pair.itemId]?.reasoningUpdates?.find(existing => existing.id === updateId)?.anaphoraSelection
+              ?? { ...ALL_ANAPHORA_BRANCHES },
           assignments: [],
         });
       }
@@ -3567,8 +3605,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
-  /** The selection the current (or last) Vampire run of this page started with. */
+  /** The selection the current (or last) Vampire run of this page started with, and per item
+   *  whether a ranking was there to apply it. */
   private runAnaphoraSelection: AnaphoraSelectionPolicy | null = null;
+  private runAnaphoraSelectionApplied: Record<string, boolean> = {};
 
   /** The selection the settings ask for -- applied to the next run, not to existing verdicts. */
   private anaphoraSelection(): AnaphoraSelectionPolicy {
@@ -3585,8 +3625,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return results;
   }
 
-  /** What the report's verdicts counted, and accuracy of the same stored Vampire results under
-   *  every-branch and ranked selection -- a comparison only; the report keeps each run's own. */
+  /** Which branches runs sent to Vampire, and accuracy of the stored results restricted to each
+   *  selection -- a comparison only; the report keeps each run's own verdicts. After a top-k run
+   *  only the selected branches have results, so the restrictions coincide. */
   private anaphoraSelectionSummary(): string {
     const counted = Object.values(this.documentInferenceResults());
     const topK = counted.find(result => result.anaphoraSelection?.mode === 'top_k')?.anaphoraSelection?.k;
@@ -3601,8 +3642,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
     const ranked = Object.values(this.documentInferenceResults({ mode: 'top_k', k: 1 }))
       .filter(result => result.anaphoraSelection?.applied).length;
-    return `Anaphora branches counted: ${countedModes.join(', ') || 'n/a'}. `
-      + `Same results under each selection: ${parts.join(' · ')} (ranking available for ${ranked} item(s))`;
+    return `Anaphora branches sent to Vampire: ${countedModes.join(', ') || 'n/a'}. `
+      + `Same results restricted to each selection: ${parts.join(' · ')} (ranking available for ${ranked} item(s))`;
   }
 
   /** Re-derives the report from the stored documents after a ranking arrives, without asking
@@ -4198,8 +4239,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       items,
       itemLabels,
       svgSolutions,
-      // Opens on what the verdict was computed over; the checkbox shows every branch.
-      ...(counted ? { filter: { ids: counted, label: 'Only branches counted in the verdict' } } : {}),
+      // Opens on what the run sent to Vampire; the checkbox shows every branch.
+      ...(counted ? { filter: { ids: counted, label: 'Only branches sent to Vampire' } } : {}),
     });
 
     this.discourseDialogLoadingItemId = itemId;

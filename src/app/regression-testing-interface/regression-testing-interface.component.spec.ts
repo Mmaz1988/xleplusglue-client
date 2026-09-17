@@ -946,23 +946,24 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
       });
 
-      it('opens on the branches the verdict counted once there are verdicts', () => {
+      it('opens on the branches the run sent to Vampire', () => {
         dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
           solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
         }));
         component.openDiscourseDialog('n0');
         expect(open.calls.mostRecent().args[0].filter).toBeUndefined();
 
+        // A top-1 run sent only pcdrs-2; no verdict has come back yet.
         document.reasoningUpdates = [{
           id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], logicType: 'fof',
-          anaphoraSelection: { mode: 'top_k', k: 1 },
-          assignments: ['pcdrs-1', 'pcdrs-2'].map(discourseId => ({
-            id: `a-${discourseId}`, premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {},
-            discourseUpdateId: 'du-S0+S1', discourseId, verdict: { consistent: true, informative: true, relevant: true },
-          })),
+          anaphoraSelection: { mode: 'top_k', k: 1, applied: true },
+          assignments: [{
+            id: 'a-pcdrs-2', premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {},
+            discourseUpdateId: 'du-S0+S1', discourseId: 'pcdrs-2',
+          }],
         }];
         component.openDiscourseDialog('n0');
-        expect(open.calls.mostRecent().args[0].filter).toEqual({ ids: ['pcdrs-2'], label: 'Only branches counted in the verdict' });
+        expect(open.calls.mostRecent().args[0].filter).toEqual({ ids: ['pcdrs-2'], label: 'Only branches sent to Vampire' });
       });
 
       it('falls back to the text DRSs when GSWB cannot render them', () => {
@@ -977,7 +978,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       });
     });
 
-    it('keeps each run\'s anaphora selection and compares the same results under every selection', () => {
+    it('keeps each run\'s anaphora selection and compares the stored results restricted to each selection', () => {
       const branchOf = (id: string, antecedent: string) => ({
         id, semanticOrigin: 'sem-a', drsString: id, ruleBranch: 1, collapsed: true,
         anaphoraMapping: { relations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent }] },
@@ -1007,20 +1008,59 @@ describe('RegressionTestingInterfaceComponent', () => {
       component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'all' };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('0');
-      expect(component.inferenceSummary).toContain('Anaphora branches counted: all.');
-      expect(component.inferenceSummary).toContain('Same results under each selection: all 0/1 · top 1 1/1');
+      expect(component.inferenceSummary).toContain('Anaphora branches sent to Vampire: all.');
+      expect(component.inferenceSummary).toContain('Same results restricted to each selection: all 0/1 · top 1 1/1');
 
       // Changing the setting afterwards leaves the existing verdict alone.
       component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'top_k', anaphora_top_k: 1 };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('0');
 
-      // A run that started with top-1 recorded it, and its verdict counts only that branch.
-      document.reasoningUpdates[0].anaphoraSelection = { mode: 'top_k', k: 1 };
+      // A top-1 run sends and stores only the best branch; its verdict is that branch's.
+      document.reasoningUpdates[0] = {
+        ...document.reasoningUpdates[0],
+        anaphoraSelection: { mode: 'top_k', k: 1, applied: true },
+        assignments: [assignmentOver('p1', false)],
+      };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('1');
       expect(component.inferenceResults[0].anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 1, total: 3 });
-      expect(component.inferenceSummary).toContain('Anaphora branches counted: top 1.');
+      expect(component.inferenceSummary).toContain('Anaphora branches sent to Vampire: top 1.');
+    });
+
+    it('waits for the ranking before a top-k run goes on, and not otherwise', () => {
+      const lm = new Subject<any>();
+      const dataService: any = TestBed.inject(DataService);
+      dataService.lmRankAnaphora = jasmine.createSpy('lmRankAnaphora').and.returnValue(lm);
+      spyOn(component as any, 'scheduleSessionSave');
+      const document: any = createRegressionAnalysisDocument('doc');
+      document.sequences = [{
+        id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'],
+        syntax: [{ synId: 'syn-a', structure: { id: 'seq' } }],
+        semantics: [{ syntacticOrigin: 'syn-a', semId: 'sem-a', semString: 'P', semType: 'lfgxdrt', graph: { id: 'drs' } }],
+        synSemMapping: { 'syn-a': ['sem-a'] },
+      }];
+      component.session.analysisDocuments = { n0: document };
+      const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
+      const prepared: any = [{
+        scopeId: 'p1', failures: [], degradations: [],
+        assignments: [{ mappingId: 'pcdrs-a', ruleBranchIndex: 1,
+          mapping: { id: 'pcdrs-a', semantic: 'drs', anaphoraRelations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }] } }],
+      }];
+
+      (component as any).registerDiscourseUpdate(document, build, [{ merged: { semanticAnalysis: { semId: 'sem-a' } } }], prepared);
+      let ranked = false;
+      (component as any).rankingOf('n0').subscribe({ complete: () => ranked = true });
+      expect(ranked).toBeFalse();
+
+      lm.next({ method: 'cosine-description', model: 'm', layers: [-1], pooling: 'mean', createdAt: 'now',
+        relations: [], branches: [{ discourseId: 'pcdrs-a', score: 0.8, rank: 1 }], warnings: [] });
+      lm.complete();
+      expect(ranked).toBeTrue();
+
+      let immediate = false;
+      (component as any).rankingOf('n0').subscribe({ complete: () => immediate = true });
+      expect(immediate).toBeTrue();
     });
 
     it('points each reasoning assignment at the discourse branch it was reasoned over', () => {
@@ -1064,7 +1104,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       });
 
       // The selection the run started with, not whatever the setting says now.
-      expect(component.session.analysisDocuments['n0'].reasoningUpdates![0].anaphoraSelection).toEqual({ mode: 'top_k', k: 2 });
+      expect(component.session.analysisDocuments['n0'].reasoningUpdates![0].anaphoraSelection).toEqual({ mode: 'top_k', k: 2, applied: true });
 
       const assignments = component.session.analysisDocuments['n0'].reasoningUpdates![0].assignments;
       expect(assignments[0].discourseUpdateId).toBe('du-S0+S1');

@@ -322,10 +322,11 @@ export interface ReasoningUpdate {
   logicType: 'fof' | 'tff';
   ruleString?: string;               // NLI post-processing rules applied, for reproducibility
   pruned?: boolean;                  // true when only the first candidate was reasoned over
-  /** Which anaphora branches the verdict counts, as set when the Vampire run started (see
-   *  VampirePreferences.anaphora_selection). Absent: every branch. Fixed per run, so changing
-   *  the setting afterwards never changes an existing verdict. */
-  anaphoraSelection?: { mode: AnaphoraSelectionMode; k: number };
+  /** Which anaphora branches this run sent to Vampire, as set when the run started (see
+   *  VampirePreferences.anaphora_selection). Absent: every branch. Under top-k, `assignments`
+   *  holds only the selected branches; `applied` is false when no ranking was available in
+   *  time and every branch was sent. */
+  anaphoraSelection?: { mode: AnaphoraSelectionMode; k: number; applied?: boolean };
   assignments: ReasoningAssignment[];
   verdict?: ReasoningItemVerdict;    // majority vote across assignments
   failure?: string;
@@ -690,9 +691,9 @@ export interface RegressionInferenceResult {
   conclusionIds: string[];
   mismatch: boolean;
   glyphs: string[];
-  /** How the verdict's assignments were selected (see VampirePreferences.anaphora_selection).
-   *  `applied` is false when top-k was asked for but the item has no ranking to apply, in
-   *  which case every assignment counted. */
+  /** Which anaphora branches were reasoned over (see VampirePreferences.anaphora_selection):
+   *  `used` of the item's `total` discourse branches. `applied` is false when top-k was asked
+   *  for but there was no ranking to select by, so every branch was used. */
   anaphoraSelection?: { mode: AnaphoraSelectionMode; k: number; applied: boolean; used: number; total: number };
 }
 
@@ -1288,10 +1289,10 @@ export interface VampirePreferences {
   model_building: boolean;
   max_duration: number;
   layered: boolean; //Processes with and without additional axioms
-  /** Which anaphora branches the verdicts of the NEXT Vampire run count. 'all' (the default, and
-   *  what a session saved without this field means): every formally generated branch. 'top_k':
-   *  per reading, only the `anaphora_top_k` best branches by language-model ranking. Every
-   *  branch is still sent to Vampire. Recorded on the run's ReasoningUpdates when it starts. */
+  /** Which anaphora branches the NEXT Vampire run sends to Vampire. 'all' (the default, and what a
+   *  session saved without this field means): every formally generated branch. 'top_k': per
+   *  reading, only the `anaphora_top_k` best branches by language-model ranking; the others are
+   *  never reasoned over. Recorded on the run's ReasoningUpdates. */
   anaphora_selection?: AnaphoraSelectionMode;
   anaphora_top_k?: number;
 }

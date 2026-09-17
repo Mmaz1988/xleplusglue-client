@@ -8,6 +8,7 @@ import {
   anaphoraRankingCaption,
   anaphoraSelectionPolicy,
   inferenceResultsFromDocument,
+  selectForVampire,
   selectedAnaphoraBranchIds,
   selectReasoningAssignments,
   discourseBranchesForDisplay,
@@ -230,7 +231,19 @@ describe('anaphora branch selection for verdicts', () => {
     expect(selectedAnaphoraBranchIds(update([branch('a', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]), { mode: 'top_k', k: 1 }).size).toBe(2);
   });
 
-  it('takes the verdict over the selected branches only, from the same stored results', () => {
+  it('selects before Vampire: only the top k per reading are sent, everything when unranked', () => {
+    const prepared = ['b-dog', 'b-cat', 'b-event', 'b2-cat', 'b2-dog', 'unrelated'].map(mappingId => ({ mappingId }));
+    const top1 = selectForVampire(ranked(), prepared, { mode: 'top_k', k: 1 });
+    expect(top1.items.map(item => item.mappingId)).toEqual(['b-event', 'b2-cat', 'b2-dog', 'unrelated']);
+    expect(top1.applied).toBeTrue();
+
+    const unranked = selectForVampire(update([branch('b-dog', [['x4', 'x2']])]), prepared, { mode: 'top_k', k: 1 });
+    expect(unranked.items.length).toBe(6);
+    expect(unranked.applied).toBeFalse();
+    expect(selectForVampire(ranked(), prepared, { mode: 'all', k: 1 }).items.length).toBe(6);
+  });
+
+  it('compares stored results restricted to a selection', () => {
     // All five branches: 2 entailment vs 3 neutral -> neutral. Top-1: the event (entailment)
     // plus the unscored reading's two branches (entailment, neutral) -> 2 vs 1 -> entailment.
     const document = reasoningOver(ranked(), [
@@ -246,9 +259,12 @@ describe('anaphora branch selection for verdicts', () => {
     expect(top1.mismatch).toBeFalse();
     expect(top1.anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 3, total: 5 });
 
-    // Without an override, the selection stored on the reasoning update by its run applies.
-    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1 };
-    expect(inferenceResultsFromDocument(document, [item], {})['n0'].predictedLabel).toBe('1');
+    // Without an override the report takes every stored assignment: a top-k run only stored
+    // the selected ones, so a recorded top-k selection is not applied a second time.
+    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1, applied: true };
+    expect(inferenceResultsFromDocument(document, [item], {})['n0'].predictedLabel).toBe('0');
+    expect(inferenceResultsFromDocument(document, [item], {})['n0'].anaphoraSelection)
+      .toEqual({ mode: 'top_k', k: 1, applied: true, used: 5, total: 5 });
   });
 
   it('counts unlinked assignments, and says when there was no ranking to apply', () => {
@@ -267,20 +283,22 @@ describe('anaphora branch selection for verdicts', () => {
       anaphora_selection: 'top_k', anaphora_top_k: 2.7 })).toEqual({ mode: 'top_k', k: 2 });
   });
 
-  it('lists the branches a run counted, and marks the ones it did not', () => {
-    const document = reasoningOver(ranked(), [
-      ['b-dog', 'neutral'], ['b-cat', 'neutral'], ['b-event', 'entailment'], ['b2-cat', 'entailment'],
-    ]);
-    expect(discourseBranchesForDisplay(document).counted).toEqual(['b-event', 'b-cat', 'b-dog', 'b2-cat']);
-
-    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1 };
-    const { solutions, labels, counted } = discourseBranchesForDisplay(document);
-    // b2-dog has no verdict at all, so it is not counted either.
-    expect(counted).toEqual(['b-event', 'b2-cat']);
-    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('Vampire: neutral ×1 (not counted)');
-    expect(labels[solutions.findIndex(solution => solution.id === 'b-event')]).not.toContain('not counted');
-
+  it('lists the branches a run sent to Vampire, verdict or not, and marks the ones it did not send', () => {
     expect(discourseBranchesForDisplay(documentWith(ranked())).counted).toBeUndefined();
+
+    // A top-1 run sent the event reading of sem-1 and both unscored sem-2 branches; b2-dog has
+    // no verdict yet and is still sent.
+    const document = reasoningOver(ranked(), [['b-event', 'entailment'], ['b2-cat', 'entailment']]);
+    document.reasoningUpdates![0].assignments.push({
+      id: 'pending', premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {} as any,
+      contextTptp: '', discourseUpdateId: 'du-sentence-1', discourseId: 'b2-dog',
+    });
+    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1, applied: true };
+
+    const { solutions, labels, counted } = discourseBranchesForDisplay(document);
+    expect(counted).toEqual(['b-event', 'b2-cat', 'b2-dog']);
+    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('not sent to Vampire (top 1)');
+    expect(labels[solutions.findIndex(solution => solution.id === 'b2-dog')]).toContain('Vampire: not run ×1');
   });
 
   it('narrows sem-vis items to an id filter like a discriminant selection, and back', () => {
