@@ -852,6 +852,41 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(update.mergedGraphs).toBeUndefined();
     });
 
+    it('ranks the stored branches in the background and saves the ranking into the item document', () => {
+      const lm = new Subject<any>();
+      const dataService: any = TestBed.inject(DataService);
+      dataService.lmRankAnaphora = jasmine.createSpy('lmRankAnaphora').and.returnValue(lm);
+      const scheduleSessionSave = spyOn(component as any, 'scheduleSessionSave');
+      const document: any = createRegressionAnalysisDocument('doc');
+      document.sequences = [{
+        id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'],
+        syntax: [{ synId: 'syn-a', structure: { id: 'seq-structure' } }],
+        semantics: [{ syntacticOrigin: 'syn-a', semId: 'sem-a', semString: 'P', semType: 'lfgxdrt', graph: { id: 'drs-a' } }],
+        synSemMapping: { 'syn-a': ['sem-a'] },
+      }];
+      component.session.analysisDocuments = { n0: document };
+      const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
+      const relations = [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }];
+      const prepared: any = [{
+        scopeId: 'p1', failures: [], degradations: [],
+        assignments: [{ mappingId: 'pcdrs-a', ruleBranchIndex: 1, mapping: { id: 'pcdrs-a', semantic: 'drs', anaphoraRelations: relations } }],
+      }];
+
+      (component as any).registerDiscourseUpdate(document, build, [{ merged: { semanticAnalysis: { semId: 'sem-a' } } }], prepared);
+
+      expect(document.discourseUpdates[0].anaphoraRanking).toBeUndefined();
+      expect(dataService.lmRankAnaphora.calls.mostRecent().args[0].syntax).toEqual({ 'syn-a': { id: 'seq-structure' } });
+      const ranking = {
+        method: 'cosine-description', model: 'm', layers: [-1], pooling: 'mean', createdAt: 'now',
+        relations: [], branches: [{ discourseId: 'pcdrs-a', score: 0.8, rank: 1 }], warnings: [],
+      };
+      lm.next(ranking);
+      lm.complete();
+
+      expect(component.session.analysisDocuments['n0'].discourseUpdates![0].anaphoraRanking).toEqual(ranking as any);
+      expect(scheduleSessionSave).toHaveBeenCalled();
+    });
+
     it('writes nothing when the item has no registered sequence to hang it off', () => {
       const document: any = createRegressionAnalysisDocument('doc');
       const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };

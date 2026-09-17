@@ -93,9 +93,17 @@
   </div>
   <div #pcdrsResults class="pcdrs-results" *ngIf="pcdrsSolutions.length" tabindex="-1">
     <h3>{{ showCollapsedAnaphora ? 'Collapsed anaphora' : 'PCDRS solutions' }}</h3>
+    <div class="pcdrs-ranking" *ngIf="pcdrsRankingStatusText()">
+      <span class="pcdrs-ranking-status">{{ pcdrsRankingStatusText() }}</span>
+      <label *ngIf="canTogglePcdrsOrder()">
+        <input type="checkbox" [checked]="pcdrsGenerationOrder" (change)="togglePcdrsOrder()">
+        Generation order
+      </label>
+    </div>
     <app-sem-vis
       #pcdrsSemvis
       [items]="pcdrsDisplaySolutions"
+      [itemLabels]="pcdrsDisplayLabels"
       [svgSolutions]="true"
       [solutionToggleLabel]="canToggleCollapsedAnaphora() ? (showCollapsedAnaphora ? 'Show PCDRS' : 'Show collapsed') : null"
       (solutionToggle)="toggleCollapsedAnaphora()"></app-sem-vis>

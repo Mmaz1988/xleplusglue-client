@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, timeout } from 'rxjs';
 import {
+  AnaphoraRanking,
+  LmRankAnaphoraRequest,
   GswbRequest,
   GswbMultipleRequest,
   LigerBatchParsingAnalysis,
@@ -81,6 +83,7 @@ export class DataService {
   private redispage = 'http://localhost:8083';
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
+  private lmpage = 'http://localhost:8084';
   constructor(private http: HttpClient) { }
 
   //gswb models
@@ -95,6 +98,10 @@ export class DataService {
 
   gswbGeneratePcdrs(request: GswbPcdrsRequest): Observable<GswbPcdrsOutput> {
     return this.http.post<GswbPcdrsOutput>(`${this.gswbpage}/generate_pcdrs`, request);
+  }
+
+  lmRankAnaphora(request: LmRankAnaphoraRequest): Observable<AnaphoraRanking> {
+    return this.http.post<AnaphoraRanking>(`${this.lmpage}/rank_anaphora`, request);
   }
 
   gswbCollapseAnaphora(request: GswbCollapseAnaphoraRequest): Observable<GswbSolution> {

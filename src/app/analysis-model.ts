@@ -1,5 +1,8 @@
 import {
+  AnaphoraRanking,
+  DiscourseAnalysis,
   DiscourseUpdate,
+  LmRankAnaphoraRequest,
   NliLabel,
   RegressionInferenceResult,
   REASONING_CHECK_NAMES,
@@ -270,6 +273,120 @@ export function validateDiscourseUpdate(document: XlePlusGlueDocument, update: D
       }
     });
   });
+
+  (update.anaphoraRanking?.branches ?? []).forEach(branch => {
+    if (!discourseIds.has(branch.discourseId)) {
+      throw new Error(`Anaphora ranking of ${update.id} ranks unknown discourse analysis ${branch.discourseId}.`);
+    }
+  });
+}
+
+/** The `/rank_anaphora` request for a discourse update, built from the document alone: the
+ *  source element's stored syntax and semantic graphs plus each branch's anaphora mapping.
+ *  Every view produces the same request for the same document, whichever view built it.
+ *  Returns a reason instead when there is nothing to rank or the inputs are not stored. */
+export function anaphoraRankingRequest(
+  document: XlePlusGlueDocument,
+  update: DiscourseUpdate,
+): { request: LmRankAnaphoraRequest } | { reason: string } {
+  if (!update.discourse.some(branch => branch.anaphoraMapping.relations.length)) {
+    return { reason: 'no branch binds a pronoun' };
+  }
+  const element = findElementById(document, update.sourceElementId);
+  if (!element) {
+    return { reason: `unknown element ${update.sourceElementId}` };
+  }
+
+  const origins = [...new Set(update.discourse
+    .filter(branch => branch.anaphoraMapping.relations.length)
+    .map(branch => branch.semanticOrigin))];
+  const semantics: LmRankAnaphoraRequest['semantics'] = [];
+  const syntax: LmRankAnaphoraRequest['syntax'] = {};
+  for (const origin of origins) {
+    const semantic = element.semantics.find(candidate => candidate.semId === origin);
+    const synId = semantic?.syntacticOrigin;
+    const structure = element.syntax.find(candidate => candidate.synId === synId)?.structure;
+    if (!semantic?.graph || !synId || !structure) {
+      return { reason: `semantic origin ${origin} has no stored DRS graph or syntax structure` };
+    }
+    semantics.push({ semanticOrigin: origin, syntacticOrigin: synId, drs: semantic.graph });
+    syntax[synId] = structure;
+  }
+
+  return {
+    request: {
+      syntax,
+      semantics,
+      branches: update.discourse.map(branch => ({
+        discourseId: branch.id,
+        semanticOrigin: branch.semanticOrigin,
+        relations: branch.anaphoraMapping.relations.map(relation => ({
+          // The referent label is what /drs_provenance knows referents by.
+          pronoun: relation.pronounDisplay ?? relation.pronounReferentId,
+          antecedent: relation.antecedent,
+        })),
+      })),
+    },
+  };
+}
+
+function bindingsKey(branches: DiscourseAnalysis[]): string {
+  return JSON.stringify(branches.map(branch => [
+    branch.id,
+    branch.semanticOrigin,
+    branch.anaphoraMapping.relations.map(relation =>
+      [relation.pronounDisplay ?? relation.pronounReferentId, relation.antecedent]),
+  ]).sort());
+}
+
+/** Whether a ranking computed for `ranked` still describes `current`: same branches, same
+ *  bindings. Collapsing a branch or re-applying the same rules keeps a ranking valid; a new
+ *  PCDRS generation does not. */
+export function anaphoraRankingStillApplies(ranked: DiscourseUpdate, current: DiscourseUpdate): boolean {
+  return bindingsKey(ranked.discourse) === bindingsKey(current.discourse);
+}
+
+/** `next` carrying `previous`'s ranking when that ranking still applies to it. Views call this
+ *  when they replace a discourse update, so re-upserting unchanged branches does not drop the
+ *  ranking and trigger another lm call. */
+export function carryAnaphoraRanking(previous: DiscourseUpdate | undefined, next: DiscourseUpdate): DiscourseUpdate {
+  if (next.anaphoraRanking || !previous?.anaphoraRanking || !anaphoraRankingStillApplies(previous, next)) {
+    return next;
+  }
+  return { ...next, anaphoraRanking: previous.anaphoraRanking };
+}
+
+export function needsAnaphoraRanking(update: DiscourseUpdate): boolean {
+  return !update.anaphoraRanking && update.discourse.some(branch => branch.anaphoraMapping.relations.length);
+}
+
+/** The update as it now stands in `document` with `ranking` attached, or null when the ranking
+ *  arrived too late: the update was replaced by one with different branches or bindings, or the
+ *  document no longer holds it (e.g. a new conversation). */
+export function attachAnaphoraRanking(
+  document: XlePlusGlueDocument,
+  ranked: DiscourseUpdate,
+  ranking: AnaphoraRanking,
+): DiscourseUpdate | null {
+  const current = document.discourseUpdates?.find(update => update.id === ranked.id);
+  if (!current || !anaphoraRankingStillApplies(ranked, current)) {
+    return null;
+  }
+  return { ...current, anaphoraRanking: ranking };
+}
+
+/** `branches` ordered by their ranking (stable: equal ranks and unranked branches keep their
+ *  generation order, unranked ones last). Without a ranking, generation order. */
+export function orderByAnaphoraRanking<T extends { id: string }>(
+  branches: T[],
+  ranking: AnaphoraRanking | undefined,
+): T[] {
+  if (!ranking) return [...branches];
+  const rankById = new Map(ranking.branches.map(branch => [branch.discourseId, branch.rank]));
+  return branches
+    .map((branch, index) => ({ branch, index, rank: rankById.get(branch.id) ?? Number.POSITIVE_INFINITY }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(entry => entry.branch);
 }
 
 /** The reasoning layer stacks on Sentence/Sequence by id reference, like the discourse
@@ -433,3 +550,23 @@ export function inferenceResultsFromDocument(
   return results;
 }
 
+/** One-line description of how `discourseId` was ranked within `update`, shared by every view
+ *  so they caption the same ranking the same way:
+ *  "rank 1 · mean cos 0.871 · it → the black dog (cos 0.79, recency 1)". Empty when unranked. */
+export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: string): string {
+  const ranking = update.anaphoraRanking;
+  const branch = ranking?.branches.find(candidate => candidate.discourseId === discourseId);
+  const discourse = update.discourse.find(candidate => candidate.id === discourseId);
+  if (!ranking || !branch || !discourse) return '';
+
+  const bindings = discourse.anaphoraMapping.relations.map(relation => {
+    const pronoun = relation.pronounDisplay ?? relation.pronounReferentId;
+    const scored = ranking.relations.find(candidate => candidate.semanticOrigin === discourse.semanticOrigin
+      && candidate.pronoun === pronoun && candidate.antecedent === relation.antecedent);
+    const cosine = scored?.cosine == null ? 'n/a' : scored.cosine.toFixed(2);
+    const recency = scored?.recencyRank == null ? 'n/a' : scored.recencyRank;
+    return `${scored?.pronounText || pronoun} → ${scored?.antecedentText || relation.antecedent} (cos ${cosine}, recency ${recency})`;
+  });
+  const score = branch.score == null ? 'no score' : `mean cos ${branch.score.toFixed(3)}`;
+  return [`rank ${branch.rank}`, score, ...bindings].join(' · ');
+}

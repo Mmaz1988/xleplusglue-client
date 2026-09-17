@@ -161,8 +161,52 @@ export interface DiscourseUpdate {
   // grows with the sentence count, the joins grew with readings x rule branches.
   discourse: DiscourseAnalysis[];    // candidate branches; each carries its own drsGraph
   semDiscourseMapping: SemDiscourseMapping;
+  // Language-model ordering of `discourse`, keyed by discourseId. Pragmatic annotation only:
+  // it orders the formally generated branches, never removes one, and never feeds back into
+  // synSemMapping, the semantic alternatives or the branches themselves. Absent when the lm
+  // service was unavailable or there was nothing to rank.
+  anaphoraRanking?: AnaphoraRanking;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** One pronoun -> antecedent binding as scored by lm `/rank_anaphora`. `pronoun` and
+ *  `antecedent` are referent labels (AnaphoraRelation.pronounDisplay / .antecedent) within
+ *  `semanticOrigin`'s DRS. */
+export interface AnaphoraRankedRelation {
+  semanticOrigin: string;
+  pronoun: string;
+  antecedent: string;
+  pronounText: string;       // the pronoun's description in the input, e.g. "it"
+  antecedentText: string;    // the antecedent's description, e.g. "the black dog"
+  cosine: number | null;     // null when either side has no embedding
+  recencyRank: number | null; // symbolic baseline: 1 = nearest admitted antecedent before the pronoun
+}
+
+export interface AnaphoraRankedBranch {
+  discourseId: string;
+  score: number | null;      // mean cosine over the branch's relations; null if it has none scored
+  rank: number;              // 1-based, highest score first; equal scores share a rank
+}
+
+/** lm `/rank_anaphora` response, stored as-is on the DiscourseUpdate it ranks. */
+export interface AnaphoraRanking {
+  method: string;            // "cosine-description"
+  model: string;
+  layers: number[];
+  pooling: string;
+  createdAt: string;
+  relations: AnaphoraRankedRelation[];
+  branches: AnaphoraRankedBranch[];
+  warnings: string[];
+}
+
+/** lm `/rank_anaphora` request: the source element's syntax by synId, the DRS graph of every
+ *  semantic origin the branches enrich, and each branch's bindings as referent labels. */
+export interface LmRankAnaphoraRequest {
+  syntax: Record<string, LigerStructure>;
+  semantics: { semanticOrigin: string; syntacticOrigin: string; drs: LigerStructure }[];
+  branches: { discourseId: string; semanticOrigin: string; relations: { pronoun: string; antecedent: string }[] }[];
 }
 
 // Reasoning layer (consistency/informativity NLI checks over a premise/conclusion pair).

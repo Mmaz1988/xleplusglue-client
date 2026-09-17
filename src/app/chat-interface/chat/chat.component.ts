@@ -25,11 +25,15 @@ import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
 import {
   compositeAnalysisId,
   majorityVerdict,
+  anaphoraRankingCaption,
+  carryAnaphoraRanking,
+  needsAnaphoraRanking,
   reasoningUpdateId,
   validateAnalysisDocument,
   validateReasoningUpdate
 } from '../../analysis-model';
 import { MappingWithStructure, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
+import { AnaphoraRankingService } from '../../reasoning/anaphora-ranking.service';
 import {
   DocumentBuilderService,
   SequenceMergePreviousContext,
@@ -48,8 +52,13 @@ export class ChatComponent {
     private changeDetector: ChangeDetectorRef,
     private sanitizer: DomSanitizer,
     private reasoningPipeline: ReasoningPipelineService,
-    private documentBuilder: DocumentBuilderService
+    private documentBuilder: DocumentBuilderService,
+    private anaphoraRanking: AnaphoraRankingService,
   ) {}
+
+  /** Each message's DRS branches as first shown, before any ranking reordered them. Kept
+   *  off the message itself so the chat history does not store every branch twice. */
+  private readonly branchesInGenerationOrder = new WeakMap<ChatMessage, { solutions: GswbSolution[]; labels: string[] }>();
 
   @ViewChild('contextPruning') contextPruning!: ElementRef;
 
@@ -1427,11 +1436,55 @@ export class ChatComponent {
   }
 
   private upsertDiscourseUpdate(update: DiscourseUpdate): void {
+    const previous = this.chatDocument.discourseUpdates?.find(existing => existing.id === update.id);
+    const stored = carryAnaphoraRanking(previous, update);
     this.chatDocument.discourseUpdates = [
       ...(this.chatDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
-      update,
+      stored,
     ];
     this.emitChatDocument();
+    if (needsAnaphoraRanking(stored)) {
+      this.rankDiscourseUpdate(stored);
+    }
+  }
+
+  /** Stored first, ranked afterwards, never waited on: the turn is complete without it. */
+  private rankDiscourseUpdate(update: DiscourseUpdate): void {
+    this.anaphoraRanking.rankAndAttach(() => this.chatDocument, update).subscribe(({ update: ranked }) => {
+      if (!ranked) return;
+      this.upsertDiscourseUpdate(ranked);
+      this.chatHistory.forEach(message => this.orderBranchesByRanking(message));
+      this.changeDetector.detectChanges();
+    });
+  }
+
+  /** Orders a message's DRS branches by the ranking of the discourse update each belongs to
+   *  and appends the ranking caption; unranked branches keep their place after ranked ones. */
+  private orderBranchesByRanking(message: ChatMessage): void {
+    if (!message.branchSolutions?.length) return;
+    let original = this.branchesInGenerationOrder.get(message);
+    if (!original) {
+      original = { solutions: message.branchSolutions, labels: message.branchLabels ?? [] };
+      this.branchesInGenerationOrder.set(message, original);
+    }
+    const ranked = (this.chatDocument.discourseUpdates ?? []).filter(update => update.anaphoraRanking);
+    if (!ranked.length) return;
+
+    const entries = original.solutions.map((solution, index) => {
+      const update = ranked.find(candidate => candidate.anaphoraRanking!.branches
+        .some(branch => branch.discourseId === solution.id));
+      const rank = update?.anaphoraRanking!.branches.find(branch => branch.discourseId === solution.id)?.rank;
+      const caption = update ? anaphoraRankingCaption(update, solution.id) : '';
+      return {
+        solution,
+        label: [original!.labels[index], caption].filter(Boolean).join(' · '),
+        rank: rank ?? Number.POSITIVE_INFINITY,
+        index,
+      };
+    }).sort((a, b) => a.rank - b.rank || a.index - b.index);
+
+    message.branchSolutions = entries.map(entry => entry.solution);
+    message.branchLabels = entries.map(entry => entry.label);
   }
 
   private emitChatDocument(): void {

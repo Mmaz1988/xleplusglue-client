@@ -76,6 +76,19 @@
   margin: 0 0 0.75rem;
 }
 
+.pcdrs-ranking {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.pcdrs-ranking-status {
+  color: #555;
+}
+
 .pcdrs-results-header {
   display: flex;
   align-items: center;

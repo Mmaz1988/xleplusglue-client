@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
@@ -13,6 +13,7 @@ describe('ChatComponent', () => {
   let fixture: ComponentFixture<ChatComponent>;
   let dataServiceSpy: jasmine.SpyObj<{
     ligerSequence: any; gswbDeduce: any; gswbMergeSequenceSemantics: any; callVampire: any;
+    lmRankAnaphora: any;
   }>;
   let reasoningPipelineSpy: jasmine.SpyObj<{
     prepareReasoningChecks: any; prepareReasoningChecksSequentially: any;
@@ -24,7 +25,8 @@ describe('ChatComponent', () => {
       'ligerSequence',
       'gswbDeduce',
       'gswbMergeSequenceSemantics',
-      'callVampire'
+      'callVampire',
+      'lmRankAnaphora'
     ]);
     reasoningPipelineSpy = jasmine.createSpyObj('ReasoningPipelineService', [
       'prepareReasoningChecks',
@@ -553,6 +555,74 @@ describe('ChatComponent', () => {
       // Cleared for the same reason every later turn clears it -- otherwise the same DRS
       // appears twice, once rendered and once as text.
       expect(reply.semanticText).toBe('');
+    });
+
+    describe('anaphora ranking', () => {
+      const acceptTwoBindings = () => {
+        reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(of([
+          {
+            mapping: {
+              id: 'pcdrs-1', semantic: 'drs-1', solution: '<svg>dog</svg>',
+              anaphoraRelations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x2' }],
+            },
+            ruleBranchIndex: 1,
+          },
+          {
+            mapping: {
+              id: 'pcdrs-2', semantic: 'drs-2', solution: '<svg>cat</svg>',
+              anaphoraRelations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }],
+            },
+            ruleBranchIndex: 2,
+          },
+        ] as any));
+        (component as any).acceptInitialLfgxdrtContext('the cat saw the dog it barked', [{
+          id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+          syntax: structure, solutionKey: 'S0',
+          semanticAnalysis: {
+            syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
+            graph: structure, semType: 'lfgxdrt',
+          },
+        }], []);
+      };
+      const reply = () => component.chatHistory.find(m => m.sender === 'Bot')!;
+      const ranking = {
+        method: 'cosine-description', model: 'test-model', layers: [-1], pooling: 'mean', createdAt: 'now',
+        relations: [
+          { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the dog', cosine: 0.7, recencyRank: 1 },
+          { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the cat', cosine: 0.9, recencyRank: 2 },
+        ],
+        branches: [{ discourseId: 'pcdrs-1', score: 0.7, rank: 2 }, { discourseId: 'pcdrs-2', score: 0.9, rank: 1 }],
+        warnings: [],
+      };
+
+      it('orders turn 1\'s DRS branches by rank once lm answers, and stores the ranking', () => {
+        const lm = new Subject<any>();
+        dataServiceSpy.lmRankAnaphora.and.returnValue(lm);
+
+        acceptTwoBindings();
+        expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>dog</svg>', '<svg>cat</svg>']);
+        expect(component.chatDocument.discourseUpdates?.[0].anaphoraRanking).toBeUndefined();
+        expect(dataServiceSpy.lmRankAnaphora).toHaveBeenCalledTimes(1);
+
+        lm.next(ranking);
+        lm.complete();
+
+        expect(component.chatDocument.discourseUpdates?.[0].anaphoraRanking).toEqual(ranking as any);
+        expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>cat</svg>', '<svg>dog</svg>']);
+        expect(reply().branchLabels?.[0]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean cos 0.900 · it → the cat (cos 0.90, recency 2)');
+        expect(dataServiceSpy.lmRankAnaphora).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves turn 1 as it was when lm is down', () => {
+        dataServiceSpy.lmRankAnaphora.and.returnValue(throwError(() => ({ status: 0 })));
+
+        acceptTwoBindings();
+
+        expect(component.chatDocument.discourseUpdates?.[0].discourse.length).toBe(2);
+        expect(component.chatDocument.discourseUpdates?.[0].anaphoraRanking).toBeUndefined();
+        expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>dog</svg>', '<svg>cat</svg>']);
+        expect(component.loading).toBe(false);
+      });
     });
 
     it('leaves turn 1\'s text pill alone when no branch was rendered', () => {

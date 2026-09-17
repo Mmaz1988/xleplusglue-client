@@ -4,11 +4,12 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
-import { validateAnalysisDocument } from '../analysis-model';
+import { anaphoraRankingCaption, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
+import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 
 interface PostProcessingResult {
@@ -52,6 +53,14 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   pcdrsSolutions: GswbSolution[] = [];
   pcdrsDisplaySolutions: GswbSolution[] = [];
   collapsedPcdrsById: Record<string, GswbSolution> = {};
+  /** Captions for pcdrsDisplaySolutions, index-aligned: rank, score and each binding's cosine. */
+  pcdrsDisplayLabels: string[] = [];
+  /** The discourse update the shown PCDRS solutions belong to. */
+  pcdrsUpdateId: string | null = null;
+  /** Show PCDRS in the order GSWB generated them instead of by language-model rank. */
+  pcdrsGenerationOrder = false;
+  /** Latest ranking outcome per discourse update id; 'pending' while lm is working. */
+  anaphoraRankingStatus: Record<string, AnaphoraRankingResult | { status: 'pending' }> = {};
   private lastSequenceLength = 0;
   private sentenceAnalyses: SentenceAnalysis[] = [];
   private sequenceAnalyses: SequenceAnalysis[] = [];
@@ -67,6 +76,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     private dataService: DataService,
     private workspaceState: AnalysisWorkspaceStateService,
     private documentBuilder: DocumentBuilderService,
+    private anaphoraRanking: AnaphoraRankingService,
   ) {}
 
   get analysisDocumentSessionId(): string {
@@ -217,6 +227,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.mergedGraphElements = [];
     this.pcdrsSolutions = [];
     this.pcdrsDisplaySolutions = [];
+    this.pcdrsDisplayLabels = [];
+    this.pcdrsUpdateId = null;
+    this.anaphoraRankingStatus = {};
     this.collapsedPcdrsById = {};
     this.showCollapsedAnaphora = false;
   }
@@ -261,11 +274,32 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   private upsertDiscourseUpdate(update: DiscourseUpdate): void {
+    const stored = carryAnaphoraRanking(this.discourseUpdateById(update.id), update);
     this.analysisDocument.discourseUpdates = [
       ...(this.analysisDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
-      update,
+      stored,
     ];
     this.persistAnalysisDocument();
+    if (needsAnaphoraRanking(stored)) {
+      this.rankDiscourseUpdate(stored);
+    }
+  }
+
+  /** Stored first, ranked afterwards: nothing here waits for lm, and an unavailable lm only
+   *  leaves the update unranked. */
+  private rankDiscourseUpdate(update: DiscourseUpdate): void {
+    this.anaphoraRankingStatus[update.id] = { status: 'pending' };
+    this.anaphoraRanking.rankAndAttach(() => this.analysisDocument, update).subscribe(({ result, update: ranked }) => {
+      this.anaphoraRankingStatus[update.id] = result;
+      if (ranked) {
+        this.upsertDiscourseUpdate(ranked);
+      }
+      this.refreshPcdrsDisplay();
+    });
+  }
+
+  private discourseUpdateById(id: string): DiscourseUpdate | undefined {
+    return this.analysisDocument.discourseUpdates?.find(update => update.id === id);
   }
 
   private persistAnalysisDocument(): void {
@@ -402,6 +436,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.mergedStructureFileName = 'merged-graph.json';
       this.pcdrsSolutions = [];
       this.pcdrsDisplaySolutions = [];
+      this.pcdrsDisplayLabels = [];
+      this.pcdrsUpdateId = null;
       this.collapsedPcdrsById = {};
       this.showCollapsedAnaphora = false;
       this.showInlinePostProcessing = true;
@@ -447,6 +483,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     if (resetDownstream) {
       this.pcdrsSolutions = [];
       this.pcdrsDisplaySolutions = [];
+      this.pcdrsDisplayLabels = [];
+      this.pcdrsUpdateId = null;
       this.collapsedPcdrsById = {};
       this.showCollapsedAnaphora = false;
     }
@@ -626,6 +664,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         solutionIds: responses.flatMap(response => (response?.solutions ?? []).map(solution => solution.id)),
       });
       this.pcdrsSolutions = responses.flatMap(response => response?.solutions ?? []);
+      this.pcdrsUpdateId = null;
       this.collapsedPcdrsById = {};
       this.showCollapsedAnaphora = false;
 
@@ -659,6 +698,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
             ];
           });
         });
+        this.pcdrsUpdateId = `du-${sourceElement.id}`;
         this.upsertDiscourseUpdate({
           id: `du-${sourceElement.id}`,
           sourceElementId: sourceElement.id,
@@ -829,10 +869,44 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   private refreshPcdrsDisplay(): void {
-    this.pcdrsDisplaySolutions = this.pcdrsSolutions.map(solution =>
+    const ranking = this.currentPcdrsRanking();
+    const ordered = this.pcdrsGenerationOrder
+      ? this.pcdrsSolutions
+      : orderByAnaphoraRanking(this.pcdrsSolutions, ranking);
+    this.pcdrsDisplaySolutions = ordered.map(solution =>
       this.showCollapsedAnaphora && this.collapsedPcdrsById[solution.id]
         ? this.collapsedPcdrsById[solution.id]
         : solution);
+    const update = this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId) : undefined;
+    this.pcdrsDisplayLabels = ordered.map(solution => update ? anaphoraRankingCaption(update, solution.id) : '');
+  }
+
+  private currentPcdrsRanking(): AnaphoraRanking | undefined {
+    return this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId)?.anaphoraRanking : undefined;
+  }
+
+  /** What the PCDRS header says about the ranking of the shown solutions. */
+  pcdrsRankingStatusText(): string {
+    const status = this.pcdrsUpdateId ? this.anaphoraRankingStatus[this.pcdrsUpdateId] : undefined;
+    const ranking = this.currentPcdrsRanking();
+    if (ranking) {
+      return `Ranked by ${ranking.model} (${ranking.method})`;
+    }
+    switch (status?.status) {
+      case 'pending': return 'Ranking with the language model…';
+      case 'unavailable': return `Ranking unavailable: ${status.reason}. Shown in generation order.`;
+      case 'not-applicable': return `Not ranked: ${status.reason}.`;
+      default: return '';
+    }
+  }
+
+  canTogglePcdrsOrder(): boolean {
+    return !!this.currentPcdrsRanking();
+  }
+
+  togglePcdrsOrder(): void {
+    this.pcdrsGenerationOrder = !this.pcdrsGenerationOrder;
+    this.refreshPcdrsDisplay();
   }
 
   private focusPcdrsResults(): void {

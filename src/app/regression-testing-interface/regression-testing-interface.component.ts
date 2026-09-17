@@ -16,6 +16,7 @@ import {
   SemanticAnalysis,
   AnaphoraMappingModel,
   DiscourseAnalysis,
+  DiscourseUpdate,
   GswbProofInput,
   GswbRequest,
   LigerSolutionAnnotationResponse,
@@ -48,14 +49,17 @@ import { InferenceSettingsComponent } from "../inference-interface/inference-set
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
 import { APP_DEFAULTS } from '../app-defaults';
 import {
+  carryAnaphoraRanking,
   compositeAnalysisId,
   inferenceResultsFromDocument,
   majorityVerdict,
+  needsAnaphoraRanking,
   parseReasoningAssignmentId,
   reasoningUpdateId,
   validateReasoningUpdate,
 } from '../analysis-model';
 import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
+import { AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService, SequenceMergePreviousContext } from '../document-builder/document-builder.service';
 
 /** One NLI item's premise/hypothesis sentence ids, in order, plus the update id every
@@ -114,6 +118,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     private route: ActivatedRoute,
     private reasoningPipeline: ReasoningPipelineService,
     private documentBuilder: DocumentBuilderService,
+    private anaphoraRanking: AnaphoraRankingService,
   ) {
     this.lastSavedSessionFingerprint = this.buildSessionFingerprint(regressionSessionToDocument(this.session));
     // Deliberately no per-path baseline here: nothing is stored yet, so the first save
@@ -2742,20 +2747,41 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     if (!discourse.length) return;
 
-    document.discourseUpdates = [
-      ...(document.discourseUpdates ?? []).filter(existing => existing.id !== `du-${sequenceId}`),
+    const update = carryAnaphoraRanking(
+      document.discourseUpdates?.find(existing => existing.id === `du-${sequenceId}`),
       {
         id: `du-${sequenceId}`,
         sourceElementId: sequenceId,
         sourceElementKind: 'sequence',
         discourse,
         semDiscourseMapping,
-      },
+      });
+    document.discourseUpdates = [
+      ...(document.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
+      update,
     ];
+    if (needsAnaphoraRanking(update)) {
+      this.rankDiscourseUpdate(build.itemId, update);
+    }
     console.info('[Regression] discourse update registered', {
       itemId: build.itemId, sequenceId, branches: discourse.length,
       anaphoraResolved: discourse.filter(entry => entry.collapsed).length,
     });
+  }
+
+  /** Ranks an item's anaphora branches once they are stored. Never waited on by the run: the
+   *  ranking lands in the item's document whenever lm answers, and autosave picks it up. The
+   *  document is looked up again on arrival, so a session replaced in the meantime is left
+   *  alone. */
+  private rankDiscourseUpdate(itemId: string, update: DiscourseUpdate): void {
+    this.anaphoraRanking.rankAndAttach(() => this.session.analysisDocuments[itemId], update)
+      .subscribe(({ update: ranked }) => {
+        const document = this.session.analysisDocuments[itemId];
+        if (!ranked || !document) return;
+        document.discourseUpdates = (document.discourseUpdates ?? [])
+          .map(existing => existing.id === ranked.id ? ranked : existing);
+        this.scheduleSessionSave();
+      });
   }
 
   private prepareBranchChecks(

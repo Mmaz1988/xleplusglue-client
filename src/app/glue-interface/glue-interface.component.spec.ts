@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { EventEmitter, NO_ERRORS_SCHEMA } from '@angular/core';
 import { Router } from '@angular/router';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { DataService } from '../data.service';
 import { SentenceAnalysis, SequenceAnalysis } from '../models/models';
 
@@ -18,6 +18,7 @@ describe('GlueInterfaceComponent', () => {
     gswbCollapseAnaphora: jasmine.Spy;
     clearAnalysisDocument: jasmine.Spy;
     saveAnalysisDocument: jasmine.Spy;
+    lmRankAnaphora: jasmine.Spy;
   };
 
   beforeEach(() => {
@@ -37,6 +38,7 @@ describe('GlueInterfaceComponent', () => {
         id: `${request.parentSolutionId}-collapsed`, solution: '<svg></svg>'
       })),
       clearAnalysisDocument: jasmine.createSpy('clearAnalysisDocument').and.returnValue(of({})),
+      lmRankAnaphora: jasmine.createSpy('lmRankAnaphora').and.returnValue(new Subject()),
       saveAnalysisDocument: jasmine.createSpy('saveAnalysisDocument').and.callFake((sessionKey: string, document: any) => of({
         status: 'ok',
         document: { ...document, revision: 1, createdAt: 'now', updatedAt: 'now' },
@@ -301,6 +303,110 @@ describe('GlueInterfaceComponent', () => {
 
     expect(component.rulesApplicationInProgress()).toBeTrue();
     expect(component.allPostProcessingRulesApplied()).toBeFalse();
+  });
+
+  describe('anaphora ranking', () => {
+    const sentence = {
+      id: 'sentence-1',
+      text: 'the big cat ate the black dog it barked',
+      syntax: [{ synId: 'syn-1', structure: { id: 'syn' }, graph: { graphElements: [] } }],
+      semantics: [{ syntacticOrigin: 'syn-1', semId: 's1', semString: 'P', semType: 'lfgxdrt', graph: { id: 'drs' } }],
+      synSemMapping: { 'syn-1': ['s1'] },
+    } as any;
+    const binding = (antecedent: string) => [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent, stateLabel: 's1' }];
+    const ranking = {
+      method: 'cosine-description', model: 'test-model', layers: [-1], pooling: 'mean', createdAt: 'now',
+      relations: [
+        { semanticOrigin: 's1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the black dog', cosine: 0.788, recencyRank: 1 },
+        { semanticOrigin: 's1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the big cat', cosine: 0.816, recencyRank: 2 },
+      ],
+      branches: [{ discourseId: 's1-pcdrs-1', score: 0.788, rank: 2 }, { discourseId: 's1-pcdrs-2', score: 0.816, rank: 1 }],
+      warnings: [],
+    };
+    const storedUpdate = () => (component as any).analysisDocument.discourseUpdates?.[0];
+    const shownIds = () => component.pcdrsDisplaySolutions.map(solution => solution.id);
+
+    beforeEach(() => {
+      (component as any).analysisDocument.sentences.push(sentence);
+      (component as any).analysisDocument.elements.push({ kind: 'sentence', id: 'sentence-1' });
+      dataServiceMock.gswbGeneratePcdrs.and.returnValue(of({
+        solutions: [
+          { id: 's1-pcdrs-1', solution: '<svg></svg>', semantic: 'A:[a(x4,x2)]', anaphoraRelations: binding('x2') },
+          { id: 's1-pcdrs-2', solution: '<svg></svg>', semantic: 'A:[a(x4,x1)]', anaphoraRelations: binding('x1') },
+        ],
+      }));
+      component.showInlinePostProcessing = true;
+      component.mergedStructureContent = '{"constraints":[],"annotations":[]}';
+      component.postProcessingResults = [{
+        semanticSolution: { id: 's1', semantic: 'P', sentenceAnalysis: sentence } as any,
+        structureContent: '{"id":"d1"}',
+        graphElements: [],
+        ruleAnnotations: [{ structureJson: { id: 'd1a' } } as any],
+        rulesApplied: true,
+      }];
+    });
+
+    it('stores the PCDRS at once, then orders them by the ranking lm returns', () => {
+      const lm = new Subject<any>();
+      dataServiceMock.lmRankAnaphora.and.returnValue(lm);
+
+      component.generatePcdrs();
+      fixture.detectChanges();
+
+      expect(storedUpdate().discourse.map((entry: any) => entry.id)).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
+      expect(storedUpdate().anaphoraRanking).toBeUndefined();
+      expect(shownIds()).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
+      expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent).toContain('Ranking with the language model');
+      expect(dataServiceMock.lmRankAnaphora.calls.mostRecent().args[0]).toEqual({
+        syntax: { 'syn-1': { id: 'syn' } },
+        semantics: [{ semanticOrigin: 's1', syntacticOrigin: 'syn-1', drs: { id: 'drs' } }],
+        branches: [
+          { discourseId: 's1-pcdrs-1', semanticOrigin: 's1', relations: [{ pronoun: 'x4', antecedent: 'x2' }] },
+          { discourseId: 's1-pcdrs-2', semanticOrigin: 's1', relations: [{ pronoun: 'x4', antecedent: 'x1' }] },
+        ],
+      });
+
+      lm.next(ranking);
+      lm.complete();
+      fixture.detectChanges();
+
+      expect(storedUpdate().anaphoraRanking).toEqual(ranking);
+      expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
+      expect(shownIds()).toEqual(['s1-pcdrs-2', 's1-pcdrs-1']);
+      expect(component.pcdrsDisplayLabels[0]).toBe('rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2)');
+      expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent).toContain('Ranked by test-model');
+
+      component.togglePcdrsOrder();
+      expect(shownIds()).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
+    });
+
+    it('keeps the ranking when the branches are collapsed', () => {
+      const lm = new Subject<any>();
+      dataServiceMock.lmRankAnaphora.and.returnValue(lm);
+      component.generatePcdrs();
+      lm.next(ranking);
+      lm.complete();
+
+      component.collapseAllAnaphora();
+
+      expect(storedUpdate().discourse.every((entry: any) => entry.collapsed)).toBeTrue();
+      expect(storedUpdate().anaphoraRanking).toEqual(ranking);
+      expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
+    });
+
+    it('works unchanged when lm is down', () => {
+      dataServiceMock.lmRankAnaphora.and.returnValue(throwError(() => ({ status: 0 })));
+
+      component.generatePcdrs();
+      fixture.detectChanges();
+
+      expect(storedUpdate().discourse.length).toBe(2);
+      expect(storedUpdate().anaphoraRanking).toBeUndefined();
+      expect(shownIds()).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
+      expect(component.canTogglePcdrsOrder()).toBeFalse();
+      expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent)
+        .toContain('Ranking unavailable: lm service unreachable');
+    });
   });
 
   it('creates PCDRS for every annotated merged graph', () => {
