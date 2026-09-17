@@ -3341,11 +3341,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (!assignment.assignmentId
           || update.assignments.some(existing => existing.id === assignment.assignmentId)) continue;
         const verdict = verdictByAssignment.get(assignment.assignmentId);
+        // The anaphora branch this assignment was reasoned over, as chat records it. Linked
+        // only when registerDiscourseUpdate actually stored that branch: validation rejects a
+        // pointer to a branch that does not exist.
+        const discourseUpdateId = update.sourceElementId ? `du-${update.sourceElementId}` : undefined;
+        const linked = !!discourseUpdateId && (this.session.analysisDocuments[pair.itemId]?.discourseUpdates ?? [])
+          .some(du => du.id === discourseUpdateId && du.discourse.some(branch => branch.id === assignment.mappingId));
         update.assignments.push({
           id: assignment.assignmentId,
           premiseSemanticIds: parseReasoningAssignmentId(assignment.assignmentId).premiseSemanticIds,
           hypothesisSemanticIds: parseReasoningAssignmentId(assignment.assignmentId).hypothesisSemanticIds,
           ruleBranchIndex: assignment.ruleBranchIndex,
+          ...(linked ? { discourseUpdateId, discourseId: assignment.mappingId } : {}),
           contextTptp: assignment.contextTptp,
           checks: assignment.checks as ReasoningCheckSet,
           ...(assignment.degradations?.length ? { degradations: assignment.degradations } : {}),

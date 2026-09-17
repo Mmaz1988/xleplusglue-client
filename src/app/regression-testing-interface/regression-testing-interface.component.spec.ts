@@ -11,6 +11,7 @@ import {
   createRegressionAnalysisDocument,
   createRegressionTestingSession,
 } from '../models/models';
+import { discourseBranchesForDisplay, reasoningAssignmentId } from '../analysis-model';
 
 describe('RegressionTestingInterfaceComponent', () => {
   let component: RegressionTestingInterfaceComponent;
@@ -919,6 +920,53 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(payload.items.map((item: any) => item.solution)).toEqual(['drs-2', 'drs-1']);
       expect(payload.itemLabels[0]).toContain('rank 1');
       expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
+    });
+
+    it('points each reasoning assignment at the discourse branch it was reasoned over', () => {
+      const sentence = (id: string) => ({
+        id, text: id, syntax: [{ synId: `${id}-syn`, structure: {} }],
+        semantics: [{ syntacticOrigin: `${id}-syn`, semId: `${id}-s0`, semString: 'P', semType: 'lfgxdrt' }],
+        synSemMapping: { [`${id}-syn`]: [`${id}-s0`] },
+      });
+      const document: any = createRegressionAnalysisDocument('doc');
+      document.sentences = [sentence('S0'), sentence('S1')];
+      document.sequences = [{
+        id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'], syntax: [{ synId: 'seq-syn', structure: {} }],
+        semantics: [{ syntacticOrigin: 'seq-syn', semId: 'sem-a', semString: 'P', semType: 'lfgxdrt' }],
+        synSemMapping: { 'seq-syn': ['sem-a'] },
+      }];
+      document.elements = [{ kind: 'sentence', id: 'S0' }, { kind: 'sentence', id: 'S1' }, { kind: 'sequence', id: 'S0+S1' }];
+      document.discourseUpdates = [{
+        id: 'du-S0+S1', sourceElementId: 'S0+S1', sourceElementKind: 'sequence', semDiscourseMapping: { 'sem-a': ['pcdrs-a'] },
+        discourse: [{ id: 'pcdrs-a', semanticOrigin: 'sem-a', drsString: 'drs', ruleBranch: 1, collapsed: true,
+          anaphoraMapping: { relations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }] } }],
+      }];
+      component.session.analysisDocuments = { n0: document };
+      component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
+      const checks = { info_pos_check: { tptp: 'a' }, info_neg_check: { tptp: 'b' }, cons_pos_check: { tptp: 'c' }, cons_neg_check: { tptp: 'd' } };
+      const assignmentId = (mappingId: string) => reasoningAssignmentId({
+        updateId: 'ru-n0', premiseSemanticIds: ['S0-s0'], hypothesisSemanticIds: ['S1-s0'], ruleBranchIndex: 1, anaphoraBranchId: mappingId,
+      });
+      (component as any).preparedNliPairs = [{
+        itemId: 'n0', scopeId: 'pxq', failures: [], degradations: [],
+        assignments: [
+          { assignmentId: assignmentId('pcdrs-a'), mappingId: 'pcdrs-a', ruleBranchIndex: 1, checks, contextTptp: '' },
+          { assignmentId: assignmentId('pcdrs-unstored'), mappingId: 'pcdrs-unstored', ruleBranchIndex: 1, checks, contextTptp: '' },
+        ],
+      }];
+
+      (component as any).upsertReasoningUpdates({
+        n0: [{ assignment_id: assignmentId('pcdrs-a'), consistent: true, informative: false, relevant: true }],
+      });
+
+      const assignments = component.session.analysisDocuments['n0'].reasoningUpdates![0].assignments;
+      expect(assignments[0].discourseUpdateId).toBe('du-S0+S1');
+      expect(assignments[0].discourseId).toBe('pcdrs-a');
+      // A branch that was never stored is not pointed at: validation would reject the pointer.
+      expect(assignments[1].discourseUpdateId).toBeUndefined();
+      expect(assignments[1].discourseId).toBeUndefined();
+      const { labels } = discourseBranchesForDisplay(component.session.analysisDocuments['n0']);
+      expect(labels[0]).toContain('Vampire: entailment ×1');
     });
 
     it('writes nothing when the item has no registered sequence to hang it off', () => {
