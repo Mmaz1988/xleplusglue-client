@@ -22,3 +22,12 @@ input[type="submit"] {
   width: auto;
   margin-right: 5px;
 }
+
+.anaphora-selection input[type="number"] {
+  width: 4rem;
+}
+
+.setting-hint {
+  color: #6b7280;
+  font-size: 0.78rem;
+}

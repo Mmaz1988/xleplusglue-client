@@ -958,6 +958,45 @@ describe('RegressionTestingInterfaceComponent', () => {
       });
     });
 
+    it('reports accuracy under every selection and counts only the ranked top branches when asked', () => {
+      const branchOf = (id: string, antecedent: string) => ({
+        id, semanticOrigin: 'sem-a', drsString: id, ruleBranch: 1, collapsed: true,
+        anaphoraMapping: { relations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent }] },
+      });
+      const assignmentOver = (discourseId: string, informative: boolean) => ({
+        id: `a-${discourseId}`, premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {},
+        discourseUpdateId: 'du-S0+S1', discourseId, verdict: { consistent: true, informative, relevant: true },
+      });
+      const document: any = createRegressionAnalysisDocument('doc');
+      document.discourseUpdates = [{
+        id: 'du-S0+S1', sourceElementId: 'S0+S1', sourceElementKind: 'sequence', semDiscourseMapping: {},
+        discourse: [branchOf('p1', 'x1'), branchOf('p2', 'x2'), branchOf('p3', 'x3')],
+        anaphoraRanking: {
+          method: 'cosine-description', model: 'm', layers: [-1], pooling: 'mean', createdAt: 'now', relations: [], warnings: [],
+          branches: [{ discourseId: 'p1', score: 0.9, rank: 1 }, { discourseId: 'p2', score: 0.5, rank: 2 }, { discourseId: 'p3', score: 0.4, rank: 3 }],
+        },
+      }];
+      // Two neutral branches outvote the best-ranked one, which is the gold entailment.
+      document.reasoningUpdates = [{
+        id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], logicType: 'fof',
+        assignments: [assignmentOver('p1', false), assignmentOver('p2', true), assignmentOver('p3', true)],
+      }];
+      component.session.analysisDocuments = { n0: document };
+      component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'], gold_label: '1' }];
+      const results = { n0: [{ consistent: true, informative: true } as any] };
+
+      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'all' };
+      (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
+      expect(component.inferenceResults[0].predictedLabel).toBe('0');
+      expect(component.inferenceSummary).toContain('Correct under each selection: all branches 0/1 · top-1 1/1');
+
+      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'top_k', anaphora_top_k: 1 };
+      (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
+      expect(component.inferenceResults[0].predictedLabel).toBe('1');
+      expect(component.inferenceResults[0].anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 1, total: 3 });
+      expect(component.inferenceSummary).toContain('Anaphora branches counted: top-1 per reading');
+    });
+
     it('points each reasoning assignment at the discourse branch it was reasoned over', () => {
       const sentence = (id: string) => ({
         id, text: id, syntax: [{ synId: `${id}-syn`, structure: {} }],

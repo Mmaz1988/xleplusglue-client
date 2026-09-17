@@ -1,8 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject, throwError } from 'rxjs';
 import { DataService } from '../data.service';
+import { FormBuilder } from '@angular/forms';
+import { InferenceSettingsComponent } from '../inference-interface/inference-settings/inference-settings.component';
 import {
   anaphoraRankingCaption,
+  anaphoraSelectionPolicy,
+  inferenceResultsFromDocument,
+  selectedAnaphoraBranchIds,
+  selectReasoningAssignments,
   discourseBranchesForDisplay,
   anaphoraRankingRequest,
   attachAnaphoraRanking,
@@ -177,6 +183,94 @@ describe('discourseBranchesForDisplay', () => {
       'reading 1/1 · x4 → x2 · no reasoning over this branch',
       'reading 1/1 · no binding · no reasoning over this branch',
     ]);
+  });
+});
+
+describe('anaphora branch selection for verdicts', () => {
+  // Reading sem-1: b-dog (0.788), b-cat (0.816), b-event (0.871) -- top-1 is the event.
+  // Reading sem-2: b2-cat, b2-dog, both unscored.
+  const ranked = () => ({
+    ...update([
+      branch('b-dog', [['x4', 'x2']]), branch('b-cat', [['x4', 'x1']]), branch('b-event', [['x4', 'x3']]),
+      branch('b2-cat', [['x4', 'x1']], 'sem-2'), branch('b2-dog', [['x4', 'x2']], 'sem-2'),
+    ]),
+    anaphoraRanking: ranking([['b-dog', 3, 0.788], ['b-cat', 2, 0.816], ['b-event', 1, 0.871], ['b2-cat', 4, null], ['b2-dog', 4, null]]),
+  });
+  const verdictFor = { entailment: { consistent: true, informative: false }, neutral: { consistent: true, informative: true } };
+  const reasoningOver = (discourse: DiscourseUpdate, outcomes: [string, 'entailment' | 'neutral'][], unlinked: ('entailment' | 'neutral')[] = []) => {
+    const document = documentWith(discourse);
+    document.reasoningUpdates = [{
+      id: 'ru-n0', premiseElementIds: ['sentence-1'], hypothesisElementIds: ['sentence-1'], logicType: 'fof',
+      assignments: [
+        ...outcomes.map(([discourseId, outcome], index) => ({
+          id: `a${index}`, premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {} as any,
+          discourseUpdateId: discourse.id, discourseId, verdict: { ...verdictFor[outcome], relevant: true },
+        })),
+        ...unlinked.map((outcome, index) => ({
+          id: `u${index}`, premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {} as any,
+          verdict: { ...verdictFor[outcome], relevant: true },
+        })),
+      ] as any,
+    }];
+    return document;
+  };
+  const item = { id: 'n0', gold_label: '1' };
+
+  it('keeps the top k per reading and leaves an unscored reading whole', () => {
+    expect([...selectedAnaphoraBranchIds(ranked(), { mode: 'top_k', k: 1 })]).toEqual(['b-event', 'b2-cat', 'b2-dog']);
+    expect([...selectedAnaphoraBranchIds(ranked(), { mode: 'top_k', k: 2 })]).toEqual(['b-cat', 'b-event', 'b2-cat', 'b2-dog']);
+    expect(selectedAnaphoraBranchIds(ranked(), { mode: 'all', k: 1 }).size).toBe(5);
+  });
+
+  it('keeps tied branches together and everything when the update is unranked', () => {
+    const tied = { ...update([branch('a', [['x4', 'x1']]), branch('b', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]),
+      anaphoraRanking: ranking([['a', 1, 0.9], ['b', 1, 0.9], ['c', 3, 0.1]]) };
+    expect([...selectedAnaphoraBranchIds(tied, { mode: 'top_k', k: 1 })]).toEqual(['a', 'b']);
+    expect(selectedAnaphoraBranchIds(update([branch('a', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]), { mode: 'top_k', k: 1 }).size).toBe(2);
+  });
+
+  it('takes the verdict over the selected branches only, from the same stored results', () => {
+    // All five branches: 2 entailment vs 3 neutral -> neutral. Top-1: the event (entailment)
+    // plus the unscored reading's two branches (entailment, neutral) -> 2 vs 1 -> entailment.
+    const document = reasoningOver(ranked(), [
+      ['b-dog', 'neutral'], ['b-cat', 'neutral'], ['b-event', 'entailment'], ['b2-cat', 'entailment'], ['b2-dog', 'neutral'],
+    ]);
+
+    const all = inferenceResultsFromDocument(document, [item], {})['n0'];
+    const top1 = inferenceResultsFromDocument(document, [item], {}, { mode: 'top_k', k: 1 })['n0'];
+
+    expect(all.predictedLabel).toBe('0');
+    expect(all.anaphoraSelection).toEqual({ mode: 'all', k: 1, applied: true, used: 5, total: 5 });
+    expect(top1.predictedLabel).toBe('1');
+    expect(top1.mismatch).toBeFalse();
+    expect(top1.anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 3, total: 5 });
+  });
+
+  it('counts unlinked assignments, and says when there was no ranking to apply', () => {
+    const unranked = reasoningOver(update([branch('b-dog', [['x4', 'x2']]), branch('b-cat', [['x4', 'x1']])]),
+      [['b-dog', 'neutral'], ['b-cat', 'neutral']], ['entailment']);
+    const { assignments, applied } = selectReasoningAssignments(unranked, unranked.reasoningUpdates![0], { mode: 'top_k', k: 1 });
+    expect(assignments.length).toBe(3);
+    expect(applied).toBeFalse();
+  });
+
+  it('reads the policy from Vampire preferences, defaulting to every branch', () => {
+    expect(anaphoraSelectionPolicy(undefined)).toEqual({ mode: 'all', k: 1 });
+    expect(anaphoraSelectionPolicy({ logic_type: 0, model_building: true, max_duration: 10, layered: false }))
+      .toEqual({ mode: 'all', k: 1 });
+    expect(anaphoraSelectionPolicy({ logic_type: 0, model_building: true, max_duration: 10, layered: false,
+      anaphora_selection: 'top_k', anaphora_top_k: 2.7 })).toEqual({ mode: 'top_k', k: 2 });
+  });
+
+  it('carries the selection through the settings form', () => {
+    const settings = new InferenceSettingsComponent(new FormBuilder());
+    settings.vampirePreferencesForm.patchValue({ anaphora_selection: 'top_k', anaphora_top_k: '3' });
+    expect(settings.vampirePreferences.anaphora_selection).toBe('top_k');
+    expect(settings.vampirePreferences.anaphora_top_k).toBe(3);
+
+    settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, layered: false });
+    expect(settings.vampirePreferencesForm.value.anaphora_selection).toBe('all');
+    expect(settings.vampirePreferencesForm.value.anaphora_top_k).toBe(1);
   });
 });
 

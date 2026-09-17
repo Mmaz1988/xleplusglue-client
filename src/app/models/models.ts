@@ -686,6 +686,10 @@ export interface RegressionInferenceResult {
   conclusionIds: string[];
   mismatch: boolean;
   glyphs: string[];
+  /** How the verdict's assignments were selected (see VampirePreferences.anaphora_selection).
+   *  `applied` is false when top-k was asked for but the item has no ranking to apply, in
+   *  which case every assignment counted. */
+  anaphoraSelection?: { mode: AnaphoraSelectionMode; k: number; applied: boolean; used: number; total: number };
 }
 
 /** One line of the inference report: an NLI item, and whatever is known about it so far.
@@ -1231,6 +1235,8 @@ export function createRegressionTestingSession(): RegressionTestingSession {
       model_building: true,
       max_duration: 10,
       layered: false,
+      anaphora_selection: 'all',
+      anaphora_top_k: 1,
     },
     sentenceMap: {},
     regressionTestItems: [],
@@ -1278,7 +1284,15 @@ export interface VampirePreferences {
   model_building: boolean;
   max_duration: number;
   layered: boolean; //Processes with and without additional axioms
+  /** Which anaphora branches an item's verdict is taken over. 'all' (the default, and what a
+   *  session saved without this field means): every formally generated branch. 'top_k': per
+   *  reading, only the `anaphora_top_k` best branches by language-model ranking. Every branch
+   *  is still sent to Vampire; this selects which verdicts count. */
+  anaphora_selection?: AnaphoraSelectionMode;
+  anaphora_top_k?: number;
 }
+
+export type AnaphoraSelectionMode = 'all' | 'top_k';
 
 
 export interface GrammarList {

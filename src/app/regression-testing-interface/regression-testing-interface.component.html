@@ -192,7 +192,7 @@
   <app-toggle-display type="liger" showText="Show settings" hideText="Hide settings">
   <h1>Settings</h1>
   <app-gswb-settings #gswbSettings></app-gswb-settings>
-  <app-inference-settings  #vampirePrefs></app-inference-settings>
+  <app-inference-settings  #vampirePrefs [showAnaphoraSelection]="true"></app-inference-settings>
 
 
     <h3>Ambiguity management:</h3>
@@ -336,6 +336,13 @@
                 No reading for: {{ row.unparsedSentences.join(' / ') }}
               </div>
               <div *ngIf="row.status === 'failed'" class="report-row-note">{{ row.reason }}</div>
+              <div *ngIf="row.data.anaphoraSelection?.mode === 'top_k'" class="report-row-note">
+                <ng-container *ngIf="row.data.anaphoraSelection!.applied; else unranked">
+                  Verdict over {{ row.data.anaphoraSelection!.used }} of {{ row.data.anaphoraSelection!.total }} branch verdicts
+                  (top-{{ row.data.anaphoraSelection!.k }} per reading)
+                </ng-container>
+                <ng-template #unranked>No ranking yet: verdict over all {{ row.data.anaphoraSelection!.total }} branch verdicts</ng-template>
+              </div>
             </div>
           </div>
         </div>

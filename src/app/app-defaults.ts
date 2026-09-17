@@ -172,12 +172,16 @@ export const APP_DEFAULTS = {
       model_building: false,
       max_duration: 10,
       layered: false,
+      anaphora_selection: 'all' as const,
+      anaphora_top_k: 1,
     },
     regression: {
       logic_type: 0,
       model_building: true,
       max_duration: 10,
       layered: false,
+      anaphora_selection: 'all' as const,
+      anaphora_top_k: 1,
     },
   },
 };

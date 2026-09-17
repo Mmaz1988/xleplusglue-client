@@ -1,5 +1,6 @@
 import {
   AnaphoraRanking,
+  AnaphoraSelectionMode,
   DiscourseAnalysis,
   DiscourseUpdate,
   GswbRenderPcdrsRequest,
@@ -7,6 +8,7 @@ import {
   LmRankAnaphoraRequest,
   NliLabel,
   RegressionInferenceResult,
+  VampirePreferences,
   REASONING_CHECK_NAMES,
   ReasoningAssignment,
   ReasoningItemVerdict,
@@ -518,10 +520,75 @@ function validateMapping(
  *  the caller keeps whatever it computed for those (a non-LFGxDRT run has no updates at
  *  all). Kept here rather than in the component so a stored session can be re-rendered
  *  from the document alone. */
+export interface AnaphoraSelectionPolicy {
+  mode: AnaphoraSelectionMode;
+  k: number;
+}
+
+export const ALL_ANAPHORA_BRANCHES: AnaphoraSelectionPolicy = { mode: 'all', k: 1 };
+
+/** The policy a session's Vampire preferences ask for; absent fields mean every branch. */
+export function anaphoraSelectionPolicy(preferences: VampirePreferences | undefined): AnaphoraSelectionPolicy {
+  const k = Math.max(1, Math.floor(Number(preferences?.anaphora_top_k) || 1));
+  return preferences?.anaphora_selection === 'top_k' ? { mode: 'top_k', k } : { ...ALL_ANAPHORA_BRANCHES, k };
+}
+
+/** The anaphora branch ids that survive `policy`, per reading: within each semantic origin,
+ *  branches ranked by score ("1224", unscored after scored) and kept while their rank <= k.
+ *  A reading with no scored branch keeps all of its branches -- the ranking says nothing
+ *  about it -- and so does every reading when the update has no ranking. Readings are never
+ *  compared with each other: choosing between syntactic or scope readings is not the ranker's
+ *  job. */
+export function selectedAnaphoraBranchIds(update: DiscourseUpdate, policy: AnaphoraSelectionPolicy): Set<string> {
+  const ids = new Set(update.discourse.map(branch => branch.id));
+  if (policy.mode === 'all' || !update.anaphoraRanking) return ids;
+
+  const scoreById = new Map(update.anaphoraRanking.branches.map(branch => [branch.discourseId, branch.score]));
+  const origins = [...new Set(update.discourse.map(branch => branch.semanticOrigin))];
+  origins.forEach(origin => {
+    const branches = update.discourse.filter(branch => branch.semanticOrigin === origin);
+    const scores = branches.map(branch => scoreById.get(branch.id) ?? null);
+    const scored = scores.filter((score): score is number => score !== null).sort((a, b) => b - a);
+    if (!scored.length) return;
+    branches.forEach((branch, index) => {
+      const score = scores[index];
+      const rank = score === null ? scored.length + 1 : 1 + scored.filter(other => other > score).length;
+      if (rank > policy.k) ids.delete(branch.id);
+    });
+  });
+  return ids;
+}
+
+/** The assignments of `update` whose verdicts count under `policy`. An assignment not linked
+ *  to a discourse branch always counts: there is nothing to rank it by. `applied` is false
+ *  when top-k was asked for but no linked discourse update carries a ranking. */
+export function selectReasoningAssignments(
+  document: XlePlusGlueDocument,
+  update: ReasoningUpdate,
+  policy: AnaphoraSelectionPolicy,
+): { assignments: ReasoningAssignment[]; applied: boolean } {
+  if (policy.mode === 'all') return { assignments: update.assignments, applied: true };
+
+  const discourseUpdates = new Map((document.discourseUpdates ?? []).map(du => [du.id, du]));
+  const selected = new Map<string, Set<string>>();
+  let applied = false;
+  const assignments = update.assignments.filter(assignment => {
+    const discourseUpdate = assignment.discourseUpdateId ? discourseUpdates.get(assignment.discourseUpdateId) : undefined;
+    if (!discourseUpdate || !assignment.discourseId) return true;
+    if (discourseUpdate.anaphoraRanking) applied = true;
+    if (!selected.has(discourseUpdate.id)) {
+      selected.set(discourseUpdate.id, selectedAnaphoraBranchIds(discourseUpdate, policy));
+    }
+    return selected.get(discourseUpdate.id)!.has(assignment.discourseId);
+  });
+  return { assignments, applied };
+}
+
 export function inferenceResultsFromDocument(
   document: XlePlusGlueDocument | undefined,
   items: any[],
   sentenceMap: Record<string, string>,
+  policy: AnaphoraSelectionPolicy = ALL_ANAPHORA_BRANCHES,
 ): Record<string, RegressionInferenceResult> {
   const results: Record<string, RegressionInferenceResult> = {};
   const updatesById = new Map((document?.reasoningUpdates ?? []).map(update => [update.id, update]));
@@ -529,8 +596,10 @@ export function inferenceResultsFromDocument(
   for (const item of items ?? []) {
     const itemId = String(item?.id ?? '');
     const update = updatesById.get(`ru-${itemId}`);
-    const verdict = update && majorityVerdict(update.assignments ?? []);
-    if (!update || !verdict) continue;
+    if (!document || !update) continue;
+    const selection = selectReasoningAssignments(document, update, policy);
+    const verdict = majorityVerdict(selection.assignments);
+    if (!verdict) continue;
 
     const goldLabel = item?.gold_label ?? 'unknown';
     const textsFor = (ids: string[]) => (ids ?? [])
@@ -547,6 +616,13 @@ export function inferenceResultsFromDocument(
       conclusionIds: [...update.hypothesisElementIds],
       mismatch: goldLabel !== verdict.label,
       glyphs: [...(verdict.glyphs ?? [])],
+      anaphoraSelection: {
+        mode: policy.mode,
+        k: policy.k,
+        applied: selection.applied,
+        used: selection.assignments.filter(assignment => !!assignment.verdict).length,
+        total: update.assignments.filter(assignment => !!assignment.verdict).length,
+      },
     };
   }
   return results;

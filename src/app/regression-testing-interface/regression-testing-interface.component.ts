@@ -49,6 +49,9 @@ import { InferenceSettingsComponent } from "../inference-interface/inference-set
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
 import { APP_DEFAULTS } from '../app-defaults';
 import {
+  ALL_ANAPHORA_BRANCHES,
+  AnaphoraSelectionPolicy,
+  anaphoraSelectionPolicy,
   carryAnaphoraRanking,
   compositeAnalysisId,
   discourseBranchesForDisplay,
@@ -359,8 +362,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.scheduleSessionSave();
     });
 
+    let lastAnaphoraSelection = JSON.stringify(this.anaphoraSelection());
     this.vampirePreferences.vampirePreferencesForm.valueChanges.subscribe(() => {
       this.syncSessionStateFromUi();
+      const selection = JSON.stringify(this.anaphoraSelection());
+      if (selection !== lastAnaphoraSelection) {
+        lastAnaphoraSelection = selection;
+        this.refreshInferenceFromDocuments();
+      }
       this.scheduleSessionSave();
     });
 
@@ -2782,6 +2791,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (!ranked || !document) return;
         document.discourseUpdates = (document.discourseUpdates ?? [])
           .map(existing => existing.id === ranked.id ? ranked : existing);
+        // The counted verdict can change under top-k, and the summary's per-selection
+        // comparison changes either way.
+        this.refreshInferenceFromDocuments();
         this.scheduleSessionSave();
       });
   }
@@ -3453,14 +3465,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // Each item's verdict is read from its own document and the per-item results merged
     // into one map, which is what the confusion matrix and the report below consume. The
     // aggregation is the only place the per-item split has to be undone.
-    const documentResults: Record<string, RegressionInferenceResult> = {};
-    for (const item of this.regressionTestItems) {
-      const itemId = String(item?.id ?? '');
-      const document = this.session.analysisDocuments[itemId];
-      if (!document) continue;
-      Object.assign(documentResults,
-        inferenceResultsFromDocument(document, [item], this.sentenceMap));
-    }
+    const policy = this.anaphoraSelection();
+    const documentResults = this.documentInferenceResults(policy);
 
     const currentInferenceResults: RegressionInferenceResult[] = [];
 
@@ -3521,7 +3527,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         premiseIds: testItem?.premises ?? [],
         conclusionIds: testItem?.conclusion ?? [],
         mismatch: (testItem?.gold_label ?? '') !== entailment_label,
-        glyphs: glyphs
+        glyphs: glyphs,
+        ...(fromDocument?.anaphoraSelection ? { anaphoraSelection: fromDocument.anaphoraSelection } : {}),
       });
 
       if (idx[testItem.gold_label] !== undefined && idx[entailment_label] !== undefined) {
@@ -3553,11 +3560,51 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       `(${successful_neutral_predictions} of ${all_neutral_predictions})\n` +
       `Successful contradiction prediction ratio: ${formatRatio(successful_contradiction_predictions, all_contradiction_predictions)} ` +
       `(${successful_contradiction_predictions} of ${all_contradiction_predictions})\n` +
-      `Overall accuracy: ${totalSessionItems === 0 ? 'n/a' : String(totalCorrectItems / totalSessionItems)}`;
+      `Overall accuracy: ${totalSessionItems === 0 ? 'n/a' : String(totalCorrectItems / totalSessionItems)}\n` +
+      this.anaphoraSelectionSummary(policy);
 
     if (finalSnapshot) {
       this.commitParsedRegressionSnapshot();
     }
+  }
+
+  private anaphoraSelection(): AnaphoraSelectionPolicy {
+    return anaphoraSelectionPolicy(this.vampirePreferences?.vampirePreferences ?? this.session.vampirePreferences);
+  }
+
+  /** Every item's verdict as its document gives it under `policy`, merged into one map. */
+  private documentInferenceResults(policy: AnaphoraSelectionPolicy): Record<string, RegressionInferenceResult> {
+    const results: Record<string, RegressionInferenceResult> = {};
+    for (const item of this.regressionTestItems) {
+      const document = this.session.analysisDocuments[String(item?.id ?? '')];
+      if (document) Object.assign(results, inferenceResultsFromDocument(document, [item], this.sentenceMap, policy));
+    }
+    return results;
+  }
+
+  /** Accuracy of the same Vampire results under every-branch and ranked selection, so a run
+   *  shows what the ranking changes without running anything twice. */
+  private anaphoraSelectionSummary(policy: AnaphoraSelectionPolicy): string {
+    const policies: [string, AnaphoraSelectionPolicy][] = [['all branches', ALL_ANAPHORA_BRANCHES], ['top-1', { mode: 'top_k', k: 1 }]];
+    if (policy.mode === 'top_k' && policy.k > 1) policies.push([`top-${policy.k}`, policy]);
+    const parts = policies.map(([name, candidate]) => {
+      const results = Object.values(this.documentInferenceResults(candidate));
+      const correct = results.filter(result => !result.mismatch).length;
+      return `${name} ${correct}/${results.length}`;
+    });
+    const ranked = Object.values(this.documentInferenceResults({ mode: 'top_k', k: 1 }))
+      .filter(result => result.anaphoraSelection?.applied).length;
+    const counted = policy.mode === 'top_k' ? `top-${policy.k} per reading` : 'all branches';
+    return `Anaphora branches counted: ${counted}. Correct under each selection: ${parts.join(' · ')} `
+      + `(ranking available for ${ranked} item(s))`;
+  }
+
+  /** Re-derives the report from the stored documents -- after a ranking arrives or the
+   *  selection setting changes -- without asking Vampire for anything. */
+  private refreshInferenceFromDocuments(): void {
+    const results = this.session.lastVampireResults;
+    if (!results || !Object.keys(results).length) return;
+    this.renderVampireResults(results, { item_count: Object.keys(results).length, proof_count: 0 } as VampireSessionSummary, false, false);
   }
 
   private formatDuration(ms: number | null, precise = false): string {
