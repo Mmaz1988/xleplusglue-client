@@ -887,6 +887,40 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(scheduleSessionSave).toHaveBeenCalled();
     });
 
+    it('opens an item\'s discourses as text DRSs, ranked and captioned, without touching sentence selections', () => {
+      const document: any = createRegressionAnalysisDocument('doc');
+      document.sequences = [{ id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'], syntax: [], semantics: [{ semId: 'sem-a' }], synSemMapping: {} }];
+      const binding = (antecedent: string) => ({ relations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent }] });
+      document.discourseUpdates = [{
+        id: 'du-S0+S1', sourceElementId: 'S0+S1', sourceElementKind: 'sequence', semDiscourseMapping: {},
+        discourse: [
+          { id: 'pcdrs-1', semanticOrigin: 'sem-a', drsString: 'drs-1', ruleBranch: 1, collapsed: true, anaphoraMapping: binding('x2') },
+          { id: 'pcdrs-2', semanticOrigin: 'sem-a', drsString: 'drs-2', ruleBranch: 1, collapsed: true, anaphoraMapping: binding('x1') },
+        ],
+        anaphoraRanking: {
+          method: 'cosine-description', model: 'm', layers: [-1], pooling: 'mean', createdAt: 'now', relations: [], warnings: [],
+          branches: [{ discourseId: 'pcdrs-1', score: 0.5, rank: 2 }, { discourseId: 'pcdrs-2', score: 0.9, rank: 1 }],
+        },
+      }];
+      component.session.analysisDocuments = { n0: document, n1: createRegressionAnalysisDocument('empty') };
+      const open = jasmine.createSpy('open');
+      (component as any).discourseDialog = { open };
+      const selectionsBefore = JSON.stringify(component.session.selectedScopeIdsBySentence);
+
+      expect(component.hasDiscourses('n0')).toBeTrue();
+      expect(component.hasDiscourses('n1')).toBeFalse();
+      expect(component.hasDiscourses('missing')).toBeFalse();
+
+      component.openDiscourseDialog('n0');
+
+      const payload = open.calls.mostRecent().args[0];
+      expect(payload.title).toBe('Discourses — n0');
+      expect(payload.svgSolutions).toBeFalse();
+      expect(payload.items.map((item: any) => item.solution)).toEqual(['drs-2', 'drs-1']);
+      expect(payload.itemLabels[0]).toContain('rank 1');
+      expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
+    });
+
     it('writes nothing when the item has no registered sequence to hang it off', () => {
       const document: any = createRegressionAnalysisDocument('doc');
       const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };

@@ -18,6 +18,7 @@ export class SemvisDialogComponent {
   }>();
 
   private activeSentenceId: string | null = null;
+  title = 'Solutions';
 
   open(payload: {
     sentenceId: string;
@@ -28,8 +29,12 @@ export class SemvisDialogComponent {
     selectedScopeIds?: string[];
     selectedMcIds?: string[];
     svgSolutions?: boolean;
+    /** Caption per item, index-aligned with `items`. */
+    itemLabels?: string[];
+    title?: string;
   }): void {
     this.activeSentenceId = payload.sentenceId;
+    this.title = payload.title ?? 'Solutions';
     this.dialog.nativeElement.show();
 
     const items = Array.isArray(payload.items) ? payload.items : [];
@@ -60,6 +65,7 @@ export class SemvisDialogComponent {
         this.semVis.setDiscriminants(discriminants);
         this.semVis.meaningConstructors = meaningConstructors;
         this.semVis.svgSolutions = svgSolutions;
+        this.semVis.itemLabels = payload.itemLabels ?? [];
         this.semVis.setItems(items, startIndex);
 
       // restore selection and re-filter

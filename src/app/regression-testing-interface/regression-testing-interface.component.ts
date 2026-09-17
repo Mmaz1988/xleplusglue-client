@@ -51,6 +51,7 @@ import { APP_DEFAULTS } from '../app-defaults';
 import {
   carryAnaphoraRanking,
   compositeAnalysisId,
+  discourseBranchesForDisplay,
   inferenceResultsFromDocument,
   majorityVerdict,
   needsAnaphoraRanking,
@@ -153,6 +154,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   @ViewChild('errorhandle') errorhandle: ElementRef;
 
   @ViewChild('semvisDialog') semvisDialog: SemvisDialogComponent;
+  @ViewChild('discourseDialog') discourseDialog: SemvisDialogComponent;
 
   gswbMultipleRequest: GswbMultipleRequest;
 
@@ -4113,6 +4115,25 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     if (a.length !== b.length) return false;
     return a.every((id, index) => id === b[index]);
+  }
+
+  hasDiscourses(itemId: string): boolean {
+    return !!this.session.analysisDocuments[itemId]?.discourseUpdates?.some(update => update.discourse.length);
+  }
+
+  /** The item's full discourses -- every anaphora branch of its merged sequence, by rank, with
+   *  the verdicts reasoned over each -- as text DRSs. */
+  openDiscourseDialog(itemId: string): void {
+    const document = this.session.analysisDocuments[itemId];
+    if (!document) return;
+    const { solutions, labels } = discourseBranchesForDisplay(document);
+    this.discourseDialog.open({
+      sentenceId: itemId,
+      title: `Discourses — ${itemId}`,
+      items: solutions,
+      itemLabels: labels,
+      svgSolutions: false,
+    });
   }
 
   openSemVisDialog(payload: any): void {

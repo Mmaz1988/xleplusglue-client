@@ -386,6 +386,11 @@ div.errorhandling {
   opacity: 0.6;
 }
 
+.report-row-discourses {
+  font-size: 0.78rem;
+  margin: 2px 0 6px 22px;
+}
+
 .report-row-note {
   color: #6b7280;
   font-size: 0.78rem;

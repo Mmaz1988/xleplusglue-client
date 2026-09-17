@@ -271,6 +271,9 @@
   </div>
 
   <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
+  <!-- Separate instance, no selectionChange: its items are discourse branches, not a
+       sentence's readings, so nothing it emits may be stored as a sentence's selection. -->
+  <app-semvis-dialog #discourseDialog></app-semvis-dialog>
   <div class="results-grid">
     <div class="results-panel">
       <h3>Parsing report ({{ parseResultCount }} of {{ expectedParseCount }}):</h3>
@@ -324,6 +327,10 @@
               </label>
               <app-inference-result [data]="row.data" [displayIndex]="i + 1" [status]="row.status">
               </app-inference-result>
+              <button type="button" class="report-row-discourses" *ngIf="hasDiscourses(row.id)"
+                      (click)="openDiscourseDialog(row.id)">
+                Open discourses
+              </button>
               <div *ngIf="row.status === 'unparsed'" class="report-row-note">
                 No reading for: {{ row.unparsedSentences.join(' / ') }}
               </div>

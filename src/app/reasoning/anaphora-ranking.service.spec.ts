@@ -3,6 +3,7 @@ import { Subject, throwError } from 'rxjs';
 import { DataService } from '../data.service';
 import {
   anaphoraRankingCaption,
+  discourseBranchesForDisplay,
   anaphoraRankingRequest,
   attachAnaphoraRanking,
   carryAnaphoraRanking,
@@ -130,6 +131,51 @@ describe('anaphora ranking document helpers', () => {
     expect(anaphoraRankingCaption(ranked, 'b-cat'))
       .toBe('rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2)');
     expect(anaphoraRankingCaption(twoBranches(), 'b-cat')).toBe('');
+  });
+});
+
+describe('discourseBranchesForDisplay', () => {
+  const assignment = (discourseId: string, verdict?: { consistent: boolean; informative: boolean }, failure?: string) => ({
+    id: `a-${discourseId}-${Math.random()}`, discourseId, premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1,
+    checks: {} as any, verdict: verdict ? { ...verdict, relevant: true } : undefined, failure,
+  });
+
+  it('groups by reading, orders each reading by rank and captions ranking and verdicts', () => {
+    const discourse = update([
+      { ...branch('b-dog', [['x4', 'x2']]), drsString: 'drs-dog' },
+      { ...branch('b-cat', [['x4', 'x1']]), drsString: 'drs-cat' },
+      { ...branch('b2-cat', [['x4', 'x1']], 'sem-2'), drsString: 'drs-2' },
+    ]);
+    const document = documentWith({ ...discourse, anaphoraRanking: ranking([['b-dog', 3, 0.788], ['b-cat', 1, 0.816], ['b2-cat', 1, 0.816]]) });
+    document.reasoningUpdates = [{
+      id: 'ru-n0', premiseElementIds: ['sentence-1'], hypothesisElementIds: ['sentence-1'], logicType: 'fof',
+      assignments: [
+        assignment('b-cat', { consistent: true, informative: true }),
+        assignment('b-cat', { consistent: true, informative: false }),
+        assignment('b-cat', { consistent: true, informative: true }),
+        assignment('b-dog', undefined, 'collapse failed'),
+      ] as any,
+    }];
+
+    const { solutions, labels } = discourseBranchesForDisplay(document);
+
+    expect(solutions.map(solution => [solution.id, solution.solution]))
+      .toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
+    expect(labels[0]).toBe('reading 1/2 · rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2) · Vampire: neutral ×2, entailment ×1');
+    expect(labels[1]).toContain('reading 1/2 · rank 3');
+    expect(labels[1]).toContain('Vampire: failed ×1');
+    expect(labels[2]).toContain('reading 2/2');
+    expect(labels[2]).toContain('no reasoning over this branch');
+  });
+
+  it('shows the bindings in generation order when there is no ranking', () => {
+    const document = documentWith(update([branch('b-dog', [['x4', 'x2']]), branch('b-none', [])]));
+    const { solutions, labels } = discourseBranchesForDisplay(document);
+    expect(solutions.map(solution => solution.id)).toEqual(['b-dog', 'b-none']);
+    expect(labels).toEqual([
+      'reading 1/1 · x4 → x2 · no reasoning over this branch',
+      'reading 1/1 · no binding · no reasoning over this branch',
+    ]);
   });
 });
 

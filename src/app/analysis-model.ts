@@ -2,6 +2,7 @@ import {
   AnaphoraRanking,
   DiscourseAnalysis,
   DiscourseUpdate,
+  GswbSolution,
   LmRankAnaphoraRequest,
   NliLabel,
   RegressionInferenceResult,
@@ -569,4 +570,48 @@ export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: str
   });
   const score = branch.score == null ? 'no score' : `mean cos ${branch.score.toFixed(3)}`;
   return [`rank ${branch.rank}`, score, ...bindings].join(' · ');
+}
+
+const NLI_LABEL_NAMES: Record<NliLabel, string> = { '1': 'entailment', '0': 'neutral', '-1': 'contradiction' };
+
+/** Every discourse branch of a document, for paging through in a dialog: text DRSs grouped by
+ *  reading (in the order the readings first appear), each reading's branches by anaphora rank
+ *  (generation order when unranked), captioned with the ranking and with the Vampire verdicts
+ *  of the reasoning assignments computed over that branch. Reads the document only. */
+export function discourseBranchesForDisplay(document: XlePlusGlueDocument): { solutions: GswbSolution[]; labels: string[] } {
+  const assignments = (document.reasoningUpdates ?? []).flatMap(update => update.assignments);
+  const solutions: GswbSolution[] = [];
+  const labels: string[] = [];
+
+  (document.discourseUpdates ?? []).forEach(update => {
+    const origins = [...new Set(update.discourse.map(branch => branch.semanticOrigin))];
+    origins.forEach((origin, readingIndex) => {
+      const branches = orderByAnaphoraRanking(
+        update.discourse.filter(branch => branch.semanticOrigin === origin), update.anaphoraRanking);
+      branches.forEach(branch => {
+        const bindings = branch.anaphoraMapping.relations.length
+          ? branch.anaphoraMapping.relations
+            .map(relation => `${relation.pronounDisplay ?? relation.pronounReferentId} → ${relation.antecedent}`).join(', ')
+          : 'no binding';
+        const ranking = anaphoraRankingCaption(update, branch.id) || (update.anaphoraRanking ? 'unranked' : bindings);
+
+        const own = assignments.filter(assignment => assignment.discourseId === branch.id);
+        const counts = new Map<string, number>();
+        own.forEach(assignment => {
+          const outcome = assignment.verdict
+            ? NLI_LABEL_NAMES[nliLabelFromVerdicts(assignment.verdict.consistent, assignment.verdict.informative)]
+            : assignment.failure ? 'failed' : 'not run';
+          counts.set(outcome, (counts.get(outcome) ?? 0) + 1);
+        });
+        const verdicts = own.length
+          ? `Vampire: ${[...counts].map(([outcome, count]) => `${outcome} ×${count}`).join(', ')}`
+          : 'no reasoning over this branch';
+
+        solutions.push({ id: branch.id, solution: branch.drsString } as GswbSolution);
+        labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].join(' · '));
+      });
+    });
+  });
+
+  return { solutions, labels };
 }
