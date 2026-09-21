@@ -10,6 +10,7 @@ import {
   LigerBatchParsingAnalysis,
   LigerRuleAnnotation
     ,
+  LigerRuleSet,
   LigerMergeResponse,
   LigerStructure,
   LigerStructureMergeRequest,
@@ -206,8 +207,14 @@ export class DataService {
     return this.http.post<GrammarString>(`${this.ligerpage}/change_grammar`, grammarString);
   }
 
-  loadRules(ruleString): Observable<any> {
-    return this.http.post<GrammarString>(`${this.ligerpage}/load_rules`, ruleString);
+  /** A LiGER config or a single rule file; also makes its lexica LiGER's active ones. */
+  loadRules(path: { grammar: string }): Observable<LigerRuleSet> {
+    return this.http.post<LigerRuleSet>(`${this.ligerpage}/load_rules`, path);
+  }
+
+  /** A file's text, for files that are not rules (testsuites, axioms). */
+  loadFile(path: { grammar: string }): Observable<{ grammar: string }> {
+    return this.http.post<{ grammar: string }>(`${this.ligerpage}/load_file`, path);
   }
 
   //calls to vampire

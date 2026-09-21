@@ -1,17 +1,27 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { RuleLoaderComponent } from './rule-loader.component';
 import { DataService } from '../../data.service';
+import { LigerRuleSet } from '../../models/models';
+
+const CONFIG: LigerRuleSet = {
+  kind: 'config',
+  source: './liger_resources/rules/default.liger.yaml',
+  semantics: 'semantics rules',
+  pragmatics: 'pragmatics rules',
+  lexica: ['/liger_resources/dicts/ling_dict_eng.txt'],
+};
 
 describe('RuleLoaderComponent', () => {
   let component: RuleLoaderComponent;
   let fixture: ComponentFixture<RuleLoaderComponent>;
+  let dataServiceSpy: jasmine.SpyObj<DataService>;
 
   beforeEach(() => {
-    const dataServiceSpy = jasmine.createSpyObj('DataService', ['loadRules', 'getFileTree']);
-    dataServiceSpy.loadRules.and.returnValue(of({ grammar: 'default rule content' }));
+    dataServiceSpy = jasmine.createSpyObj('DataService', ['loadRules', 'getFileTree']);
+    dataServiceSpy.loadRules.and.returnValue(of(CONFIG));
     dataServiceSpy.getFileTree.and.returnValue(of({ children: [] }));
 
     TestBed.configureTestingModule({
@@ -48,5 +58,35 @@ describe('RuleLoaderComponent', () => {
     // ..." message on screen, even though the rules file backing it had been cleared --
     // exactly what made a missing-axioms failure look like a working setup.
     expect(component.currentStatusMessage).toBe('');
+  });
+
+  it('emits the whole rule set, so hosts get the pragmatics rules with the semantics', () => {
+    const emitted: LigerRuleSet[] = [];
+    const loaded: { content: string; ruleSet: LigerRuleSet }[] = [];
+    component.dataEmitter.subscribe(set => emitted.push(set));
+    component.ruleLoaded.subscribe(event => loaded.push(event));
+
+    component.selectedPath = CONFIG.source;
+    component.updateRules();
+
+    expect(dataServiceSpy.loadRules).toHaveBeenCalledWith({ grammar: CONFIG.source });
+    expect(emitted).toEqual([CONFIG]);
+    expect(loaded[0].content).toBe('semantics rules');
+    expect(loaded[0].ruleSet.pragmatics).toBe('pragmatics rules');
+    expect(component.currentStatusMessage).toContain('(config)');
+  });
+
+  it('shows why LiGER rejected a config', () => {
+    dataServiceSpy.loadRules.and.returnValue(throwError(() => ({
+      error: { error: "Unknown field 'semantic' in LiGER config x.yaml" },
+    })));
+    const emitted: LigerRuleSet[] = [];
+    component.dataEmitter.subscribe(set => emitted.push(set));
+
+    component.selectedPath = 'x.yaml';
+    component.updateRules();
+
+    expect(component.currentStatusMessage).toContain("Unknown field 'semantic'");
+    expect(emitted).toEqual([]);
   });
 });

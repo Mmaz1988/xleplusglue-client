@@ -25,6 +25,7 @@
         <div class="session-id-row" title="Chat session id -- matches tmp/log file names on the inference backend">{{ chatDocumentSessionKey }}</div>
       </app-hover-sidebar>
       <app-chat #chat [ruleString]="ruleFile"
+                [pragmaticsRuleString]="pragmaticsRules"
                 [axioms]="axioms"
                 [gswbPreferences]="gswbPrefs"
                 [vampirePreferences]="vampirePrefs"

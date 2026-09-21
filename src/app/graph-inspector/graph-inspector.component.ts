@@ -17,6 +17,9 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   @Input() initialUploadedContent = '';
   @Input() initialUploadedFileName = 'uploaded-graph';
   @Input() initialGraphElements: any[] = [];
+  /** The loaded LiGER rule set's post-processing rules. A newly loaded rule set replaces
+   *  the editor's rules; edits stay until then. */
+  @Input() pragmaticsRules: string | null = null;
   @Output() rulesApplied = new EventEmitter<LigerRuleAnnotationResponse>();
 
   constructor(private dataService: DataService) {
@@ -37,7 +40,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   uploadedContent = '';
   uploadedFormat: 'json' | 'prolog' = 'json';
   uploadedFileName = 'uploaded-graph';
-  rulesText = APP_DEFAULTS.graphInspector.rulesText;
+  rulesText = '';
   queryText = APP_DEFAULTS.graphInspector.queryText;
   queryResult = '';
   loading = false;
@@ -76,6 +79,11 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['pragmaticsRules'] && typeof this.pragmaticsRules === 'string') {
+      this.rulesText = this.pragmaticsRules;
+      this.rulesEditor?.updateContent(this.pragmaticsRules);
+    }
+
     if (!changes['initialUploadedContent'] && !changes['initialUploadedFileName'] && !changes['initialGraphElements']) {
       return;
     }
@@ -120,6 +128,11 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
 
     if (!ruleContent.trim()) {
       this.displayMessage('Upload a graph first.', 'red');
+      return;
+    }
+
+    if (!this.rulesText.trim()) {
+      this.displayMessage('No post-processing rules loaded. Load a LiGER config or rule file.', 'red');
       return;
     }
 

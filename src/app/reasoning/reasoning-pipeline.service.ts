@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, forkJoin, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
-import { APP_DEFAULTS } from '../app-defaults';
 import { reasoningAssignmentId } from '../analysis-model';
 import {
   LigerStructure,
@@ -59,8 +58,8 @@ export interface ReasoningPairRequest {
   typed: boolean;
   /** Reason over the first candidate only. */
   prune?: boolean;
-  /** Defaults to the graph-inspector rule text both the analysis view and chat use. */
-  ruleString?: string;
+  /** The post-processing (pragmatics) rules of the loaded LiGER rule set. */
+  ruleString: string;
 }
 
 /** One reading-assignment x rule-branch x anaphora-branch, with everything needed to
@@ -133,6 +132,15 @@ export interface MappingWithStructure {
  * preserved from the chat implementation, including which steps run concurrently --
  * see the comments on the individual stages.
  */
+/** Without post-processing rules no SYNSEM link and no anaphora binding can be produced;
+ *  that has to fail loudly, not come back as "nothing bound". */
+function requirePragmaticsRules(ruleString: string | null | undefined): string {
+  if (!ruleString) {
+    throw new Error('No post-processing (pragmatics) rules loaded; load a LiGER config or rule file.');
+  }
+  return ruleString;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReasoningPipelineService {
   constructor(private dataService: DataService) {}
@@ -267,7 +275,8 @@ export class ReasoningPipelineService {
     scopeId: string;
     merged: any;
     sequenceStructure: LigerStructure;
-    ruleString?: string;
+    /** The post-processing (pragmatics) rules of the loaded LiGER rule set. */
+    ruleString: string;
     prune?: boolean;
   }): Observable<MappingWithStructure[]> {
     if (!request.sequenceStructure) {
@@ -280,7 +289,7 @@ export class ReasoningPipelineService {
       request.scopeId,
       request.merged,
       request.sequenceStructure,
-      request.ruleString ?? APP_DEFAULTS.graphInspector.rulesText,
+      requirePragmaticsRules(request.ruleString),
       !!request.prune,
     );
   }
@@ -301,7 +310,7 @@ export class ReasoningPipelineService {
         { scopeId });
     }
 
-    const ruleString = request.ruleString ?? APP_DEFAULTS.graphInspector.rulesText;
+    const ruleString = requirePragmaticsRules(request.ruleString);
 
     // The check ASTs are fixed for this pair and never vary across the PCDRS mappings
     // below, so they are fetched exactly once and reused by every mapping. This call

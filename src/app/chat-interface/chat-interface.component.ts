@@ -1,6 +1,6 @@
 import {Component, ViewChild, OnInit, AfterViewInit, OnDestroy} from '@angular/core';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
-import {context, GswbPreferences, persistedAnalysisDocument, XlePlusGlueDocument} from "../models/models";
+import {context, GswbPreferences, LigerRuleSet, persistedAnalysisDocument, XlePlusGlueDocument} from "../models/models";
 import {ChatComponent} from "./chat/chat.component";
 import {HistoryComponent} from "./history/history.component";
 import {EditorComponent} from "../editor/editor.component";
@@ -19,6 +19,8 @@ import { DocumentBuilderService } from '../document-builder/document-builder.ser
 export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
 
   ruleFile: string = '';
+  /** Post-processing rules of the loaded rule set; null until one is loaded. */
+  pragmaticsRules: string | null = null;
   history: context[][] = [];
 
   @ViewChild('gswbPrefs') gswbPreferences!: GswbSettingsComponent; // Ensures it is initialized later
@@ -69,8 +71,9 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
 
-  updateData(ruleFile: string) {
-    this.ruleFile = ruleFile;
+  updateData(ruleSet: LigerRuleSet) {
+    this.ruleFile = ruleSet.semantics;
+    this.pragmaticsRules = ruleSet.pragmatics;
   }
 
   // This method is called automatically when historyChange emits

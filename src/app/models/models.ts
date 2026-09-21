@@ -28,6 +28,20 @@ export interface LigerRule {
   lineNumber: number;
 }
 
+/** LiGER's /load_rules answer for a LiGER config (*.liger.yaml) or a single rule file.
+ *  A single rule file is the semantics stage; its pragmatics come from LiGER's default
+ *  config. Loading either makes its lexica the ones LiGER's lex/2 uses. */
+export interface LigerRuleSet {
+  kind: 'config' | 'rules';
+  /** The path that was loaded. */
+  source: string;
+  /** Rules applied to the parse before semantic composition (ruleString of /parse etc.). */
+  semantics: string;
+  /** Post-processing rules for /apply_rules_uploaded_structure; null if LiGER has none. */
+  pragmatics: string | null;
+  lexica: string[];
+}
+
 export type SynSemMapping = Record<string, string[]>;
 
 export interface SyntacticAnalysis {
@@ -765,6 +779,9 @@ export interface RegressionSessionInputs {
   grammarPath: string;
   testsuite: RegressionSessionFilePart;
   rules: RegressionSessionFilePart;
+  /** Post-processing rules of the loaded LiGER rule set. Missing in sessions saved before
+   *  LiGER configs existed; those get them back by reloading `rules.filename`. */
+  pragmaticsRules?: string;
   axioms: RegressionSessionFilePart;
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
@@ -845,6 +862,8 @@ export interface RegressionTestingSession {
   testsuiteLoadedText: string;
   rulesLoadedText: string;
   axiomsLoadedText: string;
+  /** Post-processing (pragmatics) rules that came with the loaded rules file or config. */
+  pragmaticsRulesText: string;
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
   sentenceMap: Record<string, string>;
@@ -1088,6 +1107,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
         String(session?.rulesText ?? ''),
         String(session?.rulesLoadedText ?? session?.rulesText ?? ''),
       ),
+      pragmaticsRules: String(session?.pragmaticsRulesText ?? ''),
       axioms: createRegressionSessionFilePart(
         String(session?.axiomsFilename ?? ''),
         String(session?.axiomsText ?? ''),
@@ -1181,6 +1201,7 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     testsuiteLoadedText: String(testsuite?.loadedText ?? document?.testsuiteLoadedText ?? testsuite?.text ?? document?.testsuiteText ?? ''),
     rulesLoadedText: String(rules?.loadedText ?? document?.rulesLoadedText ?? rules?.text ?? document?.rulesText ?? ''),
     axiomsLoadedText: String(axioms?.loadedText ?? document?.axiomsLoadedText ?? axioms?.text ?? document?.axiomsText ?? ''),
+    pragmaticsRulesText: String(inputs?.pragmaticsRules ?? document?.pragmaticsRulesText ?? ''),
     gswbPreferences: { ...(inputs?.gswbPreferences ?? document?.gswbPreferences ?? base.gswbPreferences) },
     vampirePreferences: { ...(inputs?.vampirePreferences ?? document?.vampirePreferences ?? base.vampirePreferences) },
     sentenceMap: { ...(system?.sentenceMap ?? document?.sentenceMap ?? {}) },
@@ -1225,6 +1246,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     testsuiteLoadedText: '',
     rulesLoadedText: '',
     axiomsLoadedText: '',
+    pragmaticsRulesText: '',
     gswbPreferences: {
       prover: 1,
       debugging: false,

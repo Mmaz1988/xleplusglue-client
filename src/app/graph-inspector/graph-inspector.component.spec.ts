@@ -1,6 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { NO_ERRORS_SCHEMA, SimpleChange } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
@@ -119,10 +119,34 @@ describe('GraphInspectorComponent', () => {
     expect(graphVis.graphStyle).toBe('liger');
   });
 
-  it('should seed default rules and query text', () => {
-    expect(component.rulesText).toContain('Connects referents via SRC');
+  it('should seed the default query text, and no rules until a rule set is loaded', () => {
+    expect(component.rulesText).toBe('');
     expect(component.queryText).toContain('MCN-PATH(#a,#b)');
     expect(component.queryText).toContain('REFL-BIND(#f,#h)');
+  });
+
+  it('takes the loaded rule set\'s post-processing rules, replacing edits on each new load', () => {
+    const editor = jasmine.createSpyObj('EditorComponent', ['updateContent']);
+    component.rulesEditor = editor;
+
+    component.pragmaticsRules = 'rules from the config';
+    component.ngOnChanges({ pragmaticsRules: new SimpleChange(null, 'rules from the config', false) });
+    expect(component.rulesText).toBe('rules from the config');
+    expect(editor.updateContent).toHaveBeenCalledWith('rules from the config');
+
+    component.rulesText = 'edited';
+    component.pragmaticsRules = 'another config';
+    component.ngOnChanges({ pragmaticsRules: new SimpleChange('rules from the config', 'another config', false) });
+    expect(component.rulesText).toBe('another config');
+  });
+
+  it('refuses to apply rules while none are loaded', () => {
+    component.currentStructureJson = '{"constraints": []}';
+    component.rulesText = '';
+
+    component.applyRules();
+
+    expect(dataServiceMock.ligerApplyRulesToStructure).not.toHaveBeenCalled();
   });
 
   it('should render a preloaded graph from route state', () => {

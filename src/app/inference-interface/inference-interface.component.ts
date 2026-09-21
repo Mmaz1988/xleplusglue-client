@@ -1,5 +1,5 @@
 import {ChangeDetectorRef, Component, ViewChild} from '@angular/core';
-import {context} from "../models/models";
+import {context, LigerRuleSet} from "../models/models";
 import {GswbSettingsComponent} from "../gswb-vis/gswb-settings/gswb-settings.component";
 import {ChatComponent} from "../chat-interface/chat/chat.component";
 import {HistoryComponent} from "../chat-interface/history/history.component";
@@ -41,8 +41,8 @@ export class InferenceInterfaceComponent {
 
   }
 
-  updateData(ruleFile: string) {
-    this.ruleFile = ruleFile;
+  updateData(ruleSet: LigerRuleSet) {
+    this.ruleFile = ruleSet.semantics;
   }
 
   // This method is called automatically when historyChange emits

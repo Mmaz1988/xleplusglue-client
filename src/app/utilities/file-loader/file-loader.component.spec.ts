@@ -10,8 +10,8 @@ describe('FileLoaderComponent', () => {
   let fixture: ComponentFixture<FileLoaderComponent>;
 
   beforeEach(() => {
-    const dataServiceSpy = jasmine.createSpyObj('DataService', ['loadRules', 'getFileTree']);
-    dataServiceSpy.loadRules.and.returnValue(of({ grammar: 'default file content' }));
+    const dataServiceSpy = jasmine.createSpyObj('DataService', ['loadFile', 'getFileTree']);
+    dataServiceSpy.loadFile.and.returnValue(of({ grammar: 'default file content' }));
     dataServiceSpy.getFileTree.and.returnValue(of({ children: [] }));
 
     TestBed.configureTestingModule({

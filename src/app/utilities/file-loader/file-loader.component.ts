@@ -96,7 +96,7 @@ export class FileLoaderComponent implements OnChanges {
 
     console.log("Changing rules to: " + this.selectedPath);
 
-    this.dataService.loadRules({ grammar: this.selectedPath }).subscribe(
+    this.dataService.loadFile({ grammar: this.selectedPath }).subscribe(
       data => {
         if (data && data.hasOwnProperty("grammar")) {
           console.log("Successfully loaded file: " + this.selectedPath);

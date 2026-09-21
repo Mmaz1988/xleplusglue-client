@@ -21,7 +21,7 @@ import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-setting
 import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
 import { catchError, concatMap, from, map, of, switchMap, toArray } from 'rxjs';
-import { APP_DEFAULTS, isLfgxdrtPreferences } from '../../app-defaults';
+import { isLfgxdrtPreferences } from '../../app-defaults';
 import {
   compositeAnalysisId,
   majorityVerdict,
@@ -63,6 +63,9 @@ export class ChatComponent {
   @ViewChild('contextPruning') contextPruning!: ElementRef;
 
   @Input() ruleString: string = '';
+  /** The loaded rule set's post-processing rules (pronouns, presuppositions), applied to
+   *  each sentence's and sequence's merged syntax + DRS. Null until rules are loaded. */
+  @Input() pragmaticsRuleString: string | null = null;
   @Input() gswbPreferences: GswbSettingsComponent;
   @Input() vampirePreferences: InferenceSettingsComponent;
 
@@ -122,6 +125,14 @@ export class ChatComponent {
     return stored;
   }
 
+  /** The post-processing rules, which every discourse/reasoning step below needs. */
+  private requirePragmaticsRules(): string {
+    if (!this.pragmaticsRuleString) {
+      throw new Error('No post-processing (pragmatics) rules loaded; load a LiGER config or rule file.');
+    }
+    return this.pragmaticsRuleString;
+  }
+
   sendMessage() {
     if (!this.userInput.trim()) return;
 
@@ -130,6 +141,17 @@ export class ChatComponent {
 
     // Add user message to history
     this.pushChatMessage({ text: userMessage, sender: 'User' });
+
+    // Without them every turn would parse fine and then bind no pronoun, which reads as a
+    // linguistic result rather than a setup problem.
+    if (!this.pragmaticsRuleString) {
+      this.pushChatMessage({
+        text: 'No post-processing rules are loaded. Load a LiGER config or rule file first.',
+        sender: 'Bot',
+      });
+      this.loading = false;
+      return;
+    }
 
     // If logicType is 0 create string 'fof' if 1 create string 'tff'
     const logicType = this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
@@ -625,7 +647,8 @@ export class ChatComponent {
             premiseAsts: [premiseContext.semanticGraph],
             hypothesisAsts: [pair.currentSemantic?.graph],
             typed,
-            prune: pruneContext
+            prune: pruneContext,
+            ruleString: this.requirePragmaticsRules(),
           }).pipe(map(preparedPair => ({
             priorElementId,
             newSentenceId,
@@ -734,7 +757,7 @@ export class ChatComponent {
           sourceElementKind: 'sequence',
           // Same source the TPTP itself was built from, not GSWB's output style.
           logicType: this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff',
-          ruleString: APP_DEFAULTS.graphInspector.rulesText,
+          ruleString: this.requirePragmaticsRules(),
           pruned: pruneContext,
           assignments: [],
           createdAt: new Date().toISOString(),
@@ -949,14 +972,12 @@ export class ChatComponent {
           merged: { semantic: entry.semantic, graph: entry.semanticGraph, ...(solution ?? {}) },
           sequenceStructure: entry.syntax as LigerStructure,
           // The post-processing rules, NOT `this.ruleString`. That input is the LiGER
-          // *parse* rule file (it feeds /parse and the sequence syntax merge) and is ''
-          // until the user loads one, so turn 1 was applying no rules at all: LiGER
-          // returned no annotations, applyNliRules fell back to the unruled tier-A union,
-          // and with no SYNSEM there were no POSSIBLE-ANT facts for GSWB to branch on --
-          // one empty mapping, no pronoun bound, however many pronouns the turn had.
-          // Turn 2 onwards already uses this same source, so turn 1 was also the only
-          // turn whose pragmatic layer came from a different rule set than the rest.
-          ruleString: APP_DEFAULTS.graphInspector.rulesText,
+          // *parse* rule set (it feeds /parse and the sequence syntax merge). Applying it
+          // here once meant LiGER returned no annotations, applyNliRules fell back to the
+          // unruled tier-A union, and with no SYNSEM there were no POSSIBLE-ANT facts for
+          // GSWB to branch on -- one empty mapping, no pronoun bound. Every turn uses this
+          // same source, so all turns' pragmatic layers come from one rule set.
+          ruleString: this.requirePragmaticsRules(),
         }).pipe(
           map(mappings => ({ semId, scopeId, mappings })),
           catchError(error => {
@@ -1024,7 +1045,7 @@ export class ChatComponent {
             sourceElementId: sentenceId,
             sourceElementKind: 'sentence',
             // Now that the joins are not stored, this is what makes them recomputable.
-            ruleString: APP_DEFAULTS.graphInspector.rulesText,
+            ruleString: this.requirePragmaticsRules(),
             discourse,
             semDiscourseMapping,
           });
@@ -1315,7 +1336,7 @@ export class ChatComponent {
         id: `du-${sequenceId}`,
         sourceElementId: sequenceId,
         sourceElementKind: 'sequence',
-        ruleString: APP_DEFAULTS.graphInspector.rulesText,
+        ruleString: this.requirePragmaticsRules(),
         discourse: group.discourse,
         semDiscourseMapping: group.semDiscourseMapping,
       });

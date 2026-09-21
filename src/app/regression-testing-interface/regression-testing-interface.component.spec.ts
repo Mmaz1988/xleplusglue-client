@@ -20,6 +20,7 @@ describe('RegressionTestingInterfaceComponent', () => {
 
   beforeEach(() => {
     const dataServiceSpy = jasmine.createSpyObj('DataService', [
+      'loadRules',
       'ligerSequence',
       'gswbDeduce',
       'gswbMergeSequenceSemantics',
@@ -38,6 +39,10 @@ describe('RegressionTestingInterfaceComponent', () => {
       'clearVampireProgress',
       'callBatchVampire'
     ]);
+    dataServiceSpy.loadRules.and.returnValue(of({
+      kind: 'config', source: './liger_resources/rules/default.liger.yaml',
+      semantics: 'semantics from file', pragmatics: 'pragmatics from file', lexica: [],
+    }));
     dataServiceSpy.clearVampireProgress.and.returnValue(of({} as any));
     dataServiceSpy.callBatchVampire.and.returnValue(of({ status: 'ok' } as any));
     dataServiceSpy.listRegressionSessions.and.returnValue(of([]));
@@ -110,6 +115,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     } as any;
     component['errorhandle'] = { nativeElement: { textContent: '', style: {} } } as any;
     component['semvisDialog'] = { open: () => {} } as any;
+    component.session.pragmaticsRulesText = 'pragmatics rules';
   });
 
   it('should create', () => {
@@ -293,6 +299,8 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(request.premiseSemantic).toBe('A + S2');
         expect(request.merged.semantic).toBe('A + S2 + S3');
         expect(request.scope!.updateId).toBe('ru-n1');
+        // The loaded rule set's post-processing rules, not a client-side default.
+        expect(request.ruleString).toBe('pragmatics rules');
         expect(request.scope!.premiseSemanticIds).toEqual(['S1-sol-1', 'S2-derived-1']);
         expect(request.scope!.hypothesisSemanticIds).toEqual(['S3-derived-1']);
         done();
@@ -521,6 +529,47 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component['vampirePreserveExistingResults']).toBeTrue();
     expect(component.processingTimingDetails).toContain('Disambiguated sentences: 1 total');
     expect(component.processingTimingDetails).toContain('Proofs: 1 total');
+  });
+
+  describe('the rule set of a restored session', () => {
+    it('reloads the session\'s rules file, which reactivates LiGER\'s lexica and supplies missing pragmatics', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.loadRules.calls.reset();
+      const snapshot = createRegressionTestingSession();
+      snapshot.rulesFilename = './liger_resources/rules/default.liger.yaml';
+      snapshot.rulesText = 'edited semantics';
+
+      (component as any).hydrateSession(snapshot);
+
+      expect(dataServiceSpy.loadRules).toHaveBeenCalledWith({ grammar: './liger_resources/rules/default.liger.yaml' });
+      expect(component.session.pragmaticsRulesText).toBe('pragmatics from file');
+      // The editor's rules are the session's, not the file's.
+      expect(component.session.rulesText).toBe('edited semantics');
+    });
+
+    it('keeps the pragmatics the session ran with', () => {
+      const snapshot = createRegressionTestingSession();
+      snapshot.rulesFilename = './liger_resources/rules/default.liger.yaml';
+      snapshot.pragmaticsRulesText = 'stored pragmatics';
+
+      (component as any).hydrateSession(snapshot);
+
+      expect(component.session.pragmaticsRulesText).toBe('stored pragmatics');
+    });
+
+    it('fails an NLI branch with a reason when no post-processing rules are loaded', done => {
+      component.session.pragmaticsRulesText = '';
+      (component as any).prepareBranchChecks(
+        { itemId: 'n1', updateId: 'u1' },
+        { sequenceStructure: { constraints: [] }, merged: { graph: {} } },
+        0, false, false,
+      ).subscribe((pair: any) => {
+        expect(pair.assignments).toEqual([]);
+        expect(pair.failures[0]).toContain('no post-processing rules loaded');
+        expect(reasoningPipeline.prepareReasoningChecks).not.toHaveBeenCalled();
+        done();
+      });
+    });
   });
 
   it('drives progress from the live vampire_progress record, not from last_session results', () => {

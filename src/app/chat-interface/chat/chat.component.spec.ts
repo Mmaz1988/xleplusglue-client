@@ -6,14 +6,13 @@ import { of, Subject, throwError } from 'rxjs';
 import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
-import { APP_DEFAULTS } from '../../app-defaults';
 
 describe('ChatComponent', () => {
   let component: ChatComponent;
   let fixture: ComponentFixture<ChatComponent>;
   let dataServiceSpy: jasmine.SpyObj<{
-    ligerSequence: any; gswbDeduce: any; gswbMergeSequenceSemantics: any; callVampire: any;
-    lmRankAnaphora: any;
+    ligerAnnotate: any; ligerSequence: any; gswbDeduce: any; gswbMergeSequenceSemantics: any;
+    callVampire: any; lmRankAnaphora: any;
   }>;
   let reasoningPipelineSpy: jasmine.SpyObj<{
     prepareReasoningChecks: any; prepareReasoningChecksSequentially: any;
@@ -22,6 +21,7 @@ describe('ChatComponent', () => {
 
   beforeEach(() => {
     dataServiceSpy = jasmine.createSpyObj('DataService', [
+      'ligerAnnotate',
       'ligerSequence',
       'gswbDeduce',
       'gswbMergeSequenceSemantics',
@@ -46,11 +46,26 @@ describe('ChatComponent', () => {
     });
     fixture = TestBed.createComponent(ChatComponent);
     component = fixture.componentInstance;
+    component.pragmaticsRuleString = 'pragmatics rules';
     fixture.detectChanges();
   });
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('refuses a turn while no post-processing rules are loaded, instead of binding nothing', () => {
+    component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
+    component.ruleString = 'rules';
+    component.pragmaticsRuleString = null;
+    component.userInput = 'Kim arrived';
+
+    component.sendMessage();
+
+    expect(dataServiceSpy.ligerAnnotate).not.toHaveBeenCalled();
+    expect(component.chatHistory[component.chatHistory.length - 1].text)
+      .toContain('No post-processing rules are loaded');
+    expect(component.loading).toBe(false);
   });
 
   /** One reasoning assignment: a rule branch x PCDRS mapping of `merged`. Every assignment
@@ -244,6 +259,7 @@ describe('ChatComponent', () => {
       component.gswbPreferences = { gswbPreferences: { resolveDrs: true } } as any;
       component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
       component.ruleString = 'rules';
+      component.pragmaticsRuleString = 'pragmatics rules';
       component.activeIndices = [];
     });
 
@@ -462,6 +478,7 @@ describe('ChatComponent', () => {
       component.gswbPreferences = { gswbPreferences: { resolveDrs: true } } as any;
       component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
       component.ruleString = 'rules';
+      component.pragmaticsRuleString = 'pragmatics rules';
       component.chatDocument = {
         id: 'doc', semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [],
       } as any;
@@ -495,10 +512,10 @@ describe('ChatComponent', () => {
       const [request] = reasoningPipelineSpy.generateDiscourseMappings.calls.mostRecent().args;
       expect(request.sequenceStructure).toBe(structure);
       // The post-processing rules, not `component.ruleString` ('rules' above) -- that
-      // input is the LiGER *parse* rule file and is '' until the user loads one. Sending
-      // it applied no rules, so there was no SYNSEM, no POSSIBLE-ANT, and turn 1 bound no
-      // pronoun however many it had. Turn 2 onwards already used this source.
-      expect(request.ruleString).toBe(APP_DEFAULTS.graphInspector.rulesText);
+      // input is the LiGER *parse* rule set. Sending it applied no post-processing rules,
+      // so there was no SYNSEM, no POSSIBLE-ANT, and turn 1 bound no pronoun however many
+      // it had.
+      expect(request.ruleString).toBe('pragmatics rules');
 
       const update = component.chatDocument.discourseUpdates?.[0] as any;
       expect(update).toBeTruthy();
@@ -514,7 +531,7 @@ describe('ChatComponent', () => {
       // it, so its branches were text-only while analysis showed the rendered DRS.
       expect(update.discourse[0].svg).toBe('<svg>pcdrs-1</svg>');
       // Recorded now that the joins are not stored -- this is what makes them recomputable.
-      expect(update.ruleString).toBe(APP_DEFAULTS.graphInspector.rulesText);
+      expect(update.ruleString).toBe('pragmatics rules');
       expect(update.structures).toBeUndefined();
       expect(update.mergedGraphs).toBeUndefined();
       expect(component.loading).toBe(false);

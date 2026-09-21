@@ -37,6 +37,7 @@ describe('ReasoningPipelineService', () => {
     premiseAsts: [structure],
     hypothesisAsts: [structure],
     typed: false,
+    ruleString: 'pragmatics rules',
   });
 
   beforeEach(() => {
@@ -321,6 +322,14 @@ describe('ReasoningPipelineService', () => {
       expect(pair.assignments[0].mapping).toBeTruthy();
       done();
     });
+  });
+
+  it('fails loudly without post-processing rules -- they are what binds anaphora', () => {
+    expect(() => service.prepareReasoningChecks({ ...request(), ruleString: '' }))
+      .toThrowError(/post-processing/);
+    expect(() => service.generateDiscourseMappings({
+      scopeId: 's', merged: request().merged, sequenceStructure: structure, ruleString: '',
+    })).toThrowError(/post-processing/);
   });
 
   it('requires the sequence syntax -- rules cannot link semantics alone', () => {

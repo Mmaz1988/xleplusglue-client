@@ -12,7 +12,7 @@ import {
   SimpleChanges
 } from '@angular/core';
 import { DataService } from "../../data.service";
-import { FileTree } from "../../models/models";
+import { FileTree, LigerRuleSet } from "../../models/models";
 import { tap } from 'rxjs/operators';
 import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component";  // Import tap operator
 import { APP_DEFAULTS } from '../../app-defaults';
@@ -28,8 +28,9 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
   @ViewChild('toggleDisplayComponent') toggleDisplayComponent: ToggleDisplayComponent;
 
-  @Output() dataEmitter = new EventEmitter<string>();
-  @Output() ruleLoaded = new EventEmitter<{ path: string; content: string }>();
+  /** The loaded rule set: `semantics` for parsing, `pragmatics` for post-processing. */
+  @Output() dataEmitter = new EventEmitter<LigerRuleSet>();
+  @Output() ruleLoaded = new EventEmitter<{ path: string; content: string; ruleSet: LigerRuleSet }>();
   @Output() stateChange = new EventEmitter<{ path: string; loadedContent: string }>();
   @Input() currentContent = '';
   @Input() displayName = 'rules';
@@ -42,6 +43,7 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   rulesFileTree: FileTree[] = [];  // Initialize as an empty array
   selectedPath: string = "";  // This will store the selected file or folder path
   rules: string = "";
+  ruleSet: LigerRuleSet | null = null;
   // selectedIsDirectory: boolean = false;  // This will store if the selected path is a directory
 
   constructor(private dataService: DataService, private cd: ChangeDetectorRef) {}
@@ -51,7 +53,6 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
     console.log("Initial file tree:", this.rulesFileTree);
     this.selectedPath = this.defaultRules
     this.updateRules();
-    this.sendRules()
   }
 
   ngAfterViewInit() {
@@ -89,20 +90,20 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
     console.log("Changing rules to: " + this.selectedPath);
 
-    // Update the current grammar string
+    // A LiGER config or a single rule file; either way LiGER answers with both stages.
     this.dataService.loadRules({ grammar: this.selectedPath}).subscribe(
       data => {
         console.log(data);
-        if (data.hasOwnProperty("grammar")) {
+        if (data && typeof data.semantics === 'string') {
           console.log("Successfully loaded rules: " + this.selectedPath);
-          // this.grammarListSelector.nativeElement.value = this.selectedPath;
           this.loadedPath = this.selectedPath;
-          this.loadedContent = data.grammar;
+          this.loadedContent = data.semantics;
           this.cd.detectChanges();
           this.toggleDisplayComponent.isHidden = true;
-          this.rules = data.grammar;
+          this.rules = data.semantics;
+          this.ruleSet = data;
           this.sendRules()
-          this.ruleLoaded.emit({ path: this.selectedPath, content: this.rules });
+          this.ruleLoaded.emit({ path: this.selectedPath, content: this.rules, ruleSet: data });
           this.stateChange.emit({ path: this.loadedPath, loadedContent: this.loadedContent });
           this.refreshStatusMessage();
         } else {
@@ -111,7 +112,9 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
       },
       error => {
         console.log('ERROR: ', error);
-        this.currentStatusMessage = "Failed to load rules: " + this.selectedPath;
+        // LiGER names the file and field at fault for a broken config.
+        const reason = error?.error?.error;
+        this.currentStatusMessage = "Failed to load rules: " + this.selectedPath + (reason ? ` (${reason})` : '');
       }
     );
   }
@@ -143,7 +146,9 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
     }));
   }
   sendRules() {
-    this.dataEmitter.emit(this.rules);
+    if (this.ruleSet) {
+      this.dataEmitter.emit(this.ruleSet);
+    }
   }
 
   private refreshStatusMessage(): void {
@@ -159,7 +164,8 @@ export class RuleLoaderComponent implements OnInit,AfterViewInit, OnChanges {
     }
 
     const modified = (this.currentContent ?? '') !== (this.loadedContent ?? this.rules ?? '');
-    this.currentStatusMessage = `Currently loaded ${this.displayName}: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
+    const kind = this.ruleSet?.kind === 'config' ? ' (config)' : '';
+    this.currentStatusMessage = `Currently loaded ${this.displayName}${kind}: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
   }
 
 }

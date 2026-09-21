@@ -5,7 +5,7 @@ import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import {GrammarLoaderComponent} from "../utilities/grammar-loader/grammar-loader.component";
 import { proofInputsFrom } from '../document-builder/proof-inputs';
 import { DataService } from '../data.service';
-import { GswbProofInput, LigerSolutionAnnotation, LigerStructure, SequenceAnalysis } from '../models/models';
+import { GswbProofInput, LigerRuleSet, LigerSolutionAnnotation, LigerStructure, SequenceAnalysis } from '../models/models';
 import { AnalysisWorkspaceStateService, LigerWorkspaceState } from '../analysis-workspace-state.service';
 import { APP_DEFAULTS } from "../app-defaults";
 
@@ -429,8 +429,12 @@ export class LigerVisComponent implements AfterViewInit {
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
-  updateRules(ruleFile: string) {
-    this.ligerRules.updateContent(ruleFile);
+  /** Post-processing rules of the loaded rule set, for the post-processing graph inspector. */
+  pragmaticsRules: string | null = null;
+
+  updateRules(ruleSet: LigerRuleSet) {
+    this.ligerRules.updateContent(ruleSet.semantics);
+    this.pragmaticsRules = ruleSet.pragmatics;
   }
 
   onGrammarLoaded(path: string): void {

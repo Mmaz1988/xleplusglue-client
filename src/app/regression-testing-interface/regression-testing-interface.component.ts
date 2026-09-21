@@ -40,6 +40,7 @@ import {
   check,
   VampireSessionSummary,
   sameReasoningUpdate,
+  LigerRuleSet,
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
@@ -974,6 +975,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       testsuiteLoadedText: runtimeSnapshot.testsuiteLoadedText ?? runtimeSnapshot.testsuiteText ?? '',
       rulesLoadedText: runtimeSnapshot.rulesLoadedText ?? runtimeSnapshot.rulesText ?? '',
       axiomsLoadedText: runtimeSnapshot.axiomsLoadedText ?? runtimeSnapshot.axiomsText ?? '',
+      pragmaticsRulesText: runtimeSnapshot.pragmaticsRulesText ?? '',
       testsuiteUpdateMode: runtimeSnapshot.testsuiteUpdateMode ?? 'write',
       lastVampireResults: runtimeSnapshot.lastVampireResults ?? null,
     };
@@ -987,6 +989,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.testfile.updateContent(this.session.testsuiteText || '');
     this.ligerRules.updateContent(this.session.rulesText || '');
     this.axiomEdit.updateContent(this.session.axiomsText || '');
+    this.reactivateRuleSet();
     this.testsuiteUpdateMode = this.session.testsuiteUpdateMode ?? 'write';
     this.testsuiteEditorMode = this.inferTestsuiteEditorMode(this.session.testsuiteText || '');
 
@@ -2846,6 +2849,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         failures: [`${pairId}: no merged sequence for this branch.`], degradations: [],
       });
     }
+    if (!this.session.pragmaticsRulesText) {
+      return of({
+        scopeId: pairId, assignments: [],
+        failures: [`${pairId}: no post-processing rules loaded; load a LiGER config or rule file.`],
+        degradations: [],
+      });
+    }
     return this.reasoningPipeline.prepareReasoningChecks({
       scopeId: pairId,
       scope: {
@@ -2860,7 +2870,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       hypothesisAsts: branch.hypothesisAsts,
       typed,
       prune: pruning,
-      ruleString: APP_DEFAULTS.graphInspector.rulesText,
+      ruleString: this.session.pragmaticsRulesText,
     }).pipe(
       catchError(error => {
         const reason = `${pairId}: ${error?.message ?? String(error)}`;
@@ -3373,7 +3383,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           ...(sequenceRegistered ? { sourceElementId: sequenceId, sourceElementKind: 'sequence' as const } : {}),
           itemId: pair.itemId,
           logicType: this.session.lastLogicType === 'tff' ? 'tff' : 'fof',
-          ruleString: APP_DEFAULTS.graphInspector.rulesText,
+          ruleString: this.session.pragmaticsRulesText,
           pruned: this.contextPruning?.nativeElement?.checked ?? false,
           anaphoraSelection: this.runAnaphoraSelection
             ? { ...this.runAnaphoraSelection, applied: this.runAnaphoraSelectionApplied[pair.itemId] ?? true }
@@ -3727,14 +3737,41 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.testsuiteLoadedText = state?.loadedContent ?? '';
   }
 
-  updateRules(file: { path: string; content: string }) {
-    // Loading a rules file replaces the editor content and snapshot metadata.
+  updateRules(file: { path: string; content: string; ruleSet: LigerRuleSet }) {
+    // Loading a rules file or config replaces the editor content and snapshot metadata.
     this.session.rulesFilename = file?.path ?? '';
     this.session.rulesLoadedText = file?.content ?? '';
     this.session.rulesText = file?.content ?? '';
+    this.session.pragmaticsRulesText = file?.ruleSet?.pragmatics ?? '';
     this.ligerRules.updateContent(file?.content ?? '');
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();
+  }
+
+  /**
+   * LiGER's active lexica are server state, and sessions saved before LiGER configs have no
+   * pragmatics rules stored. Reloading the session's rules file or config restores both. The
+   * editor's (possibly edited) rules and any stored pragmatics are kept, so a rerun uses the
+   * rules the session ran with.
+   */
+  private reactivateRuleSet(): void {
+    const path = this.session.rulesFilename;
+    if (!path) {
+      return;
+    }
+    const sessionKey = this.session.redisSessionKey;
+    this.dataService.loadRules({ grammar: path }).subscribe({
+      next: ruleSet => {
+        if (this.session.redisSessionKey !== sessionKey || this.session.rulesFilename !== path) {
+          return;
+        }
+        if (!this.session.pragmaticsRulesText) {
+          this.session.pragmaticsRulesText = ruleSet.pragmatics ?? '';
+          this.scheduleSessionSave();
+        }
+      },
+      error: error => console.warn('[Regression] could not reload the session\'s rules', { path, error }),
+    });
   }
 
   onRulesStateChange(state: { path: string; loadedContent: string }): void {
