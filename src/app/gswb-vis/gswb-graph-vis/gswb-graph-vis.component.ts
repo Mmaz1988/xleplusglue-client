@@ -3,6 +3,7 @@ import cytoscape, {Core} from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
 import tippy from "tippy.js";
+import {labelHeight, labelWidth} from '../../utilities/cytoscape-label-size';
 
 cytoscape.use(dagre);
 
@@ -18,8 +19,8 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "yellow white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
   },
@@ -34,8 +35,8 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "red white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
   },
@@ -50,8 +51,8 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
   },
@@ -66,8 +67,8 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
   },
@@ -82,8 +83,8 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "orange white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
   },

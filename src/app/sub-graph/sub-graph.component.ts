@@ -3,6 +3,7 @@ import cytoscape, {Core} from "cytoscape";
 import cise from "cytoscape-cise";
 import dagre from "cytoscape-dagre";
 import tippy from "tippy.js";
+import {labelHeight, labelWidth} from '../utilities/cytoscape-label-size';
 
 cytoscape.use(cise);
 cytoscape.use(dagre);
@@ -61,8 +62,8 @@ const ligerStyle = [
       'background-fill': 'linear-gradient',
       'background-gradient-stop-colors': '#4b0082 white',
       'background-gradient-stop-positions': '0 30 60',
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px'
     }
   },
@@ -77,8 +78,8 @@ const ligerStyle = [
       'background-fill': 'linear-gradient',
       'background-gradient-stop-colors': '#7b2cbf white',
       'background-gradient-stop-positions': '0 30 60',
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px'
     }
   },
@@ -93,8 +94,8 @@ const ligerStyle = [
       'background-fill': 'linear-gradient',
       'background-gradient-stop-colors': '#0b3d91 white',
       'background-gradient-stop-positions': '0 30 60',
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px'
     }
   },
@@ -109,8 +110,8 @@ const ligerStyle = [
       'background-fill': 'linear-gradient',
       'background-gradient-stop-colors': '#455a64 white',
       'background-gradient-stop-positions': '0 30 60',
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px'
     }
   },
@@ -125,8 +126,8 @@ const ligerStyle = [
       'background-fill': 'linear-gradient',
       'background-gradient-stop-colors': '#2e7d32 white',
       'background-gradient-stop-positions': '0 30 60',
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px'
     }
   },
@@ -174,8 +175,8 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "yellow white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
   },
@@ -190,8 +191,8 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "red white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
   },
@@ -206,8 +207,8 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
   },
@@ -222,8 +223,8 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
   },
@@ -238,8 +239,8 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "orange white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': '80px',
-      'height': '30px',
+      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
   },
