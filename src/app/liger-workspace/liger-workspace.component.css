@@ -7,43 +7,51 @@
 .liger-workspace {
   display: flex;
   min-height: 200px;
-  border: 1px solid #d8dee8;
-  border-radius: 4px;
   overflow: hidden;
   resize: vertical;
-  background: #fff;
   font-family: Roboto, sans-serif;
   font-size: 12px;
   font-weight: normal;
 }
 
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.pane.left { flex: 0 0 auto; background: #fbfcfe; }
+.pane.left { flex: 0 0 auto; background: #fbfcfe; border: 1px solid #d8dee8; }
 .pane.right { flex: 1 1 auto; }
 
+/* Between tree and editor: drag to resize the tree, or hide and show it with the toggle. */
 .divider {
   flex: none;
-  width: 5px;
+  width: 16px;
   cursor: col-resize;
   background: #eef1f5;
-  border-left: 1px solid #d8dee8;
-  border-right: 1px solid #d8dee8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.divider:hover { background: #00a9e0; }
+.divider:hover { background: #d7f0fb; }
+.divider.closed { cursor: default; background: transparent; }
+button.tree-toggle {
+  width: 16px; height: 44px; margin: 0; padding: 0;
+  border: 0; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.tree-toggle mat-icon { font-size: 16px; width: 16px; height: 16px; }
 
+/* The app's rounded blue buttons (styles.css), only smaller and without their margin. */
 .toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex: none; }
 .toolbar button,
 .pane-toolbar button {
-  font: inherit; font-size: 11px; border: 1px solid #d8dee8; background: #fff;
-  border-radius: 3px; padding: 3px 8px; cursor: pointer; color: #243247;
+  font: inherit; font-size: 12px; padding: 2px 12px; margin: 0;
 }
-.toolbar button.primary { background: #00a9e0; border-color: #00a9e0; color: #fff; }
-.toolbar button:disabled,
-.pane-toolbar button:disabled { color: #b9c6d4; cursor: default; }
 
 .tree-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 8px; }
 
 /* --- tree rows, as in the explorer's grammar-tree ------------------------ */
+.browse-dir {
+  padding: 2px 6px 4px; font-size: 11px; color: #7c8ba1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
 .tree { font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 .branch { display: flex; align-items: center; height: 22px; }
 .children { padding-left: 14px; }
@@ -67,7 +75,10 @@
   color: #243247;
   box-sizing: border-box;
 }
-button.row:hover { background: #eef3fa; }
+/* Rows and twisties are buttons: undo the app's global rounded-blue button style. */
+button.row, button.twisty { margin: 0; border: 0; background: none; color: #243247; }
+button.row:hover:not(:disabled) { background: #eef3fa; }
+.row.not-config { opacity: .45; cursor: default; }
 .row.selected { background: #00a9e0; color: #fff; }
 .row.selected .kind,
 .row.selected .edited { color: #fff; }
@@ -109,7 +120,7 @@ span.twisty { cursor: default; }
 /* --- editor pane ---------------------------------------------------------- */
 .pane-toolbar {
   display: flex; align-items: center; gap: 6px; flex: none;
-  padding: 5px 8px; border-bottom: 1px solid #d8dee8; background: #f7f9fc;
+  padding: 2px 0 4px;
 }
 .pane-toolbar .spacer { flex: 1; }
 .file-label {
@@ -122,12 +133,12 @@ span.twisty { cursor: default; }
   background: #fff8e1; color: #7a5b00; border-bottom: 1px solid #ffe0a3;
 }
 
-/* app-editor fills the pane. Its global CSS (ViewEncapsulation.None) gives
-   .editor-container a 780px minimum width and CodeMirror a fixed 300px height, both
-   meant for a stand-alone editor; inside the pane they give way to the pane's size. */
+/* app-editor fills the pane and keeps its own blue box. Its global CSS
+   (ViewEncapsulation.None) gives .editor-container a 780px minimum width and CodeMirror a
+   fixed 300px height, both meant for a stand-alone editor; here they give way to the pane. */
 .pane.right app-editor { display: block; flex: 1; min-height: 0; }
 :host ::ng-deep .pane.right .editor-container {
-  min-width: 0; height: 100%; border: 0; background: #fff;
+  min-width: 0; height: 100%; box-sizing: border-box;
 }
 :host ::ng-deep .pane.right .CodeMirror {
   height: 100%; resize: none; font-size: 13px;

@@ -33,6 +33,7 @@ const EDITOR_MODES: Record<LigerConfigField, string> = {
 export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @ViewChild('editor') editor?: EditorComponent;
+  @ViewChild('rightPane') rightPane?: ElementRef<HTMLElement>;
 
   /** Opened when no rule set is open yet. */
   @Input() defaultPath = APP_DEFAULTS.grammar.ligerRulesPath;
@@ -47,8 +48,13 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The tree pane's share of the width, as in the explorer. */
   splitFraction = 0.3;
+  /** The tree starts hidden: the editor keeps the room a rules editor always had. */
+  treeOpen = false;
   browsing = false;
   browseTree: FileTree[] = [];
+  /** The folder "Open…" is showing; ".." goes up from it. */
+  browseDir = '';
+  browseLoading = false;
 
   private collapsedFields = new Set<LigerConfigField>();
   private openBrowseDirs = new Set<string>();
@@ -76,12 +82,13 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   ngAfterViewInit(): void {
     this.syncEditor();
-    // CodeMirror measures itself once. Re-measure whenever the box changes size: when its
-    // bottom edge or the divider is dragged, and when an app-toggle-display showing it
-    // switches from display: none, which CodeMirror would otherwise render blank.
+    // CodeMirror measures itself once. Re-measure whenever the editor's pane changes size:
+    // when the box's bottom edge or the divider is dragged, when the tree is shown or
+    // hidden, and when an app-toggle-display showing it switches from display: none, which
+    // CodeMirror would otherwise render blank.
     if (typeof ResizeObserver !== 'undefined') {
       this.resizes = new ResizeObserver(() => this.editor?.refresh());
-      this.resizes.observe(this.host.nativeElement);
+      this.resizes.observe(this.rightPane?.nativeElement ?? this.host.nativeElement);
     }
   }
 
@@ -107,10 +114,18 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
     return !!this.state.documents[path]?.readOnly;
   }
 
-  /** Where "Open…" browses: the open config's scope, so a grammar's other configs and rule
-   *  files are one click away. */
+  /** Where "Open…" starts: the open config's scope, so a grammar's other configs are one
+   *  click away; ".." leads anywhere else. */
   get browseRoot(): string {
     return this.state?.tree?.scope ?? this.browseDirectory;
+  }
+
+  get browseDirName(): string {
+    return this.browseDir.replace(/\/+$/, '');
+  }
+
+  toggleTree(): void {
+    this.treeOpen = !this.treeOpen;
   }
 
   fieldTooltip(section: LigerConfigTreeSection): string {
@@ -167,12 +182,33 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   toggleBrowse(): void {
     this.browsing = !this.browsing;
     if (this.browsing) {
-      const root = this.browseRoot;
-      this.browseTree = [];
-      this.files.browse(root).subscribe({
-        next: tree => this.browseTree = tree,
-        error: err => console.error('Failed to list', root, err),
-      });
+      this.browseInto(this.browseRoot);
+    }
+  }
+
+  /** Shows `dir`'s folders and files. */
+  browseInto(dir: string): void {
+    this.browseDir = dir;
+    this.browseTree = [];
+    this.openBrowseDirs.clear();
+    this.browseLoading = true;
+    this.files.browse(dir).subscribe({
+      next: tree => { this.browseTree = tree; this.browseLoading = false; },
+      error: err => { this.browseLoading = false; console.error('Failed to list', dir, err); },
+    });
+  }
+
+  /** Goes up one folder. Lexically: ".." of a symlinked folder is its link's parent, which is
+   *  where the user came from. */
+  browseUp(): void {
+    const dir = this.browseDir.replace(/\/+$/, '');
+    const cut = dir.lastIndexOf('/');
+    if (cut > 0) {
+      this.browseInto(dir.substring(0, cut));
+    } else if (cut === 0) {
+      this.browseInto('/');
+    } else {
+      this.browseInto(`${dir}/..`);
     }
   }
 
@@ -186,12 +222,14 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
+  /** Only a LiGER config opens as a rule set: a rule file has no stages, so on its own it
+   *  would be a semantics stage without pragmatics, and post-processing would be blocked. */
   isConfigFile(name: string): boolean {
-    return /\.ya?ml$/i.test(name);
+    return /\.liger\.ya?ml$/i.test(name);
   }
 
   openBrowsed(path: string): void {
-    if (path && this.confirmDroppingEdits(`Open ${path}?`)) {
+    if (path && this.isConfigFile(path) && this.confirmDroppingEdits(`Open ${path}?`)) {
       this.browsing = false;
       this.workspace.open(path);
     }

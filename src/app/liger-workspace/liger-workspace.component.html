@@ -1,17 +1,26 @@
 <div class="liger-workspace" [style.height]="height"
      (mousemove)="onDrag($event)" (mouseup)="endDrag()" (mouseleave)="endDrag()">
 
-  <div class="pane left" [style.flex-basis.%]="splitFraction * 100" aria-label="LiGER rule set">
+  <div class="pane left" *ngIf="treeOpen" [style.flex-basis.%]="splitFraction * 100" aria-label="LiGER rule set">
     <div class="toolbar">
       <button type="button" class="primary" (click)="toggleBrowse()">{{ browsing ? 'Cancel' : 'Open…' }}</button>
       <button type="button" (click)="reload()" [disabled]="!state.ruleSet" title="Read the rule set from disk again">Reload</button>
     </div>
 
     <div class="tree-scroll">
-      <!-- Picking a config or rule file to open. -->
+      <!-- Picking a config to open. Only configs open: a rule file is one stage of a rule set,
+           edited through the config that lists it. -->
       <ng-container *ngIf="browsing">
+        <div class="browse-dir" [title]="browseDir">{{ browseDirName }}</div>
+        <div class="branch">
+          <span class="twisty"></span>
+          <button type="button" class="row field" (click)="browseUp()" title="Parent folder">
+            <mat-icon class="kind">drive_folder_upload</mat-icon><span class="label">..</span>
+          </button>
+        </div>
         <ng-container *ngTemplateOutlet="browseRows; context: { $implicit: browseTree }"></ng-container>
-        <p *ngIf="!browseTree.length" class="status">Listing {{ browseRoot }}…</p>
+        <p *ngIf="browseLoading" class="status">Listing {{ browseDir }}…</p>
+        <p *ngIf="!browseLoading && !browseTree.length" class="status">Empty folder.</p>
       </ng-container>
 
       <!-- The open rule set: config → field → file. -->
@@ -61,9 +70,16 @@
     <p *ngIf="state.error" class="error">{{ state.error }}</p>
   </div>
 
-  <div class="divider" (mousedown)="startDrag($event)" title="Drag to resize"></div>
+  <div class="divider" [class.closed]="!treeOpen" (mousedown)="startDrag($event)"
+       [title]="treeOpen ? 'Drag to resize the rule set' : ''">
+    <button type="button" class="tree-toggle" (mousedown)="$event.stopPropagation()" (click)="toggleTree()"
+            [attr.aria-expanded]="treeOpen"
+            [title]="treeOpen ? 'Hide the rule set' : 'Show the rule set'">
+      <mat-icon>{{ treeOpen ? 'chevron_left' : 'chevron_right' }}</mat-icon>
+    </button>
+  </div>
 
-  <div class="pane right">
+  <div class="pane right" #rightPane>
     <div class="pane-toolbar">
       <span class="file-label" [title]="active?.path ?? ''">{{ active?.name ?? 'No file selected' }}</span>
       <span *ngIf="active && isEdited(active.path)" class="dirty-hint">edited, not saved</span>
@@ -86,7 +102,8 @@
       <button type="button" class="twisty" (click)="toggleBrowseDir(node.path)">
         <mat-icon>{{ isBrowseOpen(node.path) ? 'expand_more' : 'chevron_right' }}</mat-icon>
       </button>
-      <button type="button" class="row field" (click)="toggleBrowseDir(node.path)">
+      <button type="button" class="row field" (click)="toggleBrowseDir(node.path)"
+              (dblclick)="browseInto(node.path)" title="Double-click to open this folder">
         <mat-icon class="kind">folder</mat-icon><span class="label">{{ node.name }}</span>
       </button>
     </div>
@@ -94,7 +111,11 @@
       <ng-container *ngTemplateOutlet="browseRows; context: { $implicit: node.children }"></ng-container>
     </div>
     <ng-template #browseFile>
-      <button type="button" class="row file leaf" [title]="'Open ' + node.path" (click)="openBrowsed(node.path)">
+      <button type="button" class="row file leaf" [class.not-config]="!isConfigFile(node.name)"
+              [disabled]="!isConfigFile(node.name)"
+              [title]="isConfigFile(node.name) ? 'Open ' + node.path
+                : 'Not a LiGER config: a rule file is edited through the config that lists it'"
+              (click)="openBrowsed(node.path)">
         <mat-icon class="kind">{{ isConfigFile(node.name) ? 'settings' : 'description' }}</mat-icon>
         <span class="label">{{ node.name }}</span>
       </button>

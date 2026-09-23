@@ -41,6 +41,23 @@ describe('LigerWorkspaceComponent', () => {
     workspace = TestBed.inject(LigerWorkspaceService);
     root = fixture.nativeElement;
     fixture.detectChanges();
+    click(root.querySelector<HTMLButtonElement>('.tree-toggle')!);  // the tree starts hidden
+  });
+
+  it('starts with the tree hidden, and the toggle between tree and editor shows and hides it', () => {
+    const fresh = TestBed.createComponent(LigerWorkspaceComponent);
+    fresh.detectChanges();
+    const el: HTMLElement = fresh.nativeElement;
+    expect(el.querySelector('.pane.left')).toBeNull();
+    expect(el.querySelector('app-editor')).not.toBeNull();
+
+    el.querySelector<HTMLButtonElement>('.divider .tree-toggle')!.click();
+    fresh.detectChanges();
+    expect(el.querySelector('.pane.left')).not.toBeNull();
+
+    el.querySelector<HTMLButtonElement>('.divider .tree-toggle')!.click();
+    fresh.detectChanges();
+    expect(el.querySelector('.pane.left')).toBeNull();
   });
 
   it('opens the default rule set and shows the first file', () => {
@@ -77,10 +94,33 @@ describe('LigerWorkspaceComponent', () => {
     expect(Array.from(root.querySelectorAll('.row.field'))[1].classList).toContain('absent');
   });
 
-  it('browses the open config\'s scope', () => {
+  it('browses from the open config\'s scope, and ".." goes up from any folder', () => {
     click(root.querySelector<HTMLButtonElement>('.toolbar .primary')!);
-
     expect(files.browse).toHaveBeenCalledWith('/res/rules');
+
+    const up = () => Array.from(root.querySelectorAll<HTMLButtonElement>('.row.field'))
+      .find(row => row.querySelector('.label')!.textContent!.trim() === '..')!;
+    click(up());
+    expect(files.browse).toHaveBeenCalledWith('/res');
+    click(up());
+    expect(files.browse).toHaveBeenCalledWith('/');
+  });
+
+  it('opens only configs: a rule file is one stage, not a rule set', () => {
+    files.browse.and.returnValue(of([
+      { name: 'c.liger.yaml', path: '/r/c.liger.yaml', isDirectory: false, children: [] },
+      { name: 'rules.liger', path: '/r/rules.liger', isDirectory: false, children: [] },
+    ]));
+    click(root.querySelector<HTMLButtonElement>('.toolbar .primary')!);
+    files.loadRuleSet.calls.reset();
+
+    const ruleFile = fileButton('rules.liger');
+    expect(ruleFile.disabled).toBeTrue();
+    component.openBrowsed('/r/rules.liger');
+    expect(files.loadRuleSet).not.toHaveBeenCalled();
+
+    click(fileButton('c.liger.yaml'));
+    expect(files.loadRuleSet).toHaveBeenCalledWith('/r/c.liger.yaml');
   });
 
   it('collapses and expands a section', () => {
