@@ -86,21 +86,19 @@
     <p *ngIf="state.error" class="error">{{ state.error }}</p>
   </div>
 
-  <!-- Between tree and editor while the tree is shown; with it hidden, the toggle moves to
-       the start of the editor's toolbar, so the editor lines up with the boxes around it. -->
-  <div class="divider" *ngIf="treeOpen" (mousedown)="startDrag($event)" title="Drag to resize the rule set">
+  <!-- Between tree and editor, inside the workspace's one frame: the tree splits the box, it
+       does not push the editor out of it. Drag to resize the tree; the toggle shows and hides it. -->
+  <div class="divider" [class.closed]="!treeOpen" (mousedown)="startDrag($event)"
+       [title]="treeOpen ? 'Drag to resize the rule set' : ''">
     <button type="button" class="tree-toggle" (mousedown)="$event.stopPropagation()" (click)="toggleTree()"
-            aria-expanded="true" title="Hide the rule set">
-      <mat-icon>chevron_left</mat-icon>
+            [attr.aria-expanded]="treeOpen"
+            [title]="treeOpen ? 'Hide the rule set' : 'Show the rule set'">
+      <mat-icon>{{ treeOpen ? 'chevron_left' : 'chevron_right' }}</mat-icon>
     </button>
   </div>
 
   <div class="pane right" #rightPane>
     <div class="pane-toolbar">
-      <button *ngIf="!treeOpen" type="button" class="tree-toggle" (click)="toggleTree()"
-              aria-expanded="false" title="Show the rule set">
-        <mat-icon>chevron_right</mat-icon>
-      </button>
       <span class="file-label" [title]="active?.path ?? ''">{{ active?.name ?? 'No file selected' }}</span>
       <span *ngIf="active && isEdited(active.path)" class="dirty-hint">edited, not saved</span>
       <span class="spacer"></span>

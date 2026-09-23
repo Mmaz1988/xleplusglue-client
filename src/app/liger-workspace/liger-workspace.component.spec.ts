@@ -51,20 +51,35 @@ describe('LigerWorkspaceComponent', () => {
     expect(el.querySelector('.pane.left')).toBeNull();
     expect(el.querySelector('app-editor')).not.toBeNull();
 
-    expect(el.querySelector('.divider')).toBeNull();  // no bar: the editor lines up with the page
-    el.querySelector<HTMLButtonElement>('.pane-toolbar .tree-toggle')!.click();
+    // The bar between tree and editor stays, inside the workspace's frame, with the toggle on it.
+    expect(el.querySelector('.liger-workspace > .divider .tree-toggle')).not.toBeNull();
+    el.querySelector<HTMLButtonElement>('.divider .tree-toggle')!.click();
     fresh.detectChanges();
     expect(el.querySelector('.pane.left')).not.toBeNull();
 
     el.querySelector<HTMLButtonElement>('.divider .tree-toggle')!.click();
     fresh.detectChanges();
     expect(el.querySelector('.pane.left')).toBeNull();
+    expect(el.querySelector('.divider .tree-toggle')).not.toBeNull();
   });
 
   it('is an editor\'s height plus its toolbar, from the shared --editor-height', () => {
     root.style.setProperty('--editor-height', '200px');
 
     expect(getComputedStyle(root.querySelector('.liger-workspace')!).height).toBe('230px');
+  });
+
+  it('splits its own box when the tree opens: the box keeps its width', () => {
+    root.style.width = '600px';
+    const box = root.querySelector<HTMLElement>('.liger-workspace')!;
+    const width = box.getBoundingClientRect().width;
+    const editorPane = root.querySelector<HTMLElement>('.pane.right')!;
+    const editorOpen = editorPane.getBoundingClientRect().width;
+
+    click(root.querySelector<HTMLButtonElement>('.divider .tree-toggle')!);  // hide the tree
+    expect(box.getBoundingClientRect().width).toBe(width);
+    expect(editorPane.getBoundingClientRect().right).toBe(box.getBoundingClientRect().right - 3);
+    expect(editorPane.getBoundingClientRect().width).toBeGreaterThan(editorOpen);
   });
 
   it('opens the default rule set and shows the first file', () => {

@@ -4,8 +4,13 @@
   display: block;
 }
 
+/* One text box, framed like the editors, split inside into tree | bar | editor. */
 .liger-workspace {
   display: flex;
+  box-sizing: border-box;
+  border: var(--box-border-width, 3px) solid var(--box-border-color, #00a9e0);
+  border-radius: var(--text-box-radius, 0);
+  background: #fff;
   /* An editor's height plus the toolbar row, so the rule set is the size of the other
      editors on the page. */
   height: calc(var(--editor-height, 300px) + 30px);
@@ -18,12 +23,7 @@
 }
 
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-/* The tree is a text box too: the editors' sharp blue frame. */
-.pane.left {
-  flex: 0 0 auto; background: #fbfcfe; box-sizing: border-box;
-  border: var(--box-border-width, 3px) solid var(--box-border-color, #00a9e0);
-  border-radius: var(--text-box-radius, 0);
-}
+.pane.left { flex: 0 0 auto; background: #fbfcfe; box-sizing: border-box; }
 .pane.right { flex: 1 1 auto; }
 
 /* Between tree and editor: drag to resize the tree, or hide and show it with the toggle. */
@@ -37,7 +37,8 @@
   justify-content: center;
 }
 .divider:hover { background: #d7f0fb; }
-.pane-toolbar button.tree-toggle { width: 24px; height: 20px; padding: 0; }
+.divider.closed { cursor: default; }
+.divider.closed:hover { background: #eef1f5; }
 button.tree-toggle {
   width: 16px; height: 44px; margin: 0; padding: 0;
   border: 0; border-radius: 8px;
@@ -128,7 +129,7 @@ span.twisty { cursor: default; }
 /* --- editor pane ---------------------------------------------------------- */
 .pane-toolbar {
   display: flex; align-items: center; gap: 6px; flex: none;
-  padding: 2px 0 4px;
+  padding: 3px 8px; border-bottom: 1px solid #d8dee8; background: #f7f9fc;
 }
 .pane-toolbar .spacer { flex: 1; }
 .file-label {
@@ -145,8 +146,9 @@ span.twisty { cursor: default; }
    (ViewEncapsulation.None) gives .editor-container a 780px minimum width and CodeMirror a
    fixed 300px height, both meant for a stand-alone editor; here they give way to the pane. */
 .pane.right app-editor { display: block; flex: 1; min-height: 0; }
+/* The workspace's frame is the editor's frame here, so the editor has none of its own. */
 :host ::ng-deep .pane.right .editor-container {
-  min-width: 0; height: 100%; box-sizing: border-box;
+  min-width: 0; height: 100%; box-sizing: border-box; border: 0;
 }
 :host ::ng-deep .pane.right .CodeMirror {
   height: 100%; resize: none; font-size: 13px;
