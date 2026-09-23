@@ -1,11 +1,15 @@
 import {Component, Input} from '@angular/core';
 import cytoscape, {Core} from "cytoscape";
 import cise from "cytoscape-cise";
+import popper from 'cytoscape-popper';
 import dagre from "cytoscape-dagre";
 import tippy from "tippy.js";
 import {labelHeight, labelWidth} from '../utilities/cytoscape-label-size';
 
 cytoscape.use(cise);
+// Its tooltips use popperRef(); registered here, not only by the LiGER graph, so this view
+// does not depend on that one being loaded first.
+cytoscape.use(popper);
 cytoscape.use(dagre);
 
 const ligerStyle = [

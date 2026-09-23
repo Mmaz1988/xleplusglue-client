@@ -1,17 +1,21 @@
 import {Component, Input, OnChanges, AfterViewInit, ViewChild, ElementRef} from '@angular/core';
 import cytoscape, {Core} from 'cytoscape';
+import popper from 'cytoscape-popper';
 import dagre from 'cytoscape-dagre';
 import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
 import tippy from "tippy.js";
 import {labelHeight, labelWidth} from '../../utilities/cytoscape-label-size';
 
 cytoscape.use(dagre);
+// Its tooltips use popperRef(); registered here, not only by the LiGER graph, so this view
+// does not depend on that one being loaded first.
+cytoscape.use(popper);
 
 const styleArray = [
   {
     selector: 'node[color="yellow"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -19,7 +23,7 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "yellow white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
@@ -27,7 +31,7 @@ const styleArray = [
   {
     selector: 'node[color="red"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -35,7 +39,7 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "red white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
@@ -43,7 +47,7 @@ const styleArray = [
   {
     selector: 'node[color="blue"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'back',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -51,7 +55,7 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
@@ -59,7 +63,7 @@ const styleArray = [
   {
     selector: 'node[color="green"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -67,7 +71,7 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
@@ -75,7 +79,7 @@ const styleArray = [
   {
     selector: 'node[color="orange"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -83,7 +87,7 @@ const styleArray = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "orange white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
@@ -159,7 +163,7 @@ export class GswbGraphVisComponent {
   renderGraph(graphData): void {
     this.cy = cytoscape({
       container: document.getElementById(this.graphID), // Use the appropriate container element ID
-      elements: graphData,
+      elements: withLabels(graphData),
       style: styleArray as cytoscape.Stylesheet[],
       layout: {
         name: 'dagre'
@@ -194,6 +198,15 @@ export class GswbGraphVisComponent {
 
         var attributes = ele._private.data;
 
+        if (isScc(attributes)) {
+          // The abbreviated node's full content. textContent: categories can hold "<".
+          const members = document.createElement('div');
+          members.textContent = `Strongly connected component: ${attributes.text}`;
+          const hint = document.createElement('div');
+          hint.textContent = 'Double-click to open it.';
+          content.append(members, hint);
+        }
+
         if (attributes.hasOwnProperty("solutions")) {
           //iterate through array attributes.solutions
           for (var solution of attributes.solutions) {
@@ -215,7 +228,7 @@ export class GswbGraphVisComponent {
 
       const data = ele.data();
 
-      if (data.hasOwnProperty('solutions')) {
+      if (data.hasOwnProperty('solutions') || isScc(data)) {
         //  console.log("Making popper for: ", data);
         this.makePopper(ele);
         //   console.log("Element with tippy: ",data);
@@ -233,3 +246,40 @@ export class GswbGraphVisComponent {
   }
 
 }
+
+/** A strongly connected component of the Lev prover's graph: GSWB marks it green, gives it the
+ *  component's members as `text`, and its own graph as `subgraph`. Its id is the whole
+ *  component written out, far too long to read as a node. */
+function isScc(data: any): boolean {
+  return data?.color === 'green' && !!data.subgraph;
+}
+
+/** How many nodes the component holds: its subgraph's green and yellow (goal) nodes, as GSWB
+ *  builds them; the blue ones are premises feeding into it, not members. */
+function sccMembers(data: any): number | null {
+  const elements = data?.subgraph?.graphElements;
+  if (!Array.isArray(elements)) {
+    return null;
+  }
+  return elements.filter(e => e?.data && e.data.source === undefined
+    && (e.data.color === 'green' || e.data.color === 'yellow')).length;
+}
+
+/** Each node's `label`, the text drawn in it: its id, except that SCCs are abbreviated to
+ *  "SCC n (members)", numbered in graph order. Edges refer to ids, which stay as they are. */
+export function withLabels(elements: any[]): any[] {
+  let scc = 0;
+  return (elements ?? []).map(element => {
+    const data = element?.data;
+    if (!data || data.source !== undefined) {
+      return element;
+    }
+    let label = String(data.id);
+    if (isScc(data)) {
+      const members = sccMembers(data);
+      label = `SCC ${++scc}${members ? ` (${members})` : ''}`;
+    }
+    return { ...element, data: { ...data, label } };
+  });
+}
+
