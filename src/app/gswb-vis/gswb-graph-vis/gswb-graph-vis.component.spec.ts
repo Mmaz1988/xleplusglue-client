@@ -49,19 +49,29 @@ describe('GswbGraphVisComponent', () => {
     subgraph: { graphElements: [member('g_e'), member('(g_e -o f_t)'), member('f_t', 'yellow'),
       { data: { id: 'p1', color: 'blue' } }, { data: { id: 'x', source: 'p1', target: 'g_e' } }] }, ...extra } });
   const render = (sccNode: any) => {
-    component.renderGraph([sccNode, { data: { id: 'h_t', color: 'yellow' } },
+    component.renderGraph([sccNode, { data: { id: 'h_t', color: 'yellow', text: 'hₜ' } },
       { data: { id: 'e1', source: sccId, target: 'h_t' } }]);
     return (component as any).cy;
   };
 
   it('labels a strongly connected component by what it produces, keeping its id for edges', () => {
-    const cy = render(scc({ outputs: ['(g_e -o f_t)'] }));
+    const cy = render(scc({ outputs: ['gₑ ⊸ fₜ'] }));
 
     const node = cy.getElementById(sccId);
-    expect(node.data('label')).toBe('↻ (g_e -o f_t)');
+    expect(node.data('label')).toBe('gₑ ⊸ fₜ');
     expect(node.width()).toBeLessThan(160);
-    expect(cy.getElementById('h_t').data('label')).toBe('h_t');
     expect(cy.getElementById('e1').source().id()).toBe(sccId);
+  });
+
+  it('draws GSWB\'s pretty print (text), not the plain id, and the id where there is no text', () => {
+    component.renderGraph([
+      { data: { id: '(g_e -o f_t) -o h_t', color: 'blue', text: '(gₑ ⊸ fₜ) ⊸ hₜ' } },
+      { data: { id: 'k_e', color: 'red' } },
+    ]);
+    const cy = (component as any).cy;
+
+    expect(cy.getElementById('(g_e -o f_t) -o h_t').data('label')).toBe('(gₑ ⊸ fₜ) ⊸ hₜ');
+    expect(cy.getElementById('k_e').data('label')).toBe('k_e');
   });
 
   it('falls back to "SCC n (members)" when GSWB sends no outputs', () => {

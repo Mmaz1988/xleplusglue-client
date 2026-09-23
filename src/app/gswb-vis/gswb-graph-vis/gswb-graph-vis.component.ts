@@ -5,6 +5,7 @@ import dagre from 'cytoscape-dagre';
 import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
 import tippy from "tippy.js";
 import {labelHeight, labelWidth} from '../../utilities/cytoscape-label-size';
+import {isScc, withLabels} from '../../utilities/gswb-graph-labels';
 
 cytoscape.use(dagre);
 // Its tooltips use popperRef(); registered here, not only by the LiGER graph, so this view
@@ -251,46 +252,3 @@ export class GswbGraphVisComponent {
   }
 
 }
-
-/** A strongly connected component of the Lev prover's graph: GSWB marks it green, gives it the
- *  component's members as `text`, and its own graph as `subgraph`. Its id is the whole
- *  component written out, far too long to read as a node. */
-function isScc(data: any): boolean {
-  return data?.color === 'green' && !!data.subgraph;
-}
-
-/** How many nodes the component holds: its subgraph's green and yellow (goal) nodes, as GSWB
- *  builds them; the blue ones are premises feeding into it, not members. */
-function sccMembers(data: any): number | null {
-  const elements = data?.subgraph?.graphElements;
-  if (!Array.isArray(elements)) {
-    return null;
-  }
-  return elements.filter(e => e?.data && e.data.source === undefined
-    && (e.data.color === 'green' || e.data.color === 'yellow')).length;
-}
-
-/** Each node's `label`, the text drawn in it: its id, except for SCCs, whose id is the whole
- *  component written out. An SCC shows what it produces, "↻ " and its outputs (GSWB's
- *  `outputs`: the members with an edge leaving the component, or its goal when the derivation
- *  ends in it), and "SCC n (members)" when GSWB sends no outputs. Edges refer to ids, which
- *  stay as they are. */
-export function withLabels(elements: any[]): any[] {
-  let scc = 0;
-  return (elements ?? []).map(element => {
-    const data = element?.data;
-    if (!data || data.source !== undefined) {
-      return element;
-    }
-    let label = String(data.id);
-    if (isScc(data)) {
-      const members = sccMembers(data);
-      scc++;
-      label = Array.isArray(data.outputs) && data.outputs.length
-        ? `↻ ${data.outputs.join(', ')}`
-        : `SCC ${scc}${members ? ` (${members})` : ''}`;
-    }
-    return { ...element, data: { ...data, label } };
-  });
-}
-

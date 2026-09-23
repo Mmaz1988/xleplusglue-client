@@ -5,6 +5,7 @@ import popper from 'cytoscape-popper';
 import dagre from "cytoscape-dagre";
 import tippy from "tippy.js";
 import {labelHeight, labelWidth} from '../utilities/cytoscape-label-size';
+import {withLabels} from '../utilities/gswb-graph-labels';
 
 cytoscape.use(cise);
 // Its tooltips use popperRef(); registered here, not only by the LiGER graph, so this view
@@ -171,7 +172,7 @@ const gswbStyle = [
   {
     selector: 'node[color="yellow"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -179,7 +180,7 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "yellow white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
@@ -187,7 +188,7 @@ const gswbStyle = [
   {
     selector: 'node[color="red"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -195,7 +196,7 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "red white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
@@ -203,7 +204,7 @@ const gswbStyle = [
   {
     selector: 'node[color="blue"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'back',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -211,7 +212,7 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightblue white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding': '10px' // Set the padding value as desired
     }
@@ -219,7 +220,7 @@ const gswbStyle = [
   {
     selector: 'node[color="green"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -227,7 +228,7 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "lightgreen white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
@@ -235,7 +236,7 @@ const gswbStyle = [
   {
     selector: 'node[color="orange"]',
     style: {
-      'content': 'data(id)',
+      'content': 'data(label)',
       'color': 'black',
       'shape': 'rectangle',
       'text-valign': 'center',
@@ -243,7 +244,7 @@ const gswbStyle = [
       "background-fill": "linear-gradient",
       "background-gradient-stop-colors": "orange white", // get data from data.color in each node
       "background-gradient-stop-positions": "0 30 60",
-      'width': labelWidth('id'),  // sized to the label: see cytoscape-label-size.ts
+      'width': labelWidth('label'),  // sized to the label: see cytoscape-label-size.ts
       'height': labelHeight(),
       'padding' : '10px' // Set the padding value as desired
     }
@@ -320,7 +321,8 @@ export class SubGraphComponent {
   renderGraph(graphData): void {
     this.cy = cytoscape({
         container: document.getElementById(this.graphID), // Use the appropriate container element ID
-        elements: graphData,
+        // A GSWB subgraph draws GSWB's pretty-printed labels; LiGER data brings its own.
+        elements: this.graphStyle === 'glue' ? withLabels(graphData) : graphData,
         style: this.styleArray as cytoscape.Stylesheet[],
         layout: {
           name: this.layout
