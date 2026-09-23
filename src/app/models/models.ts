@@ -40,6 +40,8 @@ export interface LigerRuleSet {
   /** Post-processing rules for /apply_rules_uploaded_structure; null if LiGER has none. */
   pragmatics: string | null;
   lexica: string[];
+  /** The config's TPTP axiom files, concatenated; null when it lists none. */
+  axioms: string | null;
 }
 
 export type SynSemMapping = Record<string, string[]>;

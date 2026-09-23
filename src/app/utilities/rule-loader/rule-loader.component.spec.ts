@@ -12,6 +12,7 @@ const CONFIG: LigerRuleSet = {
   semantics: 'semantics rules',
   pragmatics: 'pragmatics rules',
   lexica: ['/liger_resources/dicts/ling_dict_eng.txt'],
+  axioms: 'fof(a, axiom, p).',
 };
 
 describe('RuleLoaderComponent', () => {

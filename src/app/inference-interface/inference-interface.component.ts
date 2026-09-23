@@ -43,6 +43,10 @@ export class InferenceInterfaceComponent {
 
   updateData(ruleSet: LigerRuleSet) {
     this.ruleFile = ruleSet.semantics;
+    if (ruleSet.axioms !== null && ruleSet.axioms !== undefined) {
+      this.axioms = ruleSet.axioms;
+      this.editor?.updateContent(ruleSet.axioms);
+    }
   }
 
   // This method is called automatically when historyChange emits

@@ -74,6 +74,12 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
   updateData(ruleSet: LigerRuleSet) {
     this.ruleFile = ruleSet.semantics;
     this.pragmaticsRules = ruleSet.pragmatics;
+    // A config that lists axioms fills the Axioms editor, which stays the source of truth
+    // from there on; one that lists none leaves whatever is in it.
+    if (ruleSet.axioms !== null && ruleSet.axioms !== undefined) {
+      this.axioms = ruleSet.axioms;
+      this.editor?.updateContent(ruleSet.axioms);
+    }
   }
 
   // This method is called automatically when historyChange emits

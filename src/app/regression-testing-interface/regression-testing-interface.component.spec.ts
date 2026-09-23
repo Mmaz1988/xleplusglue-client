@@ -42,6 +42,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.loadRules.and.returnValue(of({
       kind: 'config', source: './liger_resources/rules/default.liger.yaml',
       semantics: 'semantics from file', pragmatics: 'pragmatics from file', lexica: [],
+      axioms: null,
     }));
     dataServiceSpy.clearVampireProgress.and.returnValue(of({} as any));
     dataServiceSpy.callBatchVampire.and.returnValue(of({ status: 'ok' } as any));
@@ -545,6 +546,37 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(component.session.pragmaticsRulesText).toBe('pragmatics from file');
       // The editor's rules are the session's, not the file's.
       expect(component.session.rulesText).toBe('edited semantics');
+    });
+
+    it('fills the axioms editor and its file label from a config that lists axiom files', () => {
+      const axiomEdit = jasmine.createSpyObj('EditorComponent', ['updateContent', 'getContent']);
+      component['axiomEdit'] = axiomEdit;
+      component.session.axiomsText = 'previous axioms';
+
+      component.updateRules({
+        path: './liger_resources/rules/default.liger.yaml', content: 'semantics',
+        ruleSet: { kind: 'config', source: 'c', semantics: 'semantics', pragmatics: 'prag',
+                   lexica: [], axioms: 'fof(a, axiom, p).' },
+      });
+
+      expect(component.session.axiomsText).toBe('fof(a, axiom, p).');
+      expect(component.session.axiomsLoadedText).toBe('fof(a, axiom, p).');
+      expect(component.session.axiomsFilename).toBe('./liger_resources/rules/default.liger.yaml');
+      expect(axiomEdit.updateContent).toHaveBeenCalledWith('fof(a, axiom, p).');
+    });
+
+    it('leaves the axioms alone when the loaded rule set lists none', () => {
+      component.session.axiomsText = 'previous axioms';
+      component.session.axiomsFilename = './axioms/basic_axioms.txt';
+
+      component.updateRules({
+        path: './liger_resources/rules/other.liger', content: 'semantics',
+        ruleSet: { kind: 'rules', source: 'r', semantics: 'semantics', pragmatics: 'prag',
+                   lexica: [], axioms: null },
+      });
+
+      expect(component.session.axiomsText).toBe('previous axioms');
+      expect(component.session.axiomsFilename).toBe('./axioms/basic_axioms.txt');
     });
 
     it('keeps the pragmatics the session ran with', () => {

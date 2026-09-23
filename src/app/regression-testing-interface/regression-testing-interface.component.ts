@@ -3743,6 +3743,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.rulesLoadedText = file?.content ?? '';
     this.session.rulesText = file?.content ?? '';
     this.session.pragmaticsRulesText = file?.ruleSet?.pragmatics ?? '';
+    // A config that lists axioms fills the axioms editor and its loaded-file snapshot, so
+    // the config is named as their source until an axioms file is picked.
+    const axioms = file?.ruleSet?.axioms;
+    if (axioms !== null && axioms !== undefined) {
+      this.session.axiomsText = axioms;
+      this.session.axiomsLoadedText = axioms;
+      this.session.axiomsFilename = file?.path ?? '';
+      this.axiomEdit.updateContent(axioms);
+    }
     this.ligerRules.updateContent(file?.content ?? '');
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();
