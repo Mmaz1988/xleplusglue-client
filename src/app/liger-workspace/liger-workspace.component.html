@@ -8,8 +8,7 @@
     </div>
 
     <div class="tree-scroll">
-      <!-- Picking a config to open. Only configs open: a rule file is one stage of a rule set,
-           edited through the config that lists it. -->
+      <!-- Picking a config or a single rule file to open. -->
       <ng-container *ngIf="browsing">
         <div class="browse-dir" [title]="browseDir">{{ browseDirName }}</div>
         <div class="branch">
@@ -23,12 +22,26 @@
         <p *ngIf="!browseLoading && !browseTree.length" class="status">Empty folder.</p>
       </ng-container>
 
-      <!-- The open rule set: config → field → file. -->
-      <div *ngIf="!browsing && state.ruleSet" class="tree">
+      <!-- A single rule file is shown as the one file it is: it has no stages, so it is
+           semantics rules only, not a config with empty sections. -->
+      <div *ngIf="!browsing && state.ruleSet?.kind === 'rules'" class="tree">
+        <ng-container *ngFor="let file of sections[0]?.files ?? []">
+          <button type="button" class="row file" [class.selected]="file.path === state.activePath"
+                  [title]="file.path" (click)="select(file.path)">
+            <mat-icon class="kind">description</mat-icon>
+            <span class="label">{{ file.name }}</span>
+            <span class="badge" title="A single rule file: semantics rules only">rule file</span>
+            <span *ngIf="isEdited(file.path)" class="edited" title="Edited in memory">●</span>
+          </button>
+        </ng-container>
+      </div>
+
+      <!-- The open config: config → field → file. -->
+      <div *ngIf="!browsing && state.ruleSet?.kind === 'config'" class="tree">
         <div class="branch">
           <span class="twisty"></span>
-          <span class="row root" [title]="state.ruleSet.source">
-            <mat-icon class="kind">{{ state.ruleSet.kind === 'config' ? 'settings' : 'description' }}</mat-icon>
+          <span class="row root" [title]="state.ruleSet?.source ?? ''">
+            <mat-icon class="kind">settings</mat-icon>
             <span class="label">{{ sourceName }}</span>
           </span>
         </div>
@@ -64,6 +77,7 @@
     </div>
 
     <p *ngIf="state.ruleSet && !state.ruleSet.pragmatics" class="warning">
+      <ng-container *ngIf="state.ruleSet.kind === 'rules'">A single rule file holds semantics rules only. </ng-container>
       No pragmatics rules: post-processing is blocked until a config with a pragmatics section is open.
     </p>
     <p *ngIf="state.loading" class="status">Opening {{ state.loading }}…</p>
@@ -111,10 +125,8 @@
       <ng-container *ngTemplateOutlet="browseRows; context: { $implicit: node.children }"></ng-container>
     </div>
     <ng-template #browseFile>
-      <button type="button" class="row file leaf" [class.not-config]="!isConfigFile(node.name)"
-              [disabled]="!isConfigFile(node.name)"
-              [title]="isConfigFile(node.name) ? 'Open ' + node.path
-                : 'Not a LiGER config: a rule file is edited through the config that lists it'"
+      <button type="button" class="row file leaf"
+              [title]="(isConfigFile(node.name) ? 'Open config ' : 'Open rule file ') + node.path"
               (click)="openBrowsed(node.path)">
         <mat-icon class="kind">{{ isConfigFile(node.name) ? 'settings' : 'description' }}</mat-icon>
         <span class="label">{{ node.name }}</span>

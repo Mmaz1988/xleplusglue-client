@@ -78,7 +78,6 @@ button.tree-toggle {
 /* Rows and twisties are buttons: undo the app's global rounded-blue button style. */
 button.row, button.twisty { margin: 0; border: 0; background: none; color: #243247; }
 button.row:hover:not(:disabled) { background: #eef3fa; }
-.row.not-config { opacity: .45; cursor: default; }
 .row.selected { background: #00a9e0; color: #fff; }
 .row.selected .kind,
 .row.selected .edited { color: #fff; }

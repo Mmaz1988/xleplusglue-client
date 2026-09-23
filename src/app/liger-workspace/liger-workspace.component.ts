@@ -222,14 +222,12 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /** Only a LiGER config opens as a rule set: a rule file has no stages, so on its own it
-   *  would be a semantics stage without pragmatics, and post-processing would be blocked. */
   isConfigFile(name: string): boolean {
     return /\.liger\.ya?ml$/i.test(name);
   }
 
   openBrowsed(path: string): void {
-    if (path && this.isConfigFile(path) && this.confirmDroppingEdits(`Open ${path}?`)) {
+    if (path && this.confirmDroppingEdits(`Open ${path}?`)) {
       this.browsing = false;
       this.workspace.open(path);
     }

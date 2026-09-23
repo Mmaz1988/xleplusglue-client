@@ -106,22 +106,33 @@ describe('LigerWorkspaceComponent', () => {
     expect(files.browse).toHaveBeenCalledWith('/');
   });
 
-  it('opens only configs: a rule file is one stage, not a rule set', () => {
+  it('shows an opened rule file as the one file it is, not as a config with empty sections', () => {
+    files.loadRuleSet.and.returnValue(of({ ...RULE_SET, kind: 'rules', source: '/r/rules.liger',
+      pragmatics: null, lexica: [], axioms: null }));
+    files.listConfig.and.returnValue(of({
+      kind: 'rules', source: '/r/rules.liger', scope: '/r',
+      sections: [
+        { field: 'semantics', present: true, files: [{ path: '/r/rules.liger', name: 'rules.liger', inScope: true }] },
+        { field: 'pragmatics', present: false, files: [] },
+        { field: 'lexica', present: false, files: [] },
+        { field: 'axioms', present: false, files: [] },
+      ],
+    }));
+    files.read.and.returnValue(of('RULES\n'));
     files.browse.and.returnValue(of([
-      { name: 'c.liger.yaml', path: '/r/c.liger.yaml', isDirectory: false, children: [] },
       { name: 'rules.liger', path: '/r/rules.liger', isDirectory: false, children: [] },
     ]));
     click(root.querySelector<HTMLButtonElement>('.toolbar .primary')!);
-    files.loadRuleSet.calls.reset();
 
-    const ruleFile = fileButton('rules.liger');
-    expect(ruleFile.disabled).toBeTrue();
-    component.openBrowsed('/r/rules.liger');
-    expect(files.loadRuleSet).not.toHaveBeenCalled();
+    click(fileButton('rules.liger'));
 
-    click(fileButton('c.liger.yaml'));
-    expect(files.loadRuleSet).toHaveBeenCalledWith('/r/c.liger.yaml');
+    expect(files.loadRuleSet).toHaveBeenCalledWith('/r/rules.liger');
+    expect(root.querySelectorAll('.row.field').length).toBe(0);
+    expect(fileButton('rules.liger').querySelector('.badge')?.textContent).toContain('rule file');
+    expect(root.querySelector('.warning')?.textContent).toContain('semantics rules only');
+    expect(editorText()).toBe('RULES\n');
   });
+
 
   it('collapses and expands a section', () => {
     const pragmatics = Array.from(root.querySelectorAll<HTMLButtonElement>('.row.field'))[1];
