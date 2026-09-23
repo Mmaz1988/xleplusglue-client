@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { of } from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { LigerFileSource } from './liger-file-source.service';
 import { LigerWorkspaceComponent } from './liger-workspace.component';
@@ -21,10 +22,10 @@ describe('LigerWorkspaceComponent', () => {
   const editorText = () => component.editor!.getContent();
   /** Typing, as far as app-editor can tell: a change CodeMirror reports. */
   const type = (text: string) => { codeMirror().setValue(text); fixture.detectChanges(); };
-  const fileButton = (name: string) => Array.from(root.querySelectorAll<HTMLButtonElement>('.ws-file'))
-    .find(button => button.textContent!.trim().startsWith(name))!;
+  const fileButton = (name: string) => Array.from(root.querySelectorAll<HTMLButtonElement>('.row.file'))
+    .find(button => button.querySelector('.label')!.textContent!.trim() === name)!;
   const click = (element: HTMLElement) => { element.click(); fixture.detectChanges(); };
-  const button = (label: string) => Array.from(root.querySelectorAll<HTMLButtonElement>('.ws-toolbar button'))
+  const button = (label: string) => Array.from(root.querySelectorAll<HTMLButtonElement>('.pane-toolbar button'))
     .find(b => b.textContent!.trim() === label)!;
 
   beforeEach(() => {
@@ -49,16 +50,28 @@ describe('LigerWorkspaceComponent', () => {
 
   it('does not count the editor filling itself as an edit', () => {
     expect(workspace.hasEdits).toBeFalse();
-    expect(root.querySelector('.ws-edited')).toBeNull();
+    expect(root.querySelector('.edited')).toBeNull();
   });
 
-  it('lists the sections in field order and marks the inherited ones', () => {
-    const summaries = Array.from(root.querySelectorAll('.ws-section summary')).map(s => s.textContent!.trim());
+  it('lists the sections in field order with their file counts, and marks the inherited ones', () => {
+    const fields = Array.from(root.querySelectorAll('.row.field'));
+    const text = (row: Element, selector: string) => row.querySelector(selector)?.textContent?.trim();
 
-    expect(summaries.map(s => s.split(/\s+/)[0])).toEqual(['semantics', 'pragmatics', 'lexica', 'axioms']);
-    expect(summaries[0]).not.toContain('from');
-    expect(summaries[1]).toContain('from default.liger.yaml');
-    expect(fileButton('d.txt').textContent).toContain('read-only');
+    expect(fields.map(row => text(row, '.label'))).toEqual(['semantics', 'pragmatics', 'lexica', 'axioms']);
+    expect(fields.map(row => text(row, '.badge'))).toEqual(['2', '1', '1', '1']);
+    expect(text(fields[0], '.inherited-note')).toBeUndefined();
+    expect(text(fields[1], '.inherited-note')).toBe('from default.liger.yaml');
+    expect(text(fileButton('d.txt'), '.kind')).toBe('lock');
+  });
+
+  it('collapses and expands a section', () => {
+    const pragmatics = Array.from(root.querySelectorAll<HTMLButtonElement>('.row.field'))[1];
+
+    click(pragmatics);
+    expect(fileButton('p.liger')).toBeUndefined();
+
+    click(pragmatics);
+    expect(fileButton('p.liger')).toBeDefined();
   });
 
   it('keeps each file\'s edits when switching between files', () => {
@@ -69,8 +82,8 @@ describe('LigerWorkspaceComponent', () => {
     click(fileButton('a.liger'));
 
     expect(editorText()).toBe('A EDITED');
-    expect(fileButton('a.liger').querySelector('.ws-edited')).not.toBeNull();
-    expect(fileButton('p.liger').querySelector('.ws-edited')).toBeNull();
+    expect(fileButton('a.liger').querySelector('.edited')).not.toBeNull();
+    expect(fileButton('p.liger').querySelector('.edited')).toBeNull();
     expect(workspace.semantics).toContain('A EDITED');
   });
 
@@ -104,10 +117,26 @@ describe('LigerWorkspaceComponent', () => {
 
     expect(editorText()).toBe(FILES['/res/dicts/d.txt']);
     expect(codeMirror().getOption('readOnly')).toBeTrue();
-    expect(root.querySelector('.ws-note')?.textContent).toContain('read from disk');
+    expect(root.querySelector('.notice')?.textContent).toContain('read from disk');
 
     click(fileButton('a.liger'));
     expect(codeMirror().getOption('readOnly')).toBeFalse();
+  });
+
+  it('opens a browsed file from the compact tree', () => {
+    files.browse.and.returnValue(of([
+      { name: 'sub', path: '/r/sub', isDirectory: true, children: [
+        { name: 'x.liger.yaml', path: '/r/sub/x.liger.yaml', isDirectory: false, children: [] },
+      ] },
+    ]));
+    click(root.querySelector<HTMLButtonElement>('.toolbar .primary')!);
+    click(Array.from(root.querySelectorAll<HTMLButtonElement>('.row.field'))
+      .find(row => row.textContent!.includes('sub'))!);
+
+    click(fileButton('x.liger.yaml'));
+
+    expect(files.loadRuleSet).toHaveBeenCalledWith('/r/sub/x.liger.yaml');
+    expect(component.browsing).toBeFalse();
   });
 
   it('follows an edit made through the service, as another view\'s workspace would', () => {

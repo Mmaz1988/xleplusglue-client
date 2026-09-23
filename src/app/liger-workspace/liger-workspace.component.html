@@ -1,63 +1,99 @@
-<div class="liger-workspace" [class.collapsed]="collapsed">
-  <aside class="ws-sidebar" aria-label="LiGER rule set">
-    <div class="ws-sidebar-head">
-      <button type="button" class="ws-collapse" (click)="collapsed = !collapsed"
-              [attr.aria-expanded]="!collapsed"
-              [title]="collapsed ? 'Show the rule set' : 'Hide the rule set'">{{ collapsed ? '›' : '‹' }}</button>
-      <span *ngIf="!collapsed" class="ws-source" [title]="state.ruleSet?.source ?? ''">
-        {{ sourceName || 'No rule set' }}<span *ngIf="state.ruleSet?.kind === 'config'" class="ws-kind"> (config)</span>
-      </span>
+<div class="liger-workspace" [style.height]="height"
+     (mousemove)="onDrag($event)" (mouseup)="endDrag()" (mouseleave)="endDrag()">
+
+  <div class="pane left" [style.flex-basis.%]="splitFraction * 100" aria-label="LiGER rule set">
+    <div class="toolbar">
+      <button type="button" class="primary" (click)="toggleBrowse()">{{ browsing ? 'Cancel' : 'Open…' }}</button>
+      <button type="button" (click)="reload()" [disabled]="!state.ruleSet" title="Read the rule set from disk again">Reload</button>
     </div>
 
-    <ng-container *ngIf="!collapsed">
-      <div class="ws-actions">
-        <button type="button" (click)="toggleBrowse()">{{ browsing ? 'Cancel' : 'Open…' }}</button>
-        <button type="button" (click)="reload()" [disabled]="!state.ruleSet">Reload</button>
+    <div class="tree-scroll">
+      <!-- Picking a config or rule file to open. -->
+      <ng-container *ngIf="browsing">
+        <ng-container *ngTemplateOutlet="browseRows; context: { $implicit: browseTree }"></ng-container>
+        <p *ngIf="!browseTree.length" class="status">Listing {{ browseDirectory }}…</p>
+      </ng-container>
+
+      <!-- The open rule set: config → field → file. -->
+      <div *ngIf="!browsing && state.ruleSet" class="tree">
+        <div class="branch">
+          <span class="twisty"></span>
+          <span class="row root" [title]="state.ruleSet.source">
+            <mat-icon class="kind">{{ state.ruleSet.kind === 'config' ? 'settings' : 'description' }}</mat-icon>
+            <span class="label">{{ sourceName }}</span>
+          </span>
+        </div>
+        <div class="children">
+          <ng-container *ngFor="let section of sections">
+            <div class="branch">
+              <button type="button" class="twisty" (click)="toggleSection(section.field)"
+                      [attr.aria-expanded]="!isCollapsed(section.field)"
+                      [attr.aria-label]="'toggle ' + section.field">
+                <mat-icon>{{ isCollapsed(section.field) ? 'chevron_right' : 'expand_more' }}</mat-icon>
+              </button>
+              <button type="button" class="row field" [class.inherited]="section.inheritedFrom"
+                      [title]="fieldTooltip(section)" (click)="toggleSection(section.field)">
+                <mat-icon class="kind">{{ fieldIcon(section.field) }}</mat-icon>
+                <span class="label">{{ section.field }}</span>
+                <span *ngIf="section.inheritedFrom" class="inherited-note">{{ inheritedLabel(section) }}</span>
+                <span class="badge">{{ section.files.length }}</span>
+              </button>
+            </div>
+            <div class="children" *ngIf="!isCollapsed(section.field)">
+              <button type="button" *ngFor="let file of section.files" class="row file leaf"
+                      [class.selected]="file.path === state.activePath" [title]="file.path"
+                      (click)="select(file.path)">
+                <mat-icon class="kind">{{ isReadOnly(file.path) ? 'lock' : 'description' }}</mat-icon>
+                <span class="label">{{ file.name }}</span>
+                <span *ngIf="isEdited(file.path)" class="edited" title="Edited in memory">●</span>
+              </button>
+            </div>
+          </ng-container>
+        </div>
       </div>
+    </div>
 
-      <div *ngIf="browsing" class="ws-browse">
-        <app-file-tree [fileTree]="browseTree" width="100%"
-                       (nodeSelected)="browsePath = $event"
-                       (nodeDoubleClicked)="openBrowsed($event)"></app-file-tree>
-        <button type="button" (click)="openBrowsed()" [disabled]="!browsePath">Open</button>
-      </div>
+    <p *ngIf="state.loading" class="status">Opening {{ state.loading }}…</p>
+    <p *ngIf="state.error" class="error">{{ state.error }}</p>
+  </div>
 
-      <p *ngIf="state.loading" class="ws-status">Opening {{ state.loading }}…</p>
-      <p *ngIf="state.error" class="ws-status ws-error">{{ state.error }}</p>
+  <div class="divider" (mousedown)="startDrag($event)" title="Drag to resize"></div>
 
-      <details *ngFor="let section of sections" class="ws-section" open>
-        <summary>
-          {{ section.field }}
-          <span *ngIf="section.inheritedFrom" class="ws-inherited"
-                [title]="section.inheritedFrom">{{ inheritedLabel(section) }}</span>
-        </summary>
-        <ul>
-          <li *ngFor="let file of section.files">
-            <button type="button" class="ws-file" [class.active]="file.path === state.activePath"
-                    [title]="file.path" (click)="select(file.path)">
-              {{ file.name }}<span *ngIf="isEdited(file.path)" class="ws-edited" title="Edited in memory"> *</span>
-              <span *ngIf="isReadOnly(file.path)" class="ws-readonly">read-only</span>
-            </button>
-          </li>
-          <li *ngIf="section.files.length === 0" class="ws-none">none</li>
-        </ul>
-      </details>
-    </ng-container>
-  </aside>
-
-  <section class="ws-main">
-    <div class="ws-toolbar">
-      <span class="ws-label" [title]="active?.path ?? ''">
-        {{ active?.name ?? 'No file selected' }}<span *ngIf="active && isEdited(active.path)"> — edited</span>
-      </span>
+  <div class="pane right">
+    <div class="pane-toolbar">
+      <span class="file-label" [title]="active?.path ?? ''">{{ active?.name ?? 'No file selected' }}</span>
+      <span *ngIf="active && isEdited(active.path)" class="dirty-hint">edited, not saved</span>
+      <span class="spacer"></span>
       <button type="button" (click)="revert()" [disabled]="!active || !isEdited(active.path)">Revert</button>
       <button type="button" (click)="download()" [disabled]="!active"
               title="Edits are kept in memory only; download to keep them">Download</button>
     </div>
-    <p *ngIf="active?.readOnly" class="ws-note">
+    <p *ngIf="active?.readOnly" class="notice">
       Lexica are read from disk by LiGER, so an edit here could not take effect: this file is read-only.
     </p>
     <app-editor #editor [mode]="mode" [readOnly]="!!active?.readOnly" [initialContent]="''"
                 [showControls]="false" (contentChange)="onEditorChange($event)"></app-editor>
-  </section>
+  </div>
 </div>
+
+<ng-template #browseRows let-nodes>
+  <ng-container *ngFor="let node of nodes">
+    <div class="branch" *ngIf="node.isDirectory; else browseFile">
+      <button type="button" class="twisty" (click)="toggleBrowseDir(node.path)">
+        <mat-icon>{{ isBrowseOpen(node.path) ? 'expand_more' : 'chevron_right' }}</mat-icon>
+      </button>
+      <button type="button" class="row field" (click)="toggleBrowseDir(node.path)">
+        <mat-icon class="kind">folder</mat-icon><span class="label">{{ node.name }}</span>
+      </button>
+    </div>
+    <div class="children" *ngIf="node.isDirectory && isBrowseOpen(node.path)">
+      <ng-container *ngTemplateOutlet="browseRows; context: { $implicit: node.children }"></ng-container>
+    </div>
+    <ng-template #browseFile>
+      <button type="button" class="row file leaf" [title]="'Open ' + node.path" (click)="openBrowsed(node.path)">
+        <mat-icon class="kind">{{ isConfigFile(node.name) ? 'settings' : 'description' }}</mat-icon>
+        <span class="label">{{ node.name }}</span>
+      </button>
+    </ng-template>
+  </ng-container>
+</ng-template>

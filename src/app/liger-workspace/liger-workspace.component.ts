@@ -6,6 +6,13 @@ import { FileTree, LigerConfigField, LigerConfigTreeSection } from '../models/mo
 import { LigerFileSource } from './liger-file-source.service';
 import { LigerWorkspaceService, WorkspaceDocument, WorkspaceState, isEdited } from './liger-workspace.service';
 
+const FIELD_ICONS: Record<LigerConfigField, string> = {
+  semantics: 'account_tree',
+  pragmatics: 'forum',
+  lexica: 'menu_book',
+  axioms: 'functions',
+};
+
 const EDITOR_MODES: Record<LigerConfigField, string> = {
   semantics: 'liger',
   pragmatics: 'liger',
@@ -13,13 +20,11 @@ const EDITOR_MODES: Record<LigerConfigField, string> = {
   axioms: 'vampire',
 };
 
-/** The active LiGER config as a tree of its files beside one editor pane
- *  (EDITOR_WORKSPACE_PLAN.md). State lives in LigerWorkspaceService, so every view showing
- *  a workspace shows the same rule set and the same in-memory edits.
- *
- *  The sidebar is a column of this component that collapses on click, not an
- *  app-hover-sidebar: that one is fixed to the viewport's right edge, where the views that
- *  host a workspace already keep their own. */
+/** The active LiGER config as a working tree beside one editor pane, laid out after
+ *  ../xle-grammar-explorer: the tree fills a resizable left pane, and the whole workspace is
+ *  a box of fixed height, so it takes the place a rules editor used to and displaces
+ *  nothing (EDITOR_WORKSPACE_PLAN.md). State lives in LigerWorkspaceService, so every view
+ *  showing a workspace shows the same rule set and the same in-memory edits. */
 @Component({
   selector: 'app-liger-workspace',
   templateUrl: './liger-workspace.component.html',
@@ -33,22 +38,28 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   @Input() defaultPath = APP_DEFAULTS.grammar.ligerRulesPath;
   /** Where "Open…" browses for configs and rule files. */
   @Input() browseDirectory = './liger_resources/rules';
+  /** The workspace's height; its bottom edge can be dragged to change it. */
+  @Input() height = '420px';
 
   state!: WorkspaceState;
   sections: LigerConfigTreeSection[] = [];
   active: WorkspaceDocument | null = null;
 
-  collapsed = false;
+  /** The tree pane's share of the width, as in the explorer. */
+  splitFraction = 0.3;
   browsing = false;
   browseTree: FileTree[] = [];
-  browsePath = '';
+
+  private collapsedFields = new Set<LigerConfigField>();
+  private openBrowseDirs = new Set<string>();
+  private dragging = false;
 
   /** Set while the editor is being filled from state. app-editor emits contentChange for
    *  its own updateContent, twice (cleared, then filled): without this, switching files
    *  would briefly record the new file as emptied, and the rule text as changed. */
   private hydrating = false;
   private subscription?: Subscription;
-  private visibility?: IntersectionObserver;
+  private resizes?: ResizeObserver;
 
   constructor(readonly workspace: LigerWorkspaceService, private files: LigerFileSource,
               private host: ElementRef<HTMLElement>) {}
@@ -65,21 +76,18 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   ngAfterViewInit(): void {
     this.syncEditor();
-    // Views keep the workspace in an app-toggle-display, which hides it with display: none;
-    // CodeMirror laid out while hidden shows blank until re-measured.
-    if (typeof IntersectionObserver !== 'undefined') {
-      this.visibility = new IntersectionObserver(entries => {
-        if (entries.some(entry => entry.isIntersecting)) {
-          this.editor?.refresh();
-        }
-      });
-      this.visibility.observe(this.host.nativeElement);
+    // CodeMirror measures itself once. Re-measure whenever the box changes size: when its
+    // bottom edge or the divider is dragged, and when an app-toggle-display showing it
+    // switches from display: none, which CodeMirror would otherwise render blank.
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizes = new ResizeObserver(() => this.editor?.refresh());
+      this.resizes.observe(this.host.nativeElement);
     }
   }
 
   ngOnDestroy(): void {
     this.subscription?.unsubscribe();
-    this.visibility?.disconnect();
+    this.resizes?.disconnect();
   }
 
   get mode(): string {
@@ -101,10 +109,33 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   inheritedLabel(section: LigerConfigTreeSection): string {
     if (section.inheritedFrom === 'builtin') {
-      return "LiGER's default lexicon";
+      return 'builtin';
     }
     const from = section.inheritedFrom ?? '';
     return `from ${from.substring(from.lastIndexOf('/') + 1)}`;
+  }
+
+  fieldTooltip(section: LigerConfigTreeSection): string {
+    if (section.inheritedFrom === 'builtin') {
+      return `${section.field}: LiGER's default lexicon`;
+    }
+    return section.inheritedFrom
+      ? `${section.field}: inherited from ${section.inheritedFrom}`
+      : `${section.field}: ${section.present ? 'listed in the config' : 'none'}`;
+  }
+
+  fieldIcon(field: LigerConfigField): string {
+    return FIELD_ICONS[field];
+  }
+
+  isCollapsed(field: LigerConfigField): boolean {
+    return this.collapsedFields.has(field);
+  }
+
+  toggleSection(field: LigerConfigField): void {
+    if (!this.collapsedFields.delete(field)) {
+      this.collapsedFields.add(field);
+    }
   }
 
   select(path: string): void {
@@ -145,11 +176,42 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  openBrowsed(path = this.browsePath): void {
+  isBrowseOpen(path: string): boolean {
+    return this.openBrowseDirs.has(path);
+  }
+
+  toggleBrowseDir(path: string): void {
+    if (!this.openBrowseDirs.delete(path)) {
+      this.openBrowseDirs.add(path);
+    }
+  }
+
+  isConfigFile(name: string): boolean {
+    return /\.ya?ml$/i.test(name);
+  }
+
+  openBrowsed(path: string): void {
     if (path && this.confirmDroppingEdits(`Open ${path}?`)) {
       this.browsing = false;
       this.workspace.open(path);
     }
+  }
+
+  startDrag(event: MouseEvent): void {
+    event.preventDefault();
+    this.dragging = true;
+  }
+
+  onDrag(event: MouseEvent): void {
+    if (!this.dragging) {
+      return;
+    }
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.splitFraction = Math.min(0.6, Math.max(0.15, (event.clientX - box.left) / box.width));
+  }
+
+  endDrag(): void {
+    this.dragging = false;
   }
 
   /** Puts the active document's text into the editor when it differs from what the editor
