@@ -1,6 +1,18 @@
 /* You can add global styles to this file, and also import other style files */
 @import 'https://fonts.googleapis.com/css?family=Open+Sans';
 
+/* Box tokens: one frame for every box, sharp for text (editors, the rule set, semantic
+   representations), rounded for graphs; heights per kind. See docs/plans/ANALYSIS_LAYOUT_PLAN.md
+   in xleplusglue. */
+:root {
+  --box-border-color: #00a9e0;
+  --box-border-width: 3px;
+  --text-box-radius: 0;
+  --graph-box-radius: 25px;
+  --editor-height: 300px;
+  --graph-height: 590px;
+}
+
 h1 {
   font-family: Open Sans;
   font-size: 24px;
@@ -140,6 +152,11 @@ button.hide-button {
 .editor-restr {
   max-width: 800px;
   overflow: hidden;
+}
+
+/* The analysis page (glue-interface sets .fluid-boxes): boxes fill their column. */
+.fluid-boxes .editor-restr {
+  max-width: none;
 }
 
   .log{

@@ -16,3 +16,8 @@ div.rule-container {
 }
 
 
+
+/* The analysis page (.fluid-boxes): the list is as wide as its column, like the boxes. */
+:host-context(.fluid-boxes) div {
+  width: auto;
+}

@@ -4,6 +4,22 @@
   max-height: 100%; /* Ensure the div doesn't exceed parent's height */
 }
 
+/* The analysis page (.fluid-boxes): the editor fills its column at the shared editor height,
+   and its bottom edge can be dragged. Elsewhere it keeps its stand-alone size. */
+.fluid-boxes .editor-container {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  border-width: var(--box-border-width);
+  border-color: var(--box-border-color);
+  border-radius: var(--text-box-radius);
+}
+
+.fluid-boxes .CodeMirror {
+  height: var(--editor-height);
+  resize: vertical;
+}
+
 .editor-container {
   position: relative;
   display: block;

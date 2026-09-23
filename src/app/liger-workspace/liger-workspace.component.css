@@ -6,6 +6,9 @@
 
 .liger-workspace {
   display: flex;
+  /* An editor's height plus the toolbar row, so the rule set is the size of the other
+     editors on the page. */
+  height: calc(var(--editor-height, 300px) + 30px);
   min-height: 200px;
   overflow: hidden;
   resize: vertical;
@@ -15,7 +18,12 @@
 }
 
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.pane.left { flex: 0 0 auto; background: #fbfcfe; border: 1px solid #d8dee8; }
+/* The tree is a text box too: the editors' sharp blue frame. */
+.pane.left {
+  flex: 0 0 auto; background: #fbfcfe; box-sizing: border-box;
+  border: var(--box-border-width, 3px) solid var(--box-border-color, #00a9e0);
+  border-radius: var(--text-box-radius, 0);
+}
 .pane.right { flex: 1 1 auto; }
 
 /* Between tree and editor: drag to resize the tree, or hide and show it with the toggle. */
@@ -29,7 +37,7 @@
   justify-content: center;
 }
 .divider:hover { background: #d7f0fb; }
-.divider.closed { cursor: default; background: transparent; }
+.pane-toolbar button.tree-toggle { width: 24px; height: 20px; padding: 0; }
 button.tree-toggle {
   width: 16px; height: 44px; margin: 0; padding: 0;
   border: 0; border-radius: 8px;

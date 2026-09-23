@@ -1,4 +1,4 @@
-import {ChangeDetectorRef, Component, Input, OnInit, ViewChild, ElementRef} from '@angular/core';
+import {AfterViewInit, ChangeDetectorRef, Component, Input, OnDestroy, OnInit, ViewChild, ElementRef} from '@angular/core';
 import cytoscape, {Core} from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import popper from 'cytoscape-popper';
@@ -193,7 +193,7 @@ const style = [
   templateUrl: './graph-vis.component.html',
   styleUrls: ['./graph-vis.component.css']
 })
-export class GraphVisComponent implements OnInit {
+export class GraphVisComponent implements OnInit, AfterViewInit, OnDestroy {
 
   constructor(private changeDetector: ChangeDetectorRef) {}
 
@@ -226,11 +226,24 @@ export class GraphVisComponent implements OnInit {
   private lastNodePositions = new Map<string, { x: number; y: number }>();
   private lastGraphData: any[] = [];
 
-  defaultWidth = '800px';
-  defaultHeight = '600px';
+  private resizes?: ResizeObserver;
 
   ngOnInit(): void {
     // The host element is not available until after view initialization.
+  }
+
+  /** Cytoscape measures its container when it is created and on window resizes only. The
+   *  container also changes size on its own: it fills its column on the analysis page, and
+   *  its edge can be dragged. Tell cytoscape each time. */
+  ngAfterViewInit(): void {
+    if (typeof ResizeObserver !== 'undefined' && this.graphContainer) {
+      this.resizes = new ResizeObserver(() => this.cy?.resize());
+      this.resizes.observe(this.graphContainer.nativeElement);
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.resizes?.disconnect();
   }
 
   makePopper(ele: any): void {
@@ -514,8 +527,9 @@ export class GraphVisComponent implements OnInit {
 
   resizeToDefault(): void {
     const graphContainer = this.graphContainer.nativeElement;
-    graphContainer.style.width = this.defaultWidth;
-    graphContainer.style.height = this.defaultHeight;
+    // Back to the stylesheet's size, which is fluid on the analysis page (.fluid-boxes).
+    graphContainer.style.width = '';
+    graphContainer.style.height = '';
   }
 
   isStructureVisible(type: StructureType): boolean {

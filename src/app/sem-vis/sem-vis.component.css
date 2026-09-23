@@ -159,3 +159,11 @@ button.chip.selected.current-hit{
   color: #16445b;
   font-size: 0.78rem;
 }
+
+/* The analysis page (.fluid-boxes): a semantic representation is text, even drawn, so its
+   box has the editors' sharp frame. */
+:host-context(.fluid-boxes) .sem-svg {
+  border: var(--box-border-width) solid var(--box-border-color);
+  border-radius: var(--text-box-radius);
+  min-height: var(--editor-height);
+}

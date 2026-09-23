@@ -10,7 +10,10 @@
     overflow-y: auto;
     max-height: 100vh;
     flex-basis: 50%;
-    padding-left: 60px
+    min-width: 0; /* lets the boxes inside shrink with the column */
+    padding-left: 60px;
+    padding-right: 15px;
+    box-sizing: border-box;
   }
 
   /* This will trigger when the window width is less than 800px */

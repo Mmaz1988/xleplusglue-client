@@ -114,3 +114,21 @@ div.errorhandling {
   align-items: center;
   margin: 8px 0 12px;
 }
+
+/* The analysis page (.fluid-boxes): the sentence box, the history and the graph fill the
+   column; the sentence box is a text box like the editors. */
+:host-context(.fluid-boxes) textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: var(--box-border-width) solid var(--box-border-color);
+  border-radius: var(--text-box-radius);
+}
+
+:host-context(.fluid-boxes) .sequence-history {
+  width: 100%;
+}
+
+:host-context(.fluid-boxes) div.ligergraphcontainer {
+  width: 100%;
+  max-width: none;
+}

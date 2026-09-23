@@ -46,8 +46,9 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   @Input() defaultPath = APP_DEFAULTS.grammar.ligerRulesPath;
   /** Where "Open…" browses while no rule set is open; afterwards, the open config's scope. */
   @Input() browseDirectory = './grammars';
-  /** The workspace's height; its bottom edge can be dragged to change it. */
-  @Input() height = '420px';
+  /** Overrides the workspace's height, which is otherwise an editor's (the shared
+   *  --editor-height) plus the toolbar; its bottom edge can be dragged either way. */
+  @Input() height: string | null = null;
 
   state!: WorkspaceState;
   sections: LigerConfigTreeSection[] = [];

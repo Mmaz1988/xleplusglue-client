@@ -26,7 +26,10 @@ interface PostProcessingResult {
 @Component({
   selector: 'app-glue-interface',
   templateUrl: './glue-interface.component.html',
-  styleUrls: ['./glue-interface.component.css']
+  styleUrls: ['./glue-interface.component.css'],
+  // Its boxes (editors, graphs, the rule set, semantics) fill their column rather than
+  // keeping stand-alone pixel sizes; see ANALYSIS_LAYOUT_PLAN.md.
+  host: { class: 'fluid-boxes' },
 })
 export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 

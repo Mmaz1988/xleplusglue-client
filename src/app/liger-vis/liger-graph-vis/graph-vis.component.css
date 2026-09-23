@@ -22,6 +22,21 @@ div.cy {
   max-height: none;
 }
 
+/* The analysis page (.fluid-boxes): the graph fills its column at the shared graph height. */
+:host-context(.fluid-boxes) .graph-view {
+  align-items: stretch;
+}
+
+:host-context(.fluid-boxes) div.cy {
+  width: 100%;
+  height: var(--graph-height);
+  resize: vertical;
+  box-sizing: border-box;
+  border-width: var(--box-border-width);
+  border-color: var(--box-border-color);
+  border-radius: var(--graph-box-radius);
+}
+
 .structure-filters {
   display: flex;
   flex-wrap: wrap;

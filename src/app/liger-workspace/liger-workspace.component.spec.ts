@@ -51,13 +51,20 @@ describe('LigerWorkspaceComponent', () => {
     expect(el.querySelector('.pane.left')).toBeNull();
     expect(el.querySelector('app-editor')).not.toBeNull();
 
-    el.querySelector<HTMLButtonElement>('.divider .tree-toggle')!.click();
+    expect(el.querySelector('.divider')).toBeNull();  // no bar: the editor lines up with the page
+    el.querySelector<HTMLButtonElement>('.pane-toolbar .tree-toggle')!.click();
     fresh.detectChanges();
     expect(el.querySelector('.pane.left')).not.toBeNull();
 
     el.querySelector<HTMLButtonElement>('.divider .tree-toggle')!.click();
     fresh.detectChanges();
     expect(el.querySelector('.pane.left')).toBeNull();
+  });
+
+  it('is an editor\'s height plus its toolbar, from the shared --editor-height', () => {
+    root.style.setProperty('--editor-height', '200px');
+
+    expect(getComputedStyle(root.querySelector('.liger-workspace')!).height).toBe('230px');
   });
 
   it('opens the default rule set and shows the first file', () => {

@@ -330,7 +330,14 @@ export class EditorComponent implements AfterViewInit, OnChanges {
   }
 
   resizeToDefault(): void {
-    this.codeMirror.setSize(this.defaultWidth, this.defaultHeight);
+    // On the analysis page (.fluid-boxes) the default is the stylesheet's: the column's width
+    // at the shared editor height. Clearing the inline size (set by a drag or setSize) gets
+    // it back; a fixed 800px would stop the editor following its column.
+    if (this.host?.nativeElement.closest('.fluid-boxes')) {
+      this.codeMirror.setSize('', '');
+    } else {
+      this.codeMirror.setSize(this.defaultWidth, this.defaultHeight);
+    }
   }
 
   downloadFile(filename: string) {

@@ -37,6 +37,11 @@
   font-weight: 600;
 }
 
+/* 800px on its own route; on the analysis page (.fluid-boxes) its column decides. */
+:host-context(.fluid-boxes) .editor-restr {
+  width: 100%;
+}
+
 .editor-restr {
   width: 800px;
   max-width: 100%;

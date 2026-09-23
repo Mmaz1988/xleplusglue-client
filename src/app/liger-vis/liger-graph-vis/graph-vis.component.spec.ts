@@ -58,4 +58,26 @@ describe('GraphVisComponent', () => {
 
     expect(visible.map((element: any) => element.data.id)).toEqual(['d1']);
   });
+
+  it('tells cytoscape when its box changes size, not only on window resizes', async () => {
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
+    const box = document.createElement('div');
+    box.style.width = '300px';
+    box.style.height = '200px';
+    document.body.appendChild(box);
+    component.graphContainer = { nativeElement: box } as any;
+    const resize = jasmine.createSpy('resize');
+    (component as any).cy = { resize };
+    const frames = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 20)));
+
+    component.ngAfterViewInit();
+    await frames();
+    resize.calls.reset();
+    box.style.width = '500px';
+    await frames();
+
+    expect(resize).toHaveBeenCalled();
+    component.ngOnDestroy();
+    box.remove();
+  });
 });
