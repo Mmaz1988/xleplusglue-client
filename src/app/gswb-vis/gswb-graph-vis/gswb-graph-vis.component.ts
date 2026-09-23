@@ -202,6 +202,11 @@ export class GswbGraphVisComponent {
           // The abbreviated node's full content. textContent: categories can hold "<".
           const members = document.createElement('div');
           members.textContent = `Strongly connected component: ${attributes.text}`;
+          if (Array.isArray(attributes.outputs) && attributes.outputs.length) {
+            const outputs = document.createElement('div');
+            outputs.textContent = `Produces: ${attributes.outputs.join(', ')}`;
+            content.append(outputs);
+          }
           const hint = document.createElement('div');
           hint.textContent = 'Double-click to open it.';
           content.append(members, hint);
@@ -265,8 +270,11 @@ function sccMembers(data: any): number | null {
     && (e.data.color === 'green' || e.data.color === 'yellow')).length;
 }
 
-/** Each node's `label`, the text drawn in it: its id, except that SCCs are abbreviated to
- *  "SCC n (members)", numbered in graph order. Edges refer to ids, which stay as they are. */
+/** Each node's `label`, the text drawn in it: its id, except for SCCs, whose id is the whole
+ *  component written out. An SCC shows what it produces, "↻ " and its outputs (GSWB's
+ *  `outputs`: the members with an edge leaving the component, or its goal when the derivation
+ *  ends in it), and "SCC n (members)" when GSWB sends no outputs. Edges refer to ids, which
+ *  stay as they are. */
 export function withLabels(elements: any[]): any[] {
   let scc = 0;
   return (elements ?? []).map(element => {
@@ -277,7 +285,10 @@ export function withLabels(elements: any[]): any[] {
     let label = String(data.id);
     if (isScc(data)) {
       const members = sccMembers(data);
-      label = `SCC ${++scc}${members ? ` (${members})` : ''}`;
+      scc++;
+      label = Array.isArray(data.outputs) && data.outputs.length
+        ? `↻ ${data.outputs.join(', ')}`
+        : `SCC ${scc}${members ? ` (${members})` : ''}`;
     }
     return { ...element, data: { ...data, label } };
   });

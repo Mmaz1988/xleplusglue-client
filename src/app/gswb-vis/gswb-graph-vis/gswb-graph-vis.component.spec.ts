@@ -43,22 +43,31 @@ describe('GswbGraphVisComponent', () => {
     expect(longNode.outerWidth()).toBeGreaterThanOrEqual(labelBox.w - 4);
   });
 
-  it('abbreviates a strongly connected component to "SCC n (members)", keeping its id for edges', () => {
-    const sccId = '([v1, v2, v3], [(v1,v2), (v2,v1), (v2,v3)])';
-    const member = (id: string, color = 'green') => ({ data: { id, color } });
-    component.renderGraph([
-      { data: { id: sccId, color: 'green', text: 'g_e, (g_e -o f_t), f_t',
-        subgraph: { graphElements: [member('g_e'), member('(g_e -o f_t)'), member('f_t', 'yellow'),
-          { data: { id: 'p1', color: 'blue' } }, { data: { id: 'x', source: 'p1', target: 'g_e' } }] } } },
-      { data: { id: 'f_t', color: 'yellow' } },
-      { data: { id: 'e1', source: sccId, target: 'f_t' } },
-    ]);
-    const cy = (component as any).cy;
+  const sccId = '([v1, v2, v3], [(v1,v2), (v2,v1), (v2,v3)])';
+  const member = (id: string, color = 'green') => ({ data: { id, color } });
+  const scc = (extra: object) => ({ data: { id: sccId, color: 'green', text: 'g_e, (g_e -o f_t), f_t',
+    subgraph: { graphElements: [member('g_e'), member('(g_e -o f_t)'), member('f_t', 'yellow'),
+      { data: { id: 'p1', color: 'blue' } }, { data: { id: 'x', source: 'p1', target: 'g_e' } }] }, ...extra } });
+  const render = (sccNode: any) => {
+    component.renderGraph([sccNode, { data: { id: 'h_t', color: 'yellow' } },
+      { data: { id: 'e1', source: sccId, target: 'h_t' } }]);
+    return (component as any).cy;
+  };
 
-    const scc = cy.getElementById(sccId);
-    expect(scc.data('label')).toBe('SCC 1 (3)');
-    expect(scc.width()).toBeLessThan(120);
-    expect(cy.getElementById('f_t').data('label')).toBe('f_t');
+  it('labels a strongly connected component by what it produces, keeping its id for edges', () => {
+    const cy = render(scc({ outputs: ['(g_e -o f_t)'] }));
+
+    const node = cy.getElementById(sccId);
+    expect(node.data('label')).toBe('↻ (g_e -o f_t)');
+    expect(node.width()).toBeLessThan(160);
+    expect(cy.getElementById('h_t').data('label')).toBe('h_t');
     expect(cy.getElementById('e1').source().id()).toBe(sccId);
   });
+
+  it('falls back to "SCC n (members)" when GSWB sends no outputs', () => {
+    const cy = render(scc({}));
+
+    expect(cy.getElementById(sccId).data('label')).toBe('SCC 1 (3)');
+  });
+
 });
