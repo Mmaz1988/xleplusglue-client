@@ -1,3 +1,8 @@
  div.viscontainer {
    max-width: 800px;
  }
+
+/* The analysis page (.fluid-boxes): as wide as its column, like the other boxes. */
+:host-context(.fluid-boxes) div.viscontainer {
+  max-width: none;
+}

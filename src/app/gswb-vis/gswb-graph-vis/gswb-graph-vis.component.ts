@@ -1,4 +1,4 @@
-import {Component, Input, OnChanges, AfterViewInit, ViewChild, ElementRef} from '@angular/core';
+import {Component, Input, OnChanges, AfterViewInit, OnDestroy, ViewChild, ElementRef} from '@angular/core';
 import cytoscape, {Core} from 'cytoscape';
 import popper from 'cytoscape-popper';
 import dagre from 'cytoscape-dagre';
@@ -120,12 +120,13 @@ const styleArray = [
   templateUrl: './gswb-graph-vis.component.html',
   styleUrls: ['./gswb-graph-vis.component.css']
 })
-export class GswbGraphVisComponent {
+export class GswbGraphVisComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('graphContainer') graphContainer: ElementRef;
   @ViewChild('subgraphDialog') subgraphDialog: SubGraphDialogComponent;
   @Input() graphID!: string;
   private cy: Core;
+  private resizes?: ResizeObserver;
 
   defaultWidth = '800px';
   defaultHeight = '600px';
@@ -141,6 +142,17 @@ export class GswbGraphVisComponent {
         }
         // rest of your cytoscape config
       });
+
+      // Cytoscape measures its container on creation and on window resizes only; on the
+      // analysis page the container follows its column and its edge can be dragged.
+      if (typeof ResizeObserver !== 'undefined' && this.graphContainer) {
+        this.resizes = new ResizeObserver(() => this.cy?.resize());
+        this.resizes.observe(this.graphContainer.nativeElement);
+      }
+  }
+
+  ngOnDestroy(): void {
+    this.resizes?.disconnect();
   }
 
 
@@ -247,8 +259,14 @@ export class GswbGraphVisComponent {
 
   resizeToDefault(): void {
     const graphContainer = this.graphContainer.nativeElement;
-    graphContainer.style.width = this.defaultWidth;
-    graphContainer.style.height = this.defaultHeight;
+    if (graphContainer.closest('.fluid-boxes')) {
+      // Back to the stylesheet's size: the column's width at the shared graph height.
+      graphContainer.style.width = '';
+      graphContainer.style.height = '';
+    } else {
+      graphContainer.style.width = this.defaultWidth;
+      graphContainer.style.height = this.defaultHeight;
+    }
   }
 
 }

@@ -11,3 +11,16 @@ div.cy {
   max-width: 100%; /* Ensure the div doesn't exceed parent's width */
   max-height: 100%; /* Ensure the div doesn't exceed parent's height */
 }
+
+/* The analysis page (.fluid-boxes): the graph fills its column at the shared graph height,
+   with the graphs' rounded frame; its bottom edge can be dragged. */
+:host-context(.fluid-boxes) div.cy {
+  width: 100%;
+  height: var(--graph-height);
+  margin: 0;
+  resize: vertical;
+  box-sizing: border-box;
+  border-width: var(--box-border-width);
+  border-color: var(--box-border-color);
+  border-radius: var(--graph-box-radius);
+}

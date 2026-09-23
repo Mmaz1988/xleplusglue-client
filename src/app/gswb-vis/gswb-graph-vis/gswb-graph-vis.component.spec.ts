@@ -80,4 +80,34 @@ describe('GswbGraphVisComponent', () => {
     expect(cy.getElementById(sccId).data('label')).toBe('SCC 1 (3)');
   });
 
+
+  it('tells cytoscape when its box changes size', async () => {
+    const box: HTMLElement = fixture.nativeElement.querySelector('div.cy');
+    box.style.width = '300px';
+    const resize = jasmine.createSpy('resize');
+    (component as any).cy = { resize };
+    const frames = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 20)));
+    await frames();
+    resize.calls.reset();
+
+    box.style.width = '500px';
+    await frames();
+
+    expect(resize).toHaveBeenCalled();
+  });
+
+  it('fills its column on the analysis page and returns there on "Resize to Default"', () => {
+    const page = document.createElement('div');
+    page.className = 'fluid-boxes';
+    page.style.width = '640px';
+    document.body.appendChild(page);
+    page.appendChild(fixture.nativeElement);
+    const box: HTMLElement = fixture.nativeElement.querySelector('div.cy');
+
+    expect(box.getBoundingClientRect().width).toBe(640);
+    box.style.width = '300px';
+    component.resizeToDefault();
+    expect(box.getBoundingClientRect().width).toBe(640);
+    page.remove();
+  });
 });
