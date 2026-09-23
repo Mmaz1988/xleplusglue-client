@@ -19,19 +19,20 @@ export const TREE: LigerConfigTree = {
   kind: 'config',
   source: './liger_resources/rules/c.liger.yaml',
   scope: '/res/rules',
+  projectRoot: '/res',
   sections: [
     { field: 'semantics', present: true, files: [
-      { path: '/res/rules/a.liger', name: 'a.liger', inScope: true },
-      { path: '/res/rules/b.liger', name: 'b.liger', inScope: true },
+      { path: '/res/rules/a.liger', name: 'a.liger', inScope: true, count: 3 },
+      { path: '/res/rules/b.liger', name: 'b.liger', inScope: true, count: 2 },
     ] },
     { field: 'pragmatics', present: true, files: [
-      { path: '/res/rules/p.liger', name: 'p.liger', inScope: true },
+      { path: '/res/rules/p.liger', name: 'p.liger', inScope: true, count: 13 },
     ] },
     { field: 'lexica', present: true, files: [
-      { path: '/res/dicts/d.txt', name: 'd.txt', inScope: true },
+      { path: '/res/dicts/d.txt', name: 'd.txt', inScope: true, count: 40 },
     ] },
     { field: 'axioms', present: true, files: [
-      { path: '/res/axioms/x.p', name: 'x.p', inScope: false },
+      { path: '/res/axioms/x.p', name: 'x.p', inScope: false, count: 5 },
     ] },
   ],
 };

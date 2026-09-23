@@ -2,7 +2,7 @@ import { AfterViewInit, Component, ElementRef, Input, OnDestroy, OnInit, ViewChi
 import { Subscription } from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { APP_DEFAULTS } from '../app-defaults';
-import { FileTree, LigerConfigField, LigerConfigTreeSection } from '../models/models';
+import { FileTree, LigerConfigField, LigerConfigTreeFile, LigerConfigTreeSection } from '../models/models';
 import { LigerFileSource } from './liger-file-source.service';
 import { LigerWorkspaceService, WorkspaceDocument, WorkspaceState, isEdited } from './liger-workspace.service';
 
@@ -11,6 +11,13 @@ const FIELD_ICONS: Record<LigerConfigField, string> = {
   pragmatics: 'forum',
   lexica: 'menu_book',
   axioms: 'functions',
+};
+
+const COUNT_UNITS: Record<LigerConfigField, string> = {
+  semantics: 'rules',
+  pragmatics: 'rules',
+  lexica: 'labels',
+  axioms: 'formulas',
 };
 
 const EDITOR_MODES: Record<LigerConfigField, string> = {
@@ -115,9 +122,51 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /** Where "Open…" starts: the open config's scope, so a grammar's other configs are one
-   *  click away; ".." leads anywhere else. */
+   *  click away; ".." leads up to the project's grammars folder and no further. */
   get browseRoot(): string {
-    return this.state?.tree?.scope ?? this.browseDirectory;
+    const scope = this.state?.tree?.scope;
+    const project = this.projectRoot;
+    if (!scope) {
+      return project ?? this.browseDirectory;
+    }
+    return project && !isWithin(scope, project) ? project : scope;
+  }
+
+  /** The project's grammars folder, as LiGER reports it; null if it has none. */
+  get projectRoot(): string | null {
+    return this.state?.tree?.projectRoot ?? null;
+  }
+
+  /** ".." stops at the project's grammars folder, so browsing cannot leave the project. */
+  get canBrowseUp(): boolean {
+    const project = this.projectRoot;
+    return !project || (isWithin(this.browseDir, project) && trimSlash(this.browseDir) !== trimSlash(project));
+  }
+
+  countLabel(file: LigerConfigTreeFile): string {
+    return `${file.count}${this.isEdited(file.path) ? '*' : ''}`;
+  }
+
+  countTooltip(field: LigerConfigField, file: LigerConfigTreeFile): string {
+    const text = `${file.count} ${COUNT_UNITS[field]}`;
+    return this.isEdited(file.path) ? `${text} on disk; the in-memory edit is not counted` : text;
+  }
+
+  /** A section's total, or empty when a file could not be counted. */
+  sectionCount(section: LigerConfigTreeSection): string {
+    if (section.files.some(file => file.count === null)) {
+      return '';
+    }
+    const total = section.files.reduce((sum, file) => sum + (file.count ?? 0), 0);
+    const edited = section.files.some(file => this.isEdited(file.path));
+    return `${total}${edited ? '*' : ''}`;
+  }
+
+  sectionCountTooltip(section: LigerConfigTreeSection): string {
+    const total = this.sectionCount(section).replace('*', '');
+    return total
+      ? `${total} ${COUNT_UNITS[section.field]} in ${section.files.length} file(s)`
+      : `${section.files.length} file(s); LiGER could not count them all`;
   }
 
   get browseDirName(): string {
@@ -201,6 +250,9 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   /** Goes up one folder. Lexically: ".." of a symlinked folder is its link's parent, which is
    *  where the user came from. */
   browseUp(): void {
+    if (!this.canBrowseUp) {
+      return;
+    }
     const dir = this.browseDir.replace(/\/+$/, '');
     const cut = dir.lastIndexOf('/');
     if (cut > 0) {
@@ -274,4 +326,13 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
     }
     return window.confirm(`${question} Your in-memory edits will be lost.`);
   }
+}
+
+const trimSlash = (path: string) => path.replace(/\/+$/, '');
+
+/** Whether `path` is `root` or lies under it, lexically (both are real paths from LiGER). */
+function isWithin(path: string, root: string): boolean {
+  const p = trimSlash(path);
+  const r = trimSlash(root);
+  return p === r || p.startsWith(`${r}/`);
 }

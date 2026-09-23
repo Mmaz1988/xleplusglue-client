@@ -11,7 +11,7 @@
       <!-- Picking a config or a single rule file to open. -->
       <ng-container *ngIf="browsing">
         <div class="browse-dir" [title]="browseDir">{{ browseDirName }}</div>
-        <div class="branch">
+        <div class="branch" *ngIf="canBrowseUp">
           <span class="twisty"></span>
           <button type="button" class="row field" (click)="browseUp()" title="Parent folder">
             <mat-icon class="kind">drive_folder_upload</mat-icon><span class="label">..</span>
@@ -31,6 +31,7 @@
             <mat-icon class="kind">description</mat-icon>
             <span class="label">{{ file.name }}</span>
             <span class="badge" title="A single rule file: semantics rules only">rule file</span>
+            <span *ngIf="file.count !== null" class="badge" [title]="countTooltip('semantics', file)">{{ countLabel(file) }}</span>
             <span *ngIf="isEdited(file.path)" class="edited" title="Edited in memory">●</span>
           </button>
         </ng-container>
@@ -57,7 +58,7 @@
                       [title]="fieldTooltip(section)" (click)="toggleSection(section.field)">
                 <mat-icon class="kind">{{ fieldIcon(section.field) }}</mat-icon>
                 <span class="label">{{ section.field }}</span>
-                <span class="badge">{{ section.files.length }}</span>
+                <span *ngIf="section.present" class="badge" [title]="sectionCountTooltip(section)">{{ sectionCount(section) }}</span>
               </button>
             </div>
             <div class="children" *ngIf="!isCollapsed(section.field)">
@@ -69,6 +70,7 @@
                 <span class="label">{{ file.name }}</span>
                 <span *ngIf="!file.inScope" class="outside" title="Outside the config's scope">⚠</span>
                 <span *ngIf="isEdited(file.path)" class="edited" title="Edited in memory">●</span>
+                <span *ngIf="file.count !== null" class="badge" [title]="countTooltip(section.field, file)">{{ countLabel(file) }}</span>
               </button>
             </div>
           </ng-container>

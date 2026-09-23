@@ -75,7 +75,10 @@ describe('LigerWorkspaceComponent', () => {
     const text = (row: Element, selector: string) => row.querySelector(selector)?.textContent?.trim();
 
     expect(fields.map(row => text(row, '.label'))).toEqual(['semantics', 'pragmatics', 'lexica', 'axioms']);
-    expect(fields.map(row => text(row, '.badge'))).toEqual(['2', '1', '1', '1']);
+    // Rules per stage, labels in the lexica, formulas in the axioms: totals of the files' counts.
+    expect(fields.map(row => text(row, '.badge'))).toEqual(['5', '13', '40', '5']);
+    expect(text(fileButton('a.liger'), '.badge')).toBe('3');
+    expect(fileButton('a.liger').querySelector('.badge')!.getAttribute('title')).toBe('3 rules');
     expect(text(fileButton('d.txt'), '.kind')).toBe('lock');
     expect(fileButton('x.p').querySelector('.outside')).not.toBeNull();
     expect(fileButton('a.liger').querySelector('.outside')).toBeNull();
@@ -94,25 +97,37 @@ describe('LigerWorkspaceComponent', () => {
     expect(Array.from(root.querySelectorAll('.row.field'))[1].classList).toContain('absent');
   });
 
-  it('browses from the open config\'s scope, and ".." goes up from any folder', () => {
+  it('browses from the open config\'s scope, and ".." stops at the project\'s grammars folder', () => {
     click(root.querySelector<HTMLButtonElement>('.toolbar .primary')!);
     expect(files.browse).toHaveBeenCalledWith('/res/rules');
 
     const up = () => Array.from(root.querySelectorAll<HTMLButtonElement>('.row.field'))
-      .find(row => row.querySelector('.label')!.textContent!.trim() === '..')!;
-    click(up());
+      .find(row => row.querySelector('.label')!.textContent!.trim() === '..');
+    click(up()!);
     expect(files.browse).toHaveBeenCalledWith('/res');
-    click(up());
-    expect(files.browse).toHaveBeenCalledWith('/');
+
+    expect(up()).toBeUndefined();
+    component.browseUp();
+    expect(files.browse).not.toHaveBeenCalledWith('/');
+  });
+
+  it('starts browsing at the grammars folder when the open rule set lies outside it', () => {
+    files.listConfig.and.returnValue(of({ ...TREE, scope: '/elsewhere/rules' }));
+    workspace.open('/elsewhere/rules/c.liger.yaml');
+    fixture.detectChanges();
+
+    click(root.querySelector<HTMLButtonElement>('.toolbar .primary')!);
+
+    expect(files.browse).toHaveBeenCalledWith('/res');
   });
 
   it('shows an opened rule file as the one file it is, not as a config with empty sections', () => {
     files.loadRuleSet.and.returnValue(of({ ...RULE_SET, kind: 'rules', source: '/r/rules.liger',
       pragmatics: null, lexica: [], axioms: null }));
     files.listConfig.and.returnValue(of({
-      kind: 'rules', source: '/r/rules.liger', scope: '/r',
+      kind: 'rules', source: '/r/rules.liger', scope: '/r', projectRoot: null,
       sections: [
-        { field: 'semantics', present: true, files: [{ path: '/r/rules.liger', name: 'rules.liger', inScope: true }] },
+        { field: 'semantics', present: true, files: [{ path: '/r/rules.liger', name: 'rules.liger', inScope: true, count: 7 }] },
         { field: 'pragmatics', present: false, files: [] },
         { field: 'lexica', present: false, files: [] },
         { field: 'axioms', present: false, files: [] },
@@ -129,6 +144,7 @@ describe('LigerWorkspaceComponent', () => {
     expect(files.loadRuleSet).toHaveBeenCalledWith('/r/rules.liger');
     expect(root.querySelectorAll('.row.field').length).toBe(0);
     expect(fileButton('rules.liger').querySelector('.badge')?.textContent).toContain('rule file');
+    expect(fileButton('rules.liger').textContent).toContain('7');
     expect(root.querySelector('.warning')?.textContent).toContain('semantics rules only');
     expect(editorText()).toBe('RULES\n');
   });
@@ -169,6 +185,14 @@ describe('LigerWorkspaceComponent', () => {
 
     expect(seen.length).toBe(2);  // each stream's current value, nothing after
     expect(editorText()).toBe('A EDITED');
+  });
+
+  it('marks a count as from disk while its file is edited in memory', () => {
+    type('A EDITED');
+
+    expect(fileButton('a.liger').querySelector('.badge')!.textContent!.trim()).toBe('3*');
+    expect(fileButton('a.liger').querySelector('.badge')!.getAttribute('title')).toContain('on disk');
+    expect(Array.from(root.querySelectorAll('.row.field'))[0].querySelector('.badge')!.textContent!.trim()).toBe('5*');
   });
 
   it('reverts the active file', () => {

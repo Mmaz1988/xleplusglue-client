@@ -61,6 +61,8 @@ export interface LigerConfigTree {
   /** The config's scope folder, absolute (a single rule file's own folder): where its files
    *  belong, and where the workspace browses for more. */
   scope: string;
+  /** The project's grammars folder (real path), or null: the workspace browses no higher. */
+  projectRoot: string | null;
   /** semantics, pragmatics, lexica, axioms, in that order; always all four. */
   sections: LigerConfigTreeSection[];
 }
@@ -81,6 +83,9 @@ export interface LigerConfigTreeFile {
   name: string;
   /** False for a file outside the config's scope: allowed, but worth seeing. */
   inScope: boolean;
+  /** Rules (semantics, pragmatics), labels (lexica) or formulas (axioms) in the file, as on
+   *  disk; null when LiGER could not count them. */
+  count: number | null;
 }
 
 export type SynSemMapping = Record<string, string[]>;
