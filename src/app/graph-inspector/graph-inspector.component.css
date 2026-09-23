@@ -25,6 +25,13 @@
   min-width: 0;
 }
 
+.rules-source {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  color: #555;
+  overflow-wrap: anywhere;
+}
+
 .editor-label {
   margin: 0 0 0.35rem;
   font-weight: 600;

@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, Input, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { APP_DEFAULTS } from '../app-defaults';
@@ -48,8 +48,10 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
    *  would briefly record the new file as emptied, and the rule text as changed. */
   private hydrating = false;
   private subscription?: Subscription;
+  private visibility?: IntersectionObserver;
 
-  constructor(readonly workspace: LigerWorkspaceService, private files: LigerFileSource) {}
+  constructor(readonly workspace: LigerWorkspaceService, private files: LigerFileSource,
+              private host: ElementRef<HTMLElement>) {}
 
   ngOnInit(): void {
     this.subscription = this.workspace.state$.subscribe(state => {
@@ -63,10 +65,21 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   ngAfterViewInit(): void {
     this.syncEditor();
+    // Views keep the workspace in an app-toggle-display, which hides it with display: none;
+    // CodeMirror laid out while hidden shows blank until re-measured.
+    if (typeof IntersectionObserver !== 'undefined') {
+      this.visibility = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          this.editor?.refresh();
+        }
+      });
+      this.visibility.observe(this.host.nativeElement);
+    }
   }
 
   ngOnDestroy(): void {
     this.subscription?.unsubscribe();
+    this.visibility?.disconnect();
   }
 
   get mode(): string {

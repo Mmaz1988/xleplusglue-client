@@ -15,17 +15,17 @@
   </ol>
 </section>
 <div class="errorhandling" #errorhandle></div>
-<button (click)="analyzeSentence(textareaElement.value, ligerRules.getContent())">
+<button (click)="analyzeSentence(textareaElement.value, semanticsRules())">
   <span *ngIf="!loading">Parse and rewrite</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
 </button>
-<button class="button beta" (click)="addSentence(textareaElement.value, ligerRules.getContent())"
+<button class="button beta" (click)="addSentence(textareaElement.value, semanticsRules())"
         [disabled]="loading || !canAppendSentence()">
   <span *ngIf="!loading">Add sentence</span>
   <span *ngIf="loading">Appending...</span>
 </button>
-<button class="button beta" (click)="parseSentence(textareaElement.value, ligerRules.getContent())">
+<button class="button beta" (click)="parseSentence(textareaElement.value, semanticsRules())">
   <span *ngIf="!loading">Extract multi-stage</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
@@ -36,13 +36,9 @@
   [loadedPath]="loadedGrammarPath"
   (grammarLoaded)="onGrammarLoaded($event)">
 </app-grammar-loader>
-<app-rule-loader (dataEmitter)="updateRules($event)"></app-rule-loader>
-
-<app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
-  <h3> Input rules: </h3>
-  <div class="editor-restr">
-  <app-editor #ligerRules [mode]="'liger'" ></app-editor>
-</div>
+<app-toggle-display type="liger" showText="Show rule set" hideText="Hide rule set">
+  <h3> Rule set: </h3>
+  <app-liger-workspace></app-liger-workspace>
 </app-toggle-display>
 
 <app-toggle-display showText="Show graph vis" hideText="Hide graph vis">

@@ -5,17 +5,23 @@ import { of } from 'rxjs';
 import { LigerVisComponent } from './liger-vis.component';
 import { DataService } from '../data.service';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 
 describe('LigerVisComponent', () => {
   let component: LigerVisComponent;
   let fixture: ComponentFixture<LigerVisComponent>;
 
+  /** Stands in for LigerWorkspaceService: the rules a parse sends are its semantics. */
+  let workspace: { semantics: string | null };
+
   beforeEach(() => {
+    workspace = { semantics: null };
     TestBed.configureTestingModule({
       declarations: [LigerVisComponent],
       providers: [
         { provide: DataService, useValue: {} },
         { provide: AnalysisWorkspaceStateService, useValue: { getState: () => ({ liger: null }) } },
+        { provide: LigerWorkspaceService, useValue: workspace },
       ],
       schemas: [NO_ERRORS_SCHEMA]
     });
@@ -26,6 +32,21 @@ describe('LigerVisComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('parses with the rule set\'s semantics rules, edits included, from the parse buttons', () => {
+    const analyze = spyOn(component, 'analyzeSentence');
+    workspace.semantics = 'EDITED SEMANTICS';
+    const parse = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button'))
+      .find(button => button.textContent!.includes('Parse and rewrite'))!;
+
+    parse.click();
+
+    expect(analyze).toHaveBeenCalledWith(jasmine.any(String), 'EDITED SEMANTICS');
+  });
+
+  it('parses without rules while no rule set is loaded', () => {
+    expect(component.semanticsRules()).toBe('');
   });
 
   it('does not allow adding a sentence before GSWB returns a solution', () => {

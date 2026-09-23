@@ -4,6 +4,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
 import { LigerQuerySolution, LigerRule, LigerRuleAnnotation, LigerRuleAnnotationFact, LigerRuleAnnotationResponse, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
 import { APP_DEFAULTS } from '../app-defaults';
+import { LigerWorkspaceService, isEdited } from '../liger-workspace/liger-workspace.service';
 
 @Component({
   selector: 'app-graph-inspector',
@@ -17,12 +18,9 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   @Input() initialUploadedContent = '';
   @Input() initialUploadedFileName = 'uploaded-graph';
   @Input() initialGraphElements: any[] = [];
-  /** The loaded LiGER rule set's post-processing rules. A newly loaded rule set replaces
-   *  the editor's rules; edits stay until then. */
-  @Input() pragmaticsRules: string | null = null;
   @Output() rulesApplied = new EventEmitter<LigerRuleAnnotationResponse>();
 
-  constructor(private dataService: DataService) {
+  constructor(private dataService: DataService, private ligerWorkspace: LigerWorkspaceService) {
     const state = (typeof history !== 'undefined' ? history.state : null) as any;
     this.initializeFromRouteState(state);
 
@@ -40,8 +38,26 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   uploadedContent = '';
   uploadedFormat: 'json' | 'prolog' = 'json';
   uploadedFileName = 'uploaded-graph';
-  rulesText = '';
   queryText = APP_DEFAULTS.graphInspector.queryText;
+
+  /** The post-processing rules Apply sends: the LiGER workspace's pragmatics, in-memory
+   *  edits included. glue-interface reads it too, to apply the same rules to every merged
+   *  graph. */
+  get rulesText(): string {
+    return this.ligerWorkspace.pragmatics ?? '';
+  }
+
+  /** Which files those rules come from, for the line above Apply. */
+  get rulesSummary(): string {
+    const { ruleSet, tree, documents } = this.ligerWorkspace.state;
+    const section = tree?.sections.find(s => s.field === 'pragmatics');
+    if (!ruleSet || !section?.present) {
+      return 'No post-processing rules in the loaded rule set.';
+    }
+    const names = section.files.map(file => file.name).join(', ');
+    const edited = section.files.some(file => isEdited(documents[file.path]));
+    return `${names}${edited ? ' (edited)' : ''}`;
+  }
   queryResult = '';
   loading = false;
   queryLoading = false;
@@ -65,7 +81,6 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('graphResults') graphResults: ElementRef<HTMLElement>;
   @ViewChild('errorhandle') errorhandle: ElementRef;
-  @ViewChild('rulesEditor') rulesEditor: EditorComponent;
   @ViewChild('queryEditor') queryEditor: EditorComponent;
 
   ngAfterViewInit(): void {
@@ -79,11 +94,6 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['pragmaticsRules'] && typeof this.pragmaticsRules === 'string') {
-      this.rulesText = this.pragmaticsRules;
-      this.rulesEditor?.updateContent(this.pragmaticsRules);
-    }
-
     if (!changes['initialUploadedContent'] && !changes['initialUploadedFileName'] && !changes['initialGraphElements']) {
       return;
     }
@@ -704,10 +714,6 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
       this.uploadedFormat = state.uploadedFormat === 'prolog' ? 'prolog' : 'json';
       this.uploadedFileName = state.uploadedFileName ?? 'merged-graph.json';
       this.currentStructureJson = this.uploadedFormat === 'json' ? this.uploadedContent : '';
-    }
-
-    if (typeof state?.rulesText === 'string' && state.rulesText.trim()) {
-      this.rulesText = state.rulesText;
     }
 
     if (typeof state?.queryText === 'string' && state.queryText.trim()) {

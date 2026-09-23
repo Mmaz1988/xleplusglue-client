@@ -1,3 +1,7 @@
+:host {
+  display: block;
+}
+
 .liger-workspace {
   display: flex;
   gap: 12px;

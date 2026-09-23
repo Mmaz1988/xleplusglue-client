@@ -13,10 +13,11 @@
 
 <div class="inspector-editors">
   <div class="editor-section">
-    <div class="editor-label">LiGER rules</div>
-    <div class="editor-restr">
-      <app-editor #rulesEditor [mode]="'liger'" [showControls]="false" [initialContent]="rulesText" (contentChange)="rulesText = $event"></app-editor>
-    </div>
+    <div class="editor-label">Post-processing rules</div>
+    <p class="rules-source" [title]="rulesSummary">{{ rulesSummary }}</p>
+    <app-toggle-display type="liger" [isHidden]="true" showText="Edit in rule set" hideText="Hide rule set">
+      <app-liger-workspace></app-liger-workspace>
+    </app-toggle-display>
     <button type="button" (click)="applyRules()" [disabled]="loading || !uploadedContent.trim()">
       <span *ngIf="!loading">Apply rules</span>
       <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>

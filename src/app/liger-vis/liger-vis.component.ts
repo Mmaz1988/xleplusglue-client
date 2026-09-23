@@ -1,12 +1,12 @@
 import { Component, ViewChild, EventEmitter, ElementRef, AfterViewInit, Input } from '@angular/core';
-import {EditorComponent} from "../editor/editor.component";
 import {RuleListComponent} from "./rule-list/rule-list.component";
 import {GraphVisComponent} from "./liger-graph-vis/graph-vis.component";
 import {GrammarLoaderComponent} from "../utilities/grammar-loader/grammar-loader.component";
 import { proofInputsFrom } from '../document-builder/proof-inputs';
 import { DataService } from '../data.service';
-import { GswbProofInput, LigerRuleSet, LigerSolutionAnnotation, LigerStructure, SequenceAnalysis } from '../models/models';
+import { GswbProofInput, LigerSolutionAnnotation, LigerStructure, SequenceAnalysis } from '../models/models';
 import { AnalysisWorkspaceStateService, LigerWorkspaceState } from '../analysis-workspace-state.service';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { APP_DEFAULTS } from "../app-defaults";
 
 @Component({
@@ -18,7 +18,8 @@ export class LigerVisComponent implements AfterViewInit {
 
   @Input() semanticSolutionReady = false;
 
-  constructor(private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService) {
+  constructor(private dataService: DataService, private workspaceState: AnalysisWorkspaceStateService,
+              private ligerWorkspace: LigerWorkspaceService) {
     const savedGrammarPath = this.workspaceState.getState().liger?.grammarLoadedPath;
     if (savedGrammarPath) {
       this.loadedGrammarPath = savedGrammarPath;
@@ -47,7 +48,6 @@ export class LigerVisComponent implements AfterViewInit {
   selectedSolutionIndex = 0;
   useAllResults = true;
 
-  @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('rl1') rulelist1: RuleListComponent;
   @ViewChild('cy1') cy1: GraphVisComponent;
   @ViewChild('grammarLoader') grammarLoader: GrammarLoaderComponent;
@@ -429,12 +429,9 @@ export class LigerVisComponent implements AfterViewInit {
     this.errorhandle.nativeElement.innerHTML = "[" + new Date().toLocaleTimeString() + "] " + message;
   }
 
-  /** Post-processing rules of the loaded rule set, for the post-processing graph inspector. */
-  pragmaticsRules: string | null = null;
-
-  updateRules(ruleSet: LigerRuleSet) {
-    this.ligerRules.updateContent(ruleSet.semantics);
-    this.pragmaticsRules = ruleSet.pragmatics;
+  /** The rule set's semantics rules, in-memory edits included; empty while none is loaded. */
+  semanticsRules(): string {
+    return this.ligerWorkspace.semantics ?? '';
   }
 
   onGrammarLoaded(path: string): void {
@@ -470,7 +467,7 @@ export class LigerVisComponent implements AfterViewInit {
   }
 
   captureState(): LigerWorkspaceState | null {
-    if (!this.textarea || !this.ligerRules) {
+    if (!this.textarea) {
       return this.pendingState;
     }
 
@@ -479,7 +476,6 @@ export class LigerVisComponent implements AfterViewInit {
       sequenceSentences: [...this.sequenceSentences],
       sequenceSentenceIds: [...this.sequenceSentenceIds],
       parsedSentenceStructures: this.parsedSentenceStructures,
-      rulesText: this.ligerRules.getContent(),
       grammarLoadedPath: this.loadedGrammarPath ?? '',
       grammarSelectedPath: this.grammarLoader?.selectedPath ?? this.loadedGrammarPath ?? '',
       structureJson: this.structureJson,
@@ -504,7 +500,7 @@ export class LigerVisComponent implements AfterViewInit {
 
   private applyPendingState(): void {
     const state = this.pendingState;
-    if (!state || !this.textarea || !this.ligerRules || !this.cy1) {
+    if (!state || !this.textarea || !this.cy1) {
       return;
     }
 
@@ -520,7 +516,6 @@ export class LigerVisComponent implements AfterViewInit {
       ? state.parsedSentenceStructures as LigerStructure[][]
       : [];
     this.textarea.nativeElement.value = this.defaultValue;
-    this.ligerRules.updateContent(state.rulesText || '');
     this.loadedGrammarPath = state.grammarLoadedPath || state.grammarSelectedPath || this.loadedGrammarPath;
     if (this.grammarLoader) {
       this.grammarLoader.restoreState({

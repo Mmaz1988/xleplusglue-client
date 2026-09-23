@@ -59,7 +59,6 @@
 <section #postProcessingSection class="post-processing-section" *ngIf="showInlinePostProcessing">
   <h2>Post processing</h2>
   <app-graph-inspector
-    [pragmaticsRules]="liger?.pragmaticsRules ?? null"
     [initialUploadedContent]="mergedStructureContent"
     [initialUploadedFileName]="mergedStructureFileName"
     [initialGraphElements]="mergedGraphElements"

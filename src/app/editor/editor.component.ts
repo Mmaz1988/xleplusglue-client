@@ -308,6 +308,11 @@ export class EditorComponent implements AfterViewInit, OnChanges {
   }
 
 
+  /** Re-measures the editor; needed after it was laid out while hidden (display: none). */
+  refresh(): void {
+    this.codeMirror?.refresh();
+  }
+
   public getContent(): string {
     return this.codeMirror.getValue();
   }

@@ -1,12 +1,14 @@
 import { Component, Input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { NO_ERRORS_SCHEMA, SimpleChange } from '@angular/core';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 
 import { DataService } from '../data.service';
 import { GraphInspectorComponent } from './graph-inspector.component';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
+import { fileSourceSpy } from '../liger-workspace/liger-workspace.testing';
 
 @Component({
   selector: 'app-graph-vis',
@@ -28,6 +30,8 @@ class GraphVisStubComponent {
 
 describe('GraphInspectorComponent', () => {
   let component: GraphInspectorComponent;
+  /** Stands in for LigerWorkspaceService: the rules Apply sends are its pragmatics. */
+  let workspace: { pragmatics: string | null; state: any };
   let fixture: ComponentFixture<GraphInspectorComponent>;
   let dataServiceMock: {
     ligerUploadStructure: () => any;
@@ -96,6 +100,8 @@ describe('GraphInspectorComponent', () => {
       }))
     };
 
+    workspace = { pragmatics: '', state: { ruleSet: null, tree: null, documents: {} } };
+
     TestBed.configureTestingModule({
       imports: [FormsModule],
       declarations: [GraphInspectorComponent, GraphVisStubComponent],
@@ -103,7 +109,8 @@ describe('GraphInspectorComponent', () => {
         {
           provide: DataService,
           useValue: dataServiceMock
-        }
+        },
+        { provide: LigerWorkspaceService, useValue: workspace }
       ],
       schemas: [NO_ERRORS_SCHEMA]
     });
@@ -125,24 +132,25 @@ describe('GraphInspectorComponent', () => {
     expect(component.queryText).toContain('REFL-BIND(#f,#h)');
   });
 
-  it('takes the loaded rule set\'s post-processing rules, replacing edits on each new load', () => {
-    const editor = jasmine.createSpyObj('EditorComponent', ['updateContent']);
-    component.rulesEditor = editor;
+  it('applies the workspace\'s pragmatics, edits included, and names their files', () => {
+    const real = new LigerWorkspaceService(fileSourceSpy());
+    (component as any).ligerWorkspace = real;
+    real.open('c.liger.yaml');
+    expect(component.rulesSummary).toBe('p.liger');
+    expect(component.rulesText).toBe('SERVER PRAGMATICS');
 
-    component.pragmaticsRules = 'rules from the config';
-    component.ngOnChanges({ pragmaticsRules: new SimpleChange(null, 'rules from the config', false) });
-    expect(component.rulesText).toBe('rules from the config');
-    expect(editor.updateContent).toHaveBeenCalledWith('rules from the config');
+    real.edit('/res/rules/p.liger', 'P EDITED');
+    component.currentStructureJson = '{"constraints": []}';
+    component.applyRules();
 
-    component.rulesText = 'edited';
-    component.pragmaticsRules = 'another config';
-    component.ngOnChanges({ pragmaticsRules: new SimpleChange('rules from the config', 'another config', false) });
-    expect(component.rulesText).toBe('another config');
+    expect(component.rulesSummary).toBe('p.liger (edited)');
+    const request = dataServiceMock.ligerApplyRulesToStructure.calls.mostRecent().args[0];
+    expect(request.ruleString).toBe('// ===== /res/rules/p.liger =====\nP EDITED\n\n');
   });
 
   it('refuses to apply rules while none are loaded', () => {
     component.currentStructureJson = '{"constraints": []}';
-    component.rulesText = '';
+    workspace.pragmatics = '';
 
     component.applyRules();
 
@@ -245,7 +253,7 @@ describe('GraphInspectorComponent', () => {
     component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
-    component.rulesText = '--replace(true);';
+    workspace.pragmatics = '--replace(true);';
 
     component.applyRules();
 
@@ -263,7 +271,7 @@ describe('GraphInspectorComponent', () => {
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
     component.currentStructureJson = '{"id":"selected-branch","constraints":[],"annotations":[],"choiceSpace":{}}';
-    component.rulesText = '--replace(true);';
+    workspace.pragmatics = '--replace(true);';
 
     component.applyRules();
 
@@ -277,11 +285,11 @@ describe('GraphInspectorComponent', () => {
     component.uploadedContent = '{"id":"original","constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
-    component.rulesText = '#a SUBJ #b ?=> #a TOP #b';
+    workspace.pragmatics = '#a SUBJ #b ?=> #a TOP #b';
 
     component.applyRules();
     component.selectRuleAnnotation(1);
-    component.rulesText = '--replace(true);';
+    workspace.pragmatics = '--replace(true);';
     component.applyRules();
 
     const request = dataServiceMock.ligerApplyRulesToStructure.calls.mostRecent().args[0];
@@ -293,7 +301,7 @@ describe('GraphInspectorComponent', () => {
     component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
-    component.rulesText = '#a SUBJ #b ?=> #a TOP #b';
+    workspace.pragmatics = '#a SUBJ #b ?=> #a TOP #b';
 
     component.applyRules();
     fixture.detectChanges();
@@ -316,7 +324,7 @@ describe('GraphInspectorComponent', () => {
     component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
-    component.rulesText = '#a SUBJ #b ?=> #a TOP #b';
+    workspace.pragmatics = '#a SUBJ #b ?=> #a TOP #b';
 
     component.applyRules();
 

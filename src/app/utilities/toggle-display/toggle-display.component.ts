@@ -18,7 +18,8 @@ export class ToggleDisplayComponent implements OnInit, OnDestroy {
   @Input() showText = 'Show Content'; // Default text
   @Input() hideText = 'Hide Content'; // Default text
 
-  isHidden = false;
+  /** Whether the content starts hidden. */
+  @Input() isHidden = false;
   private hideSubscription: Subscription;
 
   constructor(private hideComponentService: HideComponentsService) {}
