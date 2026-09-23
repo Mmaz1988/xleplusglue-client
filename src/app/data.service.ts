@@ -11,6 +11,7 @@ import {
   LigerRuleAnnotation
     ,
   LigerRuleSet,
+  LigerConfigTree,
   LigerMergeResponse,
   LigerStructure,
   LigerStructureMergeRequest,
@@ -215,6 +216,16 @@ export class DataService {
   /** A file's text, for files that are not rules (testsuites, axioms). */
   loadFile(path: { grammar: string }): Observable<{ grammar: string }> {
     return this.http.post<{ grammar: string }>(`${this.ligerpage}/load_file`, path);
+  }
+
+  /** The files of a config or single rule file, per field; leaves LiGER's active lexica alone. */
+  configTree(path: { grammar: string }): Observable<LigerConfigTree> {
+    return this.http.post<LigerConfigTree>(`${this.ligerpage}/config_tree`, path);
+  }
+
+  /** The LiGER configs (*.liger.yaml) under a grammar's directory. */
+  listConfigs(path: { grammar: string }): Observable<string[]> {
+    return this.http.post<string[]>(`${this.ligerpage}/list_configs`, path);
   }
 
   //calls to vampire

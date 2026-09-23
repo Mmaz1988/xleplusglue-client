@@ -44,6 +44,36 @@ export interface LigerRuleSet {
   axioms: string | null;
 }
 
+/** LiGER's /config_tree answer: a config's (or single rule file's) files per field, unread.
+ *  Joining a section's files the way LigerConfigLoader.assemble does reproduces /load_rules'
+ *  text for that field (see liger-workspace/liger-assembly.ts). */
+export interface LigerConfigTree {
+  kind: 'config' | 'rules';
+  /** The path that was loaded, as requested. */
+  source: string;
+  /** semantics, pragmatics, lexica, axioms, in that order; always all four. */
+  sections: LigerConfigTreeSection[];
+}
+
+export type LigerConfigField = 'semantics' | 'pragmatics' | 'lexica' | 'axioms';
+
+export interface LigerConfigTreeSection {
+  field: LigerConfigField;
+  /** The default config's path when the field is inherited from it, 'builtin' for
+   *  LiGER's own default lexicon, null when it is the loaded file's own. */
+  inheritedFrom: string | null;
+  /** False when neither the loaded file nor the default config has the field; then
+   *  /load_rules reports it as null and files is empty. */
+  present: boolean;
+  files: LigerConfigTreeFile[];
+}
+
+export interface LigerConfigTreeFile {
+  /** Absolute; exactly as /load_rules names it in its "===== path =====" marker lines. */
+  path: string;
+  name: string;
+}
+
 export type SynSemMapping = Record<string, string[]>;
 
 export interface SyntacticAnalysis {

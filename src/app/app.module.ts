@@ -31,6 +31,7 @@ import { ToggleDisplayComponent } from './utilities/toggle-display/toggle-displa
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
 import { GrammarLoaderComponent } from './utilities/grammar-loader/grammar-loader.component';
 import { FileTreeComponent } from './utilities/file-tree/file-tree.component';
+import { LigerWorkspaceComponent } from './liger-workspace/liger-workspace.component';
 
 import { MatTreeModule } from '@angular/material/tree';
 import { MatIconModule } from '@angular/material/icon';
@@ -82,6 +83,7 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     GswbSettingsComponent,
     GrammarLoaderComponent,
     FileTreeComponent,
+    LigerWorkspaceComponent,
     ChatInterfaceComponent,
     ChatComponent,
     RuleLoaderComponent,

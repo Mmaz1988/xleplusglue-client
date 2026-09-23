@@ -1,0 +1,63 @@
+<div class="liger-workspace" [class.collapsed]="collapsed">
+  <aside class="ws-sidebar" aria-label="LiGER rule set">
+    <div class="ws-sidebar-head">
+      <button type="button" class="ws-collapse" (click)="collapsed = !collapsed"
+              [attr.aria-expanded]="!collapsed"
+              [title]="collapsed ? 'Show the rule set' : 'Hide the rule set'">{{ collapsed ? '›' : '‹' }}</button>
+      <span *ngIf="!collapsed" class="ws-source" [title]="state.ruleSet?.source ?? ''">
+        {{ sourceName || 'No rule set' }}<span *ngIf="state.ruleSet?.kind === 'config'" class="ws-kind"> (config)</span>
+      </span>
+    </div>
+
+    <ng-container *ngIf="!collapsed">
+      <div class="ws-actions">
+        <button type="button" (click)="toggleBrowse()">{{ browsing ? 'Cancel' : 'Open…' }}</button>
+        <button type="button" (click)="reload()" [disabled]="!state.ruleSet">Reload</button>
+      </div>
+
+      <div *ngIf="browsing" class="ws-browse">
+        <app-file-tree [fileTree]="browseTree" width="100%"
+                       (nodeSelected)="browsePath = $event"
+                       (nodeDoubleClicked)="openBrowsed($event)"></app-file-tree>
+        <button type="button" (click)="openBrowsed()" [disabled]="!browsePath">Open</button>
+      </div>
+
+      <p *ngIf="state.loading" class="ws-status">Opening {{ state.loading }}…</p>
+      <p *ngIf="state.error" class="ws-status ws-error">{{ state.error }}</p>
+
+      <details *ngFor="let section of sections" class="ws-section" open>
+        <summary>
+          {{ section.field }}
+          <span *ngIf="section.inheritedFrom" class="ws-inherited"
+                [title]="section.inheritedFrom">{{ inheritedLabel(section) }}</span>
+        </summary>
+        <ul>
+          <li *ngFor="let file of section.files">
+            <button type="button" class="ws-file" [class.active]="file.path === state.activePath"
+                    [title]="file.path" (click)="select(file.path)">
+              {{ file.name }}<span *ngIf="isEdited(file.path)" class="ws-edited" title="Edited in memory"> *</span>
+              <span *ngIf="isReadOnly(file.path)" class="ws-readonly">read-only</span>
+            </button>
+          </li>
+          <li *ngIf="section.files.length === 0" class="ws-none">none</li>
+        </ul>
+      </details>
+    </ng-container>
+  </aside>
+
+  <section class="ws-main">
+    <div class="ws-toolbar">
+      <span class="ws-label" [title]="active?.path ?? ''">
+        {{ active?.name ?? 'No file selected' }}<span *ngIf="active && isEdited(active.path)"> — edited</span>
+      </span>
+      <button type="button" (click)="revert()" [disabled]="!active || !isEdited(active.path)">Revert</button>
+      <button type="button" (click)="download()" [disabled]="!active"
+              title="Edits are kept in memory only; download to keep them">Download</button>
+    </div>
+    <p *ngIf="active?.readOnly" class="ws-note">
+      Lexica are read from disk by LiGER, so an edit here could not take effect: this file is read-only.
+    </p>
+    <app-editor #editor [mode]="mode" [readOnly]="!!active?.readOnly" [initialContent]="''"
+                [showControls]="false" (contentChange)="onEditorChange($event)"></app-editor>
+  </section>
+</div>

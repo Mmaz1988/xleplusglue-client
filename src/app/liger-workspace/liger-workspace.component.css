@@ -1,0 +1,133 @@
+.liger-workspace {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.ws-sidebar {
+  flex: 0 0 240px;
+  border: 1px solid #00a9e0;
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 70vh;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.collapsed .ws-sidebar {
+  flex-basis: auto;
+}
+
+.ws-sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-collapse {
+  flex: none;
+  width: 24px;
+}
+
+.ws-source {
+  font-weight: bold;
+  overflow-wrap: anywhere;
+}
+
+.ws-kind,
+.ws-inherited,
+.ws-readonly,
+.ws-none {
+  font-weight: normal;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.ws-actions {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.ws-browse {
+  margin-bottom: 8px;
+}
+
+.ws-status {
+  margin: 4px 0;
+  font-size: 0.75rem;
+}
+
+.ws-error {
+  color: #b00020;
+  overflow-wrap: anywhere;
+}
+
+.ws-section {
+  margin-top: 6px;
+}
+
+.ws-section summary {
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.ws-section ul {
+  list-style: none;
+  margin: 2px 0 0;
+  padding-left: 12px;
+}
+
+.ws-file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.ws-file:hover {
+  background: rgba(0, 169, 224, 0.25);
+}
+
+.ws-file.active {
+  background: #00a9e0;
+  color: white;
+}
+
+.ws-file.active .ws-readonly {
+  color: white;
+}
+
+.ws-edited {
+  font-weight: bold;
+}
+
+.ws-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ws-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ws-label {
+  flex: 1 1 auto;
+  font-weight: bold;
+  overflow-wrap: anywhere;
+}
+
+.ws-note {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  color: #555;
+}

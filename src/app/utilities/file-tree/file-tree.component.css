@@ -52,7 +52,7 @@ li {
 }
 
 div.filetreecontainer {
-  width: 760px;
+  /* width comes from the component's width input */
   border: 2px solid var(--highlight-color);
   border-radius: 5px;
   padding: 10px;

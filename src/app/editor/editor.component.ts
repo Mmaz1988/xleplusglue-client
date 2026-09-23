@@ -251,6 +251,8 @@ export class EditorComponent implements AfterViewInit, OnChanges {
   @Input() mode: string;
   @Input() showControls = true;
   @Input() initialContent: string | null = null;
+  /** CodeMirror's readOnly option: shows the text, refuses edits. */
+  @Input() readOnly = false;
   @Output() contentChange = new EventEmitter<string>();
 
   defaultWidth = '800px';
@@ -267,7 +269,8 @@ export class EditorComponent implements AfterViewInit, OnChanges {
       viewportMargin: Infinity,
       lineNumbers: true,
       matchBrackets: true,  // Enables bracket matching
-      autoCloseBrackets: true  // Auto-closes brackets
+      autoCloseBrackets: true,  // Auto-closes brackets
+      readOnly: this.readOnly
     });
 
     this.codeMirror.on('change', () => {
@@ -288,6 +291,9 @@ export class EditorComponent implements AfterViewInit, OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['mode'] && this.codeMirror) {
       this.codeMirror.setOption('mode', this.resolveMode(this.mode));
+    }
+    if (changes['readOnly'] && this.codeMirror) {
+      this.codeMirror.setOption('readOnly', this.readOnly);
     }
   }
 

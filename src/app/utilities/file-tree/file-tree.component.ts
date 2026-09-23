@@ -11,6 +11,8 @@ import { MatTreeNestedDataSource } from '@angular/material/tree';
 export class FileTreeComponent implements OnInit, OnChanges {
 
   @Input() fileTree: FileTree[] = [];
+  /** The container's width; the default suits a view's main column, not a sidebar. */
+  @Input() width = '760px';
   @Output() nodeSelected = new EventEmitter<string>();  // Emit when a node is selected (clicked)
   @Output() nodeDoubleClicked = new EventEmitter<string>();  // Emit when a node is double-clicked
 
