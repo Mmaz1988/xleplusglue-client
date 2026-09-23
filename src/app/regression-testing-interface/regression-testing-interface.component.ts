@@ -41,6 +41,7 @@ import {
   VampireSessionSummary,
   sameReasoningUpdate,
   LigerRuleSet,
+  MISSING_PRAGMATICS_MESSAGE,
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
@@ -2852,7 +2853,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (!this.session.pragmaticsRulesText) {
       return of({
         scopeId: pairId, assignments: [],
-        failures: [`${pairId}: no post-processing rules loaded; load a LiGER config or rule file.`],
+        failures: [`${pairId}: ${MISSING_PRAGMATICS_MESSAGE}`],
         degradations: [],
       });
     }

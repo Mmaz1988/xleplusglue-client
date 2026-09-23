@@ -2,10 +2,8 @@ import { of } from 'rxjs';
 import { LigerConfigTree, LigerRuleSet } from '../models/models';
 import { LigerFileSource } from './liger-file-source.service';
 
-/** A config with two semantics files, inherited pragmatics and lexica, and an axiom file,
- *  for the workspace's specs. */
-export const DEFAULT = '/res/rules/default.liger.yaml';
-
+/** A config with two semantics files, pragmatics, a lexicon, and an axiom file outside the
+ *  config's scope, for the workspace's specs. */
 export const RULE_SET: LigerRuleSet = {
   kind: 'config',
   source: './liger_resources/rules/c.liger.yaml',
@@ -20,19 +18,20 @@ export const RULE_SET: LigerRuleSet = {
 export const TREE: LigerConfigTree = {
   kind: 'config',
   source: './liger_resources/rules/c.liger.yaml',
+  scope: '/res/rules',
   sections: [
-    { field: 'semantics', inheritedFrom: null, present: true, files: [
-      { path: '/res/rules/a.liger', name: 'a.liger' },
-      { path: '/res/rules/b.liger', name: 'b.liger' },
+    { field: 'semantics', present: true, files: [
+      { path: '/res/rules/a.liger', name: 'a.liger', inScope: true },
+      { path: '/res/rules/b.liger', name: 'b.liger', inScope: true },
     ] },
-    { field: 'pragmatics', inheritedFrom: DEFAULT, present: true, files: [
-      { path: '/res/rules/p.liger', name: 'p.liger' },
+    { field: 'pragmatics', present: true, files: [
+      { path: '/res/rules/p.liger', name: 'p.liger', inScope: true },
     ] },
-    { field: 'lexica', inheritedFrom: DEFAULT, present: true, files: [
-      { path: '/res/dicts/d.txt', name: 'd.txt' },
+    { field: 'lexica', present: true, files: [
+      { path: '/res/dicts/d.txt', name: 'd.txt', inScope: true },
     ] },
-    { field: 'axioms', inheritedFrom: null, present: true, files: [
-      { path: '/res/axioms/x.p', name: 'x.p' },
+    { field: 'axioms', present: true, files: [
+      { path: '/res/axioms/x.p', name: 'x.p', inScope: false },
     ] },
   ],
 };

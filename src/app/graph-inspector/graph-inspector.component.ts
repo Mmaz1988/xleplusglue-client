@@ -2,7 +2,7 @@ import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, O
 import { DataService } from '../data.service';
 import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
-import { LigerQuerySolution, LigerRule, LigerRuleAnnotation, LigerRuleAnnotationFact, LigerRuleAnnotationResponse, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
+import { MISSING_PRAGMATICS_MESSAGE, LigerQuerySolution, LigerRule, LigerRuleAnnotation, LigerRuleAnnotationFact, LigerRuleAnnotationResponse, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
 import { APP_DEFAULTS } from '../app-defaults';
 import { LigerWorkspaceService, isEdited } from '../liger-workspace/liger-workspace.service';
 
@@ -52,7 +52,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     const { ruleSet, tree, documents } = this.ligerWorkspace.state;
     const section = tree?.sections.find(s => s.field === 'pragmatics');
     if (!ruleSet || !section?.present) {
-      return 'No post-processing rules in the loaded rule set.';
+      return 'None: the loaded rule set lists no pragmatics rules.';
     }
     const names = section.files.map(file => file.name).join(', ');
     const edited = section.files.some(file => isEdited(documents[file.path]));
@@ -142,7 +142,7 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     }
 
     if (!this.rulesText.trim()) {
-      this.displayMessage('No post-processing rules loaded. Load a LiGER config or rule file.', 'red');
+      this.displayMessage(MISSING_PRAGMATICS_MESSAGE, 'red');
       return;
     }
 

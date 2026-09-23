@@ -10,6 +10,7 @@ import { ReasoningPipelineService } from '../reasoning/reasoning-pipeline.servic
 import {
   createRegressionAnalysisDocument,
   createRegressionTestingSession,
+  MISSING_PRAGMATICS_MESSAGE,
 } from '../models/models';
 import { discourseBranchesForDisplay, reasoningAssignmentId } from '../analysis-model';
 
@@ -597,7 +598,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         0, false, false,
       ).subscribe((pair: any) => {
         expect(pair.assignments).toEqual([]);
-        expect(pair.failures[0]).toContain('no post-processing rules loaded');
+        expect(pair.failures[0]).toContain(MISSING_PRAGMATICS_MESSAGE);
         expect(reasoningPipeline.prepareReasoningChecks).not.toHaveBeenCalled();
         done();
       });

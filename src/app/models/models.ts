@@ -29,8 +29,8 @@ export interface LigerRule {
 }
 
 /** LiGER's /load_rules answer for a LiGER config (*.liger.yaml) or a single rule file.
- *  A single rule file is the semantics stage; its pragmatics come from LiGER's default
- *  config. Loading either makes its lexica the ones LiGER's lex/2 uses. */
+ *  A config gets exactly what it lists; a single rule file is the semantics stage only.
+ *  Loading either makes its lexica (none, for a rule file) the ones LiGER's lex/2 uses. */
 export interface LigerRuleSet {
   kind: 'config' | 'rules';
   /** The path that was loaded. */
@@ -44,6 +44,13 @@ export interface LigerRuleSet {
   axioms: string | null;
 }
 
+/** Pragmatic post-processing (SYNSEM links, anaphora, presuppositions, reasoning checks)
+ *  runs the rule set's pragmatics rules. A config gets exactly what it lists and a single
+ *  rule file has none, so without them post-processing is blocked with this message. */
+export const MISSING_PRAGMATICS_MESSAGE =
+  'Pragmatic post-processing needs pragmatics rules, and the loaded rule set lists none. '
+  + 'Open a LiGER config with a pragmatics section.';
+
 /** LiGER's /config_tree answer: a config's (or single rule file's) files per field, unread.
  *  Joining a section's files the way LigerConfigLoader.assemble does reproduces /load_rules'
  *  text for that field (see liger-workspace/liger-assembly.ts). */
@@ -51,6 +58,9 @@ export interface LigerConfigTree {
   kind: 'config' | 'rules';
   /** The path that was loaded, as requested. */
   source: string;
+  /** The config's scope folder, absolute (a single rule file's own folder): where its files
+   *  belong, and where the workspace browses for more. */
+  scope: string;
   /** semantics, pragmatics, lexica, axioms, in that order; always all four. */
   sections: LigerConfigTreeSection[];
 }
@@ -59,11 +69,8 @@ export type LigerConfigField = 'semantics' | 'pragmatics' | 'lexica' | 'axioms';
 
 export interface LigerConfigTreeSection {
   field: LigerConfigField;
-  /** The default config's path when the field is inherited from it, 'builtin' for
-   *  LiGER's own default lexicon, null when it is the loaded file's own. */
-  inheritedFrom: string | null;
-  /** False when neither the loaded file nor the default config has the field; then
-   *  /load_rules reports it as null and files is empty. */
+  /** False when the loaded file does not list the field (nothing is inherited); then
+   *  /load_rules reports it as null (lexica: empty) and files is empty. */
   present: boolean;
   files: LigerConfigTreeFile[];
 }
@@ -72,6 +79,8 @@ export interface LigerConfigTreeFile {
   /** Absolute; exactly as /load_rules names it in its "===== path =====" marker lines. */
   path: string;
   name: string;
+  /** False for a file outside the config's scope: allowed, but worth seeing. */
+  inScope: boolean;
 }
 
 export type SynSemMapping = Record<string, string[]>;

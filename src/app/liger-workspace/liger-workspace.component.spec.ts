@@ -6,7 +6,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { LigerFileSource } from './liger-file-source.service';
 import { LigerWorkspaceComponent } from './liger-workspace.component';
 import { LigerWorkspaceService } from './liger-workspace.service';
-import { FILES, fileSourceSpy } from './liger-workspace.testing';
+import { FILES, RULE_SET, TREE, fileSourceSpy } from './liger-workspace.testing';
 
 /** Driven through TestBed with the real app-editor, so change detection and the editor's
  *  own contentChange emissions are part of what is tested. */
@@ -53,15 +53,34 @@ describe('LigerWorkspaceComponent', () => {
     expect(root.querySelector('.edited')).toBeNull();
   });
 
-  it('lists the sections in field order with their file counts, and marks the inherited ones', () => {
+  it('lists the sections in field order with their file counts, and marks what needs a look', () => {
     const fields = Array.from(root.querySelectorAll('.row.field'));
     const text = (row: Element, selector: string) => row.querySelector(selector)?.textContent?.trim();
 
     expect(fields.map(row => text(row, '.label'))).toEqual(['semantics', 'pragmatics', 'lexica', 'axioms']);
     expect(fields.map(row => text(row, '.badge'))).toEqual(['2', '1', '1', '1']);
-    expect(text(fields[0], '.inherited-note')).toBeUndefined();
-    expect(text(fields[1], '.inherited-note')).toBe('from default.liger.yaml');
     expect(text(fileButton('d.txt'), '.kind')).toBe('lock');
+    expect(fileButton('x.p').querySelector('.outside')).not.toBeNull();
+    expect(fileButton('a.liger').querySelector('.outside')).toBeNull();
+    expect(root.querySelector('.warning')).toBeNull();
+  });
+
+  it('warns that post-processing is blocked when the rule set has no pragmatics', () => {
+    files.loadRuleSet.and.returnValue(of({ ...RULE_SET, pragmatics: null }));
+    files.listConfig.and.returnValue(of({
+      ...TREE, sections: TREE.sections.map(s => s.field === 'pragmatics' ? { ...s, present: false, files: [] } : s),
+    }));
+    workspace.open('no-pragmatics.liger.yaml');
+    fixture.detectChanges();
+
+    expect(root.querySelector('.warning')?.textContent).toContain('post-processing is blocked');
+    expect(Array.from(root.querySelectorAll('.row.field'))[1].classList).toContain('absent');
+  });
+
+  it('browses the open config\'s scope', () => {
+    click(root.querySelector<HTMLButtonElement>('.toolbar .primary')!);
+
+    expect(files.browse).toHaveBeenCalledWith('/res/rules');
   });
 
   it('collapses and expands a section', () => {

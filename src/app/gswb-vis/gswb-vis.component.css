@@ -8,3 +8,15 @@ div.errorhandling {
   color: red;
   padding-bottom: 10px;
 }
+
+/* Post-processing blocked by the rule set (no pragmatics rules), not by the semantics. */
+.post-processing-blocked {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: normal;
+  color: #7a5b00;
+  background: #fff8e1;
+  border: 1px solid #ffe0a3;
+  border-radius: 3px;
+}

@@ -4,7 +4,8 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
@@ -77,6 +78,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     private workspaceState: AnalysisWorkspaceStateService,
     private documentBuilder: DocumentBuilderService,
     private anaphoraRanking: AnaphoraRankingService,
+    private ligerWorkspace: LigerWorkspaceService,
   ) {}
 
   get analysisDocumentSessionId(): string {
@@ -374,7 +376,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   handlePostProcessing(mode: 'inline' | 'standalone'): void {
     const semanticSolutions = this.semanticSolutionsForPostProcessing();
 
-    if (!semanticSolutions.length || this.postProcessingLoading) {
+    if (!semanticSolutions.length || this.postProcessingLoading || this.postProcessingBlockedReason()) {
       return;
     }
 
@@ -804,6 +806,13 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     }
     this.showCollapsedAnaphora = !this.showCollapsedAnaphora;
     this.refreshPcdrsDisplay();
+  }
+
+  /** Why post-processing is blocked even with a semantic solution: pragmatics rules are
+   *  what post-processing runs, and the loaded rule set may list none (a single rule file
+   *  never does). Null while nothing blocks it. */
+  postProcessingBlockedReason(): string | null {
+    return this.ligerWorkspace.pragmatics?.trim() ? null : MISSING_PRAGMATICS_MESSAGE;
   }
 
   canOpenMergedGraphInspector(): boolean {

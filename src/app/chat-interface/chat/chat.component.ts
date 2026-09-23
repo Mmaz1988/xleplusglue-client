@@ -15,7 +15,8 @@ import {
   SequenceAnalysis,
   SyntacticAnalysis,
   vampireRequest,
-  XlePlusGlueDocument
+  XlePlusGlueDocument,
+  MISSING_PRAGMATICS_MESSAGE,
 } from '../../models/models';
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -128,7 +129,7 @@ export class ChatComponent {
   /** The post-processing rules, which every discourse/reasoning step below needs. */
   private requirePragmaticsRules(): string {
     if (!this.pragmaticsRuleString) {
-      throw new Error('No post-processing (pragmatics) rules loaded; load a LiGER config or rule file.');
+      throw new Error(MISSING_PRAGMATICS_MESSAGE);
     }
     return this.pragmaticsRuleString;
   }
@@ -146,7 +147,7 @@ export class ChatComponent {
     // linguistic result rather than a setup problem.
     if (!this.pragmaticsRuleString) {
       this.pushChatMessage({
-        text: 'No post-processing rules are loaded. Load a LiGER config or rule file first.',
+        text: MISSING_PRAGMATICS_MESSAGE,
         sender: 'Bot',
       });
       this.loading = false;

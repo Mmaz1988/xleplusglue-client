@@ -23,15 +23,18 @@
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
     <span *ngIf="loading">Loading...</span>
   </button>
-  <select [(ngModel)]="postProcessingMode" [disabled]="!canPostProcess || postProcessingLoading" aria-label="Post-processing destination">
+  <select [(ngModel)]="postProcessingMode" [disabled]="!canPostProcess || !!postProcessingBlockedReason || postProcessingLoading" aria-label="Post-processing destination">
     <option value="inline">Show below in Analysis</option>
     <option value="standalone">Open separately</option>
   </select>
-  <button type="button" (click)="requestPostProcessing(postProcessingMode)" [disabled]="!canPostProcess || postProcessingLoading">
+  <button type="button" (click)="requestPostProcessing(postProcessingMode)"
+          [disabled]="!canPostProcess || !!postProcessingBlockedReason || postProcessingLoading"
+          [title]="postProcessingBlockedReason ?? ''">
     <span *ngIf="!postProcessingLoading">Post processing</span>
     <span *ngIf="postProcessingLoading">Merging...</span>
   </button>
 </div>
+<p *ngIf="postProcessingBlockedReason" class="post-processing-blocked" role="status">{{ postProcessingBlockedReason }}</p>
 
 <div class="errorhandling" #errorhandle></div>
 

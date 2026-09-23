@@ -8,6 +8,7 @@ import {
   REASONING_CHECK_NAMES,
   ReasoningCheck,
   ReasoningCheckName,
+  MISSING_PRAGMATICS_MESSAGE,
 } from '../models/models';
 
 /** One post-processing rule branch: the tier-B interconnected structure the rules
@@ -136,7 +137,7 @@ export interface MappingWithStructure {
  *  that has to fail loudly, not come back as "nothing bound". */
 function requirePragmaticsRules(ruleString: string | null | undefined): string {
   if (!ruleString) {
-    throw new Error('No post-processing (pragmatics) rules loaded; load a LiGER config or rule file.');
+    throw new Error(MISSING_PRAGMATICS_MESSAGE);
   }
   return ruleString;
 }

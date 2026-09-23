@@ -11,7 +11,7 @@
       <!-- Picking a config or rule file to open. -->
       <ng-container *ngIf="browsing">
         <ng-container *ngTemplateOutlet="browseRows; context: { $implicit: browseTree }"></ng-container>
-        <p *ngIf="!browseTree.length" class="status">Listing {{ browseDirectory }}…</p>
+        <p *ngIf="!browseTree.length" class="status">Listing {{ browseRoot }}…</p>
       </ng-container>
 
       <!-- The open rule set: config → field → file. -->
@@ -31,20 +31,21 @@
                       [attr.aria-label]="'toggle ' + section.field">
                 <mat-icon>{{ isCollapsed(section.field) ? 'chevron_right' : 'expand_more' }}</mat-icon>
               </button>
-              <button type="button" class="row field" [class.inherited]="section.inheritedFrom"
+              <button type="button" class="row field" [class.absent]="!section.present"
                       [title]="fieldTooltip(section)" (click)="toggleSection(section.field)">
                 <mat-icon class="kind">{{ fieldIcon(section.field) }}</mat-icon>
                 <span class="label">{{ section.field }}</span>
-                <span *ngIf="section.inheritedFrom" class="inherited-note">{{ inheritedLabel(section) }}</span>
                 <span class="badge">{{ section.files.length }}</span>
               </button>
             </div>
             <div class="children" *ngIf="!isCollapsed(section.field)">
               <button type="button" *ngFor="let file of section.files" class="row file leaf"
-                      [class.selected]="file.path === state.activePath" [title]="file.path"
+                      [class.selected]="file.path === state.activePath"
+                      [title]="file.inScope ? file.path : file.path + ' (outside the config\'s scope)'"
                       (click)="select(file.path)">
                 <mat-icon class="kind">{{ isReadOnly(file.path) ? 'lock' : 'description' }}</mat-icon>
                 <span class="label">{{ file.name }}</span>
+                <span *ngIf="!file.inScope" class="outside" title="Outside the config's scope">⚠</span>
                 <span *ngIf="isEdited(file.path)" class="edited" title="Edited in memory">●</span>
               </button>
             </div>
@@ -53,6 +54,9 @@
       </div>
     </div>
 
+    <p *ngIf="state.ruleSet && !state.ruleSet.pragmatics" class="warning">
+      No pragmatics rules: post-processing is blocked until a config with a pragmatics section is open.
+    </p>
     <p *ngIf="state.loading" class="status">Opening {{ state.loading }}…</p>
     <p *ngIf="state.error" class="error">{{ state.error }}</p>
   </div>

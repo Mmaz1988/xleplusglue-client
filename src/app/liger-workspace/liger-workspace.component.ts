@@ -36,8 +36,8 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Opened when no rule set is open yet. */
   @Input() defaultPath = APP_DEFAULTS.grammar.ligerRulesPath;
-  /** Where "Open…" browses for configs and rule files. */
-  @Input() browseDirectory = './liger_resources/rules';
+  /** Where "Open…" browses while no rule set is open; afterwards, the open config's scope. */
+  @Input() browseDirectory = './grammars';
   /** The workspace's height; its bottom edge can be dragged to change it. */
   @Input() height = '420px';
 
@@ -107,21 +107,19 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
     return !!this.state.documents[path]?.readOnly;
   }
 
-  inheritedLabel(section: LigerConfigTreeSection): string {
-    if (section.inheritedFrom === 'builtin') {
-      return 'builtin';
-    }
-    const from = section.inheritedFrom ?? '';
-    return `from ${from.substring(from.lastIndexOf('/') + 1)}`;
+  /** Where "Open…" browses: the open config's scope, so a grammar's other configs and rule
+   *  files are one click away. */
+  get browseRoot(): string {
+    return this.state?.tree?.scope ?? this.browseDirectory;
   }
 
   fieldTooltip(section: LigerConfigTreeSection): string {
-    if (section.inheritedFrom === 'builtin') {
-      return `${section.field}: LiGER's default lexicon`;
+    if (section.present) {
+      return `${section.field}: ${section.files.length} file(s) listed in the config`;
     }
-    return section.inheritedFrom
-      ? `${section.field}: inherited from ${section.inheritedFrom}`
-      : `${section.field}: ${section.present ? 'listed in the config' : 'none'}`;
+    return section.field === 'pragmatics'
+      ? 'pragmatics: none listed, so post-processing is blocked'
+      : `${section.field}: none listed`;
   }
 
   fieldIcon(field: LigerConfigField): string {
@@ -169,9 +167,11 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   toggleBrowse(): void {
     this.browsing = !this.browsing;
     if (this.browsing) {
-      this.files.browse(this.browseDirectory).subscribe({
+      const root = this.browseRoot;
+      this.browseTree = [];
+      this.files.browse(root).subscribe({
         next: tree => this.browseTree = tree,
-        error: err => console.error('Failed to list', this.browseDirectory, err),
+        error: err => console.error('Failed to list', root, err),
       });
     }
   }

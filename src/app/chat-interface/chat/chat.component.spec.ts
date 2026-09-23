@@ -5,6 +5,7 @@ import { of, Subject, throwError } from 'rxjs';
 
 import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
+import { MISSING_PRAGMATICS_MESSAGE } from '../../models/models';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 
 describe('ChatComponent', () => {
@@ -64,7 +65,7 @@ describe('ChatComponent', () => {
 
     expect(dataServiceSpy.ligerAnnotate).not.toHaveBeenCalled();
     expect(component.chatHistory[component.chatHistory.length - 1].text)
-      .toContain('No post-processing rules are loaded');
+      .toBe(MISSING_PRAGMATICS_MESSAGE);
     expect(component.loading).toBe(false);
   });
 

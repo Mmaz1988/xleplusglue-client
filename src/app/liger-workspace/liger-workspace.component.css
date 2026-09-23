@@ -77,11 +77,10 @@ button.row:hover { background: #eef3fa; }
 
 .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kind { font-size: 15px; width: 15px; height: 15px; color: #7c8ba1; flex: none; }
-.inherited .label { font-style: italic; }
-.inherited-note {
-  font-size: 10px; color: #a6b1c0; flex: none; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; max-width: 45%;
-}
+/* A field the config does not list: shown, so what is missing is visible. */
+.absent .label { opacity: .55; font-style: italic; }
+.outside { color: #b3261e; font-size: 11px; flex: none; }
+.row.selected .outside { color: #fff; }
 .badge {
   margin-left: auto; flex: none; font-size: 10px; color: #7c8ba1;
   background: #eef1f5; border-radius: 8px; padding: 0 6px;
@@ -97,6 +96,10 @@ span.twisty { cursor: default; }
 .twisty mat-icon { font-size: 16px; width: 16px; height: 16px; color: #7c8ba1; }
 
 .status { margin: 0; padding: 6px 10px; font-size: 11px; color: #7c8ba1; flex: none; }
+.warning {
+  margin: 0; padding: 6px 10px; flex: none; font-size: 11px;
+  background: #fff8e1; color: #7a5b00; border-top: 1px solid #ffe0a3;
+}
 .error {
   margin: 0; padding: 6px 10px; flex: none; font-size: 11px;
   background: #fdecea; color: #b3261e; overflow-wrap: anywhere;

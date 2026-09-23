@@ -24,6 +24,9 @@ import { DocumentBuilderService } from '../document-builder/document-builder.ser
 export class GswbVisComponent implements AfterViewInit {
   @Input() structureJson: LigerStructure | null = null;
   @Input() canPostProcess = false;
+  /** Set when post-processing cannot run whatever the semantics: shown, and the button is
+   *  disabled. */
+  @Input() postProcessingBlockedReason: string | null = null;
   @Input() postProcessingLoading = false;
   @Input() previousSentenceAnalyses: SentenceAnalysis[] = [];
   @Input() previousSequenceAnalyses: SequenceAnalysis[] = [];

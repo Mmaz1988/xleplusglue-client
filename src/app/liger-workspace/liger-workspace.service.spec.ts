@@ -79,9 +79,9 @@ describe('LigerWorkspaceService', () => {
   it('sends a single rule file\'s text alone, without a marker', () => {
     files.loadRuleSet.and.returnValue(of({ ...RULE_SET, kind: 'rules', source: 'r.liger' }));
     files.listConfig.and.returnValue(of({
-      kind: 'rules', source: 'r.liger',
-      sections: [{ field: 'semantics', inheritedFrom: null, present: true,
-        files: [{ path: '/res/rules/b.liger', name: 'b.liger' }] }],
+      kind: 'rules', source: 'r.liger', scope: '/res/rules',
+      sections: [{ field: 'semantics', present: true,
+        files: [{ path: '/res/rules/b.liger', name: 'b.liger', inScope: true }] }],
     }));
     workspace.open('r.liger');
 

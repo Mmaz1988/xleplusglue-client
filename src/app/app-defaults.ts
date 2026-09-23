@@ -11,7 +11,7 @@ export const APP_DEFAULTS = {
   grammar: {
     ligerPath: './grammars/dev/lfgxdrt_inference_grammar/main_lfgxdrt_inference_grammar.lfg.glue',
     // A LiGER config: semantics rules, post-processing (pragmatics) rules and lexica.
-    ligerRulesPath: './liger_resources/rules/default.liger.yaml',
+    ligerRulesPath: './grammars/dev/lfgxdrt_inference_grammar/liger/lfgxdrt.liger.yaml',
   },
   liger: {
     sentence: 'The PC-6082 is faster than the ITEL-XZ.',

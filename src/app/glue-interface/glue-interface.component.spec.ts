@@ -3,12 +3,15 @@ import { EventEmitter, NO_ERRORS_SCHEMA } from '@angular/core';
 import { Router } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 import { DataService } from '../data.service';
-import { SentenceAnalysis, SequenceAnalysis } from '../models/models';
+import { MISSING_PRAGMATICS_MESSAGE, SentenceAnalysis, SequenceAnalysis } from '../models/models';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 
 import { GlueInterfaceComponent } from './glue-interface.component';
 
 describe('GlueInterfaceComponent', () => {
   let component: GlueInterfaceComponent;
+  /** Stands in for LigerWorkspaceService: post-processing runs its pragmatics. */
+  let ligerWorkspace: { pragmatics: string | null };
   let fixture: ComponentFixture<GlueInterfaceComponent>;
   let routerMock: { navigate: jasmine.Spy };
   let dataServiceMock: {
@@ -45,11 +48,14 @@ describe('GlueInterfaceComponent', () => {
       })),
     };
 
+    ligerWorkspace = { pragmatics: 'PRAGMATICS RULES' };
+
     TestBed.configureTestingModule({
       declarations: [GlueInterfaceComponent],
       providers: [
         { provide: Router, useValue: routerMock },
-        { provide: DataService, useValue: dataServiceMock }
+        { provide: DataService, useValue: dataServiceMock },
+        { provide: LigerWorkspaceService, useValue: ligerWorkspace },
       ],
       schemas: [NO_ERRORS_SCHEMA]
     });
@@ -60,6 +66,24 @@ describe('GlueInterfaceComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('blocks post-processing, and says why, while the rule set has no pragmatics rules', () => {
+    component.liger = { structureJson: { id: 'syntax-graph' } } as any;
+    component.glue = {
+      semvis: { index: 0, items: [{ graph: { id: 'drs-1' } }] },
+      gswbPreferences: { gswbPreferences: { betaReduce: true } },
+    } as any;
+    ligerWorkspace.pragmatics = null;
+
+    expect(component.postProcessingBlockedReason()).toBe(MISSING_PRAGMATICS_MESSAGE);
+    component.handlePostProcessing('inline');
+
+    expect(dataServiceMock.ligerMergeStructure).not.toHaveBeenCalled();
+    expect(component.postProcessingLoading).toBeFalse();
+
+    ligerWorkspace.pragmatics = 'PRAGMATICS RULES';
+    expect(component.postProcessingBlockedReason()).toBeNull();
   });
 
   it('should navigate to the graph inspector', () => {
