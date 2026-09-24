@@ -72,6 +72,22 @@
   margin-top: 1.5rem;
   border-top: 1px solid #bbb;
   padding-top: 0.75rem;
+  /* The post-processing grid (graph-inspector): the semantics take the left column, under the
+     rule set and the result graph. The right column is kept free for supporting views next to
+     them (e.g. LM-based ones). */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 120px;
+}
+
+.pcdrs-results > * {
+  grid-column: 1;
+}
+
+@media (max-width: 1400px) {
+  .pcdrs-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .pcdrs-results h3 {
