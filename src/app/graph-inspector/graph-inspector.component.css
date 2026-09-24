@@ -192,3 +192,35 @@
   height: 1rem;
   border-width: 0.2em;
 }
+
+/* The analysis page (.fluid-boxes): the post-processing view mirrors the parse view's columns.
+   The rule set sits under the parse view's rule set and the query on the right; the result
+   graph sits under the LiGER graph, the solutions to its right. The gap equals the two columns'
+   inner paddings (60px each) and the section is padded like a column, so the edges line up.
+   One column below 1400px, like the page. */
+:host-context(.fluid-boxes) {
+  padding-left: 0;
+}
+
+:host-context(.fluid-boxes) .inspector-editors,
+:host-context(.fluid-boxes) .graph-results-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 120px;
+}
+
+:host-context(.fluid-boxes) .solutions-panel {
+  width: 100%;
+  margin-left: 0;
+  justify-self: stretch;
+}
+
+@media (max-width: 1400px) {
+  :host-context(.fluid-boxes) .inspector-editors,
+  :host-context(.fluid-boxes) .graph-results-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :host-context(.fluid-boxes) .solutions-panel {
+    max-height: none;
+  }
+}

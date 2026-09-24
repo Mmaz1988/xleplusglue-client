@@ -82,6 +82,27 @@ describe('LigerWorkspaceComponent', () => {
     expect(editorPane.getBoundingClientRect().width).toBeGreaterThan(editorOpen);
   });
 
+  it('shows its own file: two views of one rule set open on different sections and share edits', () => {
+    const post = TestBed.createComponent(LigerWorkspaceComponent);
+    post.componentInstance.preferField = 'pragmatics';
+    post.detectChanges();
+    const postEditor = () => post.componentInstance.editor!.getContent();
+
+    expect(editorText()).toBe(FILES['/res/rules/a.liger']);
+    expect(postEditor()).toBe(FILES['/res/rules/p.liger']);
+
+    // Editing pragmatics in post-processing reaches the parse view's copy of that file.
+    post.componentInstance.onEditorChange('P EDITED');
+    click(fileButton('p.liger'));
+    expect(editorText()).toBe('P EDITED');
+    // Selecting a file in one view does not switch the other.
+    expect(postEditor()).toBe('P EDITED');
+    click(fileButton('a.liger'));
+    post.detectChanges();
+    expect(postEditor()).toBe('P EDITED');
+    expect(workspace.pragmatics).toContain('P EDITED');
+  });
+
   it('opens the default rule set and shows the first file', () => {
     expect(files.loadRuleSet).toHaveBeenCalledWith(component.defaultPath);
     expect(editorText()).toBe(FILES['/res/rules/a.liger']);

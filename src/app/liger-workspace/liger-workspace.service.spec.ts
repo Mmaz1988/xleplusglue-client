@@ -20,7 +20,6 @@ describe('LigerWorkspaceService', () => {
       .toEqual(['/res/rules/a.liger', '/res/rules/b.liger', '/res/rules/p.liger', '/res/axioms/x.p']);
     expect(workspace.state.documents['/res/dicts/d.txt'].loadedText).toBeNull();
     expect(workspace.state.documents['/res/dicts/d.txt'].readOnly).toBeTrue();
-    expect(workspace.state.activePath).toBe('/res/rules/a.liger');
   });
 
   it('sends LiGER\'s own text while nothing is edited', () => {
@@ -68,7 +67,7 @@ describe('LigerWorkspaceService', () => {
   });
 
   it('refuses edits to a lexicon and reads it when it is first selected', () => {
-    workspace.select('/res/dicts/d.txt');
+    workspace.load('/res/dicts/d.txt');
     expect(workspace.state.documents['/res/dicts/d.txt'].loadedText).toBe(FILES['/res/dicts/d.txt']);
 
     workspace.edit('/res/dicts/d.txt', 'changed');

@@ -26,7 +26,7 @@
            semantics rules only, not a config with empty sections. -->
       <div *ngIf="!browsing && state.ruleSet?.kind === 'rules'" class="tree">
         <ng-container *ngFor="let file of sections[0]?.files ?? []">
-          <button type="button" class="row file" [class.selected]="file.path === state.activePath"
+          <button type="button" class="row file" [class.selected]="file.path === activePath"
                   [title]="file.path" (click)="select(file.path)">
             <mat-icon class="kind">description</mat-icon>
             <span class="label">{{ file.name }}</span>
@@ -63,7 +63,7 @@
             </div>
             <div class="children" *ngIf="!isCollapsed(section.field)">
               <button type="button" *ngFor="let file of section.files" class="row file leaf"
-                      [class.selected]="file.path === state.activePath"
+                      [class.selected]="file.path === activePath"
                       [title]="file.inScope ? file.path : file.path + ' (outside the config\'s scope)'"
                       (click)="select(file.path)">
                 <mat-icon class="kind">{{ isReadOnly(file.path) ? 'lock' : 'description' }}</mat-icon>

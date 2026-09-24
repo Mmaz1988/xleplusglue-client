@@ -46,12 +46,18 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   @Input() defaultPath = APP_DEFAULTS.grammar.ligerRulesPath;
   /** Where "Open…" browses while no rule set is open; afterwards, the open config's scope. */
   @Input() browseDirectory = './grammars';
+  /** The section this view opens on (its first file): the parse view shows semantics,
+   *  post-processing pragmatics. Which file is open is per view; the rule set and its edits
+   *  are shared by every view. */
+  @Input() preferField: LigerConfigField = 'semantics';
   /** Overrides the workspace's height, which is otherwise an editor's (the shared
    *  --editor-height) plus the toolbar; its bottom edge can be dragged either way. */
   @Input() height: string | null = null;
 
   state!: WorkspaceState;
   sections: LigerConfigTreeSection[] = [];
+  /** The file this view shows. */
+  activePath: string | null = null;
   active: WorkspaceDocument | null = null;
 
   /** The tree pane's share of the width, as in the explorer. */
@@ -82,7 +88,13 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
     this.subscription = this.workspace.state$.subscribe(state => {
       this.state = state;
       this.sections = state.tree?.sections ?? [];
-      this.active = state.activePath ? state.documents[state.activePath] ?? null : null;
+      if (!this.activePath || !state.documents[this.activePath]) {
+        this.activePath = this.firstFile(state);
+      }
+      this.active = this.activePath ? state.documents[this.activePath] ?? null : null;
+      if (this.active && this.active.loadedText === null) {
+        this.workspace.load(this.active.path);  // a lexicon, read when first shown
+      }
       this.syncEditor();
     });
     this.workspace.ensureOpen(this.defaultPath);
@@ -202,7 +214,20 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   select(path: string): void {
-    this.workspace.select(path);
+    if (!this.state.documents[path]) {
+      return;
+    }
+    this.activePath = path;
+    this.active = this.state.documents[path];
+    this.workspace.load(path);
+    this.syncEditor();
+  }
+
+  /** The first file of the preferred section, or of the first section that has one. */
+  private firstFile(state: WorkspaceState): string | null {
+    const sections = state.tree?.sections ?? [];
+    const preferred = sections.find(section => section.field === this.preferField)?.files[0];
+    return (preferred ?? sections.flatMap(section => section.files)[0])?.path ?? null;
   }
 
   onEditorChange(text: string): void {

@@ -48,11 +48,13 @@
   margin: 0 0 0.75rem;
 }
 
+/* Padded like a column of the parse view (the container's 15px plus a column's 60px), so the
+   post-processing boxes line up with the ones above. */
 .post-processing-section {
   margin: 1.5rem 15px 0;
   scroll-margin-top: 1rem;
   border-top: 2px solid #00a9e0;
-  padding-top: 0.75rem;
+  padding: 0.75rem 60px 0;
 }
 
 .post-processing-section h2 {

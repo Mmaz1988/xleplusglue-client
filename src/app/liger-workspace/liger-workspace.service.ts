@@ -24,7 +24,6 @@ export interface WorkspaceState {
   ruleSet: LigerRuleSet | null;
   tree: LigerConfigTree | null;
   documents: Record<string, WorkspaceDocument>;
-  activePath: string | null;
   /** The path being opened, while it is. */
   loading: string | null;
   /** Why the last open or read failed, as LiGER put it. */
@@ -32,7 +31,7 @@ export interface WorkspaceState {
 }
 
 const EMPTY: WorkspaceState = {
-  ruleSet: null, tree: null, documents: {}, activePath: null, loading: null, error: null,
+  ruleSet: null, tree: null, documents: {}, loading: null, error: null,
 };
 
 export function isEdited(doc: WorkspaceDocument | undefined): boolean {
@@ -109,8 +108,7 @@ export class LigerWorkspaceService {
       }),
     ).subscribe({
       next: ({ ruleSet, tree, documents }) => {
-        const first = tree.sections.flatMap(section => section.files)[0]?.path ?? null;
-        this.stateSubject.next({ ruleSet, tree, documents, activePath: first, loading: null, error: null });
+        this.stateSubject.next({ ruleSet, tree, documents, loading: null, error: null });
       },
       error: err => this.patch({ loading: null, error: `Failed to open ${path}: ${reason(err)}` }),
     });
@@ -123,12 +121,14 @@ export class LigerWorkspaceService {
     }
   }
 
-  select(path: string): void {
+  /** Reads a document not read yet (a lexicon, when a view first shows it). Which file a view
+   *  shows is the view's own: two workspaces on one page can show different files of the same
+   *  rule set, and share its edits. */
+  load(path: string): void {
     const doc = this.state.documents[path];
     if (!doc) {
       return;
     }
-    this.patch({ activePath: path });
     if (doc.loadedText === null) {
       this.files.read(path).subscribe({
         next: text => this.patchDocument(path, { loadedText: text, currentText: text }),
