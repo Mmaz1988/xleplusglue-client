@@ -73,8 +73,12 @@ export class ChatComponent {
   @Input() history: context[][] = [];  // Received from parent
   @Output() historyChange = new EventEmitter<context[][]>(); // Event to notify updates
 
+  /** The rule set's axioms (the LiGER workspace's, edits included). */
   @Input() axioms: string = '';
-  @Output() axiomsChanged = new EventEmitter<string>(); // Event to notify updates to axioms
+  /** Axioms GSWB returned with the readings of this conversation, as TPTP. Kept apart from
+   *  the rule set's: they belong to the conversation, not to a config file. Both are sent. */
+  derivedAxioms = '';
+  @Output() derivedAxiomsChange = new EventEmitter<string>();
 
   @Input() activeIndices: number[] = [];
   @Output() clearSelection: EventEmitter<void> = new EventEmitter<void>();  // Event to clear selection
@@ -107,6 +111,14 @@ export class ChatComponent {
     this.context = [];
     this.chatHistory = [];
     this.userInput = '';
+    this.derivedAxioms = '';
+    this.axiomCounter = 0;
+    this.derivedAxiomsChange.emit(this.derivedAxioms);
+  }
+
+  /** What Vampire gets: the rule set's axioms, then the conversation's. */
+  get allAxioms(): string {
+    return [this.axioms, this.derivedAxioms].filter(text => text.trim() !== '').join('\n');
   }
 
   /** One-indexed turn number for the current exchange, derived from how many surviving
@@ -191,17 +203,14 @@ export class ChatComponent {
         if (Array.isArray(selectedSolution.axioms) && selectedSolution.axioms.length > 0) {
           let extractedAxioms = '';
           for (const axiom of selectedSolution.axioms) {
-            if (axiom.trim() !== '' && !this.axioms.includes(axiom.trim())) {
+            if (axiom.trim() !== '' && !this.allAxioms.includes(axiom.trim())) {
               extractedAxioms += `${logicType}(axiom${this.axiomCounter},axiom,${axiom}).\n`;
               this.axiomCounter++;
             }
           }
 
           if (extractedAxioms.trim() !== '') {
-            if (this.axioms !== '') {
-              this.axioms += '\n';
-            }
-            this.updateAxioms(this.axioms + extractedAxioms + '\n');
+            this.addDerivedAxioms(extractedAxioms);
           }
         }
 
@@ -245,7 +254,7 @@ export class ChatComponent {
             const vampRequest: vampireRequest = {
               text: userMessage,
               context: this.context,
-              axioms: this.axioms,
+              axioms: this.allAxioms,
               hypothesis: userSem,
               pruning: pruneContext,
               active_indices: this.activeIndices,
@@ -694,7 +703,7 @@ export class ChatComponent {
         }
         const request: vampireRequest = {
           text: userMessage,
-          axioms: this.axioms,
+          axioms: this.allAxioms,
           pruning: pruneContext,
           vampire_preferences: this.vampirePreferences.vampirePreferences,
           tptp_checks: expanded.map((item: any) => item.checks),
@@ -1522,9 +1531,9 @@ export class ChatComponent {
     this.clearSelection.emit();
   }
 
-  updateAxioms(value: string): void {
-    this.axioms = value;
-    this.axiomsChanged.emit(this.axioms);
+  private addDerivedAxioms(tptp: string): void {
+    this.derivedAxioms = this.derivedAxioms ? `${this.derivedAxioms}\n${tptp}` : tptp;
+    this.derivedAxiomsChange.emit(this.derivedAxioms);
   }
 
 }

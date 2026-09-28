@@ -1,35 +1,32 @@
 import {Component, ViewChild, OnInit, AfterViewInit, OnDestroy} from '@angular/core';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
-import {context, GswbPreferences, LigerRuleSet, persistedAnalysisDocument, XlePlusGlueDocument} from "../models/models";
+import {context, persistedAnalysisDocument, XlePlusGlueDocument} from "../models/models";
 import {ChatComponent} from "./chat/chat.component";
 import {HistoryComponent} from "./history/history.component";
-import {EditorComponent} from "../editor/editor.component";
 import {ChangeDetectorRef} from "@angular/core";
 import {InferenceSettingsComponent} from "../inference-interface/inference-settings/inference-settings.component";
 import { APP_DEFAULTS } from '../app-defaults';
 import { DataService } from '../data.service';
 import { validateAnalysisDocument } from '../analysis-model';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 
 @Component({
   selector: 'app-inference-vis',
   templateUrl: './chat-interface.component.html',
   styleUrls: ['./chat-interface.component.css']
 })
-export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
+export class ChatInterfaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
-  ruleFile: string = '';
-  /** Post-processing rules of the loaded rule set; null until one is loaded. */
-  pragmaticsRules: string | null = null;
   history: context[][] = [];
 
   @ViewChild('gswbPrefs') gswbPreferences!: GswbSettingsComponent; // Ensures it is initialized later
   @ViewChild('vampirePrefs') vampirePreferences!: InferenceSettingsComponent; // Ensures it is initialized later
   @ViewChild('chat') chatComponent: ChatComponent;
   @ViewChild('history') historyComponent: HistoryComponent;
-  @ViewChild('axiomEdit') editor: EditorComponent;
 
-  axioms: string = APP_DEFAULTS.chat.axioms;
+  /** Axioms GSWB returned with this conversation's readings (shown in the Config tab). */
+  derivedAxioms = '';
 
   selectedElements: number[] = []; // Stores selected box indices from history
 
@@ -46,7 +43,15 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
     private cdRef: ChangeDetectorRef,
     private dataService: DataService,
     private documentBuilder: DocumentBuilderService,
+    /** The rule set chat runs on: rules and axioms, edits included. Read by the template. */
+    public workspace: LigerWorkspaceService,
   ) {}
+
+  /** Opens the startup config unless one is open already (e.g. from the analysis page), so
+   *  chat has rules before its Config tab is ever shown. */
+  ngOnInit(): void {
+    this.workspace.ensureOpen(APP_DEFAULTS.grammar.ligerRulesPath);
+  }
 
   ngAfterViewInit() {
 
@@ -71,17 +76,6 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
 
-  updateData(ruleSet: LigerRuleSet) {
-    this.ruleFile = ruleSet.semantics;
-    this.pragmaticsRules = ruleSet.pragmatics;
-    // A config that lists axioms fills the Axioms editor, which stays the source of truth
-    // from there on; one that lists none leaves whatever is in it.
-    if (ruleSet.axioms !== null && ruleSet.axioms !== undefined) {
-      this.axioms = ruleSet.axioms;
-      this.editor?.updateContent(ruleSet.axioms);
-    }
-  }
-
   // This method is called automatically when historyChange emits
   updateHistory(newHistory: context[][]) {
     console.log("History updated:", newHistory);
@@ -99,29 +93,6 @@ export class ChatInterfaceComponent implements AfterViewInit, OnDestroy {
       this.historyComponent.clearSelection();  // Call method in HistoryComponent
     }
     console.log("Called onClearSelection in parent component");
-  }
-
-  // CodeMirror lays out incorrectly while its tab is hidden (0-width host), so switching
-  // to a tab just needs a refresh -- the editor's own contentChange keeps `axioms` in sync,
-  // reading getContent() back here would clobber it before the editor has ever been seeded.
-  onTabChange(index: number) {
-    setTimeout(() => this.editor?.codeMirrorInstance?.refresh());
-  }
-
-  /** The Axioms editor is the source of truth: seeded with APP_DEFAULTS.chat.axioms on
-   *  load, and every keystroke there flows back into `axioms` via this handler. Whatever
-   *  the editor currently holds -- untouched defaults or the user's edits -- is what gets
-   *  sent with the next discourse update. */
-  onAxiomsEdited(value: string): void {
-    this.axioms = value;
-  }
-
-  updateAxioms(value: string): void {
-    this.axioms = value;
-    if (this.editor) {
-      this.editor.updateContent(value);
-      this.editor.codeMirrorInstance.refresh();
-    }
   }
 
   // Readable, time-of-initiation-based id (matches the `session-<iso>` format already used

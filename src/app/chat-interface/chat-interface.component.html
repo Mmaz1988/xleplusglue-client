@@ -6,17 +6,13 @@
     <h2>Grammar selection:</h2>
   <app-grammar-loader></app-grammar-loader>
   </div>
-  <div>
-    <h2>Rule file selection:</h2>
-  <app-rule-loader (dataEmitter)="updateData($event)"></app-rule-loader>
-</div>
 </div>
  <app-gswb-settings #gswbPrefs></app-gswb-settings>
  <app-inference-settings  #vampirePrefs></app-inference-settings>
 </app-toggle-display>
 </div>
 
-<mat-tab-group *ngIf="tabsInitialized" (selectedIndexChange)="onTabChange($event)">
+<mat-tab-group *ngIf="tabsInitialized">
   <mat-tab label="Chat">
     <div class="tab-content">
       <app-hover-sidebar label="Chat options">
@@ -24,9 +20,10 @@
         <button type="button" (click)="downloadChatDocumentSnapshot()">Download JSON snapshot</button>
         <div class="session-id-row" title="Chat session id -- matches tmp/log file names on the inference backend">{{ chatDocumentSessionKey }}</div>
       </app-hover-sidebar>
-      <app-chat #chat [ruleString]="ruleFile"
-                [pragmaticsRuleString]="pragmaticsRules"
-                [axioms]="axioms"
+      <!-- Rules and axioms come from the LiGER workspace (the Config tab), edits included. -->
+      <app-chat #chat [ruleString]="(workspace.semantics$ | async) ?? ''"
+                [pragmaticsRuleString]="workspace.pragmatics$ | async"
+                [axioms]="(workspace.axioms$ | async) ?? ''"
                 [gswbPreferences]="gswbPrefs"
                 [vampirePreferences]="vampirePrefs"
                 [history]="history" (historyChange)="updateHistory($event)"
@@ -34,7 +31,7 @@
                 [chatDocument]="chatDocument" (chatDocumentChange)="updateChatDocument($event)"
                 [sessionKey]="chatDocumentSessionKey"
                 (clearSelection)="onClearSelection()"
-                (axiomsChanged)="updateAxioms($event)">
+                (derivedAxiomsChange)="derivedAxioms = $event">
         ></app-chat>
     </div>
   </mat-tab>
@@ -46,13 +43,19 @@
     </div>
   </mat-tab>
 
-  <mat-tab label="Axioms">
-    <div class="tab-content">
-      <div class="editor-restr">
-        <app-editor #axiomEdit [mode]="'vampire'" [initialContent]="axioms"
-                    (contentChange)="onAxiomsEdited($event)">
-        </app-editor>
-      </div>
+  <!-- The rule set chat runs on: semantics and pragmatics rules, lexica and axioms, one
+       workspace shared with the analysis page. -->
+  <mat-tab label="Config">
+    <div class="tab-content config-tab">
+      <app-liger-workspace preferField="axioms" [treeOpen]="true" height="600px"></app-liger-workspace>
+
+      <h3>Axioms from this conversation</h3>
+      <p class="derived-help">
+        Axioms GSWB returned with the readings so far. Sent to Vampire after the rule set's
+        axioms; cleared by "New conversation".
+      </p>
+      <pre class="derived-axioms" *ngIf="derivedAxioms.trim(); else noDerivedAxioms">{{ derivedAxioms }}</pre>
+      <ng-template #noDerivedAxioms><p class="derived-help">None yet.</p></ng-template>
     </div>
   </mat-tab>
 </mat-tab-group>

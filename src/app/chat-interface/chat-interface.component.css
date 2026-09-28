@@ -41,10 +41,37 @@ app-chat {
    app-hover-sidebar now, including .session-id-row. */
 
 /*Center editor in the page*/
-.editor-restr {
-  flex: 1;
-  width: 800px;
-  justify-content: center;
-  align-items: center;
+/* The Config tab: the workspace across the tab's width, the conversation's axioms under it. */
+.tab-content.config-tab {
+  flex-direction: column;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
 
+.config-tab app-liger-workspace {
+  display: block;
+  width: 100%;
+  flex: none;
+}
+
+.config-tab h3 {
+  margin: 16px 0 4px;
+}
+
+.derived-help {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.derived-axioms {
+  margin: 0;
+  padding: 8px;
+  flex: none;
+  max-height: 200px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #d8dee8;
+  font-size: 12px;
+  white-space: pre-wrap;
 }

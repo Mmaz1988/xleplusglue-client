@@ -62,8 +62,9 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The tree pane's share of the width, as in the explorer. */
   splitFraction = 0.3;
-  /** The tree starts hidden: the editor keeps the room a rules editor always had. */
-  treeOpen = false;
+  /** Whether the tree starts shown. Hidden by default, so the editor keeps the room a rules
+   *  editor always had; a view where the workspace has a tab to itself can start it open. */
+  @Input() treeOpen = false;
   browsing = false;
   browseTree: FileTree[] = [];
   /** The folder "Open…" is showing; ".." goes up from it. */

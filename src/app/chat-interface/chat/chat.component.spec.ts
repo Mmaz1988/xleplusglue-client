@@ -55,6 +55,39 @@ describe('ChatComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  describe('axioms', () => {
+    it('sends the rule set\'s axioms, then the conversation\'s', () => {
+      component.axioms = 'tff(a, type, a: $o).';
+      (component as any).addDerivedAxioms('fof(axiom0,axiom,p).\n');
+
+      expect(component.allAxioms).toBe('tff(a, type, a: $o).\nfof(axiom0,axiom,p).\n');
+      // The rule set's axioms are the workspace's: the conversation never writes into them.
+      expect(component.axioms).toBe('tff(a, type, a: $o).');
+    });
+
+    it('sends only the rule set\'s while the conversation has none, and vice versa', () => {
+      component.axioms = 'tff(a, type, a: $o).';
+      expect(component.allAxioms).toBe('tff(a, type, a: $o).');
+
+      component.axioms = '';
+      (component as any).addDerivedAxioms('fof(axiom0,axiom,p).');
+      expect(component.allAxioms).toBe('fof(axiom0,axiom,p).');
+    });
+
+    it('drops the conversation\'s axioms on a new conversation, and says so', () => {
+      const emitted: string[] = [];
+      component.derivedAxiomsChange.subscribe(value => emitted.push(value));
+      (component as any).addDerivedAxioms('fof(axiom0,axiom,p).');
+      component.axiomCounter = 1;
+
+      component.resetConversationState();
+
+      expect(component.derivedAxioms).toBe('');
+      expect(component.axiomCounter).toBe(0);
+      expect(emitted).toEqual(['fof(axiom0,axiom,p).', '']);
+    });
+  });
+
   it('refuses a turn while no post-processing rules are loaded, instead of binding nothing', () => {
     component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
     component.ruleString = 'rules';
