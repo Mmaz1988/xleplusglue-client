@@ -1,3 +1,27 @@
 .status-message {
   color: red;
 }
+
+.grammar-configs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 4px 0;
+  font-size: 0.9rem;
+}
+
+.config-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.config-name {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.configs-none {
+  color: #666;
+}

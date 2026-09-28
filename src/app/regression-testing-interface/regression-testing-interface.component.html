@@ -153,7 +153,9 @@
     <h3>Rule set:</h3>
     <p *ngIf="isRestoringRuleSet" class="rule-set-status">Reopening the session's rule set…</p>
     <p *ngIf="ruleSetNotice" class="rule-set-notice">{{ ruleSetNotice }}</p>
-    <app-liger-workspace></app-liger-workspace>
+    <div class="editor-restr">
+      <app-liger-workspace></app-liger-workspace>
+    </div>
   </app-toggle-display>
 
   <br>

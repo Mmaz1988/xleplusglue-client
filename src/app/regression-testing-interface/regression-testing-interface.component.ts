@@ -72,6 +72,9 @@ import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.servic
 /** What a run sends and a session stores: the testsuite, and the rule set's three texts. */
 type SessionInputTexts = { testsuite: string; semantics: string; pragmatics: string; axioms: string };
 
+const NO_RULE_SET_NOTICE = 'No rule set is open: load the grammar\'s LiGER config under '
+  + 'Grammar selection, or use Open… in the rule set.';
+
 const INPUT_LABELS: Record<keyof SessionInputTexts, string> = {
   testsuite: 'testsuite', semantics: 'semantics rules', pragmatics: 'pragmatics rules', axioms: 'axioms',
 };
@@ -558,7 +561,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     if (!output || output.source !== path || state.openFailed === path) {
       this.ruleSetNotice = `Could not reopen ${path}${state.error ? ` (${state.error})` : ''}. `
-        + 'Runs use the rules stored with the session.';
+        + 'Runs use the rules stored with the session.'
+        + (state.ruleSet ? '' : ` ${NO_RULE_SET_NOTICE}`);
       return;
     }
     const stored = this.currentInputTexts();
@@ -1061,12 +1065,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.parsingSummary = '';
     this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     this.testfile.updateContent('');
-    // A new session runs on the rule set that is open, as it is.
+    // A new session runs on the rule set that is open, as it is. A previous session's failed
+    // reopen is not this session's business any more.
     this.ruleSetRestorePath = null;
     this.ruleSetNotice = '';
+    this.ligerWorkspace.clearError();
     const output = this.workspaceOutput();
     this.lastWorkspaceOutputKey = output?.key ?? null;
-    if (output) this.adoptWorkspaceOutput(output);
+    if (output) {
+      this.adoptWorkspaceOutput(output);
+    } else {
+      this.ruleSetNotice = NO_RULE_SET_NOTICE;
+    }
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
     // The two fingerprints mean different things and a blank session is exactly where

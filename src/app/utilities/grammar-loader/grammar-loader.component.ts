@@ -5,6 +5,23 @@ import { tap } from 'rxjs/operators';
 import {ToggleDisplayComponent} from "../toggle-display/toggle-display.component";  // Import tap operator
 import { EventEmitter, Output } from '@angular/core';
 import { APP_DEFAULTS } from '../../app-defaults';
+import { LigerFileSource } from '../../liger-workspace/liger-file-source.service';
+import { LigerWorkspaceService } from '../../liger-workspace/liger-workspace.service';
+
+/** LiGER answers with its working directory prefixed (`/…/liger/./grammars/…`). Sessions
+ *  store the relative form, which resolves the same in every deployment. */
+export function serverRelative(path: string): string {
+  const cut = path.indexOf('/./');
+  return cut >= 0 ? path.slice(cut + 1) : path;
+}
+
+/** Whether two spellings of a path (relative, prefixed, with or without `./`) name the same
+ *  file. */
+export function sameFile(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const norm = (p: string) => serverRelative(p).replace(/^\.\//, '');
+  return norm(a) === norm(b);
+}
 
 @Component({
   selector: 'app-grammar-loader',
@@ -27,7 +44,14 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   selectedPath: string = "";  // This will store the selected file or folder path
  // selectedIsDirectory: boolean = false;  // This will store if the selected path is a directory
 
-  constructor(private dataService: DataService, private cd: ChangeDetectorRef) {}
+  /** The LiGER configs found beside the loaded grammar, offered for loading. Loading the
+   *  grammar never opens one by itself: the pairing is offered, the choice is the user's. */
+  grammarConfigs: string[] = [];
+  /** The grammar `grammarConfigs` belong to, so a late answer for another one is dropped. */
+  private configsFor = '';
+
+  constructor(private dataService: DataService, private cd: ChangeDetectorRef,
+              private ligerFiles: LigerFileSource, readonly workspace: LigerWorkspaceService) {}
 
   ngOnInit() {
     this.getGrammars(this.grammarsDirectory);
@@ -36,6 +60,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
     if (this.loadedPath) {
       this.refreshStatusMessage();
+      this.listGrammarConfigs(this.loadedPath);
     } else {
       this.updateGrammar();
     }
@@ -56,6 +81,9 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
       (changes['selectedPath'] && !changes['selectedPath'].firstChange)
     ) {
       this.refreshStatusMessage();
+    }
+    if (changes['loadedPath'] && !changes['loadedPath'].firstChange) {
+      this.listGrammarConfigs(this.loadedPath);
     }
   }
 
@@ -89,6 +117,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
           this.loadedPath = this.selectedPath;
           this.grammarLoaded.emit(this.selectedPath);
           this.refreshStatusMessage();
+          this.listGrammarConfigs(this.selectedPath);
         } else {
           this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
         }
@@ -98,6 +127,41 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
         this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
       }
     );
+  }
+
+  /** Asks LiGER for the configs in the grammar's folder and its liger/ folder. */
+  listGrammarConfigs(grammarPath: string): void {
+    this.configsFor = grammarPath;
+    this.grammarConfigs = [];
+    if (!grammarPath) {
+      return;
+    }
+    this.ligerFiles.listConfigsForGrammar(grammarPath).subscribe({
+      next: paths => {
+        if (this.configsFor === grammarPath) {
+          this.grammarConfigs = (paths ?? []).map(serverRelative);
+        }
+      },
+      error: error => console.warn('[Grammar] could not list LiGER configs for', grammarPath, error),
+    });
+  }
+
+  configName(path: string): string {
+    return path.substring(path.lastIndexOf('/') + 1);
+  }
+
+  isOpenConfig(path: string): boolean {
+    const state = this.workspace.state;
+    return sameFile(state.ruleSet?.source, path) && !sameFile(state.openFailed, path);
+  }
+
+  /** Opens the config in the LiGER workspace every view shares. */
+  loadConfig(path: string): void {
+    if (this.workspace.hasEdits && typeof window !== 'undefined'
+        && !window.confirm(`Load ${this.configName(path)}? Your in-memory rule set edits will be lost.`)) {
+      return;
+    }
+    this.workspace.open(path);
   }
 
   private refreshStatusMessage(): void {

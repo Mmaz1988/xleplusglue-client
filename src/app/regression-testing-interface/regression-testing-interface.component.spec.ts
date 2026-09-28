@@ -663,6 +663,24 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(saves.length).toBe(before);
     });
 
+    it('starts a new session clean of a previous session\'s failed reopen', () => {
+      // A session from before the move of the configs: its path is gone.
+      ligerFiles.loadRuleSet.and.returnValue(throwError(() => ({ error: { error: 'No such file' } })));
+      const legacy = createRegressionTestingSession();
+      legacy.rulesFilename = './liger_resources/rules/default.liger.yaml';
+      legacy.rulesText = 'old rules';
+      (component as any).hydrateSession(legacy);
+      expect(workspace.state.error).toContain('./liger_resources');
+
+      (component as any).initializeBlankSession();
+
+      expect(workspace.state.error).toBeNull();
+      expect(component.ruleSetNotice).toBe('');
+      // The rule set that is open is the new session's.
+      expect(component.session.rulesFilename).toBe(RULE_SET.source);
+      expect(component.session.rulesText).toBe('SERVER SEMANTICS');
+    });
+
     it('stores the per-file text with the session', () => {
       const { files, texts } = savedRuleSet();
       (component as any).hydrateSession(storedSession(texts, files));

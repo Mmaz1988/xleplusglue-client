@@ -134,6 +134,14 @@ export class LigerWorkspaceService {
     });
   }
 
+  /** Drops the message of a failed open or read, e.g. when the session that asked for it is
+   *  gone. What is open stays open. */
+  clearError(): void {
+    if (this.state.error || this.state.openFailed) {
+      this.patch({ error: null, openFailed: null });
+    }
+  }
+
   /** The current text of every rule and axiom file, keyed by path: what a session stores so
    *  that `open(path, saved)` can bring the rule set back exactly. Lexica are left out, since
    *  they cannot be edited here. */
