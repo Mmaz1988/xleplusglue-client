@@ -68,8 +68,15 @@ describe('LigerConfigLoaderComponent', () => {
   it('says what is loaded, and when loading failed', () => {
     expect(loader.statusMessage).toBe('No LiGER config loaded.');
 
-    workspace.open(RULE_SET.source);
-    expect(loader.statusMessage).toBe(`Currently loaded LiGER config: ${RULE_SET.source}`);
+    workspace.ensureOpen(RULE_SET.source);
+    expect(loader.statusMessage).toBe(`Currently loaded LiGER config: ${RULE_SET.source} (default at startup)`);
+
+    workspace.open(RULE_SET.source, undefined, 'grammar');
+    expect(loader.statusMessage).toBe(`Currently loaded LiGER config: ${RULE_SET.source} (from the grammar)`);
+
+    loader.onFileSelected(RULE_SET.source);
+    loader.load();
+    expect(loader.statusMessage).toBe(`Currently loaded LiGER config: ${RULE_SET.source} (selected)`);
 
     files.loadRuleSet.and.returnValue(throwError(() => ({ error: { error: 'No such file' } })));
     workspace.open('./grammars/gone.liger.yaml');

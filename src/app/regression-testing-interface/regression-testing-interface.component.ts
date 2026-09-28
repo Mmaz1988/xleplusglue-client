@@ -67,7 +67,7 @@ import {
 import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
 import { AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService, SequenceMergePreviousContext } from '../document-builder/document-builder.service';
-import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
+import { LigerWorkspaceService, RuleSetOrigin } from '../liger-workspace/liger-workspace.service';
 
 /** What a run sends and a session stores: the testsuite, and the rule set's three texts. */
 type SessionInputTexts = { testsuite: string; semantics: string; pragmatics: string; axioms: string };
@@ -482,7 +482,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   /** What the workspace would have a run send, or null while it has nothing settled. */
-  private workspaceOutput(): { key: string; source: string; semantics: string; pragmatics: string;
+  private workspaceOutput(): { key: string; source: string; origin: RuleSetOrigin | null;
+      semantics: string; pragmatics: string;
       axioms: string; files: Record<string, string>; loadedSemantics: string; loadedAxioms: string } | null {
     const state = this.ligerWorkspace.state;
     if (state.loading || !state.ruleSet) return null;
@@ -498,9 +499,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return null;
     }
     const source = state.ruleSet.source;
+    const origin = state.origin;
     return {
-      key: JSON.stringify([source, semantics, pragmatics, axioms]),
-      source, semantics, pragmatics, axioms,
+      // The origin too: it decides whether a grammar load may replace this rule set.
+      key: JSON.stringify([source, origin, semantics, pragmatics, axioms]),
+      source, origin, semantics, pragmatics, axioms,
       files: this.ligerWorkspace.fileTexts(),
       loadedSemantics: state.ruleSet.semantics ?? '',
       loadedAxioms: state.ruleSet.axioms ?? '',
@@ -530,6 +533,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.axiomsText = output.axioms;
     this.session.axiomsLoadedText = output.loadedAxioms;
     this.session.ruleSetFiles = output.files;
+    this.session.ruleSetOrigin = output.origin;
   }
 
   /** Reopens the restored session's rule set with its stored per-file text. */
@@ -546,7 +550,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
     this.ruleSetRestorePath = path;
-    this.ligerWorkspace.open(path, this.session.ruleSetFiles ?? undefined);
+    // A session from before origins were stored chose its rules file by hand.
+    this.ligerWorkspace.open(path, this.session.ruleSetFiles ?? undefined,
+      this.session.ruleSetOrigin ?? 'selected');
   }
 
   /** Called on each workspace change while a restore is pending; acts once it settled. */

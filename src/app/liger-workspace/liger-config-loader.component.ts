@@ -3,7 +3,7 @@ import { Subscription, from } from 'rxjs';
 import { concatMap, map, toArray } from 'rxjs/operators';
 import { FileTree } from '../models/models';
 import { LigerFileSource } from './liger-file-source.service';
-import { LigerWorkspaceService } from './liger-workspace.service';
+import { LigerWorkspaceService, RuleSetOrigin } from './liger-workspace.service';
 import { serverRelative } from './liger-paths';
 import { ToggleDisplayComponent } from '../utilities/toggle-display/toggle-display.component';
 
@@ -15,6 +15,12 @@ export interface ConfigRoot {
 }
 
 const isConfig = (name: string) => /\.liger\.ya?ml$/i.test(name);
+
+const ORIGIN_LABELS: Record<RuleSetOrigin, string> = {
+  default: 'default at startup',
+  grammar: 'from the grammar',
+  selected: 'selected',
+};
 
 /** LiGER configs live in their grammar's folder; single rule files are left in
  *  liger_resources/rules. */
@@ -77,7 +83,8 @@ export class LigerConfigLoaderComponent implements OnInit, OnDestroy {
     }
     if (state.ruleSet) {
       const kind = state.ruleSet.kind === 'rules' ? 'rule file' : 'config';
-      return `Currently loaded LiGER ${kind}: ${state.ruleSet.source}`;
+      const origin = state.origin ? ` (${ORIGIN_LABELS[state.origin]})` : '';
+      return `Currently loaded LiGER ${kind}: ${state.ruleSet.source}${origin}`;
     }
     return 'No LiGER config loaded.';
   }

@@ -2,22 +2,6 @@
 <div #statusMessage class="status-message">
   {{currentStatusMessage}}
 </div>
-<!-- The grammar's LiGER configs, offered: loading a grammar does not open one by itself. -->
-<div class="grammar-configs" *ngIf="loadedPath">
-  <ng-container *ngIf="grammarConfigs.length; else noConfigs">
-    <span class="configs-label">LiGER config:</span>
-    <span *ngFor="let config of grammarConfigs" class="config-entry">
-      <span class="config-name" [title]="config">{{ configName(config) }}</span>
-      <button type="button" (click)="loadConfig(config)" [disabled]="isOpenConfig(config)"
-              [title]="isOpenConfig(config) ? 'Open in the rule set' : 'Open this config in the rule set'">
-        {{ isOpenConfig(config) ? 'Loaded' : 'Load' }}
-      </button>
-    </span>
-  </ng-container>
-  <ng-template #noConfigs>
-    <span class="configs-none">No LiGER config beside this grammar.</span>
-  </ng-template>
-</div>
 <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Select grammar" hideText="Hide grammar selection">
 <div>
   <app-file-tree [fileTree]="grammarFileTree"

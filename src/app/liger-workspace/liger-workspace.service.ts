@@ -20,6 +20,11 @@ export interface WorkspaceDocument {
   readOnly: boolean;
 }
 
+/** How the open rule set came to be open: the startup default, the loaded grammar's own
+ *  config, or picked by hand (LiGER config selection, Open…). A hand-picked one stays when a
+ *  grammar is loaded; the others give way to the grammar's config. */
+export type RuleSetOrigin = 'default' | 'grammar' | 'selected';
+
 export interface WorkspaceState {
   ruleSet: LigerRuleSet | null;
   tree: LigerConfigTree | null;
@@ -31,10 +36,17 @@ export interface WorkspaceState {
   /** The path the last open failed for, while what is shown is still the rule set before
    *  it; null once an open succeeds. */
   openFailed: string | null;
+  /** How the open rule set came to be open; null while none is. */
+  origin: RuleSetOrigin | null;
+  /** The origin of the rule set being opened, while one is. */
+  loadingOrigin: RuleSetOrigin | null;
+  /** Whether the open in progress restores saved text (a session): nothing may replace it. */
+  restoring: boolean;
 }
 
 const EMPTY: WorkspaceState = {
   ruleSet: null, tree: null, documents: {}, loading: null, error: null, openFailed: null,
+  origin: null, loadingOrigin: null, restoring: false,
 };
 
 export function isEdited(doc: WorkspaceDocument | undefined): boolean {
@@ -77,7 +89,7 @@ export class LigerWorkspaceService {
    *  the workspace loads the default and later views share what is open. */
   ensureOpen(path: string): void {
     if (!this.state.ruleSet && !this.state.loading) {
-      this.open(path);
+      this.open(path, undefined, 'default');
     }
   }
 
@@ -90,9 +102,9 @@ export class LigerWorkspaceService {
    *  opens as an in-memory edit of it, in the same state change that opens the rule set, so
    *  nothing ever observes the disk text in between. A saved file the rule set no longer
    *  lists cannot be applied, and is reported as the error. */
-  open(path: string, saved?: Record<string, string>): void {
+  open(path: string, saved?: Record<string, string>, origin: RuleSetOrigin = 'selected'): void {
     this.opening?.unsubscribe();
-    this.patch({ loading: path, error: null });
+    this.patch({ loading: path, loadingOrigin: origin, restoring: !!saved, error: null });
 
     this.opening = this.files.loadRuleSet(path).pipe(
       concatMap(ruleSet => this.files.listConfig(path).pipe(map(tree => ({ ruleSet, tree })))),
@@ -128,10 +140,28 @@ export class LigerWorkspaceService {
         const error = unapplied.length
           ? `Saved text not applied, the rule set no longer lists: ${unapplied.join(', ')}`
           : null;
-        this.stateSubject.next({ ruleSet, tree, documents, loading: null, error, openFailed: null });
+        this.stateSubject.next({ ruleSet, tree, documents, loading: null, error, openFailed: null,
+          origin, loadingOrigin: null, restoring: false });
       },
-      error: err => this.patch({ loading: null, error: `Failed to open ${path}: ${reason(err)}`, openFailed: path }),
+      error: err => this.patch({ loading: null, loadingOrigin: null, restoring: false,
+        error: `Failed to open ${path}: ${reason(err)}`, openFailed: path }),
     });
+  }
+
+  /** Whether loading a grammar may open its config now: not over a hand-picked rule set,
+   *  and not while a session's rule set is being restored. */
+  get yieldsToGrammar(): boolean {
+    const { loading, loadingOrigin, origin, restoring } = this.state;
+    if (restoring) return false;
+    return (loading ? loadingOrigin : origin) !== 'selected';
+  }
+
+  /** Records a new origin for the open rule set without reopening it (and so without
+   *  dropping its edits): the grammar's config was already the one open. */
+  markOrigin(origin: RuleSetOrigin): void {
+    if (this.state.ruleSet && !this.state.loading && this.state.origin !== origin) {
+      this.patch({ origin });
+    }
   }
 
   /** Drops the message of a failed open or read, e.g. when the session that asked for it is
@@ -158,7 +188,7 @@ export class LigerWorkspaceService {
   /** Opens the current rule set again, picking up files changed on disk. Drops edits. */
   reload(): void {
     if (this.state.ruleSet) {
-      this.open(this.state.ruleSet.source);
+      this.open(this.state.ruleSet.source, undefined, this.state.origin ?? 'selected');
     }
   }
 

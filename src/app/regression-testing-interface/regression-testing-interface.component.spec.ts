@@ -681,6 +681,26 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(component.session.rulesText).toBe('SERVER SEMANTICS');
     });
 
+    it('stores how its rule set was chosen, and restores it that way', () => {
+      const { files, texts } = savedRuleSet();
+      const snapshot = storedSession(texts, files);
+      snapshot.ruleSetOrigin = 'grammar';
+
+      (component as any).hydrateSession(snapshot);
+
+      expect(workspace.state.origin).toBe('grammar');
+      expect((component as any).buildSessionSnapshot().inputs.ruleSetOrigin).toBe('grammar');
+    });
+
+    it('treats a session from before origins as picked by hand', () => {
+      const { files, texts } = savedRuleSet();
+
+      (component as any).hydrateSession(storedSession(texts, files));
+
+      expect(workspace.state.origin).toBe('selected');
+      expect(workspace.yieldsToGrammar).toBeFalse();
+    });
+
     it('stores the per-file text with the session', () => {
       const { files, texts } = savedRuleSet();
       (component as any).hydrateSession(storedSession(texts, files));

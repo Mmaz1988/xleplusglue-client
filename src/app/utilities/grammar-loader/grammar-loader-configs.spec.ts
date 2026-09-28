@@ -1,24 +1,32 @@
+import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
 import { GrammarLoaderComponent } from './grammar-loader.component';
 import { sameFile, serverRelative } from '../../liger-workspace/liger-paths';
+import { LigerFileSource } from '../../liger-workspace/liger-file-source.service';
+import { LigerWorkspaceService } from '../../liger-workspace/liger-workspace.service';
+import { RULE_SET, fileSourceSpy } from '../../liger-workspace/liger-workspace.testing';
 
 /**
- * The grammar loader offers the loaded grammar's LiGER configs; it never opens one itself.
- * Built by hand: GrammarLoaderComponent's TestBed spec needs HttpClient it is not given.
+ * Loading a grammar opens its LiGER config, unless one was picked by hand or a session's is
+ * being restored. Built by hand: GrammarLoaderComponent's TestBed spec needs HttpClient it
+ * is not given. The workspace is the real one, over a fake file source.
  */
-describe('GrammarLoaderComponent, the grammar\'s LiGER configs', () => {
+describe('GrammarLoaderComponent, the grammar\'s LiGER config', () => {
   const PREFIXED = '/Users/me/liger/./grammars/dev/g/liger/g.liger.yaml';
   const RELATIVE = './grammars/dev/g/liger/g.liger.yaml';
+  let files: jasmine.SpyObj<LigerFileSource>;
+  let workspace: LigerWorkspaceService;
+  let loader: GrammarLoaderComponent;
 
-  function build(configs: string[] = [PREFIXED]) {
-    const files = jasmine.createSpyObj('LigerFileSource', ['listConfigsForGrammar']);
-    files.listConfigsForGrammar.and.returnValue(of(configs));
-    const workspace: any = jasmine.createSpyObj('LigerWorkspaceService', ['open']);
-    workspace.state = { ruleSet: null, openFailed: null };
-    workspace.hasEdits = false;
-    const loader = new GrammarLoaderComponent({} as any, { detectChanges: () => {} } as any, files, workspace);
-    return { loader, files, workspace };
-  }
+  beforeEach(() => {
+    files = fileSourceSpy();
+    files.listConfigsForGrammar.and.returnValue(of([PREFIXED]));
+    TestBed.configureTestingModule({ providers: [{ provide: LigerFileSource, useValue: files }] });
+    workspace = TestBed.inject(LigerWorkspaceService);
+    spyOn(workspace, 'open').and.callThrough();
+    loader = new GrammarLoaderComponent({} as any, { detectChanges: () => {} } as any, files, workspace);
+    loader.loadedPath = './grammars/dev/g/g.lfg';
+  });
 
   it('reads LiGER\'s prefixed paths back as the relative ones sessions store', () => {
     expect(serverRelative(PREFIXED)).toBe(RELATIVE);
@@ -27,49 +35,70 @@ describe('GrammarLoaderComponent, the grammar\'s LiGER configs', () => {
     expect(sameFile(RELATIVE, './grammars/dev/other.liger.yaml')).toBeFalse();
   });
 
-  it('lists the configs beside the grammar, without opening any', () => {
-    const { loader, files, workspace } = build();
+  it('opens the grammar\'s config over the startup default, as from the grammar', () => {
+    workspace.ensureOpen(RULE_SET.source);
+    expect(workspace.state.origin).toBe('default');
 
-    loader.listGrammarConfigs('./grammars/dev/g/g.lfg');
+    loader.openGrammarConfig('./grammars/dev/g/g.lfg');
 
-    expect(files.listConfigsForGrammar).toHaveBeenCalledWith('./grammars/dev/g/g.lfg');
-    expect(loader.grammarConfigs).toEqual([RELATIVE]);
+    expect(workspace.open).toHaveBeenCalledWith(RELATIVE, undefined, 'grammar');
+  });
+
+  it('keeps a config picked by hand, and says so', () => {
+    workspace.open(RULE_SET.source);  // LiGER config selection / Open…
+    (workspace.open as jasmine.Spy).calls.reset();
+
+    loader.openGrammarConfig('./grammars/dev/g/g.lfg');
+
+    expect(workspace.open).not.toHaveBeenCalled();
+    expect(loader.configNote).toContain('selected by hand');
+    expect(loader.currentStatusMessage).toContain('selected by hand');
+  });
+
+  it('never replaces a session\'s rule set while it is being restored', () => {
+    const tree = new Subject<any>();
+    files.listConfig.and.returnValue(tree);
+    workspace.open(RULE_SET.source, { '/res/rules/p.liger': 'P SAVED' }, 'grammar');
+    (workspace.open as jasmine.Spy).calls.reset();
+
+    loader.openGrammarConfig('./grammars/dev/g/g.lfg');
+
+    expect(workspace.open).not.toHaveBeenCalled();
+  });
+
+  it('marks the grammar\'s config as from the grammar when it is already open, keeping edits', () => {
+    files.listConfigsForGrammar.and.returnValue(of([RULE_SET.source]));
+    workspace.ensureOpen(RULE_SET.source);
+    workspace.edit('/res/rules/a.liger', 'A EDITED');
+    (workspace.open as jasmine.Spy).calls.reset();
+
+    loader.openGrammarConfig('./grammars/dev/g/g.lfg');
+
+    expect(workspace.open).not.toHaveBeenCalled();
+    expect(workspace.state.origin).toBe('grammar');
+    expect(workspace.hasEdits).toBeTrue();
+  });
+
+  it('opens nothing when the grammar has no config, or several, and says so', () => {
+    files.listConfigsForGrammar.and.returnValue(of([]));
+    loader.openGrammarConfig('./grammars/dev/g/g.lfg');
+    expect(loader.configNote).toBe('no LiGER config beside it');
+
+    files.listConfigsForGrammar.and.returnValue(of([PREFIXED, '/x/./grammars/dev/g/other.liger.yaml']));
+    loader.openGrammarConfig('./grammars/dev/g/g.lfg');
+    expect(loader.configNote).toContain('2 LiGER configs');
+
     expect(workspace.open).not.toHaveBeenCalled();
   });
 
   it('drops a late answer for a grammar that is no longer the loaded one', () => {
-    const { loader, files } = build();
     const late = new Subject<string[]>();
     files.listConfigsForGrammar.and.returnValues(late, of([]));
 
-    loader.listGrammarConfigs('./grammars/a.lfg');
-    loader.listGrammarConfigs('./grammars/b.lfg');
+    loader.openGrammarConfig('./grammars/a.lfg');
+    loader.openGrammarConfig('./grammars/b.lfg');
     late.next([PREFIXED]);
 
-    expect(loader.grammarConfigs).toEqual([]);
-  });
-
-  it('opens a config in the shared rule set on request, and marks the open one', () => {
-    const { loader, workspace } = build();
-
-    loader.loadConfig(RELATIVE);
-    expect(workspace.open).toHaveBeenCalledWith(RELATIVE);
-
-    workspace.state = { ruleSet: { source: RELATIVE }, openFailed: null };
-    expect(loader.isOpenConfig(RELATIVE)).toBeTrue();
-    // A failed reopen of it leaves the old one showing: not "loaded".
-    workspace.state = { ruleSet: { source: RELATIVE }, openFailed: RELATIVE };
-    expect(loader.isOpenConfig(RELATIVE)).toBeFalse();
-  });
-
-  it('asks before replacing a rule set with edits', () => {
-    const { loader, workspace } = build();
-    workspace.hasEdits = true;
-    spyOn(window, 'confirm').and.returnValue(false);
-
-    loader.loadConfig(RELATIVE);
-
-    expect(window.confirm).toHaveBeenCalled();
     expect(workspace.open).not.toHaveBeenCalled();
   });
 });

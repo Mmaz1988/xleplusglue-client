@@ -30,10 +30,10 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   selectedPath: string = "";  // This will store the selected file or folder path
  // selectedIsDirectory: boolean = false;  // This will store if the selected path is a directory
 
-  /** The LiGER configs found beside the loaded grammar, offered for loading. Loading the
-   *  grammar never opens one by itself: the pairing is offered, the choice is the user's. */
-  grammarConfigs: string[] = [];
-  /** The grammar `grammarConfigs` belong to, so a late answer for another one is dropped. */
+  /** What happened to the grammar's LiGER config on the last grammar load, for the status
+   *  line: its config opens with it unless one was picked by hand (LiGER config selection). */
+  configNote = '';
+  /** The grammar the config lookup is for, so a late answer for another one is dropped. */
   private configsFor = '';
 
   constructor(private dataService: DataService, private cd: ChangeDetectorRef,
@@ -46,7 +46,6 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
     if (this.loadedPath) {
       this.refreshStatusMessage();
-      this.listGrammarConfigs(this.loadedPath);
     } else {
       this.updateGrammar();
     }
@@ -68,9 +67,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
     ) {
       this.refreshStatusMessage();
     }
-    if (changes['loadedPath'] && !changes['loadedPath'].firstChange) {
-      this.listGrammarConfigs(this.loadedPath);
-    }
+
   }
 
   // Method to handle the file/folder selection from the file tree
@@ -103,7 +100,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
           this.loadedPath = this.selectedPath;
           this.grammarLoaded.emit(this.selectedPath);
           this.refreshStatusMessage();
-          this.listGrammarConfigs(this.selectedPath);
+          this.openGrammarConfig(this.selectedPath);
         } else {
           this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
         }
@@ -115,39 +112,45 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
     );
   }
 
-  /** Asks LiGER for the configs in the grammar's folder and its liger/ folder. */
-  listGrammarConfigs(grammarPath: string): void {
+  /** Opens the grammar's LiGER config (the one in its folder or its liger/ folder), unless
+   *  the rule set was picked by hand or a session's is being restored. With none or several
+   *  beside the grammar, the rule set stays and the status says why. */
+  openGrammarConfig(grammarPath: string): void {
     this.configsFor = grammarPath;
-    this.grammarConfigs = [];
-    if (!grammarPath) {
-      return;
-    }
+    this.configNote = '';
     this.ligerFiles.listConfigsForGrammar(grammarPath).subscribe({
       next: paths => {
-        if (this.configsFor === grammarPath) {
-          this.grammarConfigs = (paths ?? []).map(serverRelative);
+        if (this.configsFor !== grammarPath) {
+          return;
         }
+        const configs = (paths ?? []).map(serverRelative);
+        if (configs.length === 0) {
+          this.configNote = 'no LiGER config beside it';
+        } else if (configs.length > 1) {
+          this.configNote = `${configs.length} LiGER configs beside it: select one under LiGER config selection`;
+        } else if (!this.workspace.yieldsToGrammar) {
+          this.configNote = 'LiGER config kept (selected by hand)';
+        } else {
+          this.openConfig(configs[0]);
+        }
+        this.refreshStatusMessage();
       },
       error: error => console.warn('[Grammar] could not list LiGER configs for', grammarPath, error),
     });
   }
 
-  configName(path: string): string {
-    return path.substring(path.lastIndexOf('/') + 1);
-  }
-
-  isOpenConfig(path: string): boolean {
+  private openConfig(path: string): void {
     const state = this.workspace.state;
-    return sameFile(state.ruleSet?.source, path) && !sameFile(state.openFailed, path);
-  }
-
-  /** Opens the config in the LiGER workspace every view shares. */
-  loadConfig(path: string): void {
-    if (this.workspace.hasEdits && typeof window !== 'undefined'
-        && !window.confirm(`Load ${this.configName(path)}? Your in-memory rule set edits will be lost.`)) {
+    if (!state.loading && sameFile(state.ruleSet?.source, path) && !sameFile(state.openFailed, path)) {
+      this.workspace.markOrigin('grammar');  // already open: keep it, edits included
       return;
     }
-    this.workspace.open(path);
+    if (this.workspace.hasEdits && typeof window !== 'undefined'
+        && !window.confirm(`Open ${path}, the grammar's LiGER config? Your in-memory rule set edits will be lost.`)) {
+      this.configNote = 'LiGER config kept (unsaved edits)';
+      return;
+    }
+    this.workspace.open(path, undefined, 'grammar');
   }
 
   private refreshStatusMessage(): void {
@@ -159,7 +162,8 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
     }
 
     const modified = this.selectedPath !== this.loadedPath;
-    this.currentStatusMessage = `Currently loaded grammar: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
+    const note = this.configNote ? ` · ${this.configNote}` : '';
+    this.currentStatusMessage = `Currently loaded grammar: ${this.loadedPath}${modified ? ' (modified)' : ''}${note}`;
   }
 
   captureState(): { loadedPath: string; selectedPath: string; currentStatusMessage: string } {

@@ -833,6 +833,8 @@ export interface RegressionSessionInputs {
    *  included, keyed by path: restoring the session reopens that rule set with this text,
    *  over whatever is on disk now. Missing in sessions saved before the LiGER workspace. */
   ruleSetFiles?: Record<string, string>;
+  /** How that rule set was chosen: the grammar's own config, or picked by hand. */
+  ruleSetOrigin?: 'default' | 'grammar' | 'selected';
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
 }
@@ -917,6 +919,7 @@ export interface RegressionTestingSession {
   /** Per-file text of the rule set (see RegressionSessionInputs.ruleSetFiles); null in a
    *  session saved before the LiGER workspace. */
   ruleSetFiles: Record<string, string> | null;
+  ruleSetOrigin: 'default' | 'grammar' | 'selected' | null;
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
   sentenceMap: Record<string, string>;
@@ -1167,6 +1170,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
         String(session?.axiomsLoadedText ?? session?.axiomsText ?? ''),
       ),
       ...(session?.ruleSetFiles ? { ruleSetFiles: { ...session.ruleSetFiles } } : {}),
+      ...(session?.ruleSetOrigin ? { ruleSetOrigin: session.ruleSetOrigin } : {}),
       gswbPreferences: { ...(session?.gswbPreferences ?? createRegressionTestingSession().gswbPreferences) },
       vampirePreferences: { ...(session?.vampirePreferences ?? createRegressionTestingSession().vampirePreferences) },
     },
@@ -1258,6 +1262,7 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     pragmaticsRulesText: String(inputs?.pragmaticsRules ?? document?.pragmaticsRulesText ?? ''),
     ruleSetFiles: inputs?.ruleSetFiles && typeof inputs.ruleSetFiles === 'object'
       ? { ...inputs.ruleSetFiles } : null,
+    ruleSetOrigin: ['default', 'grammar', 'selected'].includes(inputs?.ruleSetOrigin) ? inputs.ruleSetOrigin : null,
     gswbPreferences: { ...(inputs?.gswbPreferences ?? document?.gswbPreferences ?? base.gswbPreferences) },
     vampirePreferences: { ...(inputs?.vampirePreferences ?? document?.vampirePreferences ?? base.vampirePreferences) },
     sentenceMap: { ...(system?.sentenceMap ?? document?.sentenceMap ?? {}) },
@@ -1304,6 +1309,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     axiomsLoadedText: '',
     pragmaticsRulesText: '',
     ruleSetFiles: null,
+    ruleSetOrigin: null,
     gswbPreferences: {
       prover: 1,
       debugging: false,
