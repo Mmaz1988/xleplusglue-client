@@ -13,13 +13,18 @@ import {
   MISSING_PRAGMATICS_MESSAGE,
 } from '../models/models';
 import { discourseBranchesForDisplay, reasoningAssignmentId } from '../analysis-model';
+import { LigerFileSource } from '../liger-workspace/liger-file-source.service';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
+import { FILES, RULE_SET, TREE, fileSourceSpy } from '../liger-workspace/liger-workspace.testing';
 
 describe('RegressionTestingInterfaceComponent', () => {
   let component: RegressionTestingInterfaceComponent;
   let fixture: ComponentFixture<RegressionTestingInterfaceComponent>;
   let reasoningPipeline: jasmine.SpyObj<ReasoningPipelineService>;
+  let ligerFiles: jasmine.SpyObj<LigerFileSource>;
 
   beforeEach(() => {
+    ligerFiles = fileSourceSpy();
     const dataServiceSpy = jasmine.createSpyObj('DataService', [
       'loadRules',
       'ligerSequence',
@@ -97,14 +102,13 @@ describe('RegressionTestingInterfaceComponent', () => {
         { provide: DataService, useValue: dataServiceSpy },
         { provide: ReasoningPipelineService, useValue: reasoningPipeline },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => null } } } },
+        { provide: LigerFileSource, useValue: ligerFiles },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA]
     });
     fixture = TestBed.createComponent(RegressionTestingInterfaceComponent);
     component = fixture.componentInstance;
     component['testfile'] = { getContent: () => '', updateContent: () => {} } as any;
-    component['ligerRules'] = { getContent: () => '', updateContent: () => {} } as any;
-    component['axiomEdit'] = { getContent: () => '', updateContent: () => {} } as any;
     component['gswbPreferences'] = {
       gswbPreferences: {},
       gswbPreferencesForm: { valueChanges: of([]) },
@@ -533,61 +537,140 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.processingTimingDetails).toContain('Proofs: 1 total');
   });
 
-  describe('the rule set of a restored session', () => {
-    it('reloads the session\'s rules file, which reactivates LiGER\'s lexica and supplies missing pragmatics', () => {
-      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
-      dataServiceSpy.loadRules.calls.reset();
+  describe('the rule set, from the LiGER workspace', () => {
+    let workspace: LigerWorkspaceService;
+    let saves: { semantics: string; pragmatics: string; axioms: string }[];
+
+    /** Saved per-file text with p.liger edited, and what the workspace assembles from it. */
+    function savedRuleSet() {
+      const files: Record<string, string> = { ...FILES, '/res/rules/p.liger': 'P SAVED' };
+      delete files['/res/dicts/d.txt'];
+      workspace.open(RULE_SET.source, files);
+      const texts = { semantics: workspace.semantics!, pragmatics: workspace.pragmatics!, axioms: workspace.axioms! };
+      workspace.open(RULE_SET.source);  // back to disk, as a fresh page would be
+      return { files, texts };
+    }
+
+    function storedSession(texts: { semantics: string; pragmatics: string; axioms: string },
+                           files: Record<string, string> | null) {
       const snapshot = createRegressionTestingSession();
-      snapshot.rulesFilename = './liger_resources/rules/default.liger.yaml';
-      snapshot.rulesText = 'edited semantics';
+      snapshot.rulesFilename = RULE_SET.source;
+      snapshot.rulesText = texts.semantics;
+      snapshot.pragmaticsRulesText = texts.pragmatics;
+      snapshot.axiomsText = texts.axioms;
+      snapshot.ruleSetFiles = files;
+      return snapshot;
+    }
 
-      (component as any).hydrateSession(snapshot);
+    beforeEach(() => {
+      workspace = TestBed.inject(LigerWorkspaceService);
+      workspace.open(RULE_SET.source);
+      // What ngAfterViewInit wires up.
+      component['workspaceSubscription'] = workspace.state$.subscribe(() => component['onWorkspaceChange']());
+      saves = [];
+      spyOn<any>(component, 'scheduleSessionSave').and.callFake(() => saves.push({
+        semantics: component.session.rulesText,
+        pragmatics: component.session.pragmaticsRulesText,
+        axioms: component.session.axiomsText,
+      }));
+    });
 
-      expect(dataServiceSpy.loadRules).toHaveBeenCalledWith({ grammar: './liger_resources/rules/default.liger.yaml' });
-      expect(component.session.pragmaticsRulesText).toBe('pragmatics from file');
-      // The editor's rules are the session's, not the file's.
+    afterEach(() => component['workspaceSubscription']?.unsubscribe());
+
+    it('reopens a restored session\'s rule set with its stored text, over what is on disk', () => {
+      const { files, texts } = savedRuleSet();
+
+      (component as any).hydrateSession(storedSession(texts, files));
+
+      expect(workspace.state.documents['/res/rules/p.liger'].currentText).toBe('P SAVED');
+      expect(workspace.state.documents['/res/rules/p.liger'].loadedText).toBe('P RULES\n');
+      expect(component.session.pragmaticsRulesText).toBe(texts.pragmatics);
+      expect(component.ruleSetNotice).toBe('');
+      expect(component.isRestoringRuleSet).toBeFalse();
+      expect(component.unsavedInputChanges).toEqual([]);
+    });
+
+    it('never lets the disk text reach a save while the rule set reopens', () => {
+      const { files, texts } = savedRuleSet();
+
+      (component as any).hydrateSession(storedSession(texts, files));
+
+      for (const saved of saves) {
+        expect(saved.pragmatics).toBe(texts.pragmatics);
+      }
+    });
+
+    it('holds runs until the rule set has reopened', () => {
+      const { files, texts } = savedRuleSet();
+      const tree = new Subject<any>();
+      ligerFiles.listConfig.and.returnValue(tree);
+
+      (component as any).hydrateSession(storedSession(texts, files));
+      expect(component.isRestoringRuleSet).toBeTrue();
+      expect(component.runLocked).toBeTrue();
+
+      tree.next(TREE);
+      tree.complete();
+      expect(component.isRestoringRuleSet).toBeFalse();
+      expect(component.runLocked).toBeFalse();
+      expect(component.ruleSetNotice).toBe('');
+    });
+
+    it('keeps stored text it cannot rebuild file by file, and says so', () => {
+      // A session from before the workspace: assembled text only, edited by hand.
+      const { texts } = savedRuleSet();
+
+      (component as any).hydrateSession(storedSession({ ...texts, semantics: 'edited semantics' }, null));
+
       expect(component.session.rulesText).toBe('edited semantics');
+      expect(component.ruleSetNotice).toContain('semantics rules');
+      expect(saves.every(saved => saved.semantics === 'edited semantics')).toBeTrue();
     });
 
-    it('fills the axioms editor and its file label from a config that lists axiom files', () => {
-      const axiomEdit = jasmine.createSpyObj('EditorComponent', ['updateContent', 'getContent']);
-      component['axiomEdit'] = axiomEdit;
-      component.session.axiomsText = 'previous axioms';
+    it('keeps the stored rules when the rule set cannot be reopened', () => {
+      const { files, texts } = savedRuleSet();
+      ligerFiles.loadRuleSet.and.returnValue(throwError(() => ({ error: { error: 'No such file' } })));
 
-      component.updateRules({
-        path: './liger_resources/rules/default.liger.yaml', content: 'semantics',
-        ruleSet: { kind: 'config', source: 'c', semantics: 'semantics', pragmatics: 'prag',
-                   lexica: [], axioms: 'fof(a, axiom, p).' },
-      });
+      (component as any).hydrateSession(storedSession(texts, files));
 
-      expect(component.session.axiomsText).toBe('fof(a, axiom, p).');
-      expect(component.session.axiomsLoadedText).toBe('fof(a, axiom, p).');
-      expect(component.session.axiomsFilename).toBe('./liger_resources/rules/default.liger.yaml');
-      expect(axiomEdit.updateContent).toHaveBeenCalledWith('fof(a, axiom, p).');
+      expect(component.ruleSetNotice).toContain('Could not reopen');
+      expect(component.session.pragmaticsRulesText).toBe(texts.pragmatics);
+      expect(component.isRestoringRuleSet).toBeFalse();
     });
 
-    it('leaves the axioms alone when the loaded rule set lists none', () => {
-      component.session.axiomsText = 'previous axioms';
-      component.session.axiomsFilename = './axioms/basic_axioms.txt';
+    it('takes an edit into the session, and reports it as unsaved until the next save', () => {
+      const { files, texts } = savedRuleSet();
+      (component as any).hydrateSession(storedSession(texts, files));
 
-      component.updateRules({
-        path: './liger_resources/rules/other.liger', content: 'semantics',
-        ruleSet: { kind: 'rules', source: 'r', semantics: 'semantics', pragmatics: 'prag',
-                   lexica: [], axioms: null },
-      });
+      workspace.edit('/res/axioms/x.p', 'fof(z, axiom, r).\n');
 
-      expect(component.session.axiomsText).toBe('previous axioms');
-      expect(component.session.axiomsFilename).toBe('./axioms/basic_axioms.txt');
+      expect(component.session.axiomsText).toContain('fof(z, axiom, r).');
+      expect(component.session.ruleSetFiles!['/res/axioms/x.p']).toBe('fof(z, axiom, r).\n');
+      expect(saves[saves.length - 1].axioms).toContain('fof(z, axiom, r).');
+      expect(component.unsavedInputChanges).toEqual(['axioms']);
+
+      (component as any).markInputsSaved((component as any).buildSessionSnapshot());
+      expect(component.unsavedInputChanges).toEqual([]);
     });
 
-    it('keeps the pragmatics the session ran with', () => {
-      const snapshot = createRegressionTestingSession();
-      snapshot.rulesFilename = './liger_resources/rules/default.liger.yaml';
-      snapshot.pragmaticsRulesText = 'stored pragmatics';
+    it('does not count a change that does not touch what a run sends', () => {
+      const { files, texts } = savedRuleSet();
+      (component as any).hydrateSession(storedSession(texts, files));
+      const before = saves.length;
 
-      (component as any).hydrateSession(snapshot);
+      workspace.load('/res/dicts/d.txt');  // reading a lexicon changes the state, not the texts
 
-      expect(component.session.pragmaticsRulesText).toBe('stored pragmatics');
+      expect(saves.length).toBe(before);
+    });
+
+    it('stores the per-file text with the session', () => {
+      const { files, texts } = savedRuleSet();
+      (component as any).hydrateSession(storedSession(texts, files));
+
+      const document = (component as any).buildSessionSnapshot();
+
+      expect(document.inputs.ruleSetFiles).toEqual(files);
+      expect(document.inputs.pragmaticsRules).toBe(texts.pragmatics);
     });
 
     it('fails an NLI branch with a reason when no post-processing rules are loaded', done => {
@@ -1802,7 +1885,6 @@ describe('RegressionTestingInterfaceComponent', () => {
 
     beforeEach(() => {
       submitted = spyOn<any>(component, 'submitVampireRequest');
-      component['axiomEdit'] = { getContent: () => '', updateContent: () => {} } as any;
       component['contextPruning'] = { nativeElement: { checked: false } } as any;
       component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
       component['session'].regressionTestItems = [

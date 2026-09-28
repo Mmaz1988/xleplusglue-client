@@ -71,6 +71,11 @@
         <span *ngIf="isSaveAsInProgress">Saving...</span>
       </button>
     </div>
+    <!-- Against the last save, not against the files on disk: the stored session is what
+         a reload brings back. -->
+    <div *ngIf="unsavedInputChanges.length" class="unsaved-inputs" aria-live="polite">
+      Changed since the last save: {{ unsavedInputChanges.join(', ') }}
+    </div>
 
     <h1>Files</h1>
     <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show file selection"
@@ -83,29 +88,12 @@
         </div>
         <div>
         <h2>Test suite selection:</h2>
-        <app-file-loader displayName="testsuite" [currentContent]="session.testsuiteText"
+        <app-file-loader displayName="testsuite" [currentContent]="session.testsuiteText" [showModified]="false"
                          [loadedPath]="session.testsuiteFilename"
                          [loadedContent]="session.testsuiteLoadedText"
                          (stateChange)="onTestsuiteStateChange($event)"
                          (fileLoaded)="updateTestsuite($event)"
                          defaultFilePath="./testsuites/inference/inference-basic.lfg" filesDirectory="./testsuites/"> </app-file-loader>
-      </div>
-        <div>
-          <h2>Rule file selection:</h2>
-          <app-rule-loader displayName="rules" [currentContent]="session.rulesText"
-                           [loadedPath]="session.rulesFilename"
-                           [loadedContent]="session.rulesLoadedText"
-                           (stateChange)="onRulesStateChange($event)"
-                           (ruleLoaded)="updateRules($event)"></app-rule-loader>
-        </div>
-        <div>
-        <h2>Default axioms selection:</h2>
-        <app-file-loader displayName="axioms" [currentContent]="session.axiomsText"
-                         [loadedPath]="session.axiomsFilename"
-                         [loadedContent]="session.axiomsLoadedText"
-                         (stateChange)="onAxiomsStateChange($event)"
-                         (fileLoaded)="updateAxioms($event)"
-                         filesDirectory="./axioms/"></app-file-loader>
       </div>
       </div>
     </app-toggle-display>
@@ -159,32 +147,13 @@
   <button (click)="parse_testfile(testsuite.getContent())">parse testfile</button>
 -->
 
-  <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
-<h3>
-  Test rules:
-</h3>
-    <div class="gradient-container">
-    <div class="editor-restr">
-
-  <app-editor #ligerRules [mode]="'liger'" (contentChange)="onEditorContentChange('rulesText', $event)"> </app-editor>
-</div>
-      <div class="bar-container">
-        <div class="gradient-bar"></div>
-        <div class="empty-space"></div>
-      </div>
-    </div>
-
-</app-toggle-display>
-
-  <br>
-
-  <app-toggle-display type="liger" showText="Show default axioms" hideText="Hide default axioms">
-    Axioms:
-    <div class="editor-restr">
-      <app-editor #axiomEdit [mode]="'vampire'" (contentChange)="onEditorContentChange('axiomsText', $event)">
-      </app-editor>
-    </div>
-
+  <!-- The rule set a run uses: semantics and pragmatics rules, lexica and axioms, in the
+       LiGER workspace shared with analysis and chat. Opened with "Open…" in its tree. -->
+  <app-toggle-display type="liger" showText="Show rule set" hideText="Hide rule set">
+    <h3>Rule set:</h3>
+    <p *ngIf="isRestoringRuleSet" class="rule-set-status">Reopening the session's rule set…</p>
+    <p *ngIf="ruleSetNotice" class="rule-set-notice">{{ ruleSetNotice }}</p>
+    <app-liger-workspace></app-liger-workspace>
   </app-toggle-display>
 
   <br>
@@ -212,7 +181,7 @@
   <h1>Run:</h1>
 
 
-<button (click)="batchParse(testfile.getContent(), ligerRules.getContent())" [disabled]="runLocked">
+<button (click)="batchParse(testfile.getContent())" [disabled]="runLocked">
   <span *ngIf="!loading">Parse all</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>

@@ -28,10 +28,13 @@ export interface WorkspaceState {
   loading: string | null;
   /** Why the last open or read failed, as LiGER put it. */
   error: string | null;
+  /** The path the last open failed for, while what is shown is still the rule set before
+   *  it; null once an open succeeds. */
+  openFailed: string | null;
 }
 
 const EMPTY: WorkspaceState = {
-  ruleSet: null, tree: null, documents: {}, loading: null, error: null,
+  ruleSet: null, tree: null, documents: {}, loading: null, error: null, openFailed: null,
 };
 
 export function isEdited(doc: WorkspaceDocument | undefined): boolean {
@@ -81,8 +84,13 @@ export class LigerWorkspaceService {
   /** Loads a config or single rule file: /load_rules for the assembled text, /config_tree
    *  for the files, then reads every rule and axiom file, one request at a time. They are
    *  read up front because editing one file of a section means assembling the section
-   *  from all its files. A failure keeps what was open before. */
-  open(path: string): void {
+   *  from all its files. A failure keeps what was open before.
+   *
+   *  `saved` restores a stored session: each listed file whose text differs from disk
+   *  opens as an in-memory edit of it, in the same state change that opens the rule set, so
+   *  nothing ever observes the disk text in between. A saved file the rule set no longer
+   *  lists cannot be applied, and is reported as the error. */
+  open(path: string, saved?: Record<string, string>): void {
     this.opening?.unsubscribe();
     this.patch({ loading: path, error: null });
 
@@ -103,15 +111,40 @@ export class LigerWorkspaceService {
             for (const { path: filePath, text } of texts) {
               documents[filePath] = { ...documents[filePath], loadedText: text, currentText: text };
             }
-            return { ruleSet, tree, documents };
+            const unapplied: string[] = [];
+            for (const [filePath, text] of Object.entries(saved ?? {})) {
+              const doc = documents[filePath];
+              if (!doc || doc.readOnly || doc.loadedText === null) {
+                unapplied.push(filePath);
+              } else {
+                documents[filePath] = { ...doc, currentText: text };
+              }
+            }
+            return { ruleSet, tree, documents, unapplied };
           }));
       }),
     ).subscribe({
-      next: ({ ruleSet, tree, documents }) => {
-        this.stateSubject.next({ ruleSet, tree, documents, loading: null, error: null });
+      next: ({ ruleSet, tree, documents, unapplied }) => {
+        const error = unapplied.length
+          ? `Saved text not applied, the rule set no longer lists: ${unapplied.join(', ')}`
+          : null;
+        this.stateSubject.next({ ruleSet, tree, documents, loading: null, error, openFailed: null });
       },
-      error: err => this.patch({ loading: null, error: `Failed to open ${path}: ${reason(err)}` }),
+      error: err => this.patch({ loading: null, error: `Failed to open ${path}: ${reason(err)}`, openFailed: path }),
     });
+  }
+
+  /** The current text of every rule and axiom file, keyed by path: what a session stores so
+   *  that `open(path, saved)` can bring the rule set back exactly. Lexica are left out, since
+   *  they cannot be edited here. */
+  fileTexts(): Record<string, string> {
+    const texts: Record<string, string> = {};
+    for (const doc of Object.values(this.state.documents)) {
+      if (!doc.readOnly && doc.currentText !== null) {
+        texts[doc.path] = doc.currentText;
+      }
+    }
+    return texts;
   }
 
   /** Opens the current rule set again, picking up files changed on disk. Drops edits. */

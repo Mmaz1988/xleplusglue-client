@@ -25,6 +25,9 @@ export class FileLoaderComponent implements OnChanges {
   @Input() currentContent = '';
   @Input() loadedPath = '';
   @Input() loadedContent = '';
+  /** Whether the status line marks the text as modified against the loaded file. Off where
+   *  the view has its own notion of modified (regression: against the last save). */
+  @Input() showModified = true;
 
   @Output() dataEmitter = new EventEmitter<string>();
   @Output() fileLoaded = new EventEmitter<{ path: string; content: string }>();
@@ -187,7 +190,8 @@ export class FileLoaderComponent implements OnChanges {
       return;
     }
 
-    const modified = (this.currentContent ?? '') !== (this.loadedContent ?? this.fileContent ?? '');
+    const modified = this.showModified
+      && (this.currentContent ?? '') !== (this.loadedContent ?? this.fileContent ?? '');
     this.currentStatusMessage = `Currently loaded ${this.displayName}: ${this.loadedPath}${modified ? ' (modified)' : ''}`;
   }
 

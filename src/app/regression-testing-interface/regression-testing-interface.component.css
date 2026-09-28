@@ -396,3 +396,21 @@ div.errorhandling {
   font-size: 0.78rem;
   margin: 2px 0 6px 22px;
 }
+
+/* "Changed since the last save" and the rule set's restore notices. */
+.unsaved-inputs,
+.rule-set-notice {
+  margin: 6px 0;
+  padding: 6px 10px;
+  background: #fff8e1;
+  color: #7a5b00;
+  border: 1px solid #ffe0a3;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.rule-set-status {
+  margin: 6px 0;
+  font-size: 0.9rem;
+  color: #555;
+}

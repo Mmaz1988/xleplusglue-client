@@ -101,6 +101,60 @@ describe('LigerWorkspaceService', () => {
     expect(workspace.semantics).toContain('A EDITED');
   });
 
+  describe('restoring saved text', () => {
+    it('snapshots every rule and axiom file, edits included, but no lexicon', () => {
+      workspace.edit('/res/rules/p.liger', 'P EDITED');
+
+      expect(workspace.fileTexts()).toEqual({
+        '/res/rules/a.liger': 'A RULES\n',
+        '/res/rules/b.liger': '--lexicon(../dicts/e.txt)\nB RULES\n',
+        '/res/rules/p.liger': 'P EDITED',
+        '/res/axioms/x.p': 'fof(x, axiom, p).\n',
+      });
+    });
+
+    it('opens saved text that differs from disk as an edit, the rest as read', () => {
+      const saved = { ...FILES, '/res/rules/p.liger': 'P SAVED' };
+      delete saved['/res/dicts/d.txt'];
+
+      workspace.open(RULE_SET.source, saved);
+
+      expect(workspace.state.documents['/res/rules/p.liger'].currentText).toBe('P SAVED');
+      expect(workspace.state.documents['/res/rules/p.liger'].loadedText).toBe('P RULES\n');
+      expect(workspace.hasEdits).toBeTrue();
+      expect(workspace.pragmatics).toContain('P SAVED');
+      // Unchanged files are not edits, so their sections are LiGER's own text.
+      expect(workspace.semantics).toBe('SERVER SEMANTICS');
+      expect(workspace.state.error).toBeNull();
+      expect(workspace.fileTexts()).toEqual(saved);
+    });
+
+    it('never shows the disk text of a restored file in between', () => {
+      const settled: (string | null)[] = [];
+      let watching = false;
+      const sub = workspace.state$.subscribe(state => {
+        // A caller that syncs on settled states (nothing loading) is what could autosave it.
+        if (watching && state.loading === null) {
+          settled.push(state.documents['/res/rules/p.liger']?.currentText ?? null);
+        }
+      });
+
+      watching = true;
+      workspace.open(RULE_SET.source, { '/res/rules/p.liger': 'P SAVED' });
+      sub.unsubscribe();
+
+      expect(settled).toEqual(['P SAVED']);
+    });
+
+    it('says which saved files it could not apply', () => {
+      workspace.open(RULE_SET.source, { '/res/rules/gone.liger': 'GONE', '/res/dicts/d.txt': 'x' });
+
+      expect(workspace.state.error).toContain('/res/rules/gone.liger');
+      expect(workspace.state.error).toContain('/res/dicts/d.txt');
+      expect(workspace.hasEdits).toBeFalse();
+    });
+  });
+
   it('does not reopen what another view already opened', () => {
     workspace.ensureOpen('./other.liger.yaml');
 

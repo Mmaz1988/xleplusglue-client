@@ -829,6 +829,10 @@ export interface RegressionSessionInputs {
    *  LiGER configs existed; those get them back by reloading `rules.filename`. */
   pragmaticsRules?: string;
   axioms: RegressionSessionFilePart;
+  /** The text of every rule and axiom file of the rule set `rules.filename` names, edits
+   *  included, keyed by path: restoring the session reopens that rule set with this text,
+   *  over whatever is on disk now. Missing in sessions saved before the LiGER workspace. */
+  ruleSetFiles?: Record<string, string>;
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
 }
@@ -910,6 +914,9 @@ export interface RegressionTestingSession {
   axiomsLoadedText: string;
   /** Post-processing (pragmatics) rules that came with the loaded rules file or config. */
   pragmaticsRulesText: string;
+  /** Per-file text of the rule set (see RegressionSessionInputs.ruleSetFiles); null in a
+   *  session saved before the LiGER workspace. */
+  ruleSetFiles: Record<string, string> | null;
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
   sentenceMap: Record<string, string>;
@@ -1159,6 +1166,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
         String(session?.axiomsText ?? ''),
         String(session?.axiomsLoadedText ?? session?.axiomsText ?? ''),
       ),
+      ...(session?.ruleSetFiles ? { ruleSetFiles: { ...session.ruleSetFiles } } : {}),
       gswbPreferences: { ...(session?.gswbPreferences ?? createRegressionTestingSession().gswbPreferences) },
       vampirePreferences: { ...(session?.vampirePreferences ?? createRegressionTestingSession().vampirePreferences) },
     },
@@ -1248,6 +1256,8 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     rulesLoadedText: String(rules?.loadedText ?? document?.rulesLoadedText ?? rules?.text ?? document?.rulesText ?? ''),
     axiomsLoadedText: String(axioms?.loadedText ?? document?.axiomsLoadedText ?? axioms?.text ?? document?.axiomsText ?? ''),
     pragmaticsRulesText: String(inputs?.pragmaticsRules ?? document?.pragmaticsRulesText ?? ''),
+    ruleSetFiles: inputs?.ruleSetFiles && typeof inputs.ruleSetFiles === 'object'
+      ? { ...inputs.ruleSetFiles } : null,
     gswbPreferences: { ...(inputs?.gswbPreferences ?? document?.gswbPreferences ?? base.gswbPreferences) },
     vampirePreferences: { ...(inputs?.vampirePreferences ?? document?.vampirePreferences ?? base.vampirePreferences) },
     sentenceMap: { ...(system?.sentenceMap ?? document?.sentenceMap ?? {}) },
@@ -1293,6 +1303,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     rulesLoadedText: '',
     axiomsLoadedText: '',
     pragmaticsRulesText: '',
+    ruleSetFiles: null,
     gswbPreferences: {
       prover: 1,
       debugging: false,

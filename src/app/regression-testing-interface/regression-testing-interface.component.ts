@@ -40,7 +40,6 @@ import {
   check,
   VampireSessionSummary,
   sameReasoningUpdate,
-  LigerRuleSet,
   MISSING_PRAGMATICS_MESSAGE,
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
@@ -68,6 +67,14 @@ import {
 import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
 import { AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService, SequenceMergePreviousContext } from '../document-builder/document-builder.service';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
+
+/** What a run sends and a session stores: the testsuite, and the rule set's three texts. */
+type SessionInputTexts = { testsuite: string; semantics: string; pragmatics: string; axioms: string };
+
+const INPUT_LABELS: Record<keyof SessionInputTexts, string> = {
+  testsuite: 'testsuite', semantics: 'semantics rules', pragmatics: 'pragmatics rules', axioms: 'axioms',
+};
 
 /** One NLI item's premise/hypothesis sentence ids, in order, plus the update id every
  *  branch of its sequence build shares. */
@@ -126,6 +133,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     private reasoningPipeline: ReasoningPipelineService,
     private documentBuilder: DocumentBuilderService,
     private anaphoraRanking: AnaphoraRankingService,
+    /** The rule set a run uses; its texts are mirrored into the session (see
+     *  `onWorkspaceChange`). Read by the template. */
+    public ligerWorkspace: LigerWorkspaceService,
   ) {
     this.lastSavedSessionFingerprint = this.buildSessionFingerprint(regressionSessionToDocument(this.session));
     // Deliberately no per-path baseline here: nothing is stored yet, so the first save
@@ -153,10 +163,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   @ViewChild('vampirePrefs') vampirePreferences!: InferenceSettingsComponent;
   @ViewChild('contextPruning') contextPruning!: ElementRef;
-  @ViewChild('axiomEdit') axiomEdit: EditorComponent;
 
   @ViewChild('testfile') testfile: EditorComponent;
-  @ViewChild('ligerRules') ligerRules: EditorComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
 
   @ViewChild('semvisDialog') semvisDialog: SemvisDialogComponent;
@@ -356,9 +364,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.gswbPreferences = { ...this.gswbPreferences.gswbPreferences };
     this.session.vampirePreferences = { ...this.vampirePreferences.vampirePreferences };
     this.session.testsuiteText = this.testfile.getContent();
-    this.session.rulesText = this.ligerRules.getContent();
-    this.session.axiomsText = this.axiomEdit.getContent();
     this.isHydratingSession = false;
+    this.workspaceSubscription = this.ligerWorkspace.state$.subscribe(() => this.onWorkspaceChange());
+    this.lastSavedInputs = this.currentInputTexts();
 
     this.gswbPreferences.gswbPreferencesForm.valueChanges.subscribe(() => {
       this.syncSessionStateFromUi();
@@ -414,45 +422,166 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.gswbPreferences = { ...this.gswbPreferences.gswbPreferences };
     this.session.vampirePreferences = { ...this.vampirePreferences.vampirePreferences };
     this.session.testsuiteText = this.testfile.getContent();
-    this.session.rulesText = this.ligerRules.getContent();
-    this.session.axiomsText = this.axiomEdit.getContent();
   }
 
-  private isModified(currentText: string, loadedText: string): boolean {
-    return (currentText ?? '') !== (loadedText ?? '');
+  // --- The rule set: the LiGER workspace, mirrored into the session ---------------------
+  //
+  // The session's rulesText/pragmaticsRulesText/axiomsText are what a run sends and what is
+  // stored, so a stored session says exactly what its runs used. They follow the workspace:
+  // every change there is copied in and autosaved. Restoring a session goes the other way:
+  // its stored per-file text reopens the rule set over whatever is on disk now, because the
+  // stored session is the ground truth.
+
+  private workspaceSubscription?: Subscription;
+  /** The rule set being reopened for a restored session; workspace changes are not copied
+   *  into the session until it has settled, or a file's disk text could be autosaved over
+   *  the stored one. */
+  private ruleSetRestorePath: string | null = null;
+  /** The workspace output last seen, so only a real change is copied into the session:
+   *  reading a lexicon, say, changes the workspace's state but not what a run sends. */
+  private lastWorkspaceOutputKey: string | null = null;
+  /** Why the session's rule texts are not the workspace's, when they are not. */
+  ruleSetNotice = '';
+  /** The inputs as last stored, for the "changed since the last save" warning. */
+  private lastSavedInputs: SessionInputTexts | null = null;
+
+  get isRestoringRuleSet(): boolean {
+    return this.ruleSetRestorePath !== null;
+  }
+
+  /** Which inputs differ from the last save, in words; empty when none do. */
+  get unsavedInputChanges(): string[] {
+    const saved = this.lastSavedInputs;
+    if (!saved) return [];
+    const current = this.currentInputTexts();
+    return (Object.keys(INPUT_LABELS) as (keyof SessionInputTexts)[])
+      .filter(key => current[key] !== saved[key])
+      .map(key => INPUT_LABELS[key]);
+  }
+
+  private currentInputTexts(): SessionInputTexts {
+    return {
+      testsuite: this.session.testsuiteText ?? '',
+      semantics: this.session.rulesText ?? '',
+      pragmatics: this.session.pragmaticsRulesText ?? '',
+      axioms: this.session.axiomsText ?? '',
+    };
+  }
+
+  private markInputsSaved(snapshot: RegressionSessionDocument): void {
+    const inputs = snapshot.inputs;
+    this.lastSavedInputs = {
+      testsuite: inputs.testsuite?.text ?? '',
+      semantics: inputs.rules?.text ?? '',
+      pragmatics: inputs.pragmaticsRules ?? '',
+      axioms: inputs.axioms?.text ?? '',
+    };
+  }
+
+  /** What the workspace would have a run send, or null while it has nothing settled. */
+  private workspaceOutput(): { key: string; source: string; semantics: string; pragmatics: string;
+      axioms: string; files: Record<string, string>; loadedSemantics: string; loadedAxioms: string } | null {
+    const state = this.ligerWorkspace.state;
+    if (state.loading || !state.ruleSet) return null;
+    let semantics: string, pragmatics: string, axioms: string;
+    try {
+      semantics = this.ligerWorkspace.semantics ?? '';
+      pragmatics = this.ligerWorkspace.pragmatics ?? '';
+      axioms = this.ligerWorkspace.axioms ?? '';
+    } catch (error) {
+      // A section short of a file cannot be assembled; nothing is copied rather than a
+      // rule set missing rules.
+      console.warn('[Regression] the rule set cannot be assembled', error);
+      return null;
+    }
+    const source = state.ruleSet.source;
+    return {
+      key: JSON.stringify([source, semantics, pragmatics, axioms]),
+      source, semantics, pragmatics, axioms,
+      files: this.ligerWorkspace.fileTexts(),
+      loadedSemantics: state.ruleSet.semantics ?? '',
+      loadedAxioms: state.ruleSet.axioms ?? '',
+    };
+  }
+
+  private onWorkspaceChange(): void {
+    if (this.isHydratingSession) return;
+    if (this.ruleSetRestorePath !== null) {
+      this.finishRuleSetRestore();
+      return;
+    }
+    const output = this.workspaceOutput();
+    if (!output || output.key === this.lastWorkspaceOutputKey) return;
+    this.lastWorkspaceOutputKey = output.key;
+    this.adoptWorkspaceOutput(output);
+    this.scheduleSessionSave();
+  }
+
+  private adoptWorkspaceOutput(output: NonNullable<ReturnType<RegressionTestingInterfaceComponent['workspaceOutput']>>): void {
+    this.ruleSetNotice = '';
+    this.session.rulesFilename = output.source;
+    this.session.rulesText = output.semantics;
+    this.session.rulesLoadedText = output.loadedSemantics;
+    this.session.pragmaticsRulesText = output.pragmatics;
+    this.session.axiomsFilename = output.source;
+    this.session.axiomsText = output.axioms;
+    this.session.axiomsLoadedText = output.loadedAxioms;
+    this.session.ruleSetFiles = output.files;
+  }
+
+  /** Reopens the restored session's rule set with its stored per-file text. */
+  private restoreRuleSet(): void {
+    const path = this.session.rulesFilename;
+    this.ruleSetNotice = '';
+    if (!path) {
+      this.ruleSetRestorePath = null;
+      this.lastWorkspaceOutputKey = this.workspaceOutput()?.key ?? null;
+      if ((this.session.rulesText ?? '').trim()) {
+        this.ruleSetNotice = 'This session stores rules but no rule set they came from. Runs use '
+          + 'the stored rules until a rule set is opened or edited, which replaces them.';
+      }
+      return;
+    }
+    this.ruleSetRestorePath = path;
+    this.ligerWorkspace.open(path, this.session.ruleSetFiles ?? undefined);
+  }
+
+  /** Called on each workspace change while a restore is pending; acts once it settled. */
+  private finishRuleSetRestore(): void {
+    const path = this.ruleSetRestorePath!;
+    const state = this.ligerWorkspace.state;
+    if (state.loading) return;
+    this.ruleSetRestorePath = null;
+    const output = this.workspaceOutput();
+    // From here on, only a change the user makes is copied into the session.
+    this.lastWorkspaceOutputKey = output?.key ?? null;
+
+    if (!output || output.source !== path || state.openFailed === path) {
+      this.ruleSetNotice = `Could not reopen ${path}${state.error ? ` (${state.error})` : ''}. `
+        + 'Runs use the rules stored with the session.';
+      return;
+    }
+    const stored = this.currentInputTexts();
+    const differing = (['semantics', 'pragmatics', 'axioms'] as const)
+      .filter(key => output[key] !== stored[key])
+      .map(key => INPUT_LABELS[key]);
+    if (differing.length) {
+      // The stored text is the ground truth; it could not be rebuilt file by file (a session
+      // from before the workspace, or a config whose file list changed), so it stays as
+      // stored rather than being autosaved over.
+      this.ruleSetNotice = `The stored ${differing.join(', ')} differ from ${path} as reopened`
+        + `${state.error ? ` (${state.error})` : ''}. Runs use the stored text until the rule set `
+        + 'is edited or another is opened, which replaces it.';
+      return;
+    }
+    // Reopened exactly: take the per-file text too (a session from before the workspace
+    // gains it), which changes nothing a run sends.
+    this.adoptWorkspaceOutput(output);
+    this.scheduleSessionSave();
   }
 
   getGrammarDisplay(): string {
     return this.session.grammarPath || 'Not loaded';
-  }
-
-  getTrackedFileDisplay(kind: 'testsuite' | 'rules' | 'axioms'): string {
-    // Loader components keep these fields aligned with what was loaded.
-    const metadata = {
-      testsuite: {
-        filename: this.session.testsuiteFilename,
-        current: this.session.testsuiteText,
-        loaded: this.session.testsuiteLoadedText,
-      },
-      rules: {
-        filename: this.session.rulesFilename,
-        current: this.session.rulesText,
-        loaded: this.session.rulesLoadedText,
-      },
-      axioms: {
-        filename: this.session.axiomsFilename,
-        current: this.session.axiomsText,
-        loaded: this.session.axiomsLoadedText,
-      },
-    }[kind];
-
-    const name = metadata.filename || 'Not loaded';
-    return this.isModified(metadata.current, metadata.loaded) ? `${name} (modified)` : name;
-  }
-
-  private getFileStateLabel(filename: string, loadedText: string, currentText: string): string {
-    const name = filename || 'Not loaded';
-    return this.isModified(currentText, loadedText) ? `${name} (modified)` : name;
   }
 
   private cloneParsedRegressionSnapshot(snapshot: ParsedRegressionRunSnapshot | null): ParsedRegressionRunSnapshot | null {
@@ -691,6 +820,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         saveSucceeded = true;
         this.lastSavedSessionFingerprint = serialized;
         this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(snapshot);
+        this.markInputsSaved(snapshot);
         this.setPersistedActiveSessionKey(this.redisSessionKey);
         if (response?.recent_sessions) {
           this.recentSessions = response.recent_sessions;
@@ -794,8 +924,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       gswbPreferences: { ...this.gswbPreferences.gswbPreferences },
       vampirePreferences: { ...this.vampirePreferences.vampirePreferences },
       testsuiteText: this.testfile.getContent(),
-      rulesText: this.ligerRules.getContent(),
-      axiomsText: this.axiomEdit.getContent(),
     });
   }
 
@@ -933,8 +1061,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.parsingSummary = '';
     this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     this.testfile.updateContent('');
-    this.ligerRules.updateContent('');
-    this.axiomEdit.updateContent('');
+    // A new session runs on the rule set that is open, as it is.
+    this.ruleSetRestorePath = null;
+    this.ruleSetNotice = '';
+    const output = this.workspaceOutput();
+    this.lastWorkspaceOutputKey = output?.key ?? null;
+    if (output) this.adoptWorkspaceOutput(output);
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;
     // The two fingerprints mean different things and a blank session is exactly where
@@ -947,6 +1079,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // whole run.
     this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.buildSessionSnapshot());
     this.lastSavedSectionFingerprints = {};
+    this.lastSavedInputs = this.currentInputTexts();
     this.sessionPersistenceEnabled = true;
     this.isHydratingSession = false;
     this.setPersistedActiveSessionKey('');
@@ -988,9 +1121,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampirePreferences.updateFormFromPreferences(this.session.vampirePreferences);
 
     this.testfile.updateContent(this.session.testsuiteText || '');
-    this.ligerRules.updateContent(this.session.rulesText || '');
-    this.axiomEdit.updateContent(this.session.axiomsText || '');
-    this.reactivateRuleSet();
     this.testsuiteUpdateMode = this.session.testsuiteUpdateMode ?? 'write';
     this.testsuiteEditorMode = this.inferTestsuiteEditorMode(this.session.testsuiteText || '');
 
@@ -1021,9 +1151,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const restored = this.buildSessionSnapshot();
     this.lastSavedSessionFingerprint = this.buildSessionFingerprint(restored);
     this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(restored);
+    this.markInputsSaved(restored);
 
     this.isHydratingSession = false;
     this.sessionPersistenceEnabled = true;
+    // After hydration, so the reopened rule set's first change is seen as the restore's.
+    this.restoreRuleSet();
   }
 
   loadSessionFromRecent(sessionKey: string, force = false): void {
@@ -1057,9 +1190,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             `Parses: ${parseCount}`,
             `Inference results: ${inferenceCount}`,
             `Grammar: ${runtimeSnapshot?.grammarPath || 'Not loaded'}`,
-            `Testsuite: ${this.getFileStateLabel(runtimeSnapshot?.testsuiteFilename ?? '', runtimeSnapshot?.testsuiteLoadedText ?? runtimeSnapshot?.testsuiteText ?? '', runtimeSnapshot?.testsuiteText ?? '')}`,
-            `Rules: ${this.getFileStateLabel(runtimeSnapshot?.rulesFilename ?? '', runtimeSnapshot?.rulesLoadedText ?? runtimeSnapshot?.rulesText ?? '', runtimeSnapshot?.rulesText ?? '')}`,
-            `Axioms: ${this.getFileStateLabel(runtimeSnapshot?.axiomsFilename ?? '', runtimeSnapshot?.axiomsLoadedText ?? runtimeSnapshot?.axiomsText ?? '', runtimeSnapshot?.axiomsText ?? '')}`,
+            `Testsuite: ${runtimeSnapshot?.testsuiteFilename || 'Not loaded'}`,
+            `Rule set: ${runtimeSnapshot?.rulesFilename || 'Not loaded'}`,
           ].join('\n')
         );
       },
@@ -1395,6 +1527,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   ngOnDestroy(): void {
+    this.workspaceSubscription?.unsubscribe();
     this.stopGswbSummaryPolling();
     this.stopNliPreparation();
     this.endVampireRun();
@@ -1848,8 +1981,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return count;
   }
 
-  batchParse(sentences: string, rules: string) {
+  /** Parses the testsuite with the session's rule set: the rules a session stores are the
+   *  rules its runs used. */
+  batchParse(sentences: string) {
     if (this.runLocked) return;
+    const rules = this.session.rulesText;
     if (this.testsuiteUpdateMode === 'write' && this.hasExistingRegressionSessionData()) {
       const confirmed = this.confirmWriteModeOverwrite();
       if (!confirmed) {
@@ -1872,8 +2008,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     const baseSentenceKeys = new Set(Object.keys(baseSnapshot.sentenceMap ?? {}));
     this.session.testsuiteText = sentences;
-    this.session.rulesText = rules;
-    this.session.axiomsText = this.axiomEdit.getContent();
     this.syncSessionStateFromUi();
 
     this.session.timing = {
@@ -2143,7 +2277,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (appendMode && !isNewlyAppended && !selectionChanged && !parseChanged) continue;
       }
 
-      let axioms = this.axiomEdit.getContent();
+      let axioms = this.session.axiomsText;
       let axiomCounter = 0;
 
       const premise_strings: string[] = [];
@@ -3738,71 +3872,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.testsuiteLoadedText = state?.loadedContent ?? '';
   }
 
-  updateRules(file: { path: string; content: string; ruleSet: LigerRuleSet }) {
-    // Loading a rules file or config replaces the editor content and snapshot metadata.
-    this.session.rulesFilename = file?.path ?? '';
-    this.session.rulesLoadedText = file?.content ?? '';
-    this.session.rulesText = file?.content ?? '';
-    this.session.pragmaticsRulesText = file?.ruleSet?.pragmatics ?? '';
-    // A config that lists axioms fills the axioms editor and its loaded-file snapshot, so
-    // the config is named as their source until an axioms file is picked.
-    const axioms = file?.ruleSet?.axioms;
-    if (axioms !== null && axioms !== undefined) {
-      this.session.axiomsText = axioms;
-      this.session.axiomsLoadedText = axioms;
-      this.session.axiomsFilename = file?.path ?? '';
-      this.axiomEdit.updateContent(axioms);
-    }
-    this.ligerRules.updateContent(file?.content ?? '');
-    this.syncSessionStateFromUi();
-    this.scheduleSessionSave();
-  }
-
-  /**
-   * LiGER's active lexica are server state, and sessions saved before LiGER configs have no
-   * pragmatics rules stored. Reloading the session's rules file or config restores both. The
-   * editor's (possibly edited) rules and any stored pragmatics are kept, so a rerun uses the
-   * rules the session ran with.
-   */
-  private reactivateRuleSet(): void {
-    const path = this.session.rulesFilename;
-    if (!path) {
-      return;
-    }
-    const sessionKey = this.session.redisSessionKey;
-    this.dataService.loadRules({ grammar: path }).subscribe({
-      next: ruleSet => {
-        if (this.session.redisSessionKey !== sessionKey || this.session.rulesFilename !== path) {
-          return;
-        }
-        if (!this.session.pragmaticsRulesText) {
-          this.session.pragmaticsRulesText = ruleSet.pragmatics ?? '';
-          this.scheduleSessionSave();
-        }
-      },
-      error: error => console.warn('[Regression] could not reload the session\'s rules', { path, error }),
-    });
-  }
-
-  onRulesStateChange(state: { path: string; loadedContent: string }): void {
-    // Persist the exact loaded rules file content for later comparisons.
-    this.session.rulesFilename = state?.path ?? '';
-    this.session.rulesLoadedText = state?.loadedContent ?? '';
-  }
-
-  updateRulesText(ruleFile: string) {
-    this.session.rulesText = ruleFile;
-    this.ligerRules.updateContent(ruleFile);
-    this.syncSessionStateFromUi();
-    this.scheduleSessionSave();
-  }
-
-  onAxiomsStateChange(state: { path: string; loadedContent: string }): void {
-    // Persist the exact loaded axioms file content for later comparisons.
-    this.session.axiomsFilename = state?.path ?? '';
-    this.session.axiomsLoadedText = state?.loadedContent ?? '';
-  }
-
   updateTestsuite(file: { path: string; content: string }) {
     // Loading a testsuite file replaces the editor content and snapshot metadata.
     this.session.testsuiteFilename = file?.path ?? '';
@@ -3816,23 +3885,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   updateTestsuiteText(ruleFile: string) {
     this.session.testsuiteText = ruleFile;
     this.testfile.updateContent(ruleFile);
-    this.syncSessionStateFromUi();
-    this.scheduleSessionSave();
-  }
-
-  updateAxioms(file: { path: string; content: string }) {
-    // Loading axioms follows the same persisted state pattern as rules/testsuites.
-    this.session.axiomsFilename = file?.path ?? '';
-    this.session.axiomsLoadedText = file?.content ?? '';
-    this.session.axiomsText = file?.content ?? '';
-    this.axiomEdit.updateContent(file?.content ?? '');
-    this.syncSessionStateFromUi();
-    this.scheduleSessionSave();
-  }
-
-  updateAxiomsText(ruleFile: string) {
-    this.session.axiomsText = ruleFile;
-    this.axiomEdit.updateContent(ruleFile);
     this.syncSessionStateFromUi();
     this.scheduleSessionSave();
   }
@@ -3893,7 +3945,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       .join('\n\n');
   }
 
-  onEditorContentChange(field: 'testsuiteText' | 'rulesText' | 'axiomsText', value: string): void {
+  onEditorContentChange(field: 'testsuiteText', value: string): void {
     if (this.isHydratingSession) return;
 
     this.session[field] = value;
@@ -4158,7 +4210,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  simply a parsed one -- and keeping the clause would have disabled parsing for good the
    *  first time a run stopped. */
   get runLocked(): boolean {
-    return this.loading || this.saveOperationInProgress;
+    return this.loading || this.saveOperationInProgress || this.isRestoringRuleSet;
   }
 
   get isSessionActionLocked(): boolean {
