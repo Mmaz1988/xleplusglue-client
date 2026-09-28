@@ -11,6 +11,20 @@
   margin-bottom: 0.75rem;
 }
 
+.upload-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* The toggle puts its button after the controls; keep both on the controls' row. */
+.inspector-controls app-toggle-display {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .editor-section {
   margin-bottom: 0.9rem;
 }
@@ -63,7 +77,44 @@
 }
 
 :host ::ng-deep app-editor .CodeMirror-scroll {
-  min-height: 220px;
+  min-height: 0;
+}
+
+/* The query box copies the LiGER workspace's frame (liger-workspace.component.css): the shared
+   text-box border, a toolbar row, and an editor's height plus that row, so it lines up with the
+   rule set beside it. */
+.query-box {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: var(--box-border-width, 3px) solid var(--box-border-color, #00a9e0);
+  border-radius: var(--text-box-radius, 0);
+  background: #fff;
+  height: calc(var(--editor-height, 300px) + 30px);
+  min-height: 200px;
+  overflow: hidden;
+  resize: vertical;
+}
+
+.pane-toolbar {
+  display: flex; align-items: center; gap: 6px; flex: none;
+  padding: 3px 8px; border-bottom: 1px solid #d8dee8; background: #f7f9fc;
+  font-family: Roboto, sans-serif; font-size: 12px;
+}
+.pane-toolbar .spacer { flex: 1; }
+.pane-toolbar button { font: inherit; font-size: 12px; padding: 2px 12px; margin: 0; }
+.file-label {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; font-size: 12px; color: #243247;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+/* The box's frame is the editor's frame, and the editor fills what the toolbar leaves. */
+.query-box app-editor { flex: 1; min-height: 0; }
+:host ::ng-deep .query-box .editor-container {
+  min-width: 0; height: 100%; box-sizing: border-box; border: 0;
+}
+:host ::ng-deep .query-box .CodeMirror {
+  height: 100%; resize: none;
 }
 
 .inspector-help {

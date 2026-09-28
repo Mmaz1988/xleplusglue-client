@@ -18,6 +18,8 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   @Input() initialUploadedContent = '';
   @Input() initialUploadedFileName = 'uploaded-graph';
   @Input() initialGraphElements: any[] = [];
+  /** Shown inside the analysis page, which supplies the graph: the upload controls start hidden. */
+  @Input() embedded = false;
   @Output() rulesApplied = new EventEmitter<LigerRuleAnnotationResponse>();
 
   constructor(private dataService: DataService, private ligerWorkspace: LigerWorkspaceService) {
@@ -38,7 +40,8 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   uploadedContent = '';
   uploadedFormat: 'json' | 'prolog' = 'json';
   uploadedFileName = 'uploaded-graph';
-  queryText = APP_DEFAULTS.graphInspector.queryText;
+  readonly defaultQueryText = APP_DEFAULTS.graphInspector.queryText;
+  queryText = this.defaultQueryText;
 
   /** The post-processing rules Apply sends: the LiGER workspace's pragmatics, in-memory
    *  edits included. glue-interface reads it too, to apply the same rules to every merged
@@ -130,6 +133,15 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     link.download = this.uploadedFileName.endsWith('.json') ? this.uploadedFileName : `${this.uploadedFileName}.json`;
     link.click();
     setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+  }
+
+  resetQuery(): void {
+    this.queryText = this.defaultQueryText;
+    this.queryEditor?.updateContent(this.queryText);
+  }
+
+  downloadQuery(): void {
+    this.queryEditor?.downloadFile('query.liger');
   }
 
   applyRules() {

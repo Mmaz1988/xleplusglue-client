@@ -9,6 +9,7 @@ import { DataService } from '../data.service';
 import { GraphInspectorComponent } from './graph-inspector.component';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { fileSourceSpy } from '../liger-workspace/liger-workspace.testing';
+import { ToggleDisplayComponent } from '../utilities/toggle-display/toggle-display.component';
 
 @Component({
   selector: 'app-graph-vis',
@@ -104,7 +105,7 @@ describe('GraphInspectorComponent', () => {
 
     TestBed.configureTestingModule({
       imports: [FormsModule],
-      declarations: [GraphInspectorComponent, GraphVisStubComponent],
+      declarations: [GraphInspectorComponent, GraphVisStubComponent, ToggleDisplayComponent],
       providers: [
         {
           provide: DataService,
@@ -124,6 +125,43 @@ describe('GraphInspectorComponent', () => {
 
     expect(component).toBeTruthy();
     expect(graphVis.graphStyle).toBe('liger');
+  });
+
+  function uploadShown(f: ComponentFixture<GraphInspectorComponent>): boolean {
+    const input = f.nativeElement.querySelector('input[type="file"]') as HTMLElement;
+    return !!input && !input.closest('[style*="display: none"]');
+  }
+
+  it('shows the upload controls on its own route', () => {
+    expect(uploadShown(fixture)).toBeTrue();
+  });
+
+  it('starts with the upload controls hidden when embedded, and lets them be shown', () => {
+    const embedded = TestBed.createComponent(GraphInspectorComponent);
+    embedded.componentInstance.embedded = true;
+    embedded.detectChanges();
+    expect(uploadShown(embedded)).toBeFalse();
+    // Download stays available: it is outside the toggle.
+    const buttons = Array.from(embedded.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.some(b => b.textContent!.includes('Download current structure'))).toBeTrue();
+
+    const toggle = buttons.find(b => b.classList.contains('hide-button'))!;
+    expect(toggle.textContent).toContain('Upload a graph');
+    toggle.click();
+    embedded.detectChanges();
+    expect(uploadShown(embedded)).toBeTrue();
+  });
+
+  it('frames the query editor under a toolbar, and resets it to the default query', () => {
+    expect(fixture.nativeElement.querySelector('.query-box .pane-toolbar')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.query-box app-editor')).toBeTruthy();
+
+    const updateContent = jasmine.createSpy('updateContent');
+    component.queryEditor = { updateContent } as any;
+    component.queryText = 'EDITED';
+    component.resetQuery();
+    expect(component.queryText).toBe(component.defaultQueryText);
+    expect(updateContent).toHaveBeenCalledWith(component.defaultQueryText);
   });
 
   it('should seed the default query text, and no rules until a rule set is loaded', () => {

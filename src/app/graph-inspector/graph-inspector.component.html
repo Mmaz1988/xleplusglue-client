@@ -1,11 +1,18 @@
 <h3>Graph inspector</h3>
 
+<!-- Embedded in the analysis page the graph comes from the merge, so uploading starts hidden
+     there; on its own route there is nothing to inspect until something is uploaded. -->
 <div class="inspector-controls">
-  <input type="file" accept=".json,.pl,.prolog,.txt" (change)="onUploadFile($event)">
-  <select [(ngModel)]="uploadedFormat">
-    <option value="json">JSON</option>
-    <option value="prolog">Prolog</option>
-  </select>
+  <app-toggle-display type="inspectorUpload" [isHidden]="embedded"
+                      showText="Upload a graph" hideText="Hide upload">
+    <div class="upload-controls">
+      <input type="file" accept=".json,.pl,.prolog,.txt" (change)="onUploadFile($event)">
+      <select [(ngModel)]="uploadedFormat">
+        <option value="json">JSON</option>
+        <option value="prolog">Prolog</option>
+      </select>
+    </div>
+  </app-toggle-display>
   <button type="button" (click)="downloadCurrentStructure()" [disabled]="!currentStructureJson.trim()">
     Download current structure
   </button>
@@ -27,7 +34,16 @@
 
   <div class="editor-section">
     <div class="editor-label">Graph query</div>
-    <div class="editor-restr">
+    <p class="rules-source">Runs on the graph shown below.</p>
+    <!-- Framed and sized like the rule set beside it: a toolbar row over the editor. -->
+    <div class="editor-restr query-box">
+      <div class="pane-toolbar">
+        <span class="file-label">query</span>
+        <span class="spacer"></span>
+        <button type="button" (click)="resetQuery()" [disabled]="queryText === defaultQueryText"
+                title="Back to the default query">Reset</button>
+        <button type="button" (click)="downloadQuery()">Download</button>
+      </div>
       <app-editor #queryEditor [mode]="'liger'" [showControls]="false" [initialContent]="queryText" (contentChange)="queryText = $event"></app-editor>
     </div>
     <button type="button" (click)="runQuery()" [disabled]="queryLoading">
