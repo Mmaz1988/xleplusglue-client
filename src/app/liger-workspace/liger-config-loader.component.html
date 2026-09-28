@@ -1,0 +1,11 @@
+<div class="status-message">{{ statusMessage }}</div>
+<!-- Starts closed, like the grammar and testsuite pickers. -->
+<app-toggle-display #picker type="fileTree" [isHidden]="true"
+                    showText="Select LiGER config" hideText="Hide LiGER config selection">
+  <div>
+    <app-file-tree [fileTree]="fileTree"
+                   (nodeSelected)="onFileSelected($event)"
+                   (nodeDoubleClicked)="load()"></app-file-tree>
+    <button type="button" (click)="load()" [disabled]="!canLoad">Update</button>
+  </div>
+</app-toggle-display>

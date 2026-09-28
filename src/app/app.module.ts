@@ -30,6 +30,7 @@ import { RegressionDashboardComponent } from './regression-dashboard/regression-
 import { ToggleDisplayComponent } from './utilities/toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
 import { GrammarLoaderComponent } from './utilities/grammar-loader/grammar-loader.component';
+import { LigerConfigLoaderComponent } from './liger-workspace/liger-config-loader.component';
 import { FileTreeComponent } from './utilities/file-tree/file-tree.component';
 import { LigerWorkspaceComponent } from './liger-workspace/liger-workspace.component';
 
@@ -82,6 +83,7 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     ToggleDisplayComponent,
     GswbSettingsComponent,
     GrammarLoaderComponent,
+    LigerConfigLoaderComponent,
     FileTreeComponent,
     LigerWorkspaceComponent,
     ChatInterfaceComponent,

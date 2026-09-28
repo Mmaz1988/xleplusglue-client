@@ -87,6 +87,10 @@
                               (grammarLoaded)="updateGrammar($event)"></app-grammar-loader>
         </div>
         <div>
+          <h2>LiGER config selection:</h2>
+          <app-liger-config-loader></app-liger-config-loader>
+        </div>
+        <div>
         <h2>Test suite selection:</h2>
         <app-file-loader displayName="testsuite" [currentContent]="session.testsuiteText" [showModified]="false"
                          [loadedPath]="session.testsuiteFilename"

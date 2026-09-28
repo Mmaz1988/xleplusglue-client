@@ -1,5 +1,6 @@
 import { of, Subject } from 'rxjs';
-import { GrammarLoaderComponent, sameFile, serverRelative } from './grammar-loader.component';
+import { GrammarLoaderComponent } from './grammar-loader.component';
+import { sameFile, serverRelative } from '../../liger-workspace/liger-paths';
 
 /**
  * The grammar loader offers the loaded grammar's LiGER configs; it never opens one itself.
