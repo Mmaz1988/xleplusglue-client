@@ -191,7 +191,7 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
       case 'all': return `${field}: runs use every file`;
       case 'some': return `${field}: runs use the checked files only`;
       default: return field === 'pragmatics'
-        ? 'pragmatics: no file selected, so post-processing is blocked'
+        ? 'pragmatics: no file selected, so post-processing is skipped'
         : `${field}: no file selected, runs send none`;
     }
   }
@@ -261,7 +261,7 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
       return `${section.field}: ${section.files.length} file(s) listed in the config`;
     }
     return section.field === 'pragmatics'
-      ? 'pragmatics: none listed, so post-processing is blocked'
+      ? 'pragmatics: none listed, so post-processing is skipped'
       : `${section.field}: none listed`;
   }
 

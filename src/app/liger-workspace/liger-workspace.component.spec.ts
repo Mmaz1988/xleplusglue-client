@@ -128,7 +128,7 @@ describe('LigerWorkspaceComponent', () => {
     expect(root.querySelector('.warning')).toBeNull();
   });
 
-  it('warns that post-processing is blocked when the rule set has no pragmatics', () => {
+  it('warns that post-processing is skipped when the rule set has no pragmatics', () => {
     files.loadRuleSet.and.returnValue(of({ ...RULE_SET, pragmatics: null }));
     files.listConfig.and.returnValue(of({
       ...TREE, sections: TREE.sections.map(s => s.field === 'pragmatics' ? { ...s, present: false, files: [] } : s),
@@ -136,7 +136,7 @@ describe('LigerWorkspaceComponent', () => {
     workspace.open('no-pragmatics.liger.yaml');
     fixture.detectChanges();
 
-    expect(root.querySelector('.warning')?.textContent).toContain('post-processing is blocked');
+    expect(root.querySelector('.warning')?.textContent).toContain('post-processing is skipped');
     expect(Array.from(root.querySelectorAll('.row.field'))[1].classList).toContain('absent');
   });
 

@@ -5,7 +5,7 @@ import { of, Subject, throwError } from 'rxjs';
 
 import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
-import { MISSING_PRAGMATICS_MESSAGE } from '../../models/models';
+import { POST_PROCESSING_SKIPPED_NOTICE } from '../../models/models';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 
 describe('ChatComponent', () => {
@@ -88,18 +88,18 @@ describe('ChatComponent', () => {
     });
   });
 
-  it('refuses a turn while no post-processing rules are loaded, instead of binding nothing', () => {
+  it('runs a turn without post-processing rules and says post-processing was skipped', () => {
     component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
     component.ruleString = 'rules';
     component.pragmaticsRuleString = null;
     component.userInput = 'Kim arrived';
+    dataServiceSpy.ligerAnnotate.and.returnValue(new Subject());
 
     component.sendMessage();
 
-    expect(dataServiceSpy.ligerAnnotate).not.toHaveBeenCalled();
-    expect(component.chatHistory[component.chatHistory.length - 1].text)
-      .toBe(MISSING_PRAGMATICS_MESSAGE);
-    expect(component.loading).toBe(false);
+    expect(dataServiceSpy.ligerAnnotate).toHaveBeenCalled();
+    expect(component.chatHistory.map(message => message.text))
+      .toContain(POST_PROCESSING_SKIPPED_NOTICE);
   });
 
   /** One reasoning assignment: a rule branch x PCDRS mapping of `merged`. Every assignment

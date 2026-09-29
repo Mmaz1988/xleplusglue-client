@@ -44,13 +44,28 @@ export interface LigerRuleSet {
   axioms: string | null;
 }
 
-/** Pragmatic post-processing (SYNSEM links, anaphora, presuppositions, reasoning checks)
- *  runs the rule set's pragmatics rules. A config gets exactly what it lists and a single
- *  rule file has none, so without them post-processing is blocked with this message. */
+/** Pragmatic post-processing (SYNSEM links, anaphora, presuppositions) runs the rule set's
+ *  pragmatics rules. A config gets exactly what it lists and a single rule file has none.
+ *  Running the rules by hand (graph inspector, the analysis view's "Post processing") is
+ *  blocked without them, with this message; reasoning skips them, see below. */
 export const MISSING_PRAGMATICS_MESSAGE =
   'Pragmatic post-processing needs pragmatics rules, and the loaded rule set lists none, or '
   + 'none is selected for this run. Open a LiGER config with a pragmatics section, or select '
   + 'its pragmatics files below the rule editor.';
+
+/** Shown when reasoning runs without pragmatics rules: the checks are built over the merged
+ *  DRS as it is, and no pronoun is bound. */
+export const POST_PROCESSING_SKIPPED_NOTICE =
+  'No pragmatics rules: post-processing was skipped, so no pronoun was resolved. Each '
+  + 'pronoun is reasoned over as a new referent.';
+
+/** Whether `ruleString` holds at least one rule: something with a rule arrow (`==>`, `?=>`)
+ *  once `//` comments are removed. Empty, blank and comment-only strings hold none. */
+export function hasPostProcessingRules(ruleString: string | null | undefined): boolean {
+  return !!ruleString && ruleString
+    .split('\n')
+    .some(line => line.replace(/\/\/.*$/, '').includes('=>'));
+}
 
 /** LiGER's /config_tree answer: a config's (or single rule file's) files per field, unread.
  *  Joining a section's files the way LigerConfigLoader.assemble does reproduces /load_rules'
@@ -649,6 +664,9 @@ export interface GswbTptpBatchResult {
    *  carries usable TPTP, so it is indistinguishable from a resolved one unless this is
    *  surfaced. */
   degraded?: string;
+  /** Pronouns in this item the mapping did not bind, named as in `semantic`. Their ant(x)
+   *  marker was dropped, so each is a new referent, equal to no other. */
+  unresolvedPronouns?: string[];
 }
 
 export interface GswbCollapseAndTptpBatchRequest {

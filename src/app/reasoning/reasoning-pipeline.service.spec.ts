@@ -37,7 +37,7 @@ describe('ReasoningPipelineService', () => {
     premiseAsts: [structure],
     hypothesisAsts: [structure],
     typed: false,
-    ruleString: 'pragmatics rules',
+    ruleString: "#a PRED %p ==> #a MARKED 'yes'.",
   });
 
   beforeEach(() => {
@@ -324,12 +324,48 @@ describe('ReasoningPipelineService', () => {
     });
   });
 
-  it('fails loudly without post-processing rules -- they are what binds anaphora', () => {
-    expect(() => service.prepareReasoningChecks({ ...request(), ruleString: '' }))
-      .toThrowError(/post-processing/);
-    expect(() => service.generateDiscourseMappings({
+  for (const [label, ruleString] of [
+    ['empty', ''],
+    ['comment-only', '// anaphora rules go here\n//   #a ==> #b'],
+  ]) {
+    it(`builds the checks over the merged DRS with ${label} rules, skipping only the rules`, done => {
+      service.prepareReasoningChecks({ ...request(), ruleString }).subscribe(pair => {
+        // The DRS is still merged with the syntax and still goes to PCDRS generation; only
+        // the rule application itself is skipped, so the merged union is the one branch.
+        expect(dataService.ligerMergeStructure).toHaveBeenCalledTimes(1);
+        expect(dataService.ligerApplyRulesToStructure).not.toHaveBeenCalled();
+        expect((dataService.gswbGeneratePcdrs.calls.mostRecent().args[0] as any).mergedStructure)
+          .toBe(structure);
+        expect(pair.assignments.length).toBe(1);
+        expect(pair.assignments[0].ruleBranchIndex).toBe(1);
+        expect(pair.failures).toEqual([]);
+        done();
+      });
+    });
+  }
+
+  it('generates the discourse mappings without rules too', done => {
+    service.generateDiscourseMappings({
       scopeId: 's', merged: request().merged, sequenceStructure: structure, ruleString: '',
-    })).toThrowError(/post-processing/);
+    }).subscribe(mappings => {
+      expect(mappings.length).toBe(1);
+      expect(dataService.ligerApplyRulesToStructure).not.toHaveBeenCalled();
+      done();
+    });
+  });
+
+  it('names a branch whose pronouns stayed unresolved', done => {
+    const batch: any = tptpBatch();
+    batch.results['sequence'].unresolvedPronouns = ['x4'];
+    batch.results['info_pos_check'].unresolvedPronouns = ['x2'];
+    dataService.gswbCollapseAndTptpBatch.and.returnValue(of(batch) as any);
+
+    service.prepareReasoningChecks({ ...request(), ruleString: '' }).subscribe(pair => {
+      // Once per branch, from the sequence: the check items number their referents apart.
+      expect(pair.assignments[0].degradations).toEqual(['m1: unresolved pronoun(s) x4 read as new referent(s)']);
+      expect(pair.degradations.length).toBe(1);
+      done();
+    });
   });
 
   it('requires the sequence syntax -- rules cannot link semantics alone', () => {

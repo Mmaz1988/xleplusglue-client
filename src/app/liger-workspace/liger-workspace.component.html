@@ -82,7 +82,7 @@
 
     <p *ngIf="state.ruleSet && !state.ruleSet.pragmatics" class="warning">
       <ng-container *ngIf="state.ruleSet.kind === 'rules'">A single rule file holds semantics rules only. </ng-container>
-      No pragmatics rules: post-processing is blocked until a config with a pragmatics section is open.
+      No pragmatics rules: post-processing is skipped, and reasoning reads every pronoun as a new referent. Open a config with a pragmatics section to resolve pronouns.
     </p>
     <p *ngIf="state.loading" class="status">Opening {{ state.loading }}…</p>
     <p *ngIf="state.error" class="error">{{ state.error }}</p>

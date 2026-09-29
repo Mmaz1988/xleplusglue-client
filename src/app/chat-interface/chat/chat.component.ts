@@ -16,7 +16,8 @@ import {
   SyntacticAnalysis,
   vampireRequest,
   XlePlusGlueDocument,
-  MISSING_PRAGMATICS_MESSAGE,
+  POST_PROCESSING_SKIPPED_NOTICE,
+  hasPostProcessingRules,
 } from '../../models/models';
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -139,12 +140,10 @@ export class ChatComponent {
     return stored;
   }
 
-  /** The post-processing rules, which every discourse/reasoning step below needs. */
-  private requirePragmaticsRules(): string {
-    if (!this.pragmaticsRuleString) {
-      throw new Error(MISSING_PRAGMATICS_MESSAGE);
-    }
-    return this.pragmaticsRuleString;
+  /** The post-processing rules for every discourse/reasoning step below. Empty when the rule
+   *  set has none: the steps then skip post-processing and leave every pronoun unbound. */
+  private pragmaticsRules(): string {
+    return this.pragmaticsRuleString ?? '';
   }
 
   sendMessage() {
@@ -156,15 +155,10 @@ export class ChatComponent {
     // Add user message to history
     this.pushChatMessage({ text: userMessage, sender: 'User' });
 
-    // Without them every turn would parse fine and then bind no pronoun, which reads as a
-    // linguistic result rather than a setup problem.
-    if (!this.pragmaticsRuleString) {
-      this.pushChatMessage({
-        text: MISSING_PRAGMATICS_MESSAGE,
-        sender: 'Bot',
-      });
-      this.loading = false;
-      return;
+    // Without them every turn binds no pronoun, which would read as a linguistic result
+    // rather than a setup choice -- so it is said, once per turn, and the turn goes on.
+    if (!hasPostProcessingRules(this.pragmaticsRuleString)) {
+      this.pushChatMessage({ text: POST_PROCESSING_SKIPPED_NOTICE, sender: 'Bot' });
     }
 
     // If logicType is 0 create string 'fof' if 1 create string 'tff'
@@ -656,7 +650,7 @@ export class ChatComponent {
             hypothesisAsts: [pair.currentSemantic?.graph],
             typed,
             prune: pruneContext,
-            ruleString: this.requirePragmaticsRules(),
+            ruleString: this.pragmaticsRules(),
           }).pipe(map(preparedPair => ({
             priorElementId,
             newSentenceId,
@@ -765,7 +759,7 @@ export class ChatComponent {
           sourceElementKind: 'sequence',
           // Same source the TPTP itself was built from, not GSWB's output style.
           logicType: this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff',
-          ruleString: this.requirePragmaticsRules(),
+          ruleString: this.pragmaticsRules(),
           pruned: pruneContext,
           assignments: [],
           createdAt: new Date().toISOString(),
@@ -985,7 +979,7 @@ export class ChatComponent {
           // unruled tier-A union, and with no SYNSEM there were no POSSIBLE-ANT facts for
           // GSWB to branch on -- one empty mapping, no pronoun bound. Every turn uses this
           // same source, so all turns' pragmatic layers come from one rule set.
-          ruleString: this.requirePragmaticsRules(),
+          ruleString: this.pragmaticsRules(),
         }).pipe(
           map(mappings => ({ semId, scopeId, mappings })),
           catchError(error => {
@@ -1053,7 +1047,7 @@ export class ChatComponent {
             sourceElementId: sentenceId,
             sourceElementKind: 'sentence',
             // Now that the joins are not stored, this is what makes them recomputable.
-            ruleString: this.requirePragmaticsRules(),
+            ruleString: this.pragmaticsRules(),
             discourse,
             semDiscourseMapping,
           });
@@ -1344,7 +1338,7 @@ export class ChatComponent {
         id: `du-${sequenceId}`,
         sourceElementId: sequenceId,
         sourceElementKind: 'sequence',
-        ruleString: this.requirePragmaticsRules(),
+        ruleString: this.pragmaticsRules(),
         discourse: group.discourse,
         semDiscourseMapping: group.semDiscourseMapping,
       });

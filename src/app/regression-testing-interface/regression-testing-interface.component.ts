@@ -40,7 +40,8 @@ import {
   check,
   VampireSessionSummary,
   sameReasoningUpdate,
-  MISSING_PRAGMATICS_MESSAGE,
+  POST_PROCESSING_SKIPPED_NOTICE,
+  hasPostProcessingRules,
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
@@ -2496,10 +2497,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.loading = false;
           return;
         }
-        if (failures.length || degradations.length) {
+        const skipped = hasPostProcessingRules(this.session.pragmaticsRulesText)
+          ? '' : ` ${POST_PROCESSING_SKIPPED_NOTICE}`;
+        if (failures.length || degradations.length || skipped) {
           this.displayMessage(
             `Built ${bundleCount} reasoning bundle(s); ${failures.length} branch(es) failed, `
-            + `${degradations.length} lost their anaphora binding.`, "blue");
+            + `${degradations.length} not fully resolved.${skipped}`, "blue");
         }
         this.submitVampireRequest(
           inference_items,
@@ -3058,13 +3061,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         failures: [`${pairId}: no merged sequence for this branch.`], degradations: [],
       });
     }
-    if (!this.session.pragmaticsRulesText) {
-      return of({
-        scopeId: pairId, assignments: [],
-        failures: [`${pairId}: ${MISSING_PRAGMATICS_MESSAGE}`],
-        degradations: [],
-      });
-    }
     return this.reasoningPipeline.prepareReasoningChecks({
       scopeId: pairId,
       scope: {
@@ -3079,7 +3075,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       hypothesisAsts: branch.hypothesisAsts,
       typed,
       prune: pruning,
-      ruleString: this.session.pragmaticsRulesText,
+      ruleString: this.session.pragmaticsRulesText ?? '',
     }).pipe(
       catchError(error => {
         const reason = `${pairId}: ${error?.message ?? String(error)}`;

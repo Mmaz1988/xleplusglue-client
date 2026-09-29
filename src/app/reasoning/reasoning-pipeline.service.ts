@@ -8,7 +8,7 @@ import {
   REASONING_CHECK_NAMES,
   ReasoningCheck,
   ReasoningCheckName,
-  MISSING_PRAGMATICS_MESSAGE,
+  hasPostProcessingRules,
 } from '../models/models';
 
 /** One post-processing rule branch: the tier-B interconnected structure the rules
@@ -59,7 +59,9 @@ export interface ReasoningPairRequest {
   typed: boolean;
   /** Reason over the first candidate only. */
   prune?: boolean;
-  /** The post-processing (pragmatics) rules of the loaded LiGER rule set. */
+  /** The post-processing (pragmatics) rules of the loaded LiGER rule set. Without valid
+   *  rules post-processing is skipped: the checks are still built over the merged DRS, and
+   *  every pronoun is read as a new referent (reported per branch in `degradations`). */
   ruleString: string;
 }
 
@@ -133,15 +135,6 @@ export interface MappingWithStructure {
  * preserved from the chat implementation, including which steps run concurrently --
  * see the comments on the individual stages.
  */
-/** Without post-processing rules no SYNSEM link and no anaphora binding can be produced;
- *  that has to fail loudly, not come back as "nothing bound". */
-function requirePragmaticsRules(ruleString: string | null | undefined): string {
-  if (!ruleString) {
-    throw new Error(MISSING_PRAGMATICS_MESSAGE);
-  }
-  return ruleString;
-}
-
 @Injectable({ providedIn: 'root' })
 export class ReasoningPipelineService {
   constructor(private dataService: DataService) {}
@@ -290,7 +283,7 @@ export class ReasoningPipelineService {
       request.scopeId,
       request.merged,
       request.sequenceStructure,
-      requirePragmaticsRules(request.ruleString),
+      request.ruleString ?? '',
       !!request.prune,
     );
   }
@@ -311,7 +304,7 @@ export class ReasoningPipelineService {
         { scopeId });
     }
 
-    const ruleString = requirePragmaticsRules(request.ruleString);
+    const ruleString = request.ruleString ?? '';
 
     // The check ASTs are fixed for this pair and never vary across the PCDRS mappings
     // below, so they are fetched exactly once and reused by every mapping. This call
@@ -371,6 +364,14 @@ export class ReasoningPipelineService {
               const degradations = Object.entries(result.results ?? {})
                 .filter(([, item]) => !!item?.degraded)
                 .map(([name, item]) => `${mapping.id} (${name}): ${item.degraded}`);
+              // A pronoun the mapping did not bind is read as a new referent. Named once per
+              // branch, from the whole sequence: the other items name the same pronouns, but
+              // each numbers its referents on its own.
+              const unresolved = result.results?.['sequence']?.unresolvedPronouns ?? [];
+              if (unresolved.length) {
+                degradations.push(`${mapping.id}: unresolved pronoun(s) ${unresolved.join(', ')}`
+                  + ' read as new referent(s)');
+              }
               for (const name of REASONING_CHECK_NAMES) {
                 const tptp = result.results?.[name]?.tptp;
                 if (tptp) {
@@ -440,6 +441,13 @@ export class ReasoningPipelineService {
     structure: any,
     ruleString: string,
   ): Observable<RuleBranch[]> {
+    // No rules to run: post-processing is skipped, not failed. The merged union is the one
+    // branch, exactly what the no-annotation fallback below yields, so every pronoun stays
+    // unbound and GSWB reads each one as a new referent (and reports it).
+    if (!hasPostProcessingRules(ruleString)) {
+      console.info('[Reasoning] no post-processing rules; reasoning over the unlinked union');
+      return of([{ structure }]);
+    }
     return this.dataService.ligerApplyRulesToStructure({
       content: JSON.stringify(structure),
       format: 'json',

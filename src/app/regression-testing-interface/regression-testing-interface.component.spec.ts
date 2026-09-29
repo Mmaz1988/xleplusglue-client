@@ -10,7 +10,6 @@ import { ReasoningPipelineService } from '../reasoning/reasoning-pipeline.servic
 import {
   createRegressionAnalysisDocument,
   createRegressionTestingSession,
-  MISSING_PRAGMATICS_MESSAGE,
 } from '../models/models';
 import { discourseBranchesForDisplay, reasoningAssignmentId } from '../analysis-model';
 import { LigerFileSource } from '../liger-workspace/liger-file-source.service';
@@ -759,16 +758,18 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(document.inputs.pragmaticsRules).toBe(texts.pragmatics);
     });
 
-    it('fails an NLI branch with a reason when no post-processing rules are loaded', done => {
+    it('still prepares an NLI branch when no post-processing rules are loaded', done => {
       component.session.pragmaticsRulesText = '';
+      reasoningPipeline.prepareReasoningChecks.and.returnValue(
+        of({ scopeId: 'pxq-n1-1', assignments: [], failures: [], degradations: [] }) as any);
       (component as any).prepareBranchChecks(
         { itemId: 'n1', updateId: 'u1' },
         { sequenceStructure: { constraints: [] }, merged: { graph: {} } },
         0, false, false,
       ).subscribe((pair: any) => {
-        expect(pair.assignments).toEqual([]);
-        expect(pair.failures[0]).toContain(MISSING_PRAGMATICS_MESSAGE);
-        expect(reasoningPipeline.prepareReasoningChecks).not.toHaveBeenCalled();
+        expect(pair.failures).toEqual([]);
+        expect(reasoningPipeline.prepareReasoningChecks).toHaveBeenCalledWith(
+          jasmine.objectContaining({ ruleString: '' }));
         done();
       });
     });
