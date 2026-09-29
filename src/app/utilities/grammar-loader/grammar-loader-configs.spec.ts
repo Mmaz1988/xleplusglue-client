@@ -4,7 +4,7 @@ import { GrammarLoaderComponent } from './grammar-loader.component';
 import { sameFile, serverRelative } from '../../liger-workspace/liger-paths';
 import { LigerFileSource } from '../../liger-workspace/liger-file-source.service';
 import { LigerWorkspaceService } from '../../liger-workspace/liger-workspace.service';
-import { RULE_SET, fileSourceSpy } from '../../liger-workspace/liger-workspace.testing';
+import { FILES, RULE_SET, TREE, fileSourceSpy } from '../../liger-workspace/liger-workspace.testing';
 
 /**
  * Loading a grammar opens its LiGER config, unless one was picked by hand or a session's is
@@ -66,17 +66,33 @@ describe('GrammarLoaderComponent, the grammar\'s LiGER config', () => {
     expect(workspace.open).not.toHaveBeenCalled();
   });
 
-  it('marks the grammar\'s config as from the grammar when it is already open, keeping edits', () => {
+  it('reads the grammar\'s config from disk again when it is already open, keeping edits', () => {
     files.listConfigsForGrammar.and.returnValue(of([RULE_SET.source]));
     workspace.ensureOpen(RULE_SET.source);
     workspace.edit('/res/rules/a.liger', 'A EDITED');
+    workspace.setIncluded('/res/axioms/x.p', false);
     (workspace.open as jasmine.Spy).calls.reset();
 
     loader.openGrammarConfig('./grammars/dev/g/g.lfg');
 
-    expect(workspace.open).not.toHaveBeenCalled();
+    expect(workspace.open).toHaveBeenCalledWith(RULE_SET.source, { '/res/rules/a.liger': 'A EDITED' },
+      'grammar', ['/res/axioms/x.p']);
     expect(workspace.state.origin).toBe('grammar');
     expect(workspace.hasEdits).toBeTrue();
+    expect(workspace.isIncluded('/res/axioms/x.p')).toBeFalse();
+  });
+
+  it('shows a file added to the config when the grammar is loaded again', () => {
+    files.listConfigsForGrammar.and.returnValue(of([RULE_SET.source]));
+    workspace.ensureOpen(RULE_SET.source);
+    const withNewFile = JSON.parse(JSON.stringify(TREE));
+    withNewFile.sections[1].files.push({ path: '/res/rules/q.liger', name: 'q.liger', inScope: true, count: 1 });
+    files.listConfig.and.returnValue(of(withNewFile));
+    files.read.and.callFake((path: string) => of(path === '/res/rules/q.liger' ? 'Q RULES\n' : FILES[path]));
+
+    loader.openGrammarConfig('./grammars/dev/g/g.lfg');
+
+    expect(workspace.state.documents['/res/rules/q.liger']?.loadedText).toBe('Q RULES\n');
   });
 
   it('opens nothing when the grammar has no config, or several, and says so', () => {

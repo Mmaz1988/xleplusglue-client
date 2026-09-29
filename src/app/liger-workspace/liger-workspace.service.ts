@@ -214,6 +214,37 @@ export class LigerWorkspaceService {
     return texts;
   }
 
+  /** Reads the open rule set from disk again without losing work: the config's file list
+   *  and every unedited file come from disk, the in-memory edits of files it still lists and
+   *  the files left out of runs stay. What loading a grammar does when its config is open
+   *  already, so a changed config shows. */
+  refresh(origin: RuleSetOrigin = this.state.origin ?? 'selected'): void {
+    const { ruleSet, documents, excluded } = this.state;
+    if (!ruleSet) {
+      return;
+    }
+    const edits: Record<string, string> = {};
+    for (const doc of Object.values(documents)) {
+      if (isEdited(doc)) {
+        edits[doc.path] = doc.currentText!;
+      }
+    }
+    this.open(ruleSet.source, Object.keys(edits).length ? edits : undefined, origin, excluded);
+  }
+
+  /** Opens the rule set afresh from disk, as a new session starts: no edits, every file in
+   *  runs, and no longer counted as picked by hand, so the next grammar opens its own. A
+   *  rule set still being opened (a previous session's) is opened afresh instead. Returns
+   *  whether anything is being opened. */
+  reset(): boolean {
+    const path = this.state.loading ?? this.state.ruleSet?.source;
+    if (!path) {
+      return false;
+    }
+    this.open(path, undefined, 'default');
+    return true;
+  }
+
   /** Opens the current rule set again, picking up files changed on disk. Drops edits; keeps
    *  the files left out of runs. */
   reload(): void {

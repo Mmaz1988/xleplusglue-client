@@ -686,6 +686,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       (component as any).hydrateSession(legacy);
       expect(workspace.state.error).toContain('./liger_resources');
 
+      ligerFiles.loadRuleSet.and.returnValue(of(RULE_SET));
       (component as any).initializeBlankSession();
 
       expect(workspace.state.error).toBeNull();
@@ -693,6 +694,39 @@ describe('RegressionTestingInterfaceComponent', () => {
       // The rule set that is open is the new session's.
       expect(component.session.rulesFilename).toBe(RULE_SET.source);
       expect(component.session.rulesText).toBe('SERVER SEMANTICS');
+    });
+
+    it('starts a new session on the rule set as it is on disk, not the last session\'s', () => {
+      const { files, texts } = savedRuleSet();
+      const snapshot = storedSession(texts, files);
+      snapshot.ruleSetExcluded = ['/res/axioms/x.p'];
+      (component as any).hydrateSession(snapshot);
+      expect(workspace.hasEdits).toBeTrue();
+      expect(workspace.isIncluded('/res/axioms/x.p')).toBeFalse();
+
+      (component as any).initializeBlankSession();
+
+      expect(workspace.hasEdits).toBeFalse();
+      expect(workspace.state.excluded).toEqual([]);
+      expect(workspace.yieldsToGrammar).toBeTrue();
+      expect(component.session.pragmaticsRulesText).toBe('SERVER PRAGMATICS');
+      expect(component.session.ruleSetExcluded).toEqual([]);
+    });
+
+    it('holds runs, and saves nothing, while a new session\'s rule set reopens', () => {
+      const tree = new Subject<any>();
+      ligerFiles.listConfig.and.returnValue(tree);
+      const before = saves.length;
+
+      (component as any).initializeBlankSession();
+      expect(component.runLocked).toBeTrue();
+
+      tree.next(TREE);
+      tree.complete();
+      expect(component.runLocked).toBeFalse();
+      expect(component.session.rulesText).toBe('SERVER SEMANTICS');
+      expect(component.unsavedInputChanges).toEqual([]);
+      expect(saves.length).toBe(before);
     });
 
     it('stores how its rule set was chosen, and restores it that way', () => {

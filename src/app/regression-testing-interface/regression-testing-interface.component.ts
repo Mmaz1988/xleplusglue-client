@@ -440,6 +440,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  into the session until it has settled, or a file's disk text could be autosaved over
    *  the stored one. */
   private ruleSetRestorePath: string | null = null;
+  /** Set while a new session's rule set is being opened afresh from disk: runs wait, and its
+   *  arrival is the blank session's starting point, not an unsaved change. */
+  private blankRuleSetPending = false;
   /** The workspace output last seen, so only a real change is copied into the session:
    *  reading a lexicon, say, changes the workspace's state but not what a run sends. */
   private lastWorkspaceOutputKey: string | null = null;
@@ -449,7 +452,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private lastSavedInputs: SessionInputTexts | null = null;
 
   get isRestoringRuleSet(): boolean {
-    return this.ruleSetRestorePath !== null;
+    return this.ruleSetRestorePath !== null || this.blankRuleSetPending;
   }
 
   /** Which inputs differ from the last save, in words; empty when none do. */
@@ -514,6 +517,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private onWorkspaceChange(): void {
     if (this.isHydratingSession) return;
+    if (this.blankRuleSetPending) {
+      if (this.ligerWorkspace.state.loading) return;
+      this.blankRuleSetPending = false;
+      this.adoptBlankRuleSet();
+      // The reopened rule set is where the blank session starts, not a change to save.
+      this.lastSavedSessionFingerprint = this.buildSessionFingerprint(this.buildSessionSnapshot());
+      this.lastSavedInputs = this.currentInputTexts();
+      return;
+    }
     if (this.ruleSetRestorePath !== null) {
       this.finishRuleSetRestore();
       return;
@@ -539,8 +551,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.ruleSetExcluded = output.excluded;
   }
 
+  /** Takes the freshly opened rule set into a blank session. */
+  private adoptBlankRuleSet(): void {
+    const output = this.workspaceOutput();
+    this.lastWorkspaceOutputKey = output?.key ?? null;
+    if (output) {
+      this.adoptWorkspaceOutput(output);
+    } else {
+      this.ruleSetNotice = NO_RULE_SET_NOTICE;
+    }
+  }
+
   /** Reopens the restored session's rule set with its stored per-file text. */
   private restoreRuleSet(): void {
+    this.blankRuleSetPending = false;  // a restored session's rule set replaces a blank one's
     const path = this.session.rulesFilename;
     this.ruleSetNotice = '';
     if (!path) {
@@ -1074,17 +1098,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.parsingSummary = '';
     this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     this.testfile.updateContent('');
-    // A new session runs on the rule set that is open, as it is. A previous session's failed
-    // reopen is not this session's business any more.
+    // A new session runs on the open rule set as it is on disk: a previous session's stored
+    // file text and left-out files, and its failed reopen, are not this session's business.
     this.ruleSetRestorePath = null;
     this.ruleSetNotice = '';
     this.ligerWorkspace.clearError();
-    const output = this.workspaceOutput();
-    this.lastWorkspaceOutputKey = output?.key ?? null;
-    if (output) {
-      this.adoptWorkspaceOutput(output);
-    } else {
-      this.ruleSetNotice = NO_RULE_SET_NOTICE;
+    this.ligerWorkspace.reset();
+    this.blankRuleSetPending = !!this.ligerWorkspace.state.loading;
+    if (!this.blankRuleSetPending) {
+      this.adoptBlankRuleSet();
     }
     this.writeSnapshot = this.captureParsedRegressionSnapshot();
     this.appendSnapshot = null;

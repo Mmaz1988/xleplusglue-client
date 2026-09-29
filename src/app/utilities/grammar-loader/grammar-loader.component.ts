@@ -142,7 +142,8 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   private openConfig(path: string): void {
     const state = this.workspace.state;
     if (!state.loading && sameFile(state.ruleSet?.source, path) && !sameFile(state.openFailed, path)) {
-      this.workspace.markOrigin('grammar');  // already open: keep it, edits included
+      // Already open: read it from disk again, so a changed config shows, edits included.
+      this.workspace.refresh('grammar');
       return;
     }
     if (this.workspace.hasEdits && typeof window !== 'undefined'

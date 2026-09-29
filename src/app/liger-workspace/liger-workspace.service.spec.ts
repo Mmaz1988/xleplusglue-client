@@ -211,6 +211,33 @@ describe('LigerWorkspaceService', () => {
     });
   });
 
+  describe('refresh and reset', () => {
+    it('refresh re-reads from disk, keeping edits and left-out files', () => {
+      workspace.edit('/res/rules/a.liger', 'A EDITED');
+      workspace.setIncluded('/res/axioms/x.p', false);
+      files.read.and.callFake((path: string) => of(path === '/res/rules/b.liger' ? 'B ON DISK NOW\n' : FILES[path]));
+
+      workspace.refresh('grammar');
+
+      expect(workspace.state.documents['/res/rules/a.liger'].currentText).toBe('A EDITED');
+      expect(workspace.state.documents['/res/rules/b.liger'].loadedText).toBe('B ON DISK NOW\n');
+      expect(workspace.state.documents['/res/rules/b.liger'].currentText).toBe('B ON DISK NOW\n');
+      expect(workspace.state.excluded).toEqual(['/res/axioms/x.p']);
+      expect(workspace.state.origin).toBe('grammar');
+    });
+
+    it('reset reopens from disk with no edits, every file in, and yields to a grammar', () => {
+      workspace.open(RULE_SET.source, { '/res/rules/a.liger': 'A SAVED' }, 'selected', ['/res/axioms/x.p']);
+
+      expect(workspace.reset()).toBeTrue();
+
+      expect(workspace.hasEdits).toBeFalse();
+      expect(workspace.state.excluded).toEqual([]);
+      expect(workspace.state.origin).toBe('default');
+      expect(workspace.yieldsToGrammar).toBeTrue();
+    });
+  });
+
   it('does not reopen what another view already opened', () => {
     workspace.ensureOpen('./other.liger.yaml');
 
