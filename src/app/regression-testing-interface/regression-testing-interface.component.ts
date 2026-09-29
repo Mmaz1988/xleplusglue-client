@@ -66,7 +66,7 @@ import {
 } from '../analysis-model';
 import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
 import { AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
-import { DocumentBuilderService, SequenceMergePreviousContext } from '../document-builder/document-builder.service';
+import { DocumentBuilderService, SequenceMergePreviousContext, suppliableStructures } from '../document-builder/document-builder.service';
 import { LigerWorkspaceService, RuleSetOrigin } from '../liger-workspace/liger-workspace.service';
 
 /** What a run sends and a session stores: the testsuite, and the rule set's three texts. */
@@ -2598,13 +2598,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return this.registerBatchParsedSentence(document, sentenceId, gswbOutputs, useDisambiguated, ruleString, logicType).pipe(
       map(registered => {
         if (!registered) return [];
-        return registered.semantics.map(semantic => ({
+        return registered.map(({ syntax, semantic }) => ({
           element: {
             id: sentenceId,
             text: this.sentenceMap[sentenceId] ?? '',
-            syntax: [registered.syntax],
+            syntax: [syntax],
             semantics: [semantic],
-            synSemMapping: { [registered.syntax.synId]: [semantic.semId] },
+            synSemMapping: { [syntax.synId]: [semantic.semId] },
           },
           semantic,
           sentenceIdsSoFar: [sentenceId],
@@ -2620,16 +2620,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     );
   }
 
-  /** The seed sentence's own syntax, sourced from a bare one-sentence `ligerSequence`
-   *  call -- mirroring chat's turn 1 (`chat.component.ts`'s own comment on why: keeps
-   *  LiGER's solution-key numbering consistent with what a later rebase fold expects) --
-   *  rather than `session.lastAnnotations[sentenceId].structureJson`. Confirmed live and
-   *  against the LiGER source (2026-08-21) that the batch-parse endpoint
-   *  (`/apply_rules_to_batch`, `LigerController.applyRulesToTestsuiteNew`) unconditionally
-   *  builds its `LigerRuleAnnotation` via the 6-arg constructor, which never sets
-   *  `structureJson` and always leaves `structureVariants` empty -- true for every
-   *  sentence, ambiguous or not, not just an edge case. Only `.graph` (display-only,
-   *  a `LigerWebGraph`) is populated from that endpoint. */
+  /** Fallback only: the seed sentence's syntax from a one-sentence `ligerSequence` call,
+   *  i.e. a parse. Used when the batch parse has no suppliable structure for one of the
+   *  selected readings (see `batchSyntaxFor`) -- since Stage 4 it normally has one per
+   *  analysis. */
   private seedSentenceSyntax(
     sentenceId: string, ruleString: string, logicType: 'fof' | 'tff'
   ): Observable<SyntacticAnalysis> {
@@ -2655,12 +2649,31 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     );
   }
 
-  /** Registers one sentence's independent batch-parse reading(s) into the document,
-   *  filtered to this run's disambiguation selection (matching every other reader of
-   *  `selectedSolutions`), paired with a freshly-fetched syntax (`seedSentenceSyntax`).
-   *  The semantic content itself is NOT re-derived -- only the syntax needs a real
-   *  `ligerSequence`-consistent structure; the selected GSWB solution's own reading is
-   *  used verbatim, so there is no reading to match back against anything. */
+  /** Each selected reading's syntax from the batch parse: the analysis the reading was
+   *  derived from (GSWB stamps its proof's `solutionKey` onto it), with that analysis's
+   *  structure. Null if any reading's analysis has no suppliable structure -- then the
+   *  sentence is parsed once instead (`seedSentenceSyntax`). */
+  private batchSyntaxFor(
+    sentenceId: string, solutions: GswbSolution[],
+  ): Map<GswbSolution, SyntacticAnalysis> | null {
+    const analyses = this.session.lastAnnotations?.[sentenceId]?.solutions ?? [];
+    const syntaxByReading = new Map<GswbSolution, SyntacticAnalysis>();
+    for (const solution of solutions) {
+      const key = solution.solutionKey || solution.proofId;
+      const analysis = analyses.find(candidate => candidate.solutionKey === key);
+      const structures = suppliableStructures(analysis ? [analysis] : undefined);
+      if (!key || !analysis || !structures) return null;
+      syntaxByReading.set(solution, { synId: key, structure: structures[0], graph: analysis.graph });
+    }
+    return syntaxByReading;
+  }
+
+  /** Registers one sentence's batch-parse reading(s) into the document, filtered to this
+   *  run's disambiguation selection (matching every other reader of `selectedSolutions`).
+   *  Nothing is parsed or derived again: each reading comes with the syntax of the
+   *  analysis it was derived from (`batchSyntaxFor`), so a later fold supplies exactly
+   *  that analysis's structure for it. This used to be one freshly parsed syntax
+   *  (`seedSentenceSyntax`) -- the first analysis -- for every reading. */
   private registerBatchParsedSentence(
     document: XlePlusGlueDocument,
     sentenceId: string,
@@ -2668,35 +2681,48 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     useDisambiguated: boolean,
     ruleString: string,
     logicType: 'fof' | 'tff',
-  ): Observable<{ syntax: SyntacticAnalysis; semantics: SemanticAnalysis[] } | null> {
+  ): Observable<{ syntax: SyntacticAnalysis; semantic: SemanticAnalysis }[] | null> {
     const solutions = this.selectedSolutions(sentenceId, gswbOutputs, useDisambiguated);
     if (!solutions.length) return of(null);
 
-    return this.seedSentenceSyntax(sentenceId, ruleString, logicType).pipe(
-      map(syntax => {
-        const semantics: SemanticAnalysis[] = solutions.map(solution => ({
-          ...(solution.semanticAnalysis ?? {
-            syntacticOrigin: syntax.synId,
-            semId: solution.id,
-            semString: solution.semantic || solution.solution || '',
-            graph: solution.graph,
-            semType: 'lfgxdrt',
-          }),
-          // Must resolve to a synId registered under this SAME sentence entry -- see
-          // SequenceMergePair.currentSyntax's doc on why the fallback above is not trusted
-          // as-is even when a server-provided semanticAnalysis is present.
-          syntacticOrigin: syntax.synId,
-        }));
-        const synSemMapping: SynSemMapping = { [syntax.synId]: semantics.map(semantic => semantic.semId) };
+    const fromBatch = this.batchSyntaxFor(sentenceId, solutions);
+    const syntaxOf$: Observable<(solution: GswbSolution) => SyntacticAnalysis> = fromBatch
+      ? of(solution => fromBatch.get(solution)!)
+      : this.seedSentenceSyntax(sentenceId, ruleString, logicType).pipe(map(syntax => () => syntax));
 
+    return syntaxOf$.pipe(
+      map(syntaxOf => {
+        const entries = solutions.map(solution => {
+          const syntax = syntaxOf(solution);
+          const semantic: SemanticAnalysis = {
+            ...(solution.semanticAnalysis ?? {
+              syntacticOrigin: syntax.synId,
+              semId: solution.id,
+              semString: solution.semantic || solution.solution || '',
+              graph: solution.graph,
+              semType: 'lfgxdrt',
+            }),
+            // Must resolve to a synId registered under this SAME sentence entry -- see
+            // SequenceMergePair.currentSyntax's doc on why the fallback above is not trusted
+            // as-is even when a server-provided semanticAnalysis is present.
+            syntacticOrigin: syntax.synId,
+          };
+          return { syntax, semantic };
+        });
+
+        const syntaxById = new Map(entries.map(entry => [entry.syntax.synId, entry.syntax]));
+        const synSemMapping: SynSemMapping = {};
+        entries.forEach(({ syntax, semantic }) => {
+          (synSemMapping[syntax.synId] ??= []).push(semantic.semId);
+        });
         this.documentBuilder.upsertSentenceAnalyses(document, [{
           id: sentenceId,
           text: this.sentenceMap[sentenceId] ?? '',
-          syntax: [syntax],
-          semantics,
+          syntax: [...syntaxById.values()],
+          semantics: entries.map(entry => entry.semantic),
           synSemMapping,
         }]);
-        return { syntax, semantics };
+        return entries;
       })
     );
   }
@@ -2729,7 +2755,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       knownSentences: document.sentences,
       resolveDrs,
       rebase: {
-        newSentence: { id: next.sentenceId, text: newSentenceText },
+        // Its batch structures, one per analysis: LiGER parses it no more (one parse per
+        // branch before). All analyses, as a parse would give them; the disambiguation
+        // selection filters the readings afterwards, as before.
+        newSentence: {
+          id: next.sentenceId,
+          text: newSentenceText,
+          structures: suppliableStructures(this.session.lastAnnotations?.[next.sentenceId]?.solutions),
+        },
         ruleString,
         logicType,
         gswbPreferences,

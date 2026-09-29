@@ -207,16 +207,21 @@ describe('RegressionTestingInterfaceComponent', () => {
   /** Wires the three GSWB/LiGER endpoints DocumentBuilderService.mergeSequence's rebase
    *  path calls, one sentence at a time, keyed off the request content so the same spies
    *  serve both fold steps (S1+S2, then (S1+S2)+S3) correctly. */
-  const mockChainEndpoints = (dataServiceSpy: jasmine.SpyObj<DataService>) => {
+  const mockChainEndpoints = (dataServiceSpy: jasmine.SpyObj<DataService>, batchStructures = true) => {
     component.session.gswbPreferences.outputstyle = 5;
     component.sentenceMap = { S1: 'one', S2: 'two', S3: 'three' };
+    // As /apply_rules_to_batch returns them: one solution per analysis, keyed, with its
+    // rule-applied structure. Without structures the chain falls back to parsing.
+    const batchAnnotation = (sid: string, key: string) => ({
+      sentence: sid,
+      solutions: [{ solutionKey: key, graph: null, meaningConstructors: `mc-${sid}`,
+                    ...(batchStructures ? { structureJson: { id: `st-${sid}` } } : {}) }],
+    });
     component.session.lastAnnotations = {
-      S1: { structureJson: { id: 'st-1' } as any, graph: null, appliedRules: [] },
-      S2: { structureJson: { id: 'st-2' } as any, graph: null, appliedRules: [] },
-      S3: { structureJson: { id: 'st-3' } as any, graph: null, appliedRules: [] },
+      S1: batchAnnotation('S1', 'B1'), S2: batchAnnotation('S2', 'B2'), S3: batchAnnotation('S3', 'B3'),
     } as any;
     component.session.lastGswbOutputs = {
-      S1: { solutions: [{ id: 'S1-sol-1', solution: 'x', semantic: 'A', graph: { id: 'S1-graph' } }], log: '', derivation: null, discriminants: [] },
+      S1: { solutions: [{ id: 'S1-sol-1', solutionKey: 'B1', solution: 'x', semantic: 'A', graph: { id: 'S1-graph' } }], log: '', derivation: null, discriminants: [] },
     } as any;
 
     dataServiceSpy.ligerSequence.and.callFake((request: any) => {
@@ -268,27 +273,36 @@ describe('RegressionTestingInterfaceComponent', () => {
     });
   };
 
-  it('folds a new sentence by supplying only the already-parsed prior structures, leaving it to be freshly rule-applied', done => {
+  it('parses nothing again: the seed and every fold supply the batch structures', done => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
 
     (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
       .subscribe(() => {
-        // The seed (S1) gets its own one-sentence ligerSequence call first -- batch parse
-        // never populates session.lastAnnotations[...].structureJson, so the seed's syntax
-        // is sourced the same way chat's turn 1 is, not from the batch annotation.
-        const seedCall = dataServiceSpy.ligerSequence.calls.all()
-          .find(call => (call.args[0] as any).sentenceIds.join(',') === 'S1')!.args[0] as any;
-        expect(seedCall.parsedSentences).toBeUndefined();
-        // First fold (S2 onto seed S1): only S1 is supplied (from that seed call's
-        // response), S2 is the new sentence.
-        const s2Fold = dataServiceSpy.ligerSequence.calls.all()
-          .find(call => (call.args[0] as any).sentenceIds.join(',') === 'S1,S2')!.args[0] as any;
+        const calls = dataServiceSpy.ligerSequence.calls.all().map(call => call.args[0] as any);
+        // No one-sentence seed call: S1's syntax is its batch analysis (B1), per reading.
+        expect(calls.some(call => call.sentenceIds.join(',') === 'S1')).toBeFalse();
+        const seed = component.session.analysisDocuments['n1'].sentences.find(sentence => sentence.id === 'S1')!;
+        expect(seed.syntax.map(syntax => syntax.synId)).toContain('B1');
+        // Every sentence of every fold is supplied -- the new one too, from the batch.
+        const s2Fold = calls.find(call => call.sentenceIds.join(',') === 'S1,S2')!;
+        expect(s2Fold.parsedSentences.map((group: any[]) => group[0].id)).toEqual(['st-S1', 'st-S2']);
+        const s3Fold = calls.find(call => call.sentenceIds.join(',') === 'S1,S2,S3')!;
+        expect(s3Fold.parsedSentences.map((group: any[]) => group[0].id)).toEqual(['st-S1', 'S2-rebased-struct', 'st-S3']);
+        done();
+      });
+  });
+
+  it('parses a sentence whose batch analyses have no structure, as before', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    mockChainEndpoints(dataServiceSpy, false);
+
+    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+      .subscribe(() => {
+        const calls = dataServiceSpy.ligerSequence.calls.all().map(call => call.args[0] as any);
+        expect(calls.find(call => call.sentenceIds.join(',') === 'S1')!.parsedSentences).toBeUndefined();
+        const s2Fold = calls.find(call => call.sentenceIds.join(',') === 'S1,S2')!;
         expect(s2Fold.parsedSentences.map((group: any[]) => group[0].id)).toEqual(['merged-S1']);
-        // Second fold (S3 onto S1+S2): both priors supplied, S3 is the new sentence.
-        const s3Fold = dataServiceSpy.ligerSequence.calls.all()
-          .find(call => (call.args[0] as any).sentenceIds.join(',') === 'S1,S2,S3')!.args[0] as any;
-        expect(s3Fold.parsedSentences.map((group: any[]) => group[0].id)).toEqual(['merged-S1', 'S2-rebased-struct']);
         done();
       });
   });

@@ -19,6 +19,22 @@ import {
   XlePlusGlueElementRef,
 } from '../models/models';
 
+/**
+ * A sentence's structures as the sequence endpoint can take them instead of parsing it:
+ * one per analysis, from `/apply_rules_xle` or `/apply_rules_to_batch`, both already
+ * rule-applied. Undefined -- parse instead -- unless every analysis has its structure and a
+ * single rule branch: only the first branch carries SYN-IDs, so the other branches of a
+ * branching rule set could not be supplied faithfully.
+ */
+export function suppliableStructures(
+  solutions: LigerSolutionAnnotation[] | undefined | null,
+): LigerStructure[] | undefined {
+  if (!solutions?.length) return undefined;
+  const complete = solutions.every(solution =>
+    !!solution?.structureJson && (solution.structureVariants?.length ?? 0) <= 1);
+  return complete ? solutions.map(solution => solution.structureJson as LigerStructure) : undefined;
+}
+
 /** One of the new sentence's own candidate readings -- already independently parsed and
  *  proven by the caller (a sentence's own reading is never derived inline by this
  *  service; see class doc), and already resolved to which sentence/syntax variant it
@@ -39,23 +55,20 @@ export interface SequenceMergePreviousContext {
   element: SentenceAnalysis | SequenceAnalysis;
 }
 
-/** Chat's variant: chat never computes the new sentence's own reading through a
- *  sequence-aware step the way glue-vis's `LigerVisComponent.addSentence()` does (it
- *  only ever independently parses+proves a sentence in isolation, at message-send
- *  time) -- so `mergeSequence` performs that step itself here, once per distinct
- *  previous context, exactly mirroring `addSentence()`/`proofInputsForSequencePart`:
- *  call `ligerSequence` over [prior sentences (supplied, already-parsed) + this new
- *  sentence (deliberately UNSUPPLIED)], so LiGER parses and rule-applies the new
- *  sentence fresh as part of the sequence, producing a `sequenceParts[]` entry whose
- *  meaning constructors are already rebased into the merged SYN-ID range. Proving
- *  those via a scoped `/deduce` (mirroring chat's own turn-1
- *  `calculateSequencePartSemantics`) is what makes the later `/merge_sequence_semantics`
- *  call's lack of its own rebasing safe -- the same precondition glue-vis relies on.
- *  Supplying every sentence's structure instead (as the non-rebase path does) makes
- *  LiGER skip rule application for the whole call and reuse the new sentence's own
- *  unrelated solution-key, which is what silently broke chat's pronoun resolution
- *  (confirmed live via misc/current/chat-document-pronoun-new.json: zero
- *  anaphoraRelations on every assignment).
+/** Chat's and regression's variant: the new sentence's reading is derived inside the
+ *  sequence, once per distinct previous context, mirroring `addSentence()`/
+ *  `proofInputsForSequencePart`: `ligerSequence` over [prior sentences + this new sentence]
+ *  yields a `sequenceParts[]` entry whose meaning constructors are already rebased into the
+ *  merged SYN-ID range, and proving those via a scoped `/deduce` is what makes the later
+ *  `/merge_sequence_semantics` call's lack of its own rebasing safe.
+ *
+ *  Every sentence is supplied as already parsed when its structures are known
+ *  (`newSentence.structures`): the new one too, so it is not parsed again for every branch.
+ *  That is equivalent to letting LiGER parse it -- since liger 4ec828b (SYN-IDs of a
+ *  supplied structure are kept) and 614b9bd (analyses are keyed S0.. across the call either
+ *  way) the output is identical, keys and SOLUTION-KEY provenance included. It was not in
+ *  August: a supplied structure kept its standalone key and positional numbering, which is
+ *  what broke chat's pronoun resolution then (client 78847cb).
  *
  *  Whatever `/deduce` derives simply IS the new sentence's reading set for that
  *  context -- there is no earlier candidate to match it back to, so `request.current`
@@ -66,7 +79,9 @@ export interface SequenceMergePreviousContext {
  *  exactly once, at the very end of the whole turn
  *  (ReasoningPipelineService.prepareReasoningChecks's own `prune`). */
 export interface SequenceMergeRebase {
-  newSentence: { id: string; text: string };
+  /** `structures`: the new sentence's already-parsed, rule-applied structures, one per
+   *  analysis (see `suppliableStructures`). Absent: LiGER parses the sentence. */
+  newSentence: { id: string; text: string; structures?: LigerStructure[] };
   ruleString?: string;
   logicType?: 'fof' | 'tff';
   gswbPreferences: GswbPreferences;
@@ -501,8 +516,8 @@ export class DocumentBuilderService {
    *  analysis view's `LigerVisComponent.analyzeSentence()`, which also always goes
    *  through `/apply_rules_xle_sequence` rather than the standalone `/apply_rules_xle`).
    *  Non-empty is the append case (`addSentence()`): the prior sentences' structures are
-   *  supplied and the new one deliberately is not, so LiGER parses and rule-applies it
-   *  fresh, positionally numbered into this sequence.
+   *  supplied, and the new one's too when the caller has them (`newSentence.structures`) --
+   *  otherwise LiGER parses it. Either way it is numbered into this sequence.
    *
    *  Turn 1 and turn n used to be two separate implementations of this
    *  (`chat.component.ts`'s `calculateSequencePartSemantics` and this service's own
@@ -553,19 +568,19 @@ export class DocumentBuilderService {
     }
 
     const newSentenceIndex = previousSentences.length;
+    // The new sentence too, when its structures are known: then nothing is parsed again
+    // (see SequenceMergeRebase). Without them LiGER parses it -- the entry is left off, so
+    // parsedSentences is one shorter than sentences.
+    const newStructures = rebase.newSentence.structures?.filter(structure => !!structure) ?? [];
+    if (newStructures.length) {
+      parsedSentences.push(newStructures);
+    }
 
     return this.dataService.ligerSequence({
       sentences: [...previousSentences.map(sentence => sentence.text), rebase.newSentence.text],
       sentenceIds: [...previousSentences.map(sentence => sentence.id), rebase.newSentence.id],
       ruleString: rebase.ruleString,
       logicType: rebase.logicType,
-      // Deliberately no entry for the new sentence -- see SequenceMergeRebase and
-      // commit 78847cb ("Fix chat's pronoun-resolution bug"). Supplying it here would
-      // make GswbController.applyRuleRequestXLESequence's suppliedAllSentences path
-      // reuse its independent parse verbatim (skipping rule application for the WHOLE
-      // call, and keeping whatever solution-key that independent parse had) instead of
-      // letting LiGER parse and rule-apply it fresh, positionally numbered into this
-      // sequence. Omitted entirely when there are no previous sentences.
       parsedSentences: parsedSentences.length ? parsedSentences : undefined,
     }).pipe(
       switchMap(sequence => this.deriveCurrentPart(sequence, rebase, newSentenceIndex)),

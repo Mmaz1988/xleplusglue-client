@@ -518,6 +518,21 @@ describe('ChatComponent', () => {
       } as any;
     });
 
+    it('supplies the structures of its own /apply_rules_xle parse instead of parsing again', () => {
+      const derive = spyOn((component as any).documentBuilder, 'deriveSentenceInSequence').and.returnValue(of([]));
+      const ligerSolutions = [
+        { solutionKey: 'S0', structureJson: { id: 'standalone-S0' }, graph: structure },
+        { solutionKey: 'S1', structureJson: { id: 'standalone-S1' }, graph: structure },
+      ];
+
+      (component as any).prepareLfgxdrtSolutions('a man appeared', ligerSolutions[0], ligerSolutions,
+        [{ id: 'sol-1', semantic: 'P(x)', graph: structure, solutionKey: 'S0' }], false);
+
+      const [previous, rebase] = derive.calls.mostRecent().args as any[];
+      expect(previous).toEqual([]);
+      expect(rebase.newSentence.structures.map((st: any) => st.id)).toEqual(['standalone-S0', 'standalone-S1']);
+    });
+
     /** A first sentence has no premise/hypothesis pair, so nothing is reasoned about --
      *  but a reflexive or pronoun in it still has to be shown as bound or unbound for
      *  that turn, which is what the PCDRS mappings carry. Chat used to skip this

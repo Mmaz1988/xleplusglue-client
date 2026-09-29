@@ -38,6 +38,7 @@ import { AnaphoraRankingService } from '../../reasoning/anaphora-ranking.service
 import {
   DocumentBuilderService,
   SequenceMergePreviousContext,
+  suppliableStructures,
 } from '../../document-builder/document-builder.service';
 
 
@@ -375,15 +376,11 @@ export class ChatComponent {
     // The first sentence follows the analysis workflow. There is no PxQ yet,
     // so do not run NLI rules, PCDRS generation, or anaphora collapse.
     if (this.context.length === 0) {
-      // Turn 1's syntax/semantics are sourced via ligerSequence (a one-sentence sequence),
-      // matching the analysis workflow's LigerVisComponent.analyzeSentence() -- which always
-      // parses through /apply_rules_xle_sequence, never /apply_rules_xle, even for the very
-      // first sentence -- rather than the independent /apply_rules_xle parse
-      // (candidates/syntax above are built from). This keeps LiGER's own solution-key
-      // numbering ("S0", "S1", ...) consistent across the whole conversation -- see the longer
-      // explanation in finishLfgxdrtPreparation() below, where reusing an independently-parsed
-      // structure for a later turn's new sentence was the actual root cause of chat's silent
-      // anaphora-resolution failures.
+      // Turn 1's syntax/semantics come from ligerSequence (a one-sentence sequence), like
+      // every later turn and like the analysis view's analyzeSentence(). The sentence is not
+      // parsed again for it: the structures of the /apply_rules_xle parse above are
+      // supplied, which gives the same output as parsing (keys and SYN-IDs included, since
+      // liger 4ec828b/614b9bd; see DocumentBuilderService.SequenceMergeRebase).
       const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
       // Same shared derivation every later turn uses, with no previous sentences --
       // so turn 1 gets the full syntactic cross product by construction rather than by
@@ -391,7 +388,7 @@ export class ChatComponent {
       // own `calculateSequencePartSemantics`, whose `solutions[0]` discarded every parse
       // but the first (docs/bug_reports/chat_single_syntax_variant_collapse.md).
       this.documentBuilder.deriveSentenceInSequence([], {
-        newSentence: { id: 'sentence-1', text: userMessage },
+        newSentence: { id: 'sentence-1', text: userMessage, structures: suppliableStructures(ligerSolutions) },
         ruleString: this.ruleString,
         logicType: typed ? 'tff' : 'fof',
         gswbPreferences: this.gswbPreferences.gswbPreferences,
@@ -578,7 +575,8 @@ export class ChatComponent {
       knownSentences: this.chatDocument.sentences,
       resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
       rebase: {
-        newSentence: { id: newSentenceId, text: userMessage },
+        // The structures of this turn's /apply_rules_xle parse: not parsed again per context.
+        newSentence: { id: newSentenceId, text: userMessage, structures: suppliableStructures(ligerSolutions) },
         ruleString: this.ruleString,
         logicType: typed ? 'tff' : 'fof',
         gswbPreferences: this.gswbPreferences.gswbPreferences,

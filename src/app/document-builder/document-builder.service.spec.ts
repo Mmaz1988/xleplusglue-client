@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
-import { DocumentBuilderService } from './document-builder.service';
+import { DocumentBuilderService, suppliableStructures } from './document-builder.service';
 import { DataService } from '../data.service';
 import { validateSequenceAnalysis } from '../analysis-model';
 import { GswbSolution, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
@@ -385,7 +385,7 @@ describe('DocumentBuilderService', () => {
 
       const currentSentence = { id: 'sentence-3', text: 'A woman appeared.' };
 
-      it('supplies only the previous sentence\'s structure -- never the new sentence\'s -- so LiGER parses and rule-applies it fresh', () => {
+      it('lets LiGER parse the new sentence when its structures are not given (one entry fewer)', () => {
         dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
         dataServiceMock.gswbDeduce.and.returnValue(of({
           solutions: [derivedSolution('derived-1', 'P(x)')],
@@ -413,6 +413,32 @@ describe('DocumentBuilderService', () => {
         expect(request.parsedSentences.length).toBe(1);
         expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(1);
         expect(dataServiceMock.gswbDeduce.calls.mostRecent().args[0].premises).toBe('mc-current');
+      });
+
+      it('supplies the new sentence\'s structures too when they are given: nothing is parsed again', () => {
+        dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+        dataServiceMock.gswbDeduce.and.returnValue(of({ solutions: [derivedSolution('derived-1', 'P(x)')] }));
+        dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+          of(mergedSolution(request.parentSolutionId)));
+        const newStructures = [{ ...structure, id: 'batch-S7' } as any, { ...structure, id: 'batch-S8' } as any];
+
+        service.mergeSequence({
+          current: [],
+          previousContexts: [previousContext],
+          knownSentences: [previousSentence],
+          resolveDrs: true,
+          rebase: {
+            newSentence: { ...currentSentence, structures: newStructures },
+            ruleString: 'rules',
+            logicType: 'fof',
+            gswbPreferences: {} as any,
+          },
+        }).subscribe();
+
+        const [request] = dataServiceMock.ligerSequence.calls.mostRecent().args;
+        expect(request.sentences).toEqual([previousSentence.text, currentSentence.text]);
+        expect(request.parsedSentences.length).toBe(2);
+        expect(request.parsedSentences[1]).toEqual(newStructures);
       });
 
       it('never uses request.current as merge input -- whatever /deduce derives simply is the reading set', () => {
@@ -773,6 +799,21 @@ describe('DocumentBuilderService', () => {
       });
 
       describe('deriveSentenceInSequence (the first-sentence case, shared with chat turn 1)', () => {
+        it('supplies the first sentence\'s structures when they are given', () => {
+          dataServiceMock.ligerSequence.and.returnValue(of({ solutions: [] }));
+          const given = [{ ...structure, id: 'standalone-S0' } as any];
+
+          service.deriveSentenceInSequence([], {
+            newSentence: { id: 'sentence-1', text: 'A man appeared.', structures: given },
+            ruleString: 'rules',
+            logicType: 'fof',
+            gswbPreferences: {} as any,
+          }).subscribe({ error: () => {} });
+
+          const [sequenceRequest] = dataServiceMock.ligerSequence.calls.mostRecent().args;
+          expect(sequenceRequest.parsedSentences).toEqual([given]);
+        });
+
         it('sends no parsedSentences and still fans out over every syntactic variant', () => {
           dataServiceMock.ligerSequence.and.returnValue(of({
             solutions: ['S0', 'S1'].map((synId, index) => ({
@@ -813,6 +854,27 @@ describe('DocumentBuilderService', () => {
           expect(readings.map((reading: any) => reading.sequenceStructure.id)).toEqual(['seq-S0', 'seq-S1']);
         });
       });
+    });
+  });
+
+  describe('suppliableStructures', () => {
+    const analysis = (id: string, variants = 1) => ({
+      solutionKey: id, structureJson: { id } as any,
+      structureVariants: Array.from({ length: variants }, () => ({ id } as any)),
+    } as any);
+
+    it('gives one structure per analysis', () => {
+      expect(suppliableStructures([analysis('S0'), analysis('S1')])!.map(structure => structure.id)).toEqual(['S0', 'S1']);
+    });
+
+    it('gives nothing -- parse instead -- when an analysis has no structure', () => {
+      expect(suppliableStructures([analysis('S0'), { solutionKey: 'S1' } as any])).toBeUndefined();
+      expect(suppliableStructures([])).toBeUndefined();
+      expect(suppliableStructures(undefined)).toBeUndefined();
+    });
+
+    it('gives nothing when a rule set branched: only the first branch carries SYN-IDs', () => {
+      expect(suppliableStructures([analysis('S0', 2)])).toBeUndefined();
     });
   });
 });
