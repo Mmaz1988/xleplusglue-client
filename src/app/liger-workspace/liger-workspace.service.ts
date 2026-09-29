@@ -42,11 +42,17 @@ export interface WorkspaceState {
   loadingOrigin: RuleSetOrigin | null;
   /** Whether the open in progress restores saved text (a session): nothing may replace it. */
   restoring: boolean;
+  /** Rule and axiom files left out of runs, by path: a run sends its section without them.
+   *  For trying a rule set without some of its files; nothing on disk changes. */
+  excluded: string[];
 }
+
+/** The fields whose files a run can leave out: lexica are LiGER's own, read from disk. */
+export type SelectableField = Exclude<LigerConfigField, 'lexica'>;
 
 const EMPTY: WorkspaceState = {
   ruleSet: null, tree: null, documents: {}, loading: null, error: null, openFailed: null,
-  origin: null, loadingOrigin: null, restoring: false,
+  origin: null, loadingOrigin: null, restoring: false, excluded: [],
 };
 
 export function isEdited(doc: WorkspaceDocument | undefined): boolean {
@@ -85,6 +91,24 @@ export class LigerWorkspaceService {
     return Object.values(this.state.documents).some(isEdited);
   }
 
+  isIncluded(path: string): boolean {
+    return !this.state.excluded.includes(path);
+  }
+
+  /** Leaves `path` out of runs, or takes it back in. */
+  setIncluded(path: string, included: boolean): void {
+    this.setAllIncluded([path], included);
+  }
+
+  setAllIncluded(paths: string[], included: boolean): void {
+    const excluded = included
+      ? this.state.excluded.filter(path => !paths.includes(path))
+      : [...new Set([...this.state.excluded, ...paths.filter(path => this.state.documents[path])])];
+    if (excluded.length !== this.state.excluded.length) {
+      this.patch({ excluded });
+    }
+  }
+
   /** Opens `path` unless something is open or opening already, so the first view to show
    *  the workspace loads the default and later views share what is open. */
   ensureOpen(path: string): void {
@@ -101,8 +125,12 @@ export class LigerWorkspaceService {
    *  `saved` restores a stored session: each listed file whose text differs from disk
    *  opens as an in-memory edit of it, in the same state change that opens the rule set, so
    *  nothing ever observes the disk text in between. A saved file the rule set no longer
-   *  lists cannot be applied, and is reported as the error. */
-  open(path: string, saved?: Record<string, string>, origin: RuleSetOrigin = 'selected'): void {
+   *  lists cannot be applied, and is reported as the error.
+   *
+   *  `excluded` leaves those files out of runs again (a session's, or reload's); a newly
+   *  opened rule set otherwise runs with all its files. */
+  open(path: string, saved?: Record<string, string>, origin: RuleSetOrigin = 'selected',
+       excluded: string[] = []): void {
     this.opening?.unsubscribe();
     this.patch({ loading: path, loadingOrigin: origin, restoring: !!saved, error: null });
 
@@ -132,16 +160,17 @@ export class LigerWorkspaceService {
                 documents[filePath] = { ...doc, currentText: text };
               }
             }
-            return { ruleSet, tree, documents, unapplied };
+            const kept = excluded.filter(filePath => documents[filePath] && !documents[filePath].readOnly);
+            return { ruleSet, tree, documents, unapplied, kept };
           }));
       }),
     ).subscribe({
-      next: ({ ruleSet, tree, documents, unapplied }) => {
+      next: ({ ruleSet, tree, documents, unapplied, kept }) => {
         const error = unapplied.length
           ? `Saved text not applied, the rule set no longer lists: ${unapplied.join(', ')}`
           : null;
         this.stateSubject.next({ ruleSet, tree, documents, loading: null, error, openFailed: null,
-          origin, loadingOrigin: null, restoring: false });
+          origin, loadingOrigin: null, restoring: false, excluded: kept });
       },
       error: err => this.patch({ loading: null, loadingOrigin: null, restoring: false,
         error: `Failed to open ${path}: ${reason(err)}`, openFailed: path }),
@@ -185,10 +214,11 @@ export class LigerWorkspaceService {
     return texts;
   }
 
-  /** Opens the current rule set again, picking up files changed on disk. Drops edits. */
+  /** Opens the current rule set again, picking up files changed on disk. Drops edits; keeps
+   *  the files left out of runs. */
   reload(): void {
     if (this.state.ruleSet) {
-      this.open(this.state.ruleSet.source, undefined, this.state.origin ?? 'selected');
+      this.open(this.state.ruleSet.source, undefined, this.state.origin ?? 'selected', this.state.excluded);
     }
   }
 
@@ -223,18 +253,24 @@ export class LigerWorkspaceService {
   }
 
   /** The rule text a view sends for `field`. /load_rules' text while no file of the section
-   *  is edited, so an unedited rule set is exactly what LiGER assembled; otherwise the
-   *  section assembled here from its files, edits included. */
-  assembled(field: Exclude<LigerConfigField, 'lexica'>): string | null {
+   *  is edited or left out, so an unedited rule set is exactly what LiGER assembled;
+   *  otherwise the section assembled here from its included files, edits included. A
+   *  section with every file left out is sent empty: '' where LiGER listed files, so it
+   *  stays apart from a field the config does not list (null). */
+  assembled(field: SelectableField): string | null {
     const { ruleSet, tree, documents } = this.state;
     if (!ruleSet || !tree) {
       return null;
     }
     const section = tree.sections.find(s => s.field === field);
-    if (!section || !section.files.some(file => isEdited(documents[file.path]))) {
+    if (!section || !section.files.some(file => isEdited(documents[file.path]) || !this.isIncluded(file.path))) {
       return ruleSet[field];
     }
-    const texts = section.files.map(file => {
+    const included = section.files.filter(file => this.isIncluded(file.path));
+    if (!included.length) {
+      return '';
+    }
+    const texts = included.map(file => {
       const text = documents[file.path]?.currentText;
       if (text === null || text === undefined) {
         // Never assemble around a missing file: a rule set short of a file looks exactly
@@ -250,7 +286,7 @@ export class LigerWorkspaceService {
     return assembleFiles(texts, field === 'axioms' ? 'axioms' : 'rules');
   }
 
-  private field$(field: Exclude<LigerConfigField, 'lexica'>): Observable<string | null> {
+  private field$(field: SelectableField): Observable<string | null> {
     return this.state$.pipe(map(() => this.assembled(field)), distinctUntilChanged());
   }
 

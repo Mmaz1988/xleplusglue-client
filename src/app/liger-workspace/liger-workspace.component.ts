@@ -4,7 +4,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { APP_DEFAULTS } from '../app-defaults';
 import { FileTree, LigerConfigField, LigerConfigTreeFile, LigerConfigTreeSection } from '../models/models';
 import { LigerFileSource } from './liger-file-source.service';
-import { LigerWorkspaceService, WorkspaceDocument, WorkspaceState, isEdited } from './liger-workspace.service';
+import { LigerWorkspaceService, SelectableField, WorkspaceDocument, WorkspaceState, isEdited } from './liger-workspace.service';
 
 const FIELD_ICONS: Record<LigerConfigField, string> = {
   semantics: 'account_tree',
@@ -65,6 +65,8 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
   /** Whether the tree starts shown. Hidden by default, so the editor keeps the room a rules
    *  editor always had; a view where the workspace has a tab to itself can start it open. */
   @Input() treeOpen = false;
+  /** Whether the list of files a run uses, below the editor, is expanded. */
+  runFilesOpen = false;
   browsing = false;
   browseTree: FileTree[] = [];
   /** The folder "Open…" is showing; ".." goes up from it. */
@@ -133,6 +135,69 @@ export class LigerWorkspaceComponent implements OnInit, AfterViewInit, OnDestroy
 
   isReadOnly(path: string): boolean {
     return !!this.state.documents[path]?.readOnly;
+  }
+
+  /** Whether runs use `path`. Lexica are always used; they are not LiGER request text. */
+  isIncluded(path: string): boolean {
+    return this.isReadOnly(path) || this.workspace.isIncluded(path);
+  }
+
+  /** The sections a run can leave files out of: rules and axioms, each with files. */
+  get runSections(): LigerConfigTreeSection[] {
+    return this.sections.filter(section => section.field !== 'lexica' && section.files.length);
+  }
+
+  /** Every rule and axiom file once, even one listed under two fields. */
+  private get runFiles(): string[] {
+    return [...new Set(this.runSections.flatMap(section => section.files.map(file => file.path)))];
+  }
+
+  get runFileCount(): number {
+    return this.runFiles.length;
+  }
+
+  get includedRunFileCount(): number {
+    return this.runFiles.filter(path => this.workspace.isIncluded(path)).length;
+  }
+
+  runFilesSummary(): string {
+    const total = this.runFileCount;
+    const included = this.includedRunFileCount;
+    return included === total ? `all ${total} files` : `${included} of ${total} files`;
+  }
+
+  sectionIncluded(section: LigerConfigTreeSection): 'all' | 'some' | 'none' {
+    const included = section.files.filter(file => this.workspace.isIncluded(file.path)).length;
+    return included === section.files.length ? 'all' : included ? 'some' : 'none';
+  }
+
+  setIncluded(path: string, event: Event): void {
+    this.workspace.setIncluded(path, (event.target as HTMLInputElement).checked);
+  }
+
+  /** A section's box: takes in every file of a section with one left out, else leaves all out. */
+  setSectionIncluded(section: LigerConfigTreeSection, event: Event): void {
+    this.workspace.setAllIncluded(section.files.map(file => file.path),
+      (event.target as HTMLInputElement).checked);
+  }
+
+  includeAll(): void {
+    this.workspace.setAllIncluded(this.runFiles, true);
+  }
+
+  runSectionTooltip(section: LigerConfigTreeSection): string {
+    const field = section.field as SelectableField;
+    switch (this.sectionIncluded(section)) {
+      case 'all': return `${field}: runs use every file`;
+      case 'some': return `${field}: runs use the checked files only`;
+      default: return field === 'pragmatics'
+        ? 'pragmatics: no file selected, so post-processing is blocked'
+        : `${field}: no file selected, runs send none`;
+    }
+  }
+
+  toggleRunFiles(): void {
+    this.runFilesOpen = !this.runFilesOpen;
   }
 
   /** Where "Open…" starts: the open config's scope, so a grammar's other configs are one

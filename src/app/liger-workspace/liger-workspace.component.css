@@ -153,3 +153,56 @@ span.twisty { cursor: default; }
 :host ::ng-deep .pane.right .CodeMirror {
   height: 100%; resize: none; font-size: 13px;
 }
+
+/* A file left out of runs: still in the tree, and still editable, but struck through. */
+.row.excluded .label,
+.run-row.excluded .label { text-decoration: line-through; opacity: .55; }
+.excluded-hint { font-size: 11px; color: #7c8ba1; flex: none; font-style: italic; }
+
+/* --- files for this run, below the editor ---------------------------------
+   Hangs off the workspace's frame: same border, no top edge, so it reads as the box's own
+   drawer rather than a second box. */
+.run-files {
+  box-sizing: border-box;
+  border: var(--box-border-width, 3px) solid var(--box-border-color, #00a9e0);
+  border-top: 0;
+  border-radius: var(--text-box-radius, 0);
+  background: #f7f9fc;
+  font-family: Roboto, sans-serif;
+  font-size: 12px;
+}
+button.run-files-toggle {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; margin: 0; padding: 3px 8px;
+  border: 0; border-radius: 0; background: none; color: #243247;
+  font: inherit; font-weight: 500; text-align: left; cursor: pointer;
+}
+button.run-files-toggle:hover { background: #eef3fa; }
+.run-files-toggle .badge { margin-left: 6px; }
+.badge.partial { background: #fff1d6; color: #7a5b00; }
+
+.run-files-panel { border-top: 1px solid #d8dee8; background: #fbfcfe; }
+/* One column per section, side by side while they fit. */
+.run-sections {
+  display: flex; flex-wrap: wrap; gap: 4px 24px;
+  padding: 6px 8px;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+}
+.run-section { display: flex; flex-direction: column; min-width: 200px; flex: 1 1 200px; }
+.run-row {
+  display: flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 6px; border-radius: 3px;
+  color: #243247; cursor: pointer; min-width: 0;
+}
+.run-row:hover { background: #eef3fa; }
+.run-row.field { font-weight: 500; }
+.run-row.file { padding-left: 20px; }
+.run-row input { margin: 0; flex: none; accent-color: #00a9e0; cursor: pointer; }
+
+.run-files-footer {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-top: 1px solid #d8dee8;
+}
+.run-files-footer .spacer { flex: 1; }
+.run-files-footer .hint { font-size: 11px; color: #7c8ba1; }
+.run-files-footer button { font: inherit; font-size: 12px; padding: 2px 12px; margin: 0; }

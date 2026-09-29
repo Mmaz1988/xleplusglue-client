@@ -27,6 +27,7 @@
       <div *ngIf="!browsing && state.ruleSet?.kind === 'rules'" class="tree">
         <ng-container *ngFor="let file of sections[0]?.files ?? []">
           <button type="button" class="row file" [class.selected]="file.path === activePath"
+                  [class.excluded]="!isIncluded(file.path)"
                   [title]="file.path" (click)="select(file.path)">
             <mat-icon class="kind">description</mat-icon>
             <span class="label">{{ file.name }}</span>
@@ -64,6 +65,7 @@
             <div class="children" *ngIf="!isCollapsed(section.field)">
               <button type="button" *ngFor="let file of section.files" class="row file leaf"
                       [class.selected]="file.path === activePath"
+                      [class.excluded]="!isIncluded(file.path)"
                       [title]="file.inScope ? file.path : file.path + ' (outside the config\'s scope)'"
                       (click)="select(file.path)">
                 <mat-icon class="kind">{{ isReadOnly(file.path) ? 'lock' : 'description' }}</mat-icon>
@@ -101,6 +103,8 @@
     <div class="pane-toolbar">
       <span class="file-label" [title]="active?.path ?? ''">{{ active?.name ?? 'No file selected' }}</span>
       <span *ngIf="active && isEdited(active.path)" class="dirty-hint">edited, not saved</span>
+      <span *ngIf="active && !isIncluded(active.path)" class="excluded-hint"
+            title="Unchecked under 'Files for this run'">left out of runs</span>
       <span class="spacer"></span>
       <button type="button" (click)="revert()" [disabled]="!active || !isEdited(active.path)">Revert</button>
       <button type="button" (click)="download()" [disabled]="!active"
@@ -111,6 +115,46 @@
     </p>
     <app-editor #editor [mode]="mode" [readOnly]="!!active?.readOnly" [initialContent]="''"
                 [showControls]="false" (contentChange)="onEditorChange($event)"></app-editor>
+  </div>
+</div>
+
+<!-- Below the editor: which rule and axiom files a run uses. Leaving one out changes only
+     what is sent; the file stays open, and editable, above. -->
+<div class="run-files" *ngIf="runSections.length">
+  <button type="button" class="run-files-toggle" (click)="toggleRunFiles()"
+          [attr.aria-expanded]="runFilesOpen"
+          title="Choose the rule and axiom files runs use">
+    <mat-icon class="kind">{{ runFilesOpen ? 'expand_more' : 'chevron_right' }}</mat-icon>
+    <span class="label">Files for this run</span>
+    <span class="badge" [class.partial]="includedRunFileCount < runFileCount">{{ runFilesSummary() }}</span>
+  </button>
+
+  <div class="run-files-panel" *ngIf="runFilesOpen">
+    <div class="run-sections">
+      <div class="run-section" *ngFor="let section of runSections">
+        <label class="run-row field" [title]="runSectionTooltip(section)">
+          <input type="checkbox" [checked]="sectionIncluded(section) === 'all'"
+                 [indeterminate]="sectionIncluded(section) === 'some'"
+                 (change)="setSectionIncluded(section, $event)"
+                 [attr.aria-label]="'use all ' + section.field + ' files'">
+          <mat-icon class="kind">{{ fieldIcon(section.field) }}</mat-icon>
+          <span class="label">{{ section.field }}</span>
+        </label>
+        <label *ngFor="let file of section.files" class="run-row file"
+               [class.excluded]="!isIncluded(file.path)" [title]="file.path">
+          <input type="checkbox" [checked]="isIncluded(file.path)" (change)="setIncluded(file.path, $event)">
+          <span class="label">{{ file.name }}</span>
+          <span *ngIf="isEdited(file.path)" class="edited" title="Edited in memory">●</span>
+          <span *ngIf="file.count !== null" class="badge" [title]="countTooltip(section.field, file)">{{ countLabel(file) }}</span>
+        </label>
+      </div>
+    </div>
+    <div class="run-files-footer">
+      <span class="hint">A stage's rule files run as one text: a later file may use templates or
+        hierarchies from one left out.</span>
+      <span class="spacer"></span>
+      <button type="button" (click)="includeAll()" [disabled]="includedRunFileCount === runFileCount">Use all</button>
+    </div>
   </div>
 </div>
 

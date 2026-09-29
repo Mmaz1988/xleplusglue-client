@@ -155,6 +155,62 @@ describe('LigerWorkspaceService', () => {
     });
   });
 
+  describe('leaving files out of runs', () => {
+    it('assembles the section from the included files only', () => {
+      workspace.setIncluded('/res/rules/a.liger', false);
+
+      expect(workspace.semantics).toBe(
+        '// ===== /res/rules/b.liger =====\n--lexicon(/res/rules/../dicts/e.txt)\nB RULES\n\n');
+      expect(workspace.pragmatics).toBe('SERVER PRAGMATICS');
+      expect(workspace.hasEdits).toBeFalse();
+    });
+
+    it('sends LiGER\'s own text again once the file is back in', () => {
+      workspace.setIncluded('/res/rules/a.liger', false);
+      workspace.setIncluded('/res/rules/a.liger', true);
+
+      expect(workspace.semantics).toBe('SERVER SEMANTICS');
+    });
+
+    it('sends an empty section, not null, with every file left out', () => {
+      workspace.setAllIncluded(['/res/rules/p.liger', '/res/axioms/x.p'], false);
+
+      expect(workspace.pragmatics).toBe('');
+      expect(workspace.axioms).toBe('');
+    });
+
+    it('leaves an edited file out too, and keeps its edit', () => {
+      workspace.edit('/res/rules/b.liger', 'B EDITED');
+      workspace.setIncluded('/res/rules/b.liger', false);
+
+      expect(workspace.semantics).toBe('// ===== /res/rules/a.liger =====\nA RULES\n\n');
+      expect(workspace.state.documents['/res/rules/b.liger'].currentText).toBe('B EDITED');
+    });
+
+    it('ignores paths the rule set does not list', () => {
+      workspace.setIncluded('/res/rules/gone.liger', false);
+
+      expect(workspace.state.excluded).toEqual([]);
+    });
+
+    it('keeps them left out on reload, but not when another rule set is opened', () => {
+      workspace.setIncluded('/res/rules/a.liger', false);
+      workspace.reload();
+      expect(workspace.isIncluded('/res/rules/a.liger')).toBeFalse();
+
+      workspace.open(RULE_SET.source);
+      expect(workspace.isIncluded('/res/rules/a.liger')).toBeTrue();
+    });
+
+    it('restores them on open, dropping lexica and files no longer listed', () => {
+      workspace.open(RULE_SET.source, undefined, 'selected',
+        ['/res/axioms/x.p', '/res/dicts/d.txt', '/res/rules/gone.liger']);
+
+      expect(workspace.state.excluded).toEqual(['/res/axioms/x.p']);
+      expect(workspace.axioms).toBe('');
+    });
+  });
+
   it('does not reopen what another view already opened', () => {
     workspace.ensureOpen('./other.liger.yaml');
 

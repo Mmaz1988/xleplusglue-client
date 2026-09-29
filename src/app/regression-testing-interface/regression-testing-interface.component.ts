@@ -484,7 +484,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   /** What the workspace would have a run send, or null while it has nothing settled. */
   private workspaceOutput(): { key: string; source: string; origin: RuleSetOrigin | null;
       semantics: string; pragmatics: string;
-      axioms: string; files: Record<string, string>; loadedSemantics: string; loadedAxioms: string } | null {
+      axioms: string; files: Record<string, string>; excluded: string[];
+      loadedSemantics: string; loadedAxioms: string } | null {
     const state = this.ligerWorkspace.state;
     if (state.loading || !state.ruleSet) return null;
     let semantics: string, pragmatics: string, axioms: string;
@@ -505,6 +506,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       key: JSON.stringify([source, origin, semantics, pragmatics, axioms]),
       source, origin, semantics, pragmatics, axioms,
       files: this.ligerWorkspace.fileTexts(),
+      excluded: [...state.excluded],
       loadedSemantics: state.ruleSet.semantics ?? '',
       loadedAxioms: state.ruleSet.axioms ?? '',
     };
@@ -534,6 +536,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.axiomsLoadedText = output.loadedAxioms;
     this.session.ruleSetFiles = output.files;
     this.session.ruleSetOrigin = output.origin;
+    this.session.ruleSetExcluded = output.excluded;
   }
 
   /** Reopens the restored session's rule set with its stored per-file text. */
@@ -552,7 +555,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.ruleSetRestorePath = path;
     // A session from before origins were stored chose its rules file by hand.
     this.ligerWorkspace.open(path, this.session.ruleSetFiles ?? undefined,
-      this.session.ruleSetOrigin ?? 'selected');
+      this.session.ruleSetOrigin ?? 'selected', this.session.ruleSetExcluded ?? []);
   }
 
   /** Called on each workspace change while a restore is pending; acts once it settled. */

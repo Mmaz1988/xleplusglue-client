@@ -48,8 +48,9 @@ export interface LigerRuleSet {
  *  runs the rule set's pragmatics rules. A config gets exactly what it lists and a single
  *  rule file has none, so without them post-processing is blocked with this message. */
 export const MISSING_PRAGMATICS_MESSAGE =
-  'Pragmatic post-processing needs pragmatics rules, and the loaded rule set lists none. '
-  + 'Open a LiGER config with a pragmatics section.';
+  'Pragmatic post-processing needs pragmatics rules, and the loaded rule set lists none, or '
+  + 'none is selected for this run. Open a LiGER config with a pragmatics section, or select '
+  + 'its pragmatics files below the rule editor.';
 
 /** LiGER's /config_tree answer: a config's (or single rule file's) files per field, unread.
  *  Joining a section's files the way LigerConfigLoader.assemble does reproduces /load_rules'
@@ -835,6 +836,8 @@ export interface RegressionSessionInputs {
   ruleSetFiles?: Record<string, string>;
   /** How that rule set was chosen: the grammar's own config, or picked by hand. */
   ruleSetOrigin?: 'default' | 'grammar' | 'selected';
+  /** Rule and axiom files of that rule set left out of runs, by path. Missing: none. */
+  ruleSetExcluded?: string[];
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
 }
@@ -920,6 +923,8 @@ export interface RegressionTestingSession {
    *  session saved before the LiGER workspace. */
   ruleSetFiles: Record<string, string> | null;
   ruleSetOrigin: 'default' | 'grammar' | 'selected' | null;
+  /** Files of the rule set left out of runs (see RegressionSessionInputs.ruleSetExcluded). */
+  ruleSetExcluded: string[];
   gswbPreferences: GswbPreferences;
   vampirePreferences: VampirePreferences;
   sentenceMap: Record<string, string>;
@@ -1171,6 +1176,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       ),
       ...(session?.ruleSetFiles ? { ruleSetFiles: { ...session.ruleSetFiles } } : {}),
       ...(session?.ruleSetOrigin ? { ruleSetOrigin: session.ruleSetOrigin } : {}),
+      ...(session?.ruleSetExcluded?.length ? { ruleSetExcluded: [...session.ruleSetExcluded] } : {}),
       gswbPreferences: { ...(session?.gswbPreferences ?? createRegressionTestingSession().gswbPreferences) },
       vampirePreferences: { ...(session?.vampirePreferences ?? createRegressionTestingSession().vampirePreferences) },
     },
@@ -1263,6 +1269,8 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     ruleSetFiles: inputs?.ruleSetFiles && typeof inputs.ruleSetFiles === 'object'
       ? { ...inputs.ruleSetFiles } : null,
     ruleSetOrigin: ['default', 'grammar', 'selected'].includes(inputs?.ruleSetOrigin) ? inputs.ruleSetOrigin : null,
+    ruleSetExcluded: Array.isArray(inputs?.ruleSetExcluded)
+      ? inputs.ruleSetExcluded.filter((path: unknown) => typeof path === 'string') : [],
     gswbPreferences: { ...(inputs?.gswbPreferences ?? document?.gswbPreferences ?? base.gswbPreferences) },
     vampirePreferences: { ...(inputs?.vampirePreferences ?? document?.vampirePreferences ?? base.vampirePreferences) },
     sentenceMap: { ...(system?.sentenceMap ?? document?.sentenceMap ?? {}) },
@@ -1310,6 +1318,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     pragmaticsRulesText: '',
     ruleSetFiles: null,
     ruleSetOrigin: null,
+    ruleSetExcluded: [],
     gswbPreferences: {
       prover: 1,
       debugging: false,

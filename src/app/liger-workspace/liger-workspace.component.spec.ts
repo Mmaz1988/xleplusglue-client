@@ -282,4 +282,60 @@ describe('LigerWorkspaceComponent', () => {
 
     expect(editorText()).toBe('EDITED ELSEWHERE');
   });
+
+  describe('files for this run', () => {
+    const toggle = () => root.querySelector<HTMLButtonElement>('.run-files-toggle')!;
+    const box = (name: string) => Array.from(root.querySelectorAll<HTMLLabelElement>('.run-row'))
+      .find(row => row.querySelector('.label')!.textContent!.trim() === name)!
+      .querySelector<HTMLInputElement>('input')!;
+    const uncheck = (input: HTMLInputElement) => {
+      input.checked = !input.checked;
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    it('sits below the editor box, collapsed until clicked', () => {
+      const workspaceBox = root.querySelector('.liger-workspace')!;
+      expect(workspaceBox.nextElementSibling?.classList).toContain('run-files');
+      expect(root.querySelector('.run-files-panel')).toBeNull();
+      expect(toggle().textContent).toContain('all 4 files');
+
+      click(toggle());
+      expect(root.querySelector('.run-files-panel')).not.toBeNull();
+      // Rules and axioms only: lexica are not request text.
+      expect(Array.from(root.querySelectorAll('.run-row.field .label')).map(l => l.textContent!.trim()))
+        .toEqual(['semantics', 'pragmatics', 'axioms']);
+    });
+
+    it('leaves an unchecked file out of runs and marks it in the tree', () => {
+      click(toggle());
+      uncheck(box('a.liger'));
+
+      expect(workspace.isIncluded('/res/rules/a.liger')).toBeFalse();
+      expect(workspace.semantics).not.toContain('A RULES');
+      expect(toggle().textContent).toContain('3 of 4 files');
+      expect(fileButton('a.liger').classList).toContain('excluded');
+      expect(box('semantics').indeterminate).toBeTrue();
+    });
+
+    it('checks and unchecks a whole section from its own box', () => {
+      click(toggle());
+      uncheck(box('semantics'));
+      expect(workspace.semantics).toBe('');
+      expect(box('semantics').checked).toBeFalse();
+
+      uncheck(box('semantics'));
+      expect(workspace.semantics).toBe('SERVER SEMANTICS');
+    });
+
+    it('takes every file back in with Use all', () => {
+      click(toggle());
+      uncheck(box('p.liger'));
+      click(Array.from(root.querySelectorAll<HTMLButtonElement>('.run-files-footer button'))
+        .find(b => b.textContent!.trim() === 'Use all')!);
+
+      expect(workspace.state.excluded).toEqual([]);
+      expect(workspace.pragmatics).toBe('SERVER PRAGMATICS');
+    });
+  });
 });
