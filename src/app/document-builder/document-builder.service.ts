@@ -194,6 +194,48 @@ export interface DerivedSentenceReading {
   currentSyntax?: SyntacticAnalysis;
 }
 
+/** One sentence of a sequence derived as a whole: its id, text and already-parsed,
+ *  rule-applied structures (one per analysis, see `suppliableStructures`). */
+export interface SequenceSentenceInput {
+  id: string;
+  text: string;
+  structures: LigerStructure[];
+}
+
+/** One syntactic variant of a whole sequence -- one analysis of every sentence. */
+export interface SequenceVariant {
+  /** The `ligerSequence` solution's key, `sequence-<n>-<part keys>`. */
+  variantKey: string;
+  /** The merged structure of the whole sequence in this variant. */
+  sequenceStructure?: LigerStructure;
+  /** Per sentence, in order: the key of that sentence's part in this variant. Equal to the
+   *  sentence's `syntax[i].synId`, and stamped by GSWB onto every reading proven from the
+   *  part (`keyBy: 'part'`), so a reading names the part it came from and the variants it
+   *  belongs to are exactly those listing its key at its index. */
+  partKeys: string[];
+  /** Per sentence, in order: its syntax within this variant. */
+  syntax: (SyntacticAnalysis | undefined)[];
+}
+
+/** One sentence's part of a sequence, proven once: its readings and discriminants, or why
+ *  there are none. */
+export interface DerivedSequencePart {
+  sentenceId: string;
+  /** `/deduce`'s answer for this part across every analysis of the sentence. */
+  output?: any;
+  /** The part's meaning constructors, one analysis after another, as proven. */
+  meaningConstructors?: string;
+  /** Set when the part could not be derived, or was not derived because an earlier one
+   *  failed. */
+  failure?: string;
+}
+
+export interface DerivedSequenceParts {
+  variants: SequenceVariant[];
+  /** One entry per sentence, in order. */
+  parts: DerivedSequencePart[];
+}
+
 export interface SequenceMergeResult {
   /** Every (current x previous) pair -- never dropped just because its syntax merge
    *  could not be resolved; see the "no semantic alternative may be discarded" invariant
@@ -473,26 +515,8 @@ export class DocumentBuilderService {
     }
 
     return this.deriveSentenceInSequence(previousSentences, rebase).pipe(
-      concatMap(readings => from(readings).pipe(
-        concatMap(reading => this.dataService.gswbMergeSequenceSemantics({
-          parts: [
-            this.semanticPart(previousContext.semantic, previousElement.id),
-            this.semanticPart(reading.semantic, rebase.newSentence.id),
-          ],
-          parentSolutionId: reading.solution.id,
-          solutionKey: reading.semantic.syntacticOrigin,
-          mcSetId: reading.semantic.syntacticOrigin,
-          resolveDrs,
-        }).pipe(map((merged): SequenceMergePair => ({
-          merged,
-          previousElement,
-          // This reading's OWN variant's merged structure -- never another variant's.
-          sequenceStructure: reading.sequenceStructure,
-          currentSemantic: reading.semantic,
-          currentSyntax: reading.currentSyntax,
-        })))),
-        toArray()
-      )),
+      concatMap(readings => this.mergeReadingsIntoContext(
+        previousContext, readings, rebase.newSentence.id, resolveDrs)),
       map(pairs => ({ pairs, failures: [] as string[] })),
       catchError(error => {
         // Report the cause instead of swallowing it. This handler previously returned
@@ -621,6 +645,169 @@ export class DocumentBuilderService {
       }))
     );
     });
+  }
+
+  /** Every syntactic variant of a sequence whose sentences are all already parsed: one
+   *  `ligerSequence` call, nothing parsed again. A sentence's part is the same in the whole
+   *  sequence as in any prefix of it (verified live 2026-09-30, including a 2x2x1 item), so
+   *  this one call stands in for the growing calls a turn-by-turn build makes. */
+  sequenceVariants(
+    sentences: SequenceSentenceInput[],
+    ruleString: string | undefined,
+    logicType: 'fof' | 'tff' | undefined,
+  ): Observable<{ variants: SequenceVariant[]; solutions: LigerSolutionAnnotation[] }> {
+    return this.dataService.ligerSequence({
+      sentences: sentences.map(sentence => sentence.text),
+      sentenceIds: sentences.map(sentence => sentence.id),
+      ruleString,
+      logicType,
+      parsedSentences: sentences.map(sentence => sentence.structures),
+    }).pipe(map(sequence => {
+      const solutions = (Array.isArray(sequence?.solutions) ? sequence.solutions : []) as LigerSolutionAnnotation[];
+      const variants = solutions.map((solution, index): SequenceVariant => {
+        const syntax = sentences.map((_, sentenceIndex) =>
+          solution.sequenceAnalysis?.sentences?.[sentenceIndex]?.syntax?.[0]);
+        return {
+          variantKey: solution.solutionKey || `sequence-variant-${index}`,
+          sequenceStructure: solution.structureJson,
+          partKeys: sentences.map((_, sentenceIndex) =>
+            (solution.sequenceParts ?? []).find(part => part.sourceIndex === sentenceIndex)?.solutionKey
+              ?? syntax[sentenceIndex]?.synId ?? ''),
+          syntax,
+        };
+      });
+      if (!variants.length) {
+        throw new Error(`LiGER returned no sequence for ${sentences.map(sentence => sentence.id).join(' + ')}.`);
+      }
+      return { variants, solutions };
+    }));
+  }
+
+  /** Derives every sentence of a sequence inside it, once: one `ligerSequence`, then one
+   *  `/deduce` per sentence, in order. The regression counterpart of the turn-by-turn
+   *  `deriveSentenceInSequence` -- the same parts, proven once instead of once per context.
+   *
+   *  Keyed by part, not by variant: variants that differ only in another sentence's parse
+   *  share this sentence's part, and proving it once per variant is the duplicate this
+   *  exists to remove. A reading is still attributable -- its part key is listed per variant
+   *  in `SequenceVariant.partKeys`.
+   *
+   *  Stops at the first sentence with no reading: a sequence is only as good as its weakest
+   *  sentence, so the later ones are not proven and say why. */
+  deriveSequenceParts(
+    sentences: SequenceSentenceInput[],
+    ruleString: string | undefined,
+    logicType: 'fof' | 'tff' | undefined,
+    gswbPreferences: GswbPreferences,
+  ): Observable<DerivedSequenceParts> {
+    return this.sequenceVariants(sentences, ruleString, logicType).pipe(
+      switchMap(({ variants, solutions }) => {
+        const parts: DerivedSequencePart[] = [];
+        let failed: DerivedSequencePart | null = null;
+        return from(sentences.map((sentence, index) => ({ sentence, index }))).pipe(
+          concatMap(({ sentence, index }) => {
+            if (failed) {
+              return of<DerivedSequencePart>({
+                sentenceId: sentence.id,
+                failure: `not derived: ${failed.sentenceId} has no semantics`,
+              });
+            }
+            const seen = new Set<string>();
+            const proofs = proofInputsFrom(solutions, {
+              sentenceIndex: index, keyBy: 'part', idPrefix: sentence.id, sentenceId: sentence.id,
+            }).filter(proof => !seen.has(proof.proofId) && !!seen.add(proof.proofId));
+            if (!proofs.length) {
+              return of<DerivedSequencePart>({ sentenceId: sentence.id, failure: 'no meaning constructors' });
+            }
+            const meaningConstructors = proofs.map(proof => proof.meaningConstructors).join('\n');
+            return this.dataService.gswbDeduce({
+              premises: meaningConstructors,
+              gswbPreferences,
+              structure: proofs[0].structure,
+              proofs,
+            }).pipe(
+              map((output: any): DerivedSequencePart => (output?.solutions ?? []).some((solution: GswbSolution) =>
+                typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0)
+                ? { sentenceId: sentence.id, output, meaningConstructors }
+                : { sentenceId: sentence.id, output, meaningConstructors, failure: 'no semantics derived' }),
+              catchError(error => of<DerivedSequencePart>({
+                sentenceId: sentence.id, meaningConstructors, failure: this.describeError(error),
+              })),
+            );
+          }),
+          map(part => {
+            if (part.failure && !failed) failed = part;
+            parts.push(part);
+            return part;
+          }),
+          toArray(),
+          map(() => ({ variants, parts })),
+        );
+      }),
+    );
+  }
+
+  /** A sentence's stored in-sequence readings, as the fold of one branch takes them: only
+   *  those of parts consistent with the branch's parts so far (`prefixKeys`), each pointed
+   *  at its own syntax. The merged structure is attached once it names one variant -- at the
+   *  last sentence; earlier folds do not need it. */
+  sequenceReadings(
+    variants: SequenceVariant[],
+    sentenceIndex: number,
+    sentenceId: string,
+    solutions: GswbSolution[],
+    prefixKeys: string[],
+  ): DerivedSentenceReading[] {
+    const consistent = variants.filter(variant =>
+      prefixKeys.every((key, index) => variant.partKeys[index] === key));
+    const last = sentenceIndex === (variants[0]?.partKeys.length ?? 0) - 1;
+    return solutions.flatMap(solution => {
+      const key = solution.solutionKey || solution.proofId;
+      const matching = consistent.filter(variant => variant.partKeys[sentenceIndex] === key);
+      if (!matching.length) return [];
+      const currentSyntax = matching[0].syntax[sentenceIndex];
+      const semantic = { ...this.toSemanticAnalysis(solution, key ?? sentenceId) };
+      if (currentSyntax) semantic.syntacticOrigin = currentSyntax.synId;
+      return [{
+        solution,
+        semantic,
+        currentSyntax,
+        sequenceStructure: last && matching.length === 1 ? matching[0].sequenceStructure : undefined,
+      }];
+    });
+  }
+
+  /** The semantic half of adding a sentence to one previous context: every given reading of
+   *  the new sentence merged onto the context's reading. Shared by the turn-by-turn fold
+   *  (`deriveAndMergeForContext`, readings derived just before) and regression's fold over
+   *  readings derived at parse time. Sequential, like every other fan-out here. */
+  mergeReadingsIntoContext(
+    previousContext: SequenceMergePreviousContext,
+    readings: DerivedSentenceReading[],
+    newSentenceId: string,
+    resolveDrs: boolean,
+  ): Observable<SequenceMergePair[]> {
+    const previousElement = previousContext.element;
+    return from(readings).pipe(
+      concatMap(reading => this.dataService.gswbMergeSequenceSemantics({
+        parts: [
+          this.semanticPart(previousContext.semantic, previousElement.id),
+          this.semanticPart(reading.semantic, newSentenceId),
+        ],
+        parentSolutionId: reading.solution.id,
+        solutionKey: reading.semantic.syntacticOrigin,
+        mcSetId: reading.semantic.syntacticOrigin,
+        resolveDrs,
+      }).pipe(map((merged): SequenceMergePair => ({
+        merged,
+        previousElement,
+        // This reading's OWN variant's merged structure -- never another variant's.
+        sequenceStructure: reading.sequenceStructure,
+        currentSemantic: reading.semantic,
+        currentSyntax: reading.currentSyntax,
+      })))),
+      toArray(),
+    );
   }
 
   /** Narrows freshly-derived readings to the ones the user actually selected.

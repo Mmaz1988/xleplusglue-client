@@ -877,4 +877,74 @@ describe('DocumentBuilderService', () => {
       expect(suppliableStructures([analysis('S0', 2)])).toBeUndefined();
     });
   });
+
+  describe('deriveSequenceParts (regression: a whole discourse item, derived once)', () => {
+    /** One ligerSequence variant: one part key per sentence, each part with its own MCs. */
+    const variant = (index: number, keys: string[]) => ({
+      solutionKey: `sequence-${index}-${keys.join('+')}`,
+      structureJson: { ...structure, id: `structure-${index}` },
+      sequenceParts: keys.map((key, sourceIndex) => ({ sourceIndex, solutionKey: key, meaningConstructors: `mc(${key})` })),
+      sequenceAnalysis: {
+        sentences: keys.map(key => ({ syntax: [{ synId: key, structure, graph: { graphElements: [] } }] })),
+      },
+    });
+    const inputs = ['A', 'B', 'C'].map((text, index) => ({ id: `S${10 + index}`, text, structures: [structure as any] }));
+    const reading = (id: string, key: string): GswbSolution =>
+      ({ id, solutionKey: key, proofId: key, semantic: `sem(${id})`, graph: structure } as any);
+
+    it('asks LiGER once and proves each part once, however many variants share it', done => {
+      // S10 has two analyses, S11 and S12 one each: two variants, but S11/S12's parts are
+      // the same in both.
+      dataServiceMock.ligerSequence.and.returnValue(of({ solutions: [
+        variant(1, ['S0', 'S2', 'S3']), variant(2, ['S1', 'S2', 'S3']),
+      ] }));
+      dataServiceMock.gswbDeduce.and.callFake((request: any) =>
+        of({ solutions: request.proofs.map((proof: any) => reading(`${proof.sentenceId}-${proof.proofId}`, proof.proofId)) }));
+
+      service.deriveSequenceParts(inputs, 'rules', 'fof', {} as any).subscribe(result => {
+        expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(1);
+        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(3);
+        const proofKeys = dataServiceMock.gswbDeduce.calls.allArgs()
+          .map(([request]: any[]) => request.proofs.map((proof: any) => proof.proofId));
+        expect(proofKeys).toEqual([['S0', 'S1'], ['S2'], ['S3']]);
+        expect(result.parts.map(part => part.failure)).toEqual([undefined, undefined, undefined]);
+        expect(result.variants.map(v => v.partKeys)).toEqual([['S0', 'S2', 'S3'], ['S1', 'S2', 'S3']]);
+        done();
+      });
+    });
+
+    it('stops at the first sentence without semantics and says why for the rest', done => {
+      dataServiceMock.ligerSequence.and.returnValue(of({ solutions: [variant(1, ['S0', 'S1', 'S2'])] }));
+      dataServiceMock.gswbDeduce.and.callFake((request: any) => of({
+        solutions: request.proofs[0].proofId === 'S1' ? [] : [reading('r', request.proofs[0].proofId)],
+      }));
+
+      service.deriveSequenceParts(inputs, 'rules', 'fof', {} as any).subscribe(result => {
+        // Part 2 derived nothing: 2 deductions, not 3.
+        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(2);
+        expect(result.parts[0].failure).toBeUndefined();
+        expect(result.parts[1].failure).toBe('no semantics derived');
+        expect(result.parts[2].failure).toContain('S11 has no semantics');
+        expect(result.parts[2].output).toBeUndefined();
+        done();
+      });
+    });
+
+    it('hands each branch only the readings of parts consistent with its own, structure at the end', () => {
+      const variants = [
+        { variantKey: 'v1', partKeys: ['S0', 'S2'], syntax: [{ synId: 'S0' }, { synId: 'S2' }], sequenceStructure: { id: 1 } },
+        { variantKey: 'v2', partKeys: ['S1', 'S3'], syntax: [{ synId: 'S1' }, { synId: 'S3' }], sequenceStructure: { id: 2 } },
+      ] as any[];
+      const solutions = [reading('a', 'S2'), reading('b', 'S3')];
+
+      const afterS0 = service.sequenceReadings(variants, 1, 'S11', solutions, ['S0']);
+
+      expect(afterS0.map(r => r.solution.id)).toEqual(['a']);
+      expect(afterS0[0].semantic.syntacticOrigin).toBe('S2');
+      expect(afterS0[0].sequenceStructure).toEqual({ id: 1 } as any);
+      // Not the last sentence: several variants may still follow, so no structure yet.
+      expect(service.sequenceReadings(variants, 0, 'S10', [reading('c', 'S0')], [])[0].sequenceStructure)
+        .toBeUndefined();
+    });
+  });
 });

@@ -745,6 +745,13 @@ export interface GswbOutput {
   log: string;
   derivation: any;
   discriminants: GswbDiscriminant[];
+  /** Set when the sentence was derived inside its discourse item's sequence at parse time
+   *  (regression, LFGxDRT), not on its own: its readings are that item's part, numbered into
+   *  the sequence, and are folded as they are rather than derived again. */
+  derivedInSequence?: { itemId: string; sentenceIndex: number };
+  /** Why the sentence has no readings, when it was not derived or derived nothing -- e.g.
+   *  an earlier sentence of its item has no semantics. */
+  failure?: string;
 }
 
 export interface RegressionParseResult {

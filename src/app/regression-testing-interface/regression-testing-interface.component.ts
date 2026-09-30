@@ -45,7 +45,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, ReplaySubject, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, toArray } from "rxjs";
+import { catchError, EMPTY, Observable, ReplaySubject, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, throwError, toArray } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -67,7 +67,15 @@ import {
 } from '../analysis-model';
 import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
 import { AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
-import { DocumentBuilderService, SequenceMergePreviousContext, suppliableStructures } from '../document-builder/document-builder.service';
+import {
+  DerivedSequenceParts,
+  DocumentBuilderService,
+  SequenceMergePair,
+  SequenceMergePreviousContext,
+  SequenceSentenceInput,
+  SequenceVariant,
+  suppliableStructures,
+} from '../document-builder/document-builder.service';
 import { LigerWorkspaceService, RuleSetOrigin } from '../liger-workspace/liger-workspace.service';
 
 /** What a run sends and a session stores: the testsuite, and the rule set's three texts. */
@@ -109,9 +117,16 @@ interface NliChainBranch {
   hypothesisSemanticIds: string[];
   premiseAsts: LigerStructure[];
   hypothesisAsts: LigerStructure[];
+  /** Only when the item was derived in sequence at parse time: the part key of every
+   *  sentence folded in so far, which names the syntactic variants this branch is still
+   *  consistent with (see DocumentBuilderService.SequenceVariant). */
+  partKeys?: string[];
 }
 
 type PreparedNliPair = PreparedReasoningPair & { itemId: string };
+
+/** A discourse item derived in sequence at parse time, with its sentences as supplied. */
+type SequenceDerivedItem = { itemId: string; inputs: SequenceSentenceInput[] };
 
 type ParsedRegressionRunSnapshot = {
   regressionTestItems: any[];
@@ -1526,7 +1541,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.parsingSummary =
       `Parsing summary:\n` +
-      `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`;
+      `Parsed ${currentRegressionTestResults.length} of ${Object.keys(this.sentenceMap).length} sentences!`
+      + (this.sequenceDerivationFailures.length
+        ? `\nDiscourse items stopped at a sentence without semantics:\n  `
+          + this.sequenceDerivationFailures.join('\n  ')
+        : '');
   }
 
   /** Resets the per-item documents for a fresh parse.
@@ -2116,6 +2135,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     };
     this.logBackendPayload('LiGER batch annotate request', this.testsuiteUpdateMode, ligerMultipleRequest);
 
+    let sequenceItems: SequenceDerivedItem[] = [];
+    this.sequenceDerivationFailures = [];
+    if (this.testsuiteUpdateMode === 'write') this.derivedSequenceVariants.clear();
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
         if (gswbRunToken !== this.gswbRunToken) return;
@@ -2135,9 +2157,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             return aNum - bNum;
           });
 
+          // Discourse items (LFGxDRT) are derived inside their own sequence afterwards, not
+          // sentence by sentence here -- see deriveItemsInSequence.
+          sequenceItems = this.sequenceDerivedItems(data.annotations ?? {});
+          const inSequence = new Set(sequenceItems.flatMap(item => item.inputs.map(input => input.id)));
+
           const items: Record<string, GswbRequest> = {};
           const sortedMcMap: Record<string, string> = {};
           for (const key of sortedIds) {
+            if (inSequence.has(key)) continue;
             const proofs = this.batchProofInputs(key, data.annotations[key]);
             if (!proofs.length) continue;
             sortedMcMap[key] = proofs.map(proof => proof.meaningConstructors).join('\n');
@@ -2176,12 +2204,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.startGswbSummaryPolling(runStartedAt, gswbRunToken);
         this.loadAndRenderGswbState(false, runStartedAt, gswbRunToken);
 
-        this.batchDeduce(this.gswbMultipleRequest).subscribe((result: GswbBatchOutput) => {
+        const batch$: Observable<GswbBatchOutput> = Object.keys(this.gswbMultipleRequest?.items ?? {}).length
+          ? this.batchDeduce(this.gswbMultipleRequest)
+          : of({ outputs: {}, report: '' });
+        batch$.pipe(
+          switchMap(result => {
+            if (gswbRunToken !== this.gswbRunToken) return EMPTY;
+            this.stopGswbSummaryPolling();
+            return this.deriveItemsInSequence(sequenceItems, rules, logicType, gswbRunToken).pipe(
+              map(sequenceOutputs => ({ ...(result.outputs ?? {}), ...sequenceOutputs })));
+          }),
+        ).subscribe((outputs: Record<string, GswbOutput>) => {
           if (gswbRunToken !== this.gswbRunToken) return;
 
-          this.stopGswbSummaryPolling();
-
-          const outputs = result.outputs ?? {};
           this.applyAppendSnapshotToParsedState(outputs);
           this.renderGswbResults(outputs);
           this.commitParsedRegressionSnapshot();
@@ -2207,6 +2242,85 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.loading = false;
         this.activeGswbRunStartedAt = null;
       }
+    );
+  }
+
+  /** The discourse items this parse derives in sequence: every item with more than one
+   *  sentence, for LFGxDRT -- the only semantic type with sequences; others reason over each
+   *  sentence's own reading. A single-sentence item has nothing to merge and stays in the
+   *  batch, so a testsuite without discourse items is parsed exactly as before. An item
+   *  whose sentence cannot be supplied as parsed (a branching rule set) stays there too. */
+  private sequenceDerivedItems(
+    annotations: Record<string, LigerSolutionAnnotationResponse>,
+  ): SequenceDerivedItem[] {
+    if (Number(this.gswbPreferences?.gswbPreferences?.outputstyle) !== 5) return [];
+    const derived: SequenceDerivedItem[] = [];
+    for (const item of this.regressionTestItems ?? []) {
+      const sentenceIds: string[] = [...(item?.premises ?? []), ...(item?.conclusion ?? [])];
+      if (sentenceIds.length < 2 || !sentenceIds.every(id => id in annotations)) continue;
+      const inputs = sentenceIds.map(id => ({
+        id,
+        text: this.sentenceMap[id] ?? '',
+        structures: suppliableStructures(annotations[id]?.solutions) ?? [],
+      }));
+      if (!inputs.every(input => input.structures.length)) {
+        console.warn('[Regression] item has a sentence that cannot be supplied as parsed; '
+          + 'deriving its sentences one by one instead', { itemId: item.id });
+        continue;
+      }
+      derived.push({ itemId: String(item.id), inputs });
+    }
+    return derived;
+  }
+
+  /** Derives each discourse item inside its own sequence, one item after another: one
+   *  `ligerSequence` and one `/deduce` per sentence, stopping at the first sentence without
+   *  semantics (DocumentBuilderService.deriveSequenceParts). Every sentence gets an output --
+   *  a stopped one with no readings and the reason -- marked as derived in sequence, so the
+   *  fold at inference merges these readings instead of deriving them again. */
+  private deriveItemsInSequence(
+    items: SequenceDerivedItem[], ruleString: string, logicType: 'fof' | 'tff', runToken: number,
+  ): Observable<Record<string, GswbOutput>> {
+    if (!items.length) return of({});
+    const outputs: Record<string, GswbOutput> = {};
+    const empty = (): GswbOutput => ({ solutions: [], log: '', derivation: null, discriminants: [] });
+    return from(items.map((item, index) => ({ item, index }))).pipe(
+      concatMap(({ item, index }) => {
+        if (runToken !== this.gswbRunToken) return EMPTY;
+        this.displayMessage(`Deriving discourse items in sequence (${index + 1} of ${items.length}) ...`, "blue");
+        return this.documentBuilder.deriveSequenceParts(
+          item.inputs, ruleString, logicType, this.gswbPreferences.gswbPreferences,
+        ).pipe(
+          catchError(error => of<DerivedSequenceParts>({
+            variants: [],
+            parts: item.inputs.map(input => ({
+              sentenceId: input.id,
+              failure: `sequence could not be derived: ${error?.message ?? String(error)}`,
+            })),
+          })),
+          map(derived => {
+            if (derived.variants.length) this.derivedSequenceVariants.set(item.itemId, derived.variants);
+            derived.parts.forEach((part, sentenceIndex) => {
+              outputs[part.sentenceId] = {
+                ...empty(),
+                ...(part.output ?? {}),
+                ...(part.output?.solutions?.length && !part.failure ? {} : { solutions: [] }),
+                derivedInSequence: { itemId: item.itemId, sentenceIndex },
+                ...(part.failure ? { failure: part.failure } : {}),
+              };
+              if (part.meaningConstructors) this.sortedMCmap[part.sentenceId] = part.meaningConstructors;
+            });
+            const stopped = derived.parts.find(part => part.failure);
+            if (stopped) {
+              this.sequenceDerivationFailures.push(
+                `${item.itemId}: ${stopped.sentenceId} "${this.sentenceMap[stopped.sentenceId] ?? ''}" `
+                + `-- ${stopped.failure}`);
+            }
+          }),
+        );
+      }),
+      toArray(),
+      map(() => outputs),
     );
   }
 
@@ -2290,6 +2404,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     console.log("Preparing call to Vampire ...");
 
     const inference_items: Record<string, nliItem> = {};
+    const stoppedItems: string[] = [];
 
     // An explicit selection narrows the run to the items that were ticked; no selection
     // runs everything, which is what "Run inference" does straight after a parse.
@@ -2317,6 +2432,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       if (!explicitSelection) {
         if (!isNewlyAppended && isAlreadyProcessed && !selectionChanged && !parseChanged) continue;
         if (appendMode && !isNewlyAppended && !selectionChanged && !parseChanged) continue;
+      }
+
+      // An item whose discourse stopped at a sentence without semantics at parse time
+      // (deriveItemsInSequence) is not reasoned over -- and says so, rather than silently
+      // dropping out below for lack of a hypothesis reading.
+      const stoppedAt = [...(item.premises ?? []), ...(item.conclusion ?? [])]
+        .find((sentenceId: string) => gswbOutputs[sentenceId]?.failure);
+      if (stoppedAt) {
+        stoppedItems.push(`${itemId}: ${stoppedAt} -- ${gswbOutputs[stoppedAt].failure}`);
+        continue;
       }
 
       let axioms = this.session.axiomsText;
@@ -2395,8 +2520,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
 
     this.vampireCurrentRunItemCount = Object.keys(inference_items).length;
+    if (stoppedItems.length) {
+      console.warn('[Regression] items not reasoned over: a sentence has no semantics', stoppedItems);
+    }
+    this.nliPreparationFailures = [...stoppedItems];
     if (Object.keys(inference_items).length === 0) {
-      this.displayMessage("No missing Vampire items to process.", "blue");
+      this.displayMessage(stoppedItems.length
+        ? `No items to reason over; ${stoppedItems.length} stopped at a sentence without semantics.`
+        : "No missing Vampire items to process.", "blue");
       return;
     }
 
@@ -2457,7 +2588,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         // aborted while it is still going. Nothing below may reach Vampire in that case.
         if (vampireRunToken !== this.vampireRunToken) return;
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
-        const failures: string[] = [];
+        const failures: string[] = [...stoppedItems];
         const degradations: string[] = [];
         const policy = this.runAnaphoraSelection ?? ALL_ANAPHORA_BRANCHES;
         prepared = prepared.map(pair => {
@@ -2557,19 +2688,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       ...build.hypothesisSentenceIds.map(sentenceId => ({ sentenceId, side: 'hypothesis' as const })),
     ];
 
-    return this.seedNliChainBranches(document, build.premiseSentenceIds[0], gswbOutputs, useDisambiguated, ruleString, logicType).pipe(
-      map(seed => {
-        if (!seed.length) {
-          throw new Error(`No selected reading for ${build.premiseSentenceIds[0]}.`);
-        }
-        return seed;
-      }),
-      switchMap(seedBranches => remaining.reduce(
-        (branches$, next) => branches$.pipe(
-          switchMap(branches => this.foldSentenceIntoBranches(
-            document, branches, next, ruleString, logicType, gswbPreferences, resolveDrs,
-            this.selectedDiscriminantIdentifiers(next.sentenceId, gswbOutputs, useDisambiguated)))),
-        of(seedBranches)
+    // Derived in sequence at parse time: the fold only merges semantics, over the stored
+    // readings. Otherwise (other semantic types, or a session parsed before that) each later
+    // sentence is derived per context as it is folded in.
+    const variants$: Observable<SequenceVariant[] | null> = this.isDerivedInSequence(build, gswbOutputs)
+      ? this.sequenceVariantsFor(build, ruleString, logicType)
+      : of(null);
+
+    return variants$.pipe(
+      switchMap(variants => this.seedNliChainBranches(
+        document, build.premiseSentenceIds[0], gswbOutputs, useDisambiguated, ruleString, logicType, variants).pipe(
+        map(seed => {
+          if (!seed.length) {
+            throw new Error(`No selected reading for ${build.premiseSentenceIds[0]}.`);
+          }
+          return seed;
+        }),
+        switchMap(seedBranches => remaining.reduce(
+          (branches$, next, index) => branches$.pipe(
+            switchMap(branches => variants
+              ? this.foldSequencePart(document, branches, next, index + 1, variants,
+                  this.selectedSolutions(next.sentenceId, gswbOutputs, useDisambiguated), resolveDrs)
+              : this.foldSentenceIntoBranches(
+                  document, branches, next, ruleString, logicType, gswbPreferences, resolveDrs,
+                  this.selectedDiscriminantIdentifiers(next.sentenceId, gswbOutputs, useDisambiguated)))),
+          of(seedBranches)
+        )),
       )),
       switchMap(branches => {
         this.registerFinalSequence(document, build, branches);
@@ -2622,11 +2766,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     useDisambiguated: boolean,
     ruleString: string,
     logicType: 'fof' | 'tff',
+    variants: SequenceVariant[] | null = null,
   ): Observable<NliChainBranch[]> {
-    return this.registerBatchParsedSentence(document, sentenceId, gswbOutputs, useDisambiguated, ruleString, logicType).pipe(
+    // Derived in sequence: each reading's syntax is its part's syntax in the sequence.
+    const sequenceSyntax = variants
+      ? (solution: GswbSolution) => variants.find(variant =>
+          variant.partKeys[0] === (solution.solutionKey || solution.proofId))?.syntax[0]
+      : undefined;
+    return this.registerBatchParsedSentence(
+      document, sentenceId, gswbOutputs, useDisambiguated, ruleString, logicType, sequenceSyntax).pipe(
       map(registered => {
         if (!registered) return [];
         return registered.map(({ syntax, semantic }) => ({
+          ...(variants ? { partKeys: [syntax.synId] } : {}),
           element: {
             id: sentenceId,
             text: this.sentenceMap[sentenceId] ?? '',
@@ -2709,14 +2861,26 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     useDisambiguated: boolean,
     ruleString: string,
     logicType: 'fof' | 'tff',
+    sequenceSyntax?: (solution: GswbSolution) => SyntacticAnalysis | undefined,
   ): Observable<{ syntax: SyntacticAnalysis; semantic: SemanticAnalysis }[] | null> {
-    const solutions = this.selectedSolutions(sentenceId, gswbOutputs, useDisambiguated);
+    let solutions = this.selectedSolutions(sentenceId, gswbOutputs, useDisambiguated);
+    if (sequenceSyntax) {
+      // A reading whose part no variant lists has no syntax to hang off; said, not guessed.
+      const unplaced = solutions.filter(solution => !sequenceSyntax(solution));
+      if (unplaced.length) {
+        console.error('[Regression] in-sequence reading names no sequence variant; dropped',
+          { sentenceId, readings: unplaced.map(solution => solution.id) });
+      }
+      solutions = solutions.filter(solution => !!sequenceSyntax(solution));
+    }
     if (!solutions.length) return of(null);
 
-    const fromBatch = this.batchSyntaxFor(sentenceId, solutions);
-    const syntaxOf$: Observable<(solution: GswbSolution) => SyntacticAnalysis> = fromBatch
-      ? of(solution => fromBatch.get(solution)!)
-      : this.seedSentenceSyntax(sentenceId, ruleString, logicType).pipe(map(syntax => () => syntax));
+    const fromBatch = sequenceSyntax ? null : this.batchSyntaxFor(sentenceId, solutions);
+    const syntaxOf$: Observable<(solution: GswbSolution) => SyntacticAnalysis> = sequenceSyntax
+      ? of(solution => sequenceSyntax(solution)!)
+      : fromBatch
+        ? of(solution => fromBatch.get(solution)!)
+        : this.seedSentenceSyntax(sentenceId, ruleString, logicType).pipe(map(syntax => () => syntax));
 
     return syntaxOf$.pipe(
       map(syntaxOf => {
@@ -2772,7 +2936,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     resolveDrs: boolean,
     selectedDiscriminantIdentifiers: string[] = [],
   ): Observable<NliChainBranch[]> {
-    const branchByElement = new Map(branches.map(branch => [branch.element, branch]));
     const previousContexts: SequenceMergePreviousContext[] = branches.map(branch =>
       ({ semantic: branch.semantic, element: branch.element }));
     const newSentenceText = this.sentenceMap[next.sentenceId] ?? '';
@@ -2806,77 +2969,168 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           throw new Error(`Could not fold ${next.sentenceId} into any branch.${detail}`);
         }
 
-        // The reading used for reasoning is the one derived here, freshly, inside the
-        // sequence (see DocumentBuilderService.SequenceMergeRebase) -- register it under
-        // this sentence's OWN document entry now, unioned with whatever it already had
-        // from batch parse. The independent batch-parse reading stays too, for the
-        // parsing report panel and disambiguation.
-        const syntaxById = new Map<string, SyntacticAnalysis>();
-        const semanticById = new Map<string, SemanticAnalysis>();
-        const synSemMapping: SynSemMapping = {};
-        result.pairs.forEach(pair => {
-          if (!pair.currentSyntax || !pair.currentSemantic) return;
-          syntaxById.set(pair.currentSyntax.synId, pair.currentSyntax);
-          semanticById.set(pair.currentSemantic.semId, pair.currentSemantic);
-          const mapped = synSemMapping[pair.currentSyntax.synId] ?? [];
-          if (!mapped.includes(pair.currentSemantic.semId)) mapped.push(pair.currentSemantic.semId);
-          synSemMapping[pair.currentSyntax.synId] = mapped;
-        });
-        if (syntaxById.size) {
-          this.documentBuilder.upsertSentenceAnalyses(document, [{
-            id: next.sentenceId,
-            text: newSentenceText,
-            syntax: Array.from(syntaxById.values()),
-            semantics: Array.from(semanticById.values()),
-            synSemMapping,
-          }]);
-        }
-
-        const isPremise = next.side === 'premise';
-        const folded: NliChainBranch[] = [];
-        result.pairs.forEach(pair => {
-          const branch = branchByElement.get(pair.previousElement);
-          if (!branch || !pair.currentSemantic || !pair.sequenceStructure || !pair.merged.semanticAnalysis) {
-            console.error('[Regression] merged pair is missing a required field; dropping this branch', {
-              sentenceId: next.sentenceId, previousElementId: pair.previousElement.id,
-            });
-            return;
-          }
-          const sentenceIdsSoFar = [...branch.sentenceIdsSoFar, next.sentenceId];
-          const currentGraph = pair.currentSemantic.graph as LigerStructure;
-          folded.push({
-            element: {
-              id: compositeAnalysisId(sentenceIdsSoFar),
-              text: sentenceIdsSoFar.map(id => this.sentenceMap[id] ?? '').join(' '),
-              sentenceIds: sentenceIdsSoFar,
-              syntax: pair.currentSyntax ? [pair.currentSyntax] : [],
-              semantics: [pair.merged.semanticAnalysis],
-              synSemMapping: pair.currentSyntax
-                ? { [pair.currentSyntax.synId]: [pair.merged.semanticAnalysis.semId] } : {},
-            },
-            semantic: pair.merged.semanticAnalysis,
-            sentenceIdsSoFar,
-            sequenceStructure: pair.sequenceStructure,
-            merged: pair.merged,
-            // Kept exactly as it was once the hypothesis starts folding in -- the prior
-            // (`Q`) is the merged premises alone, never premises + conclusion.
-            premiseSemantic: isPremise ? pair.merged.semantic : branch.premiseSemantic,
-            premiseSemanticIds: isPremise
-              ? [...branch.premiseSemanticIds, pair.currentSemantic.semId]
-              : branch.premiseSemanticIds,
-            hypothesisSemanticIds: isPremise
-              ? branch.hypothesisSemanticIds
-              : [...branch.hypothesisSemanticIds, pair.currentSemantic.semId],
-            premiseAsts: isPremise ? [...branch.premiseAsts, currentGraph] : branch.premiseAsts,
-            hypothesisAsts: isPremise ? branch.hypothesisAsts : [...branch.hypothesisAsts, currentGraph],
-          });
-        });
-        if (!folded.length) {
-          throw new Error(`Every branch lost a required field while folding in ${next.sentenceId}.`);
-        }
-        return folded;
+        return this.branchesFromPairs(document, branches, next, result.pairs);
       })
     );
+  }
+
+  /** Folds one more sentence into every branch from readings derived at parse time: no
+   *  derivation, only the semantic merge per branch. Each branch takes the readings of the
+   *  parts consistent with the variants it is still in (`NliChainBranch.partKeys`) -- the
+   *  same pairs the per-context fold (`foldSentenceIntoBranches`) produced, without
+   *  proving the sentence again for every context. */
+  private foldSequencePart(
+    document: XlePlusGlueDocument,
+    branches: NliChainBranch[],
+    next: { sentenceId: string; side: 'premise' | 'hypothesis' },
+    sentenceIndex: number,
+    variants: SequenceVariant[],
+    solutions: GswbSolution[],
+    resolveDrs: boolean,
+  ): Observable<NliChainBranch[]> {
+    return from(branches).pipe(
+      concatMap(branch => this.documentBuilder.mergeReadingsIntoContext(
+        { semantic: branch.semantic, element: branch.element },
+        this.documentBuilder.sequenceReadings(
+          variants, sentenceIndex, next.sentenceId, solutions, branch.partKeys ?? []),
+        next.sentenceId,
+        resolveDrs,
+      )),
+      toArray(),
+      map(pairLists => {
+        const pairs = pairLists.flat();
+        if (!pairs.length) {
+          throw new Error(`Could not fold ${next.sentenceId} into any branch: no selected reading `
+            + `of it belongs to a sequence variant the earlier readings are in.`);
+        }
+        const last = sentenceIndex === variants[0].partKeys.length - 1;
+        return this.branchesFromPairs(document, branches, next, pairs, last);
+      }),
+    );
+  }
+
+  /** The syntactic variants of an item derived in sequence: kept from its parse when this
+   *  run parsed it, otherwise asked for again -- one `ligerSequence` over the stored
+   *  structures, which numbers the parts the same way (S0.. across the call). */
+  private sequenceVariantsFor(
+    build: NliItemBuild, ruleString: string, logicType: 'fof' | 'tff',
+  ): Observable<SequenceVariant[]> {
+    const known = this.derivedSequenceVariants.get(build.itemId);
+    if (known) return of(known);
+    const inputs = this.sequenceInputs([...build.premiseSentenceIds, ...build.hypothesisSentenceIds]);
+    if (!inputs) {
+      return throwError(() => new Error(`${build.itemId}: a sentence has no suppliable structure.`));
+    }
+    return this.documentBuilder.sequenceVariants(inputs, ruleString, logicType).pipe(
+      map(({ variants }) => {
+        this.derivedSequenceVariants.set(build.itemId, variants);
+        return variants;
+      }));
+  }
+
+  /** Whether every sentence of the item was derived inside the item's sequence at parse
+   *  time (`GswbOutput.derivedInSequence`). */
+  private isDerivedInSequence(build: NliItemBuild, gswbOutputs: Record<string, GswbOutput>): boolean {
+    return [...build.premiseSentenceIds, ...build.hypothesisSentenceIds]
+      .every(sentenceId => gswbOutputs[sentenceId]?.derivedInSequence?.itemId === build.itemId);
+  }
+
+  /** The item's sentences with their parsed structures, as a sequence takes them; null if any
+   *  has no suppliable structure (see `suppliableStructures`). */
+  private sequenceInputs(sentenceIds: string[]): SequenceSentenceInput[] | null {
+    const inputs = sentenceIds.map(id => ({
+      id,
+      text: this.sentenceMap[id] ?? '',
+      structures: suppliableStructures(this.session.lastAnnotations?.[id]?.solutions) ?? [],
+    }));
+    return inputs.every(input => input.structures.length) ? inputs : null;
+  }
+
+  /** The branches one fold step leaves: one per merge pair, each the pair's previous branch
+   *  extended by the new sentence's reading. Shared by both folds -- the one that derives the
+   *  sentence per context (`foldSentenceIntoBranches`) and the one over readings derived at
+   *  parse time (`foldSequencePart`). `sequenceStructure` is required only when
+   *  `requireStructure`: the parse-time fold attaches it at the last sentence alone, the only
+   *  one whose structure is read. */
+  private branchesFromPairs(
+    document: XlePlusGlueDocument,
+    branches: NliChainBranch[],
+    next: { sentenceId: string; side: 'premise' | 'hypothesis' },
+    pairs: SequenceMergePair[],
+    requireStructure = true,
+  ): NliChainBranch[] {
+    const branchByElement = new Map(branches.map(branch => [branch.element, branch]));
+    const newSentenceText = this.sentenceMap[next.sentenceId] ?? '';
+    // The reading used for reasoning is the one derived inside the sequence (see
+    // DocumentBuilderService.SequenceMergeRebase) -- register it under this
+    // sentence's OWN document entry now, unioned with whatever it already had.
+    const syntaxById = new Map<string, SyntacticAnalysis>();
+    const semanticById = new Map<string, SemanticAnalysis>();
+    const synSemMapping: SynSemMapping = {};
+    pairs.forEach(pair => {
+      if (!pair.currentSyntax || !pair.currentSemantic) return;
+      syntaxById.set(pair.currentSyntax.synId, pair.currentSyntax);
+      semanticById.set(pair.currentSemantic.semId, pair.currentSemantic);
+      const mapped = synSemMapping[pair.currentSyntax.synId] ?? [];
+      if (!mapped.includes(pair.currentSemantic.semId)) mapped.push(pair.currentSemantic.semId);
+      synSemMapping[pair.currentSyntax.synId] = mapped;
+    });
+    if (syntaxById.size) {
+      this.documentBuilder.upsertSentenceAnalyses(document, [{
+        id: next.sentenceId,
+        text: newSentenceText,
+        syntax: Array.from(syntaxById.values()),
+        semantics: Array.from(semanticById.values()),
+        synSemMapping,
+      }]);
+    }
+
+    const isPremise = next.side === 'premise';
+    const folded: NliChainBranch[] = [];
+    pairs.forEach(pair => {
+      const branch = branchByElement.get(pair.previousElement);
+      if (!branch || !pair.currentSemantic || (requireStructure && !pair.sequenceStructure)
+        || !pair.merged.semanticAnalysis) {
+        console.error('[Regression] merged pair is missing a required field; dropping this branch', {
+          sentenceId: next.sentenceId, previousElementId: pair.previousElement.id,
+        });
+        return;
+      }
+      const sentenceIdsSoFar = [...branch.sentenceIdsSoFar, next.sentenceId];
+      const currentGraph = pair.currentSemantic.graph as LigerStructure;
+      folded.push({
+        element: {
+          id: compositeAnalysisId(sentenceIdsSoFar),
+          text: sentenceIdsSoFar.map(id => this.sentenceMap[id] ?? '').join(' '),
+          sentenceIds: sentenceIdsSoFar,
+          syntax: pair.currentSyntax ? [pair.currentSyntax] : [],
+          semantics: [pair.merged.semanticAnalysis],
+          synSemMapping: pair.currentSyntax
+            ? { [pair.currentSyntax.synId]: [pair.merged.semanticAnalysis.semId] } : {},
+        },
+        semantic: pair.merged.semanticAnalysis,
+        sentenceIdsSoFar,
+        sequenceStructure: pair.sequenceStructure,
+        merged: pair.merged,
+        // Kept exactly as it was once the hypothesis starts folding in -- the prior
+        // (`Q`) is the merged premises alone, never premises + conclusion.
+        premiseSemantic: isPremise ? pair.merged.semantic : branch.premiseSemantic,
+        premiseSemanticIds: isPremise
+          ? [...branch.premiseSemanticIds, pair.currentSemantic.semId]
+          : branch.premiseSemanticIds,
+        hypothesisSemanticIds: isPremise
+          ? branch.hypothesisSemanticIds
+          : [...branch.hypothesisSemanticIds, pair.currentSemantic.semId],
+        premiseAsts: isPremise ? [...branch.premiseAsts, currentGraph] : branch.premiseAsts,
+        hypothesisAsts: isPremise ? branch.hypothesisAsts : [...branch.hypothesisAsts, currentGraph],
+        ...(branch.partKeys && pair.currentSyntax
+          ? { partKeys: [...branch.partKeys, pair.currentSyntax.synId] } : {}),
+      });
+    });
+    if (!folded.length) {
+      throw new Error(`Every branch lost a required field while folding in ${next.sentenceId}.`);
+    }
+    return folded;
   }
 
   /** Registers the item's complete premises+hypothesis sequence once, aggregating every
@@ -3046,6 +3300,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   /** Ranking requests still running, per item. */
   private readonly pendingRankings = new Map<string, ReplaySubject<void>>();
+
+  /** Per discourse item derived in sequence by this run's parse: its syntactic variants,
+   *  so inference folds without asking LiGER again. Not persisted (the structures are
+   *  large); a restored session asks for them once per item (`sequenceVariantsFor`). */
+  private readonly derivedSequenceVariants = new Map<string, SequenceVariant[]>();
+
+  /** This parse's discourse items that stopped at a sentence without semantics, as
+   *  "item: sentence -- reason"; shown in the parsing summary. */
+  private sequenceDerivationFailures: string[] = [];
 
   private prepareBranchChecks(
     build: NliItemBuild,

@@ -292,6 +292,77 @@ describe('RegressionTestingInterfaceComponent', () => {
       });
   });
 
+  describe('an item derived in sequence at parse time', () => {
+    /** S1 has two analyses (parts S0, S1), S2 and S3 one each: two variants. */
+    const variants = [
+      { variantKey: 'v1', partKeys: ['S0', 'S2', 'S3'], sequenceStructure: { id: 'merged-v1' },
+        syntax: ['S0', 'S2', 'S3'].map(synId => ({ synId, structure: { id: synId } })) },
+      { variantKey: 'v2', partKeys: ['S1', 'S2', 'S3'], sequenceStructure: { id: 'merged-v2' },
+        syntax: ['S1', 'S2', 'S3'].map(synId => ({ synId, structure: { id: synId } })) },
+    ];
+    const output = (sentenceIndex: number, readings: Array<[string, string]>) => ({
+      solutions: readings.map(([id, key]) => ({ id, solutionKey: key, semantic: id, graph: { id: `${id}-graph` } })),
+      log: '', derivation: null, discriminants: [],
+      derivedInSequence: { itemId: 'n1', sentenceIndex },
+    });
+
+    beforeEach(() => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      mockChainEndpoints(dataServiceSpy);
+      component.session.lastGswbOutputs = {
+        S1: output(0, [['S1-a', 'S0'], ['S1-b', 'S1']]),
+        S2: output(1, [['S2-a', 'S2']]),
+        S3: output(2, [['S3-a', 'S3']]),
+      } as any;
+      (component as any).derivedSequenceVariants.set('n1', variants);
+    });
+
+    it('folds the stored readings: no parse, no deduction, one merge per branch and sentence', done => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+        .subscribe(() => {
+          expect(dataServiceSpy.ligerSequence).not.toHaveBeenCalled();
+          expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
+          // Two readings of S1, each folded with S2 and then S3.
+          expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(4);
+          const structures = reasoningPipeline.prepareReasoningChecks.calls.allArgs()
+            .map(([request]) => (request.sequenceStructure as any).id).sort();
+          // Each branch reasons over its own variant's merged structure.
+          expect(structures).toEqual(['merged-v1', 'merged-v2']);
+          done();
+        });
+    });
+
+    it('asks LiGER for the variants once when this run did not parse the item', done => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      (component as any).derivedSequenceVariants.clear();
+      dataServiceSpy.ligerSequence.and.returnValue(of({ solutions: variants.map(v => ({
+        solutionKey: v.variantKey, structureJson: v.sequenceStructure,
+        sequenceParts: v.partKeys.map((key, sourceIndex) => ({ sourceIndex, solutionKey: key })),
+        sequenceAnalysis: { sentences: v.syntax.map(syntax => ({ syntax: [syntax] })) },
+      })) } as any));
+      (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+        .subscribe(() => {
+          expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
+          expect((dataServiceSpy.ligerSequence.calls.mostRecent().args[0] as any).sentenceIds).toEqual(['S1', 'S2', 'S3']);
+          expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
+          done();
+        });
+    });
+
+    it('derives only discourse items in sequence, and only for LFGxDRT', () => {
+      component.regressionTestItems = [
+        { id: 'n1', premises: ['S1', 'S2'], conclusion: ['S3'] },
+        { id: 'n2', premises: ['S4'], conclusion: [] },
+      ];
+      const annotations = { ...component.session.lastAnnotations, S4: component.session.lastAnnotations!['S1'] } as any;
+      (component as any).gswbPreferences = { gswbPreferences: { outputstyle: 5 } };
+      expect((component as any).sequenceDerivedItems(annotations).map((item: any) => item.itemId)).toEqual(['n1']);
+      (component as any).gswbPreferences = { gswbPreferences: { outputstyle: 3 } };
+      expect((component as any).sequenceDerivedItems(annotations)).toEqual([]);
+    });
+  });
+
   it('parses a sentence whose batch analyses have no structure, as before', done => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy, false);
