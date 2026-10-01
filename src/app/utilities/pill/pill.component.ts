@@ -7,7 +7,8 @@ import {GswbSolution} from "../../models/models";
 
 
 
-type PillVariant = 'glyph-grid' | 'text' | 'editor' | 'sem-vis';
+/** `content`: whatever the host places between the pill's tags. */
+type PillVariant = 'glyph-grid' | 'text' | 'editor' | 'sem-vis' | 'content';
 
 @Component({
   selector: 'app-pill',

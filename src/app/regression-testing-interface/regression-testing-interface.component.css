@@ -95,6 +95,45 @@ div.errorhandling {
   white-space: pre-line;
 }
 
+.run-report {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: #1f2937;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.run-report table {
+  border-collapse: collapse;
+}
+
+.run-report th,
+.run-report td {
+  padding: 3px 10px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.run-report-timings thead th {
+  font-weight: 600;
+  color: #1565c0;
+  border-bottom: 2px solid #c8dff0;
+}
+
+.run-report-timings tbody tr:not(.run-report-phase) td {
+  font-weight: 600;
+}
+
+.run-report-timings tr.run-report-phase td:first-child {
+  padding-left: 24px;
+}
+
+.run-report-outcomes th {
+  font-weight: 600;
+  color: #4b5563;
+}
+
 .vampire-progress-panel {
   margin: 8px 0 12px;
   padding: 10px 12px;

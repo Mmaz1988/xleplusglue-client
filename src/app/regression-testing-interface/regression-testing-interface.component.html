@@ -236,11 +236,29 @@
     </div>
     <div *ngIf="hasTimingInfo" class="processing-timing">
       <div class="processing-timing-summary">{{ processingTimingSummary }}</div>
-      <app-pill
-        badge="i"
-        variant="text"
-        [text]="processingTimingDetails"
-        minimizedColor="#1565c0">
+      <app-pill badge="i" variant="content" minimizedColor="#1565c0">
+        <div class="run-report">
+          <table *ngIf="runReport.timings.length" class="run-report-timings">
+            <thead>
+              <tr>
+                <th></th><th>Started</th><th>Duration</th><th>Per</th><th>Count</th>
+                <th>Average</th><th>Fastest</th><th>Slowest</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of runReport.timings" [class.run-report-phase]="row.phase">
+                <td>{{ row.label }}</td><td>{{ row.started }}</td><td>{{ row.duration }}</td>
+                <td>{{ row.per }}</td><td>{{ row.count }}</td><td>{{ row.average }}</td>
+                <td>{{ row.fastest }}</td><td>{{ row.slowest }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <table *ngIf="runReport.outcomes.length" class="run-report-outcomes">
+            <tr *ngFor="let outcome of runReport.outcomes">
+              <th>{{ outcome[0] }}</th><td>{{ outcome[1] }}</td>
+            </tr>
+          </table>
+        </div>
       </app-pill>
     </div>
   </div>

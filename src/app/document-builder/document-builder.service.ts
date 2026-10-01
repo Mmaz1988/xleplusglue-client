@@ -225,6 +225,9 @@ export interface DerivedSequencePart {
   output?: any;
   /** The part's meaning constructors, one analysis after another, as proven. */
   meaningConstructors?: string;
+  /** When its `/deduce` started (epoch ms) and how long it took, as the client saw it. */
+  deduceStartedAt?: number;
+  deduceMs?: number;
   /** Set when the part could not be derived, or was not derived because an earlier one
    *  failed. */
   failure?: string;
@@ -232,6 +235,9 @@ export interface DerivedSequencePart {
 
 export interface DerivedSequenceParts {
   variants: SequenceVariant[];
+  /** When the `ligerSequence` call started (epoch ms) and how long it took. */
+  sequenceStartedAt?: number;
+  sequenceMs?: number;
   /** One entry per sentence, in order. */
   parts: DerivedSequencePart[];
 }
@@ -700,8 +706,10 @@ export class DocumentBuilderService {
     logicType: 'fof' | 'tff' | undefined,
     gswbPreferences: GswbPreferences,
   ): Observable<DerivedSequenceParts> {
+    const sequenceStartedAt = Date.now();
     return this.sequenceVariants(sentences, ruleString, logicType).pipe(
       switchMap(({ variants, solutions }) => {
+        const sequenceMs = Date.now() - sequenceStartedAt;
         const parts: DerivedSequencePart[] = [];
         let failed: DerivedSequencePart | null = null;
         return from(sentences.map((sentence, index) => ({ sentence, index }))).pipe(
@@ -720,19 +728,22 @@ export class DocumentBuilderService {
               return of<DerivedSequencePart>({ sentenceId: sentence.id, failure: 'no meaning constructors' });
             }
             const meaningConstructors = proofs.map(proof => proof.meaningConstructors).join('\n');
+            const deduceStartedAt = Date.now();
+            const timed = (part: DerivedSequencePart): DerivedSequencePart =>
+              ({ ...part, deduceStartedAt, deduceMs: Date.now() - deduceStartedAt });
             return this.dataService.gswbDeduce({
               premises: meaningConstructors,
               gswbPreferences,
               structure: proofs[0].structure,
               proofs,
             }).pipe(
-              map((output: any): DerivedSequencePart => (output?.solutions ?? []).some((solution: GswbSolution) =>
+              map((output: any): DerivedSequencePart => timed((output?.solutions ?? []).some((solution: GswbSolution) =>
                 typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0)
                 ? { sentenceId: sentence.id, output, meaningConstructors }
-                : { sentenceId: sentence.id, output, meaningConstructors, failure: 'no semantics derived' }),
-              catchError(error => of<DerivedSequencePart>({
+                : { sentenceId: sentence.id, output, meaningConstructors, failure: 'no semantics derived' })),
+              catchError(error => of<DerivedSequencePart>(timed({
                 sentenceId: sentence.id, meaningConstructors, failure: this.describeError(error),
-              })),
+              }))),
             );
           }),
           map(part => {
@@ -741,7 +752,7 @@ export class DocumentBuilderService {
             return part;
           }),
           toArray(),
-          map(() => ({ variants, parts })),
+          map(() => ({ variants, parts, sequenceStartedAt, sequenceMs })),
         );
       }),
     );

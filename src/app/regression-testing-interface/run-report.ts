@@ -23,7 +23,9 @@ export interface TimingStats {
   slowest: TimedEntry;
 }
 
-/** One phase of a step: when it started and how long it ran (null while it runs). */
+/** One phase of a step: when it first started and how long it ran, adding up every call it
+ *  made -- LiGER's batch parse and each discourse item's sequence call are one phase, as are
+ *  GSWB's batch proof and each in-sequence `/deduce` (null while it runs). */
 export interface RunPhase {
   name: string;
   startedAt: string;
@@ -99,6 +101,17 @@ export function totalDurationMs(report: RegressionRunReport | null | undefined):
   return parts.length ? parts.reduce((sum, ms) => sum + ms, 0) : null;
 }
 
+/** Adds one call's time to a phase: creates the phase at its first call, sums the rest. */
+export function addToPhase(phases: RunPhase[], name: string, startedAtMs: number, ms: number): void {
+  const phase = phases.find(candidate => candidate.name === name);
+  if (!phase) {
+    phases.push({ name, startedAt: new Date(startedAtMs).toISOString(), durationMs: ms });
+    return;
+  }
+  phase.durationMs = (phase.durationMs ?? 0) + ms;
+  if (startedAtMs < new Date(phase.startedAt).getTime()) phase.startedAt = new Date(startedAtMs).toISOString();
+}
+
 /** Starts a phase now; the returned function ends it. */
 export function startPhase(phases: RunPhase[], name: string): () => void {
   const phase: RunPhase = { name, startedAt: new Date().toISOString(), durationMs: null };
@@ -150,76 +163,85 @@ export function reportSummary(report: RegressionRunReport | null | undefined): s
   return parts.join(' · ');
 }
 
-/** The full report, one section per step. `label` names a sentence or item for the fastest
- *  and slowest entries. */
-export function reportDetails(
+/** One row of the timing table: a step, or one of its phases, with the per-sentence or
+ *  per-item statistics where there are any. */
+export interface ReportTimingRow {
+  label: string;
+  phase: boolean;
+  started: string;
+  duration: string;
+  per: string;
+  count: string;
+  average: string;
+  fastest: string;
+  slowest: string;
+}
+
+/** The report as tables: timings (steps, their phases, the total) and outcomes. */
+export function reportTables(
   report: RegressionRunReport | null | undefined,
-  label: (id: string) => string = id => id,
   now = new Date(),
-): string {
-  const lines: string[] = [];
-  const stats = (what: string, value: TimingStats | null) => value
-    ? `    per ${what}: average ${formatDuration(value.averageMs)}`
-      + ` · fastest ${label(value.fastest.id)} ${formatDuration(value.fastest.ms)}`
-      + ` · slowest ${label(value.slowest.id)} ${formatDuration(value.slowest.ms)}`
-    : null;
-  const phaseLines = (phases: RunPhase[], perEntry: Record<string, string | null>) => phases.flatMap(phase => [
-    `  ${phase.name}: ${phase.durationMs === null ? 'running' : formatDuration(phase.durationMs)}`
-      + ` (started ${formatTimestamp(phase.startedAt, now)})`,
-    ...(perEntry[phase.name] ? [perEntry[phase.name] as string] : []),
-  ]);
+): { timings: ReportTimingRow[]; outcomes: Array<[string, string]> } {
+  const timings: ReportTimingRow[] = [];
+  const outcomes: Array<[string, string]> = [];
+  const row = (label: string, phase: boolean, started: string | null, durationMs: number | null,
+               per = '', stats: TimingStats | null = null): ReportTimingRow => ({
+    label, phase,
+    started: started ? formatTimestamp(started, now) : '',
+    duration: durationMs === null ? 'running' : formatDuration(durationMs),
+    per: stats ? per : '',
+    count: stats ? String(stats.count) : '',
+    average: stats ? formatDuration(stats.averageMs) : '',
+    fastest: stats ? `${stats.fastest.id} ${formatDuration(stats.fastest.ms)}` : '',
+    slowest: stats ? `${stats.slowest.id} ${formatDuration(stats.slowest.ms)}` : '',
+  });
+  const phaseStats: Record<string, [string, TimingStats | null]> = {};
 
   const parse = report?.parse;
   if (parse) {
-    lines.push(`Parse: ${parse.durationMs === null ? 'running' : formatDuration(parse.durationMs)}`
-      + ` (started ${formatTimestamp(parse.startedAt, now)})`);
-    lines.push(...phaseLines(parse.phases, {
-      [PARSE_PHASES.parsing]: stats('sentence', parse.parsing),
-      [PARSE_PHASES.composition]: stats('sentence', parse.composition),
-    }));
-    // Composition per sentence covers the discourse items too, whose sentences are
-    // composed in their own phase.
-    if (!parse.phases.some(phase => phase.name === PARSE_PHASES.composition) && parse.composition) {
-      lines.push(stats('sentence', parse.composition)!);
-    }
-    const { total, successful, failedIds } = parse.sentences;
-    lines.push(`  Sentences: ${successful}/${total} with a semantics`
-      + (failedIds.length ? ` · without: ${failedIds.join(', ')}` : ''));
-    lines.push(`  Items: ${parse.items.total}`
-      + (parse.items.discourse ? ` · ${parse.items.discourse} discourse item(s) derived in sequence` : ''));
-    parse.items.stopped.forEach(stopped => lines.push(`    stopped: ${stopped}`));
-    if (parse.failure) lines.push(`  Failed: ${parse.failure}`);
+    phaseStats[PARSE_PHASES.parsing] = ['sentence', parse.parsing];
+    phaseStats[PARSE_PHASES.composition] = ['sentence', parse.composition];
+    timings.push(row('Parse', false, parse.startedAt, parse.durationMs));
+    parse.phases.forEach(phase => timings.push(row(phase.name, true, phase.startedAt, phase.durationMs,
+      ...(phaseStats[phase.name] ?? ['', null]))));
+    outcomes.push(['Sentences with a semantics', `${parse.sentences.successful} / ${parse.sentences.total}`]);
+    if (parse.sentences.failedIds.length) outcomes.push(['Without a semantics', parse.sentences.failedIds.join(', ')]);
+    outcomes.push(['Items', String(parse.items.total)]);
+    if (parse.items.discourse) outcomes.push(['Discourse items derived in sequence', String(parse.items.discourse)]);
+    parse.items.stopped.forEach(stopped => outcomes.push(['Stopped', stopped]));
+    if (parse.failure) outcomes.push(['Parse failed', parse.failure]);
   }
 
   const inference = report?.inference;
   if (inference) {
-    const scope = inference.selected ? `${inference.itemsInRun} selected item(s)` : `${inference.itemsInRun} item(s)`;
-    lines.push(`Inference: ${inference.durationMs === null ? 'running' : formatDuration(inference.durationMs)}`
-      + ` (started ${formatTimestamp(inference.startedAt, now)}; ${inference.runKind}, ${scope})`);
-    lines.push(...phaseLines(inference.phases, {
-      [INFERENCE_PHASES.preparation]: stats('item', inference.preparation),
-      [INFERENCE_PHASES.vampire]: stats('item', inference.vampire),
-    }));
+    phaseStats[INFERENCE_PHASES.preparation] = ['item', inference.preparation];
+    phaseStats[INFERENCE_PHASES.vampire] = ['item', inference.vampire];
+    timings.push(row('Inference', false, inference.startedAt, inference.durationMs));
+    inference.phases.forEach(phase => timings.push(row(phase.name, true, phase.startedAt, phase.durationMs,
+      ...(phaseStats[phase.name] ?? ['', null]))));
+    outcomes.push(['Inference run', `${inference.runKind}, ${inference.itemsInRun} `
+      + `${inference.selected ? 'selected ' : ''}item(s)`]);
     if (inference.finishedAt) {
       const { total, correct, wrong, notParsed, noVerdict } = inference.results;
-      lines.push(`  Results (all ${total} items): ${correct} correct · ${wrong} wrong · `
-        + `${notParsed} not parsed · ${noVerdict} without verdict`);
-      lines.push(`  Proofs: ${inference.proofs}`);
+      outcomes.push(['Correct', `${correct} / ${total}`]);
+      outcomes.push(['Wrong', String(wrong)]);
+      outcomes.push(['Not parsed', String(notParsed)]);
+      outcomes.push(['Without verdict', String(noVerdict)]);
+      outcomes.push(['Proofs', String(inference.proofs)]);
     }
-    if (inference.failure) lines.push(`  Failed: ${inference.failure}`);
+    if (inference.failure) outcomes.push(['Inference failed', inference.failure]);
   }
 
   const total = totalDurationMs(report);
   if (parse?.durationMs != null && inference?.durationMs != null && total !== null) {
-    lines.push(`Total: ${formatDuration(total)} (parse + inference)`);
+    timings.push(row('Total (parse + inference)', false, null, total));
   }
-  return lines.join('\n');
+  return { timings, outcomes };
 }
 
 export const PARSE_PHASES = {
   parsing: 'Parsing (LiGER)',
   composition: 'Composition (GSWB)',
-  discourse: 'Discourse items in sequence (LiGER + GSWB)',
 } as const;
 
 export const INFERENCE_PHASES = {

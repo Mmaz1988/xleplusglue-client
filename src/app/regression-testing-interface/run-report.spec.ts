@@ -1,6 +1,6 @@
 import {
-  INFERENCE_PHASES, PARSE_PHASES, RegressionRunReport, formatDuration, reportDetails, reportSummary,
-  startPhase, timingStats, totalDurationMs,
+  INFERENCE_PHASES, PARSE_PHASES, RegressionRunReport, addToPhase, formatDuration, reportSummary,
+  reportTables, startPhase, timingStats, totalDurationMs,
 } from './run-report';
 import { createRegressionTestingSession, regressionDocumentToSession, regressionSessionToDocument } from '../models/models';
 
@@ -53,16 +53,35 @@ describe('run report', () => {
     expect(reportSummary(running)).toBe('Parse 1m00s · Inference…');
   });
 
-  it('reports phases with their start, per-sentence and per-item extremes, and the counts', () => {
-    const details = reportDetails(report(), id => `<${id}>`);
-    expect(details).toContain('Parsing (LiGER): 40.0s');
-    expect(details).toContain('per sentence: average 2.00s · fastest <S0> 1.00s · slowest <S1> 3.00s');
-    expect(details).toContain('Composition (GSWB): 20.0s');
-    expect(details).toContain('Sentences: 2/3 with a semantics · without: S2');
-    expect(details).toContain('stopped: n1: S2');
-    expect(details).toContain('Results (all 2 items): 1 correct · 0 wrong · 1 not parsed · 0 without verdict');
-    expect(details).toContain('Total: 3m00s (parse + inference)');
-    expect(details).toMatch(/Vampire: 1m30s \(started .+\)/);
+  it('tabulates steps, phases with their per-sentence and per-item extremes, and the outcomes', () => {
+    const { timings, outcomes } = reportTables(report());
+    expect(timings.map(row => [row.label, row.phase, row.duration])).toEqual([
+      ['Parse', false, '1m00s'],
+      [PARSE_PHASES.parsing, true, '40.0s'],
+      [PARSE_PHASES.composition, true, '20.0s'],
+      ['Inference', false, '2m00s'],
+      [INFERENCE_PHASES.preparation, true, '30.0s'],
+      [INFERENCE_PHASES.vampire, true, '1m30s'],
+      ['Total (parse + inference)', false, '3m00s'],
+    ]);
+    const parsing = timings[1];
+    expect([parsing.per, parsing.count, parsing.average, parsing.fastest, parsing.slowest])
+      .toEqual(['sentence', '2', '2.00s', 'S0 1.00s', 'S1 3.00s']);
+    expect(timings[0].fastest).toBe('');
+    expect(outcomes).toContain(['Sentences with a semantics', '2 / 3']);
+    expect(outcomes).toContain(['Without a semantics', 'S2']);
+    expect(outcomes).toContain(['Correct', '1 / 2']);
+    expect(outcomes).toContain(['Not parsed', '1']);
+    expect(outcomes).toContain(['Proofs', '8']);
+  });
+
+  it('sums a phase over its calls and keeps its first start', () => {
+    const phases: any[] = [];
+    addToPhase(phases, 'GSWB', Date.parse('2026-10-01T10:00:05.000Z'), 300);
+    addToPhase(phases, 'GSWB', Date.parse('2026-10-01T10:00:01.000Z'), 200);
+    expect(phases.length).toBe(1);
+    expect(phases[0].durationMs).toBe(500);
+    expect(phases[0].startedAt).toBe('2026-10-01T10:00:01.000Z');
   });
 
   it('ends a phase once', () => {

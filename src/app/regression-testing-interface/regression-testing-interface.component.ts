@@ -78,7 +78,8 @@ import {
 } from '../document-builder/document-builder.service';
 import { LigerWorkspaceService, RuleSetOrigin } from '../liger-workspace/liger-workspace.service';
 import {
-  INFERENCE_PHASES, PARSE_PHASES, ParseReport, reportDetails, reportSummary, startPhase, timingStats,
+  INFERENCE_PHASES, PARSE_PHASES, ParseReport, RunPhase, addToPhase, reportSummary, reportTables, startPhase,
+  timingStats,
 } from './run-report';
 
 /** What a run sends and a session stores: the testsuite, and the rule set's three texts. */
@@ -2005,23 +2006,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return reportSummary(this.session.report);
   }
 
-  /** The full run report, plus the disambiguation state the next run would use. */
-  get processingTimingDetails(): string {
-    const lines = [reportDetails(this.session.report, id => this.reportLabel(id))];
+  /** The run report as tables (see run-report.ts), plus the disambiguation state the
+   *  next run would use. Sentences and items are named by id. */
+  get runReport(): ReturnType<typeof reportTables> {
+    const tables = reportTables(this.session.report);
     if (this.session.lastGswbOutputs !== null) {
-      lines.push(`Disambiguated sentences: ${this.disambiguatedSentenceCount}`);
+      tables.outcomes.push(['Disambiguated sentences', String(this.disambiguatedSentenceCount)]);
     }
-    return lines.filter(line => !!line).join('\n');
-  }
-
-  /** A sentence or item as the report names it: its id and the start of its text. */
-  private reportLabel(id: string): string {
-    const item = this.regressionTestItems.find(candidate => String(candidate?.id ?? '') === id);
-    const text = item
-      ? [...(item.premises ?? []), ...(item.conclusion ?? [])].map((sid: string) => this.sentenceMap[sid] ?? '').join(' ')
-      : this.sentenceMap[id] ?? '';
-    const short = text.length > 40 ? `${text.slice(0, 39)}…` : text;
-    return short ? `${id} "${short}"` : id;
+    return tables;
   }
 
   get disambiguatedSentenceCount(): number {
@@ -2161,11 +2153,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     let sequenceItems: SequenceDerivedItem[] = [];
     this.sequenceDerivationFailures = [];
     if (this.testsuiteUpdateMode === 'write') this.derivedSequenceVariants.clear();
-    const endParsing = startPhase(parseReport.phases, PARSE_PHASES.parsing);
+    const parsingStartedAt = Date.now();
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
         if (gswbRunToken !== this.gswbRunToken) return;
-        endParsing();
+        addToPhase(parseReport.phases, PARSE_PHASES.parsing, parsingStartedAt, Date.now() - parsingStartedAt);
         parseReport.parsing = timingStats(data?.timingsMs ?? {});
 
         if (data.hasOwnProperty("annotations")) {
@@ -2230,19 +2222,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.startGswbSummaryPolling(runStartedAt, gswbRunToken);
         this.loadAndRenderGswbState(false, runStartedAt, gswbRunToken);
 
-        const batch$: Observable<GswbBatchOutput> = Object.keys(this.gswbMultipleRequest?.items ?? {}).length
+        // Only when there is a batch: a testsuite of discourse items alone composes every
+        // sentence in sequence below, and an empty batch would read as a 0 ms GSWB phase.
+        const batched = Object.keys(this.gswbMultipleRequest?.items ?? {}).length > 0;
+        const compositionStartedAt = Date.now();
+        const batch$: Observable<GswbBatchOutput> = batched
           ? this.batchDeduce(this.gswbMultipleRequest)
           : of({ outputs: {}, report: '' });
-        const endComposition = startPhase(parseReport.phases, PARSE_PHASES.composition);
         batch$.pipe(
           switchMap(result => {
             if (gswbRunToken !== this.gswbRunToken) return EMPTY;
-            endComposition();
+            if (batched) {
+              addToPhase(parseReport.phases, PARSE_PHASES.composition,
+                compositionStartedAt, Date.now() - compositionStartedAt);
+            }
             this.stopGswbSummaryPolling();
-            const endDiscourse = sequenceItems.length
-              ? startPhase(parseReport.phases, PARSE_PHASES.discourse) : () => {};
-            return this.deriveItemsInSequence(sequenceItems, rules, logicType, gswbRunToken).pipe(
-              tap(() => endDiscourse()),
+            return this.deriveItemsInSequence(sequenceItems, rules, logicType, gswbRunToken, parseReport.phases).pipe(
               map(sequenceOutputs => ({ ...(result.outputs ?? {}), ...sequenceOutputs })));
           }),
         ).subscribe((outputs: Record<string, GswbOutput>) => {
@@ -2336,6 +2331,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  fold at inference merges these readings instead of deriving them again. */
   private deriveItemsInSequence(
     items: SequenceDerivedItem[], ruleString: string, logicType: 'fof' | 'tff', runToken: number,
+    phases: RunPhase[],
   ): Observable<Record<string, GswbOutput>> {
     if (!items.length) return of({});
     const outputs: Record<string, GswbOutput> = {};
@@ -2356,6 +2352,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           })),
           map(derived => {
             if (derived.variants.length) this.derivedSequenceVariants.set(item.itemId, derived.variants);
+            // The sequence call is LiGER's work, each part's deduction GSWB's.
+            if (derived.sequenceStartedAt !== undefined && derived.sequenceMs !== undefined) {
+              addToPhase(phases, PARSE_PHASES.parsing, derived.sequenceStartedAt, derived.sequenceMs);
+            }
+            derived.parts.forEach(part => {
+              if (part.deduceStartedAt !== undefined && part.deduceMs !== undefined) {
+                addToPhase(phases, PARSE_PHASES.composition, part.deduceStartedAt, part.deduceMs);
+              }
+            });
             derived.parts.forEach((part, sentenceIndex) => {
               outputs[part.sentenceId] = {
                 ...empty(),

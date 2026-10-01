@@ -517,7 +517,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.vampireProofCount).toBe(3);
   });
 
-  it('names the slowest and fastest sentence by id and text, and adds the disambiguation state', () => {
+  it('names the slowest and fastest sentence by id, and adds the disambiguation state', () => {
     component.sentenceMap = { S1: 'One', S2: 'Two' };
     component.session.lastGswbOutputs = {
       S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
@@ -535,10 +535,11 @@ describe('RegressionTestingInterfaceComponent', () => {
       inference: null,
     };
 
-    const details = component.processingTimingDetails;
+    const { timings, outcomes } = component.runReport;
 
-    expect(details).toContain('fastest S1 "One" 1.00s · slowest S2 "Two" 2.00s');
-    expect(details).toContain('Disambiguated sentences: 1');
+    expect(timings[1].fastest).toBe('S1 1.00s');
+    expect(timings[1].slowest).toBe('S2 2.00s');
+    expect(outcomes).toContain(['Disambiguated sentences', '1']);
   });
 
   it('does not show a saving message for current session no-ops', () => {
@@ -622,8 +623,8 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.hasTimingInfo).toBeTrue();
     expect(component['vampirePreserveExistingResults']).toBeTrue();
     expect(component.processingTimingSummary).toBe('Inference 1m00s · 1/1 correct');
-    expect(component.processingTimingDetails).toContain('Disambiguated sentences: 1');
-    expect(component.processingTimingDetails).toContain('Proofs: 1');
+    expect(component.runReport.outcomes).toContain(['Disambiguated sentences', '1']);
+    expect(component.runReport.outcomes).toContain(['Proofs', '1']);
   });
 
   describe('the rule set, from the LiGER workspace', () => {
