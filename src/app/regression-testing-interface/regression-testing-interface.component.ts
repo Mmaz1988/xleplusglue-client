@@ -1990,7 +1990,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       else results.correct++;
     }
     report.results = results;
-    report.proofs = this.vampireProofCount;
+    // From the stored results, not vampireProofCount: while the progress indicator is up
+    // that is the last poll's figure -- short of the final count -- and otherwise it counts
+    // proof files, not branches.
+    report.proofs = Object.values(this.session.lastVampireResults ?? {})
+      .reduce((sum, checks) => sum + (checks?.length ?? 0), 0);
     this.dataService.getVampireProgress(this.redisSessionKey).subscribe({
       next: progress => {
         if (this.session.report?.inference !== report) return;

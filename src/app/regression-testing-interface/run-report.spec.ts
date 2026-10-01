@@ -72,7 +72,7 @@ describe('run report', () => {
     expect(outcomes).toContain(['Without a semantics', 'S2']);
     expect(outcomes).toContain(['Correct', '1 / 2']);
     expect(outcomes).toContain(['Not parsed', '1']);
-    expect(outcomes).toContain(['Proofs', '8']);
+    expect(outcomes).toContain(['Reasoning branches checked', '8']);
   });
 
   it('sums a phase over its calls and keeps its first start', () => {

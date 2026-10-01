@@ -517,6 +517,28 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.vampireProofCount).toBe(3);
   });
 
+  it('counts the reasoning branches of a finished run from its results, not the last progress poll', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.getVampireProgress.and.returnValue(of({ itemTimingsMs: { I1: 5 } } as any));
+    component.session.report = {
+      parse: null,
+      inference: {
+        startedAt: new Date().toISOString(), finishedAt: null, durationMs: null, phases: [],
+        runKind: 'initial', itemsInRun: 2, selected: false, preparation: null, vampire: null,
+        results: { total: 0, correct: 0, wrong: 0, notParsed: 0, noVerdict: 0 }, proofs: 0,
+      },
+    };
+    component.session.lastVampireResults = {
+      I1: [{ proof_files: ['a', 'b'] }, { proof_files: ['c'] }], I2: [{ proof_files: [] }],
+    } as any;
+    component['vampireProgressProofCount'] = 1;  // a stale poll
+
+    (component as any).finishInferenceReport();
+
+    expect(component.session.report.inference!.proofs).toBe(3);
+    expect(component.session.report.inference!.vampire!.fastest).toEqual({ id: 'I1', ms: 5 });
+  });
+
   it('names the slowest and fastest sentence by id, and adds the disambiguation state', () => {
     component.sentenceMap = { S1: 'One', S2: 'Two' };
     component.session.lastGswbOutputs = {
@@ -624,7 +646,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component['vampirePreserveExistingResults']).toBeTrue();
     expect(component.processingTimingSummary).toBe('Inference 1m00s · 1/1 correct');
     expect(component.runReport.outcomes).toContain(['Disambiguated sentences', '1']);
-    expect(component.runReport.outcomes).toContain(['Proofs', '1']);
+    expect(component.runReport.outcomes).toContain(['Reasoning branches checked', '1']);
   });
 
   describe('the rule set, from the LiGER workspace', () => {

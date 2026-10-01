@@ -66,6 +66,7 @@ export interface InferenceReport {
   vampire: TimingStats | null;
   /** Over every item of the testsuite once the run is done. */
   results: { total: number; correct: number; wrong: number; notParsed: number; noVerdict: number };
+  /** Reasoning branches Vampire checked (one bundle of four checks each), over all items. */
   proofs: number;
 }
 
@@ -233,7 +234,7 @@ export function reportTables(
       outcomes.push(['Wrong', String(wrong)]);
       outcomes.push(['Not parsed', String(notParsed)]);
       outcomes.push(['Without verdict', String(noVerdict)]);
-      outcomes.push(['Proofs', String(inference.proofs)]);
+      outcomes.push(['Reasoning branches checked', String(inference.proofs)]);
     }
     if (inference.failure) outcomes.push(['Inference failed', inference.failure]);
   }
