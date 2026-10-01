@@ -307,14 +307,17 @@ div.errorhandling {
   font-size: 0.92rem;
 }
 
-/* Parsing report above inference report, each the column's width. */
+/* Parsing and inference reports side by side, together the column's width; they stack
+   only once the window is too narrow for two. */
 .results-grid {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 16px;
+  align-items: flex-start;
 }
 
 .results-panel {
+  flex: 1 1 360px;
   min-width: 0;
 }
 
