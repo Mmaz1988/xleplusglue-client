@@ -27,11 +27,14 @@ textarea{
   padding-left: 20px;
 }
 
-/* One column with wide side margins; the right one also keeps the content
-   clear of the session sidebar's handle. */
+/* One centred column about 120 editor characters wide (13px monospace, ~7.8px each, plus
+   the gutter and frame): long rule lines fit without a wide empty strip beside them. The
+   60px minimum padding also keeps the content clear of the session sidebar's handle. */
 .frame {
   position: relative;
-  padding: 0 120px;
+  max-width: calc(1000px + 2 * 60px);
+  margin: 0 auto;
+  padding: 0 60px;
   box-sizing: border-box;
 }
 
