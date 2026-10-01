@@ -537,8 +537,8 @@ describe('RegressionTestingInterfaceComponent', () => {
 
     const { timings, outcomes } = component.runReport;
 
-    expect(timings[1].fastest).toBe('S1 1.00s');
-    expect(timings[1].slowest).toBe('S2 2.00s');
+    expect(timings[1].fastest).toEqual({ duration: '1.00s', id: 'S1' });
+    expect(timings[1].slowest).toEqual({ duration: '2.00s', id: 'S2' });
     expect(outcomes).toContain(['Disambiguated sentences', '1']);
   });
 

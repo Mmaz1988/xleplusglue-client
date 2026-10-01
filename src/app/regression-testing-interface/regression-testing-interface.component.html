@@ -249,7 +249,10 @@
               <tr *ngFor="let row of runReport.timings" [class.run-report-phase]="row.phase">
                 <td>{{ row.label }}</td><td>{{ row.started }}</td><td>{{ row.duration }}</td>
                 <td>{{ row.per }}</td><td>{{ row.count }}</td><td>{{ row.average }}</td>
-                <td>{{ row.fastest }}</td><td>{{ row.slowest }}</td>
+                <td><ng-container *ngIf="row.fastest">{{ row.fastest.duration }}
+                  <span class="run-report-id">({{ row.fastest.id }})</span></ng-container></td>
+                <td><ng-container *ngIf="row.slowest">{{ row.slowest.duration }}
+                  <span class="run-report-id">({{ row.slowest.id }})</span></ng-container></td>
               </tr>
             </tbody>
           </table>

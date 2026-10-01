@@ -173,8 +173,14 @@ export interface ReportTimingRow {
   per: string;
   count: string;
   average: string;
-  fastest: string;
-  slowest: string;
+  /** Time and the sentence or item it belongs to, shown as "609ms (S8)". */
+  fastest: TimedCell | null;
+  slowest: TimedCell | null;
+}
+
+export interface TimedCell {
+  duration: string;
+  id: string;
 }
 
 /** The report as tables: timings (steps, their phases, the total) and outcomes. */
@@ -192,8 +198,8 @@ export function reportTables(
     per: stats ? per : '',
     count: stats ? String(stats.count) : '',
     average: stats ? formatDuration(stats.averageMs) : '',
-    fastest: stats ? `${stats.fastest.id} ${formatDuration(stats.fastest.ms)}` : '',
-    slowest: stats ? `${stats.slowest.id} ${formatDuration(stats.slowest.ms)}` : '',
+    fastest: stats ? { duration: formatDuration(stats.fastest.ms), id: stats.fastest.id } : null,
+    slowest: stats ? { duration: formatDuration(stats.slowest.ms), id: stats.slowest.id } : null,
   });
   const phaseStats: Record<string, [string, TimingStats | null]> = {};
 

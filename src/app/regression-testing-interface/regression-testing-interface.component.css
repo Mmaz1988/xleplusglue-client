@@ -129,6 +129,10 @@ div.errorhandling {
   padding-left: 24px;
 }
 
+.run-report-id {
+  color: #8b1a1a;
+}
+
 .run-report-outcomes th {
   font-weight: 600;
   color: #4b5563;

@@ -66,8 +66,8 @@ describe('run report', () => {
     ]);
     const parsing = timings[1];
     expect([parsing.per, parsing.count, parsing.average, parsing.fastest, parsing.slowest])
-      .toEqual(['sentence', '2', '2.00s', 'S0 1.00s', 'S1 3.00s']);
-    expect(timings[0].fastest).toBe('');
+      .toEqual(['sentence', '2', '2.00s', { duration: '1.00s', id: 'S0' }, { duration: '3.00s', id: 'S1' }]);
+    expect(timings[0].fastest).toBeNull();
     expect(outcomes).toContain(['Sentences with a semantics', '2 / 3']);
     expect(outcomes).toContain(['Without a semantics', 'S2']);
     expect(outcomes).toContain(['Correct', '1 / 2']);
