@@ -235,7 +235,8 @@
       </div>
     </div>
     <div *ngIf="hasTimingInfo" class="processing-timing">
-      <div class="processing-timing-summary">{{ processingTimingSummary }}</div>
+      <!-- One line per span: the summary keeps line breaks (pre-line). -->
+      <div class="processing-timing-summary">{{ processingTimingSummary }}<span *ngIf="inferenceFailures.length" class="run-warning"> · inference failed for {{ inferenceFailures.length }} item{{ inferenceFailures.length === 1 ? '' : 's' }}</span></div>
       <app-pill badge="i" variant="content" minimizedColor="#1565c0">
         <div class="run-report">
           <table *ngIf="runReport.timings.length" class="run-report-timings">
@@ -259,6 +260,15 @@
           <table *ngIf="runReport.outcomes.length" class="run-report-outcomes">
             <tr *ngFor="let outcome of runReport.outcomes">
               <th>{{ outcome[0] }}</th><td>{{ outcome[1] }}</td>
+            </tr>
+          </table>
+          <table *ngIf="inferenceFailures.length" class="run-report-failures">
+            <caption>Inference failed for {{ inferenceFailures.length }}
+              item{{ inferenceFailures.length === 1 ? '' : 's' }}</caption>
+            <tr *ngFor="let failed of inferenceFailures">
+              <th class="run-report-id">{{ failed.id }}</th>
+              <td>{{ failed.sentences }}</td>
+              <td>{{ failed.reason }}</td>
             </tr>
           </table>
         </div>
@@ -298,14 +308,6 @@
 
     <div class="results-panel">
       <h3>Inference report ({{ inferenceResultCount }} of {{ expectedInferenceCount }}):</h3>
-      <div *ngIf="session.hasRunVampire && failedInferenceItems.length > 0" class="inference-failures-panel">
-        <strong>{{ failedInferenceItems.length }} item(s) produced no verdict:</strong>
-        <ul>
-          <li *ngFor="let failed of failedInferenceItems">
-            <strong>{{ failed.id }}</strong><span *ngIf="failed.sentences"> ({{ failed.sentences }})</span>: {{ failed.reason }}
-          </li>
-        </ul>
-      </div>
       <app-toggle-display type="liger" showText="Show inference results" hideText="Hide inference results">
         <div>
           <div *ngIf="inferenceReportRows.length" class="report-selection-bar">

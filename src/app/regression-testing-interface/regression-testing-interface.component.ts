@@ -2008,6 +2008,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
+  /** The items without a verdict once inference has run: counted on the summary line,
+   *  listed in the info pill. */
+  get inferenceFailures(): { id: string; sentences: string; reason: string }[] {
+    return this.session.hasRunVampire ? this.failedInferenceItems : [];
+  }
+
   /** The pill's line: see run-report.ts. */
   get processingTimingSummary(): string {
     return reportSummary(this.session.report);

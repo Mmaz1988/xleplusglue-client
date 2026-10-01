@@ -1010,6 +1010,10 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(failed[0].id).toBe('n1');
     expect(failed[0].sentences).toBe('Premise one. / Hypothesis one.');
     expect(failed[0].reason).toContain('merge_sequence_semantics');
+    // Counted on the summary line and listed in the info pill, once inference has run.
+    expect(component.inferenceFailures.map(f => f.id)).toEqual(['n1']);
+    component.session.hasRunVampire = false;
+    expect(component.inferenceFailures).toEqual([]);
   });
 
   it('treats a zero item_count after a non-empty submission as a failed run, keeping prior results', () => {

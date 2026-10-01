@@ -159,6 +159,27 @@ div.errorhandling {
   color: #8b1a1a;
 }
 
+/* Items that produced no verdict: a warning on the summary line, the detail in the pill. */
+.run-warning {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.run-report-failures caption {
+  text-align: left;
+  font-weight: 600;
+  color: #b45309;
+  padding: 0 10px 4px;
+}
+
+.run-report-failures th {
+  white-space: nowrap;
+}
+
+.run-report-failures td {
+  overflow-wrap: anywhere;
+}
+
 .run-report-outcomes th {
   font-weight: 600;
   color: #4b5563;
@@ -171,20 +192,6 @@ div.errorhandling {
   border-radius: 10px;
   background: linear-gradient(180deg, #f8fcff 0%, #eef7ff 100%);
   color: #114a7a;
-}
-
-.inference-failures-panel {
-  margin: 8px 0 12px;
-  padding: 10px 12px;
-  border: 1px solid #f0d9a8;
-  border-radius: 10px;
-  background: #fff8e8;
-  color: #7a5b11;
-}
-
-.inference-failures-panel ul {
-  margin: 6px 0 0;
-  padding-left: 20px;
 }
 
 .vampire-progress-header,
