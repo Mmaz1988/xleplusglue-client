@@ -101,11 +101,26 @@ div.errorhandling {
   gap: 12px;
   color: #1f2937;
   font-size: 13px;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .run-report table {
+  width: 100%;
   border-collapse: collapse;
+}
+
+/* Times and ids stay on one line; labels and long outcome values wrap. */
+.run-report-timings td:not(:first-child),
+.run-report-timings th {
+  white-space: nowrap;
+}
+
+.run-report-outcomes th {
+  width: 40%;
+}
+
+.run-report-outcomes td {
+  overflow-wrap: anywhere;
 }
 
 .run-report th,

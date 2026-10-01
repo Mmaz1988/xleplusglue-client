@@ -31,7 +31,7 @@
         <div class="glyph-cell" *ngFor="let g of glyphs; trackBy: trackByIdx" [innerHTML]="g"></div>
       </div>
 
-      <div *ngSwitchCase="'content'" class="detail-body">
+      <div *ngSwitchCase="'content'" class="content-body">
         <ng-content></ng-content>
       </div>
 
