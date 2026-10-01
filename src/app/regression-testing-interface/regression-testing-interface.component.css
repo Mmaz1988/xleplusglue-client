@@ -27,11 +27,11 @@ textarea{
   padding-left: 20px;
 }
 
-/* One column, padded like an analysis column; the right padding also keeps the content
+/* One column with wide side margins; the right one also keeps the content
    clear of the session sidebar's handle. */
 .frame {
   position: relative;
-  padding: 0 60px;
+  padding: 0 120px;
   box-sizing: border-box;
 }
 
