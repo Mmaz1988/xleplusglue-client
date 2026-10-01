@@ -251,7 +251,7 @@ export interface SequenceMergeResult {
    *  fully successful merge. Populated instead of swallowing the cause into an empty
    *  result: a caller that ends up with zero pairs has to be able to say WHY (a LiGER
    *  500, an unresolvable sentence, a reading GSWB stamped with an unknown origin), and
-   *  before this existed `deriveAndMergeForContext`'s catchError hid a real
+   *  before this existed the per-context derivation's catchError hid a real
    *  `/apply_rules_xle_sequence` 500 behind "no pairs produced". */
   failures: string[];
   /** One SequenceAnalysis per distinct sentence PAIR (by composite id of the merged
@@ -457,85 +457,108 @@ export class DocumentBuilderService {
     );
   }
 
-  /** Chat's path: one sequence-aware derivation per distinct previous context, run
-   *  sequentially (`concatMap`, same forkJoin-avoidance rationale as the non-rebase
-   *  path). There is no `current`-driven fan-out here -- see SequenceMergeRebase. */
+  /** Chat's path: the new sentence derived inside the sequence once per distinct previous
+   *  SYNTAX, then merged onto every previous context that supplies it. Sequential
+   *  (`concatMap`, same forkJoin-avoidance rationale as the non-rebase path).
+   *
+   *  The derivation (`ligerSequence` + `/deduce` of the new part) depends only on the
+   *  sentences and structures supplied, never on which reading of them a context holds,
+   *  so contexts that are several readings of one parse used to send identical requests --
+   *  2 and 4 identical deductions per turn for 2 and 4 prior readings. Grouping changes no
+   *  result; pairs come back in context order. There is no `current`-driven fan-out here --
+   *  see SequenceMergeRebase. */
   private mergeSequenceDerived(
     previousContexts: SequenceMergePreviousContext[],
     rebase: SequenceMergeRebase,
     resolveDrs: boolean,
     knownSentences: SentenceAnalysis[],
   ): Observable<SequenceMergeResult> {
-    return from(previousContexts).pipe(
-      concatMap(previousContext => this.deriveAndMergeForContext(previousContext, rebase, resolveDrs, knownSentences)),
+    type Group = { sentences: SentenceAnalysis[]; contexts: Array<{ context: SequenceMergePreviousContext; index: number }> };
+    const groups = new Map<string, Group>();
+    const unresolved: string[] = [];
+    previousContexts.forEach((context, index) => {
+      const resolved = this.previousSentencesOf(context, knownSentences);
+      if ('failure' in resolved) {
+        unresolved.push(resolved.failure);
+        return;
+      }
+      const key = this.suppliedSyntaxKey(resolved.sentences);
+      const group = groups.get(key) ?? { sentences: resolved.sentences, contexts: [] };
+      group.contexts.push({ context, index });
+      groups.set(key, group);
+    });
+
+    return from([...groups.values()]).pipe(
+      concatMap(group => this.deriveSentenceInSequence(group.sentences, rebase).pipe(
+        concatMap(readings => from(group.contexts).pipe(
+          concatMap(({ context, index }) => this.mergeReadingsIntoContext(
+            context, readings, rebase.newSentence.id, resolveDrs).pipe(map(pairs => ({ index, pairs })))),
+          toArray(),
+        )),
+        map(merged => ({ merged, failures: [] as string[] })),
+        catchError(error => {
+          // Report the cause instead of swallowing it, once per context it cost: a real
+          // `/apply_rules_xle_sequence` 500 once surfaced as nothing but "no pairs produced".
+          console.error('[DocumentBuilder] syntax merge/derive failed; no pairs produced for its contexts', {
+            previousElementIds: group.contexts.map(({ context }) => context.element.id),
+            newSentenceId: rebase.newSentence.id, error,
+          });
+          return of({
+            merged: [] as Array<{ index: number; pairs: SequenceMergePair[] }>,
+            failures: group.contexts.map(({ context }) => `Rebasing ${rebase.newSentence.id} onto `
+              + `${context.element.id} failed: ${this.describeError(error)}`),
+          });
+        }),
+      )),
       toArray(),
-      // Chat's own registration (registerSentence/upsertSequenceFromContexts) is driven
-      // from Vampire's accepted results, not from every raw merge result the way
+      // Chat's own registration (upsertSentenceAnalyses/upsertSequenceFromContexts) is
+      // driven from Vampire's accepted results, not from every raw merge result the way
       // glue-vis's is -- so this path never builds SequenceAnalysis entries itself.
-      map(contextResults => ({
-        pairs: contextResults.flatMap(result => result.pairs),
+      map(groupResults => ({
+        pairs: groupResults.flatMap(result => result.merged)
+          .sort((a, b) => a.index - b.index)
+          .flatMap(result => result.pairs),
         sequenceAnalyses: [],
-        failures: contextResults.flatMap(result => result.failures),
+        failures: [...unresolved, ...groupResults.flatMap(result => result.failures)],
       }))
     );
   }
 
-  /** One previous context: merge syntax exactly like `LigerVisComponent.addSentence()`
-   *  does -- supply the previous sentence(s)' already-parsed structures, but deliberately
-   *  leave the new sentence unsupplied so LiGER parses (and rule-applies) it fresh as
-   *  part of this sequence call. Then extract and prove its rebased `sequenceParts[]`
-   *  entry (`deriveCurrentPart`), and semantic-merge every resulting reading against
-   *  this context. Whatever the derivation returns simply IS the new sentence's reading
-   *  set for this context -- there is no earlier candidate it needs to be matched back
-   *  to. */
-  private deriveAndMergeForContext(
+  /** The sentences a previous context supplies: the context's own sentence, or a sequence's
+   *  sentences resolved against the registry. */
+  private previousSentencesOf(
     previousContext: SequenceMergePreviousContext,
-    rebase: SequenceMergeRebase,
-    resolveDrs: boolean,
     knownSentences: SentenceAnalysis[],
-  ): Observable<{ pairs: SequenceMergePair[]; failures: string[] }> {
+  ): { sentences: SentenceAnalysis[] } | { failure: string } {
     const previousElement = previousContext.element;
-    let previousSentences: SentenceAnalysis[];
-    if ('sentenceIds' in previousElement) {
-      // Chat's previous context is always registered as a single opaque unit (its whole
-      // accumulated discourse text/structure, not decomposed sentence-by-sentence) -- this
-      // branch exists only in case a caller ever passes a genuine multi-sentence
-      // SequenceAnalysis, mirroring mergeSyntaxForPairs's own resolution against
-      // knownSentences.
-      const missingSentenceIds: string[] = [];
-      previousSentences = previousElement.sentenceIds.map(id => {
-        const sentence = knownSentences.find(candidate => candidate.id === id);
-        if (!sentence) missingSentenceIds.push(id);
-        return sentence as SentenceAnalysis;
-      });
-      if (missingSentenceIds.length) {
-        const reason = `Cannot resolve previous sentences ${missingSentenceIds.join(', ')} of `
-          + `${previousElement.id} against the document's sentence registry.`;
-        console.error('[DocumentBuilder] cannot resolve previous sentences for rebase merge; skipping this context', {
-          previousElementId: previousElement.id, missingSentenceIds,
-        });
-        return of({ pairs: [], failures: [reason] });
-      }
-    } else {
-      previousSentences = [previousElement];
+    if (!('sentenceIds' in previousElement)) {
+      return { sentences: [previousElement] };
     }
+    const missingSentenceIds: string[] = [];
+    const sentences = previousElement.sentenceIds.map(id => {
+      const sentence = knownSentences.find(candidate => candidate.id === id);
+      if (!sentence) missingSentenceIds.push(id);
+      return sentence as SentenceAnalysis;
+    });
+    if (missingSentenceIds.length) {
+      console.error('[DocumentBuilder] cannot resolve previous sentences for rebase merge; skipping this context', {
+        previousElementId: previousElement.id, missingSentenceIds,
+      });
+      return {
+        failure: `Cannot resolve previous sentences ${missingSentenceIds.join(', ')} of `
+          + `${previousElement.id} against the document's sentence registry.`,
+      };
+    }
+    return { sentences };
+  }
 
-    return this.deriveSentenceInSequence(previousSentences, rebase).pipe(
-      concatMap(readings => this.mergeReadingsIntoContext(
-        previousContext, readings, rebase.newSentence.id, resolveDrs)),
-      map(pairs => ({ pairs, failures: [] as string[] })),
-      catchError(error => {
-        // Report the cause instead of swallowing it. This handler previously returned
-        // `of([])`, which is how a real `/apply_rules_xle_sequence` 500 surfaced to the
-        // user as nothing but "no pairs produced".
-        const reason = `Rebasing ${rebase.newSentence.id} onto ${previousElement.id} failed: `
-          + `${this.describeError(error)}`;
-        console.error('[DocumentBuilder] syntax merge/derive failed for this context; no pairs produced', {
-          previousElementId: previousElement.id, newSentenceId: rebase.newSentence.id, error,
-        });
-        return of({ pairs: [] as SequenceMergePair[], failures: [reason] });
-      })
-    );
+  /** What a derivation over these sentences is computed from: their ids, texts and the
+   *  structures `deriveSentenceInSequence` supplies (`selectedSentenceSyntax`). Keyed on the
+   *  structures themselves, not on call-local ids, which are not stable across calls. */
+  private suppliedSyntaxKey(sentences: SentenceAnalysis[]): string {
+    return JSON.stringify(sentences.map(sentence => [
+      sentence.id, sentence.text, selectedSentenceSyntax(sentence).map(syntax => syntax.structure ?? null),
+    ]));
   }
 
   /** Derives one sentence's readings **inside a sequence**, across every syntactic
@@ -790,7 +813,7 @@ export class DocumentBuilderService {
 
   /** The semantic half of adding a sentence to one previous context: every given reading of
    *  the new sentence merged onto the context's reading. Shared by the turn-by-turn fold
-   *  (`deriveAndMergeForContext`, readings derived just before) and regression's fold over
+   *  (`mergeSequenceDerived`, readings derived just before) and regression's fold over
    *  readings derived at parse time. Sequential, like every other fan-out here. */
   mergeReadingsIntoContext(
     previousContext: SequenceMergePreviousContext,

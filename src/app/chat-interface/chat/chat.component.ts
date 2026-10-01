@@ -209,6 +209,14 @@ export class ChatComponent {
           }
         }
 
+        // LFGxDRT derives every reading inside the discourse's sequence (turn 1 as a sequence
+        // of one), so a standalone deduction here would only be thrown away.
+        if (isLfgxdrtPreferences(this.gswbPreferences.gswbPreferences)) {
+          this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
+            this.contextPruning.nativeElement.checked);
+          return;
+        }
+
         const gswbRequest: GswbRequest = {
           premises: this.meaningConstructors,
           gswbPreferences: this.gswbPreferences.gswbPreferences,
@@ -225,26 +233,13 @@ export class ChatComponent {
               return;
             }
 
-            const useLfgxDrt = isLfgxdrtPreferences(this.gswbPreferences.gswbPreferences);
             console.info('[Chat] GSWB deduce succeeded', {
               sentence: userMessage,
               solutionCount: gswbData.solutions.length,
-              useLfgxDrt,
               turn: this.currentTurnIndex(),
             });
-            const userSem = gswbData.solutions
-              .map(x => useLfgxDrt ? (x.semantic || x.solution) : x.solution)
-              .join('\n');
+            const userSem = gswbData.solutions.map(x => x.solution).join('\n');
             const pruneContext = this.contextPruning.nativeElement.checked;
-
-            // The document's semantic type is fixed once, at document creation -- a
-            // conversation cannot silently switch semantic type mid-thread, since
-            // sequencing (and this whole reasoning path) is lfgxdrt-only.
-            if (useLfgxDrt) {
-              this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
-                gswbData.solutions, pruneContext);
-              return;
-            }
 
             const vampRequest: vampireRequest = {
               text: userMessage,
@@ -356,16 +351,8 @@ export class ChatComponent {
     userMessage: string,
     ligerSolution: any,
     ligerSolutions: any[],
-    solutions: any[],
     pruneContext: boolean
   ): void {
-    const candidates = solutions.filter(solution =>
-      typeof (solution.semantic || solution.solution) === 'string'
-      && solution.graph).map(solution => ({
-        solution,
-        syntax: ligerSolutions.find(item => item.solutionKey === solution.solutionKey)?.structureJson
-          ?? ligerSolution.structureJson
-      }));
 
     // The first sentence follows the analysis workflow. There is no PxQ yet,
     // so do not run NLI rules, PCDRS generation, or anaphora collapse.
@@ -418,28 +405,14 @@ export class ChatComponent {
       return;
     }
 
-    this.finishLfgxdrtPreparation(
-      userMessage,
-      candidates.map(candidate => ({ ...candidate.solution, syntax: candidate.syntax })),
-      pruneContext,
-      ligerSolutions
-    );
+    this.finishLfgxdrtPreparation(userMessage, pruneContext, ligerSolutions);
   }
 
   private finishLfgxdrtPreparation(
     userMessage: string,
-    solutions: any[],
     pruneContext: boolean,
     ligerSolutions: any[] = []
   ): void {
-    const semanticSolutions = solutions.filter(solution =>
-      typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
-    if (!semanticSolutions.length) {
-      this.pushChatMessage({ text: 'No post-processed semantic analyses found.', sender: 'Bot' });
-      this.loading = false;
-      return;
-    }
-
     const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
 
     const contextIndices = this.activeIndices.length
@@ -452,12 +425,13 @@ export class ChatComponent {
     // ReasoningPipelineService.prepareReasoningChecks (`prune: pruneContext` below) --
     // less efficient when pruning, but keeps this method's own shape independent of
     // whether the turn happens to be pruned.
-    const { id: newSentenceId } = this.registerSentence(userMessage, semanticSolutions, ligerSolutions);
+    // Registered once its readings are derived inside the sequence (below), like every
+    // other view: a reading derived on its own is never the one reasoned over.
+    const newSentenceId = `sentence-${this.chatDocument.sentences.length + 1}`;
     console.info('[Chat] Preparing NLI reasoning', {
       sentence: userMessage,
       newSentenceId,
       contextIndices,
-      candidateCount: semanticSolutions.length,
       pruneContext,
     });
 
@@ -494,7 +468,7 @@ export class ChatComponent {
       // real Sequence (upsertSequenceFromContexts registers it under exactly this id, with
       // correct per-sentence sentenceIds -- see chat.component.ts's own upsertSequenceFromContexts).
       // Use (a clone of) that registered element, NOT a synthetic single-sentence wrapper
-      // built from the concatenated discourse text, so mergeSequence/deriveAndMergeForContext's
+      // built from the concatenated discourse text, so mergeSequence/mergeSequenceDerived's
       // `'sentenceIds' in previousElement` branch decomposes it into its real constituent
       // sentences before calling ligerSequence -- exactly like glue-vis's addSentence()
       // always sends genuine per-sentence texts. Feeding the concatenated text as if it
@@ -545,11 +519,10 @@ export class ChatComponent {
     // glue-vis's LigerVisComponent.addSentence() does -- ligerSequence over [this
     // context's own structure + the new sentence, deliberately unsupplied so LiGER
     // parses and rule-applies it fresh], then a scoped /deduce on its rebased
-    // sequenceParts[] entry -- once per distinct previous context, not once per
-    // (context x reading) pairing. Chat's own bare, context-free parse/deduce
-    // (semanticSolutions above) is registered as the sentence's own document entry only;
-    // it is not reused as merge input here, because it was never rebased against any
-    // prior discourse and using it directly is what silently broke anaphora resolution
+    // sequenceParts[] entry -- once per distinct previous syntax, not once per
+    // (context x reading) pairing. A context-free deduction of the sentence is not made
+    // at all in this mode: it was never rebased against any prior discourse, and using it
+    // as merge input is what silently broke anaphora resolution
     // (confirmed live via misc/current/chat-document-pronoun-new.json: zero
     // anaphoraRelations across every assignment) after mergeSequence briefly routed
     // through the non-rebase, already-computed-reading path glue-vis's OWN merge step

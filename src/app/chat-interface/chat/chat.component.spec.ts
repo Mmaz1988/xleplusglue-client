@@ -88,6 +88,24 @@ describe('ChatComponent', () => {
     });
   });
 
+  it('makes no standalone /deduce in LFGxDRT mode: the readings are derived in the sequence', () => {
+    component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
+    component.gswbPreferences = { gswbPreferences: { outputstyle: 5 } } as any;
+    component.ruleString = 'rules';
+    component.pragmaticsRuleString = 'rules ==> x.';
+    component.userInput = 'Kim arrived';
+    const structure = { constraints: [], annotations: [], choiceSpace: {} };
+    dataServiceSpy.ligerAnnotate.and.returnValue(of({ solutions: [
+      { solutionKey: 'S0', structureJson: structure, graph: { graphElements: [{}] }, meaningConstructors: 'mc' },
+    ] }));
+    const derive = spyOn((component as any).documentBuilder, 'deriveSentenceInSequence').and.returnValue(new Subject());
+
+    component.sendMessage();
+
+    expect(derive).toHaveBeenCalled();
+    expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
+  });
+
   it('runs a turn without post-processing rules and says post-processing was skipped', () => {
     component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
     component.ruleString = 'rules';
@@ -297,13 +315,10 @@ describe('ChatComponent', () => {
       component.activeIndices = [];
     });
 
-    it('derives the new sentence\'s own reading once per distinct previous context, mirroring glue-vis\'s addSentence() -- never reusing chat\'s bare, context-free parse', () => {
-      // Two accepted READINGS of the SAME prior element (an ambiguous premise) --
-      // each is a genuinely distinct discourse state, so each gets its own
-      // ligerSequence + scoped /deduce call (grouping/dedup only makes sense across
-      // pairings that share one syntax, and there is no such pairing here: chat's own
-      // readings of the NEW sentence are never used as merge input at all, see
-      // SequenceMergeRebase).
+    it('derives the new sentence once per distinct previous syntax and merges it onto every context, mirroring glue-vis\'s addSentence()', () => {
+      // Two accepted READINGS of the SAME prior element (an ambiguous premise) -- two
+      // distinct discourse states, but one parse: the derivation depends only on the
+      // structures supplied, so it runs once, and each reading gets its own merge.
       component.context = [
         {
           original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
@@ -335,17 +350,13 @@ describe('ChatComponent', () => {
         return of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] });
       });
 
-      // The candidateSolutions passed here (chat's own bare parse of "he saw him") are
-      // registered as the sentence's document entry only -- not reused as merge input.
-      (component as any).finishLfgxdrtPreparation('he saw him', [
-        { id: 'cand-1', semantic: 'unused-bare-parse-reading', solution: 'unused', graph: structure, solutionKey: 'part-1' },
-      ], false, []);
+      (component as any).finishLfgxdrtPreparation('he saw him', false, []);
 
-      // One ligerSequence + one scoped /deduce per distinct previous context.
-      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(2);
-      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(2);
+      // One ligerSequence + one scoped /deduce for the one previous syntax.
+      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
       expect(dataServiceSpy.gswbDeduce.calls.allArgs().map(([request]: any[]) => request.premises))
-        .toEqual(['mc-current', 'mc-current']);
+        .toEqual(['mc-current']);
       // The new sentence must never be supplied as an already-parsed structure -- only
       // the previous sentence is, so LiGER parses (and rule-applies) the new one fresh.
       dataServiceSpy.ligerSequence.calls.allArgs().forEach(([request]: any[]) => {
@@ -418,9 +429,7 @@ describe('ChatComponent', () => {
         return of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] });
       });
 
-      (component as any).finishLfgxdrtPreparation('every swede is a scandinavian', [
-        { id: 'cand-1', semantic: 'unused', solution: 'unused', graph: structure, solutionKey: 'part-1' },
-      ], false, []);
+      (component as any).finishLfgxdrtPreparation('every swede is a scandinavian', false, []);
 
       expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
       expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
@@ -525,8 +534,7 @@ describe('ChatComponent', () => {
         { solutionKey: 'S1', structureJson: { id: 'standalone-S1' }, graph: structure },
       ];
 
-      (component as any).prepareLfgxdrtSolutions('a man appeared', ligerSolutions[0], ligerSolutions,
-        [{ id: 'sol-1', semantic: 'P(x)', graph: structure, solutionKey: 'S0' }], false);
+      (component as any).prepareLfgxdrtSolutions('a man appeared', ligerSolutions[0], ligerSolutions, false);
 
       const [previous, rebase] = derive.calls.mostRecent().args as any[];
       expect(previous).toEqual([]);

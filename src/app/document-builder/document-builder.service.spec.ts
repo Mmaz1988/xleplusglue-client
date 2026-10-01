@@ -415,6 +415,32 @@ describe('DocumentBuilderService', () => {
         expect(dataServiceMock.gswbDeduce.calls.mostRecent().args[0].premises).toBe('mc-current');
       });
 
+      it('derives once per distinct previous syntax and merges onto every context, in context order', () => {
+        dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
+        dataServiceMock.gswbDeduce.and.returnValue(of({ solutions: [derivedSolution('derived-1', 'P(x)')] }));
+        dataServiceMock.gswbMergeSequenceSemantics.and.callFake((request: any) =>
+          of(mergedSolution(request.parts[0].id)));
+        // Two readings of one parse (a, c) and one of another parse (b).
+        const parseA = sentence('sentence-1', 'A man saw a man.', 'syn-a');
+        const parseB = { ...sentence('sentence-1', 'A man saw a man.', 'syn-b') };
+        parseB.syntax = [{ synId: 'syn-b', structure: { ...structure, id: 'other-parse' } as any, graph: { graphElements: [] } }];
+        const contextOf = (element: SentenceAnalysis, semId: string) =>
+          ({ element, semantic: { ...element.semantics[0], semId } });
+
+        let pairs: any[] = [];
+        service.mergeSequence({
+          current: [],
+          previousContexts: [contextOf(parseA, 'a'), contextOf(parseB, 'b'), contextOf(parseA, 'c')],
+          knownSentences: [],
+          resolveDrs: true,
+          rebase: { newSentence: currentSentence, ruleString: 'rules', logicType: 'fof', gswbPreferences: {} as any },
+        }).subscribe(result => pairs = result.pairs);
+
+        expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(2);
+        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(2);
+        expect(pairs.map(pair => pair.merged.id)).toEqual(['a', 'b', 'c']);
+      });
+
       it('supplies the new sentence\'s structures too when they are given: nothing is parsed again', () => {
         dataServiceMock.ligerSequence.and.returnValue(of(rebaseLigerResponse()));
         dataServiceMock.gswbDeduce.and.returnValue(of({ solutions: [derivedSolution('derived-1', 'P(x)')] }));
@@ -513,7 +539,7 @@ describe('DocumentBuilderService', () => {
         expect(pair.currentSemantic.syntacticOrigin).toBe('S1');
       });
 
-      it('groups by distinct previous context -- one ligerSequence/deduce call per context, not per (context x reading) pairing', () => {
+      it('derives once for two readings of one previous syntax, and merges each reading', () => {
         const otherPreviousSentence = { ...sentence('sentence-1', 'A man appeared.'), id: 'sentence-1' };
         const otherPreviousContext = {
           semantic: { ...previousSentence.semantics[0], semId: 'sem-sentence-1-b' },
@@ -541,10 +567,11 @@ describe('DocumentBuilderService', () => {
           },
         }).subscribe(r => result = r);
 
-        // Two distinct previous contexts -> two ligerSequence/deduce calls (grouping
-        // is by previous context, not by any pre-computed reading of the new sentence).
-        expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(2);
-        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(2);
+        // Two contexts, one syntax: the derivation depends only on what is supplied, so it
+        // runs once (it ran per context before, with identical requests); each reading is
+        // still merged on its own.
+        expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(1);
+        expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(1);
         expect(dataServiceMock.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
         expect(result.pairs.length).toBe(2);
       });
