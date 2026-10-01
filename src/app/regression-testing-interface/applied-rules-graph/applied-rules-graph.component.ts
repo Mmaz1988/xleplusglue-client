@@ -1,4 +1,4 @@
-import {Component, ElementRef, Input, ViewChild} from '@angular/core';
+import {AfterViewInit, Component, ElementRef, Input, OnDestroy, ViewChild} from '@angular/core';
 import dagre from 'cytoscape-dagre';
 import popper from 'cytoscape-popper';
 import tippy from 'tippy.js';
@@ -19,7 +19,7 @@ cytoscape.use(popper);
   templateUrl: './applied-rules-graph.component.html',
   styleUrls: ['./applied-rules-graph.component.css']
 })
-export class AppliedRulesGraphComponent {
+export class AppliedRulesGraphComponent implements AfterViewInit, OnDestroy {
 
   style = [
     {
@@ -54,6 +54,7 @@ export class AppliedRulesGraphComponent {
 
   @Input() graphID!: string;
   private cy: Core;
+  private resizes?: ResizeObserver;
 
   defaultWidth = '800px';
   defaultHeight = '600px';
@@ -69,6 +70,19 @@ export class AppliedRulesGraphComponent {
       // rest of your cytoscape config
     });
 
+  }
+
+  ngAfterViewInit(): void {
+    // Cytoscape measures its container on creation and on window resizes only; in a
+    // .fluid-boxes view the container follows its column and its edge can be dragged.
+    if (typeof ResizeObserver !== 'undefined' && this.graphContainer) {
+      this.resizes = new ResizeObserver(() => this.cy?.resize());
+      this.resizes.observe(this.graphContainer.nativeElement);
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.resizes?.disconnect();
   }
 
   makePopper(ele: any): void {
@@ -299,8 +313,14 @@ export class AppliedRulesGraphComponent {
 
   resizeToDefault(): void {
     const graphContainer = this.graphContainer.nativeElement;
-    graphContainer.style.width = this.defaultWidth;
-    graphContainer.style.height = this.defaultHeight;
+    if (graphContainer.closest('.fluid-boxes')) {
+      // Back to the stylesheet's size: the column's width at the shared graph height.
+      graphContainer.style.width = '';
+      graphContainer.style.height = '';
+    } else {
+      graphContainer.style.width = this.defaultWidth;
+      graphContainer.style.height = this.defaultHeight;
+    }
   }
 
   showDialog(){

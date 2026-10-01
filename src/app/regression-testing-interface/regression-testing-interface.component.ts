@@ -144,7 +144,10 @@ type ParsedRegressionRunSnapshot = {
 @Component({
   selector: 'app-regression-testing-interface',
   templateUrl: './regression-testing-interface.component.html',
-  styleUrls: ['./regression-testing-interface.component.css']
+  styleUrls: ['./regression-testing-interface.component.css'],
+  // One column whose boxes (the testsuite editor, the rule set, the applied-rules graph)
+  // fill it, as on the analysis page.
+  host: { class: 'fluid-boxes' },
 })
 export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDestroy {
 
