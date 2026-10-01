@@ -418,6 +418,10 @@ div.errorhandling {
   margin-bottom: 8px;
 }
 
+.report-selection-spacer {
+  visibility: hidden;
+}
+
 .report-selection-hint,
 .run-inference-scope {
   color: #6b7280;

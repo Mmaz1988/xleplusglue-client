@@ -275,6 +275,12 @@
       <h3>Parsing report ({{ parseResultCount }} of {{ expectedParseCount }}):</h3>
       <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
         <div>
+          <!-- An empty line the height of the inference report's "Select all" bar, so both
+               lists start at the same height. -->
+          <div *ngIf="inferenceReportRows.length" class="report-selection-bar report-selection-spacer"
+               aria-hidden="true">
+            <button type="button" tabindex="-1">Select all</button>
+          </div>
           <div class="results-list">
              <div class="result-container"
                  *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId">
