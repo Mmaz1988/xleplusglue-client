@@ -45,7 +45,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, EMPTY, Observable, ReplaySubject, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, throwError, toArray } from "rxjs";
+import { catchError, defer, EMPTY, Observable, ReplaySubject, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, throwError, toArray } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -77,6 +77,9 @@ import {
   suppliableStructures,
 } from '../document-builder/document-builder.service';
 import { LigerWorkspaceService, RuleSetOrigin } from '../liger-workspace/liger-workspace.service';
+import {
+  INFERENCE_PHASES, PARSE_PHASES, ParseReport, reportDetails, reportSummary, startPhase, timingStats,
+} from './run-report';
 
 /** What a run sends and a session stores: the testsuite, and the rule set's three texts. */
 type SessionInputTexts = { testsuite: string; semantics: string; pragmatics: string; axioms: string };
@@ -1061,6 +1064,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       'analysis.system.inferenceResults': system.inferenceResults,
       'analysis.save_state.lastVampireResults': saveState.lastVampireResults,
       'analysis.documents': analysis.documents,
+      'analysis.report': analysis.report,
       // Everything else in save_state, all small.
       ...Object.fromEntries(Object.entries(saveStateRest)
         .filter(([key]) => key !== 'lastVampireResults')
@@ -1461,7 +1465,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }
 
         if (finalSnapshot) {
-          this.session.timing.parseMs = Date.now() - runStartedAt;
           this.session.lastGswbOutputs = outputs;
           this.loading = false;
           this.activeGswbRunStartedAt = null;
@@ -1641,6 +1644,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // and the cancel is a round trip it could otherwise finish inside.
     this.vampireRunToken++;
     this.stopNliPreparation();
+    const parse = this.session.report?.parse;
+    if (parse && !parse.finishedAt) {
+      parse.phases.forEach(phase => phase.durationMs ??= Date.now() - new Date(phase.startedAt).getTime());
+      this.finishParseReport(parse, new Date(parse.startedAt).getTime(), parse.items.discourse, 'aborted');
+    }
     if (this.sessionSaveTimer !== null) {
       clearTimeout(this.sessionSaveTimer);
       this.sessionSaveTimer = null;
@@ -1667,6 +1675,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         console.warn('Unable to request Vampire cancel.', error);
         this.stopGswbSummaryPolling();
         this.endVampireRun();
+        this.finishInferenceReport('aborted');
         this.vampirePendingItemCount = null;
         this.activeGswbRunStartedAt = null;
         this.activeVampireRunStartedAt = null;
@@ -1772,10 +1781,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get hasTimingInfo(): boolean {
-    return this.session.timing.parseMs !== null ||
-      this.session.timing.totalMs !== null ||
-      this.activeVampireRunStartedAt !== null ||
-      this.session.lastVampireResults !== null;
+    return !!(this.session.report?.parse || this.session.report?.inference)
+      || this.session.lastGswbOutputs !== null;
   }
 
   get parseResultCount(): number {
@@ -1960,50 +1967,61 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
-  get processingTimingSummary(): string {
-    const timing = this.session.timing;
-
-    if (timing.totalMs !== null) {
-      return `Overall ${this.formatDuration(timing.totalMs)}`;
+  /** Closes the inference report once its run is over: duration, results over the whole
+   *  testsuite, proofs, and -- read once more from the progress record, which the run may
+   *  have finished before the last poll -- Vampire's time per item. */
+  private finishInferenceReport(failure?: string): void {
+    const report = this.session.report?.inference;
+    if (!report || report.finishedAt) return;
+    this.endVampirePhase?.();
+    this.endVampirePhase = null;
+    report.phases.forEach(phase => phase.durationMs ??= 0);
+    report.finishedAt = new Date().toISOString();
+    report.durationMs = Date.now() - new Date(report.startedAt).getTime();
+    failure ??= this.abortRequestInFlight ? 'aborted' : undefined;
+    if (failure) report.failure = failure;
+    const results = { total: 0, correct: 0, wrong: 0, notParsed: 0, noVerdict: 0 };
+    for (const row of this.inferenceReportRows) {
+      results.total++;
+      if (row.status === 'unparsed') results.notParsed++;
+      else if (row.status !== 'done') results.noVerdict++;
+      else if (row.data.mismatch) results.wrong++;
+      else results.correct++;
     }
-
-    if (timing.parseMs !== null) {
-      if (this.activeVampireRunStartedAt !== null) {
-        return `Parse ${this.formatDuration(timing.parseMs)} · Vampire pending`;
-      }
-
-      if (this.session.hasRunVampire && this.inferenceResultCount < this.expectedInferenceCount) {
-        return `Parse ${this.formatDuration(timing.parseMs)} · Vampire call incomplete`;
-      }
-
-      return `Parse ${this.formatDuration(timing.parseMs)}`;
-    }
-
-    return '';
+    report.results = results;
+    report.proofs = this.vampireProofCount;
+    this.dataService.getVampireProgress(this.redisSessionKey).subscribe({
+      next: progress => {
+        if (this.session.report?.inference !== report) return;
+        report.vampire = timingStats(progress?.itemTimingsMs ?? {});
+        this.scheduleSessionSave();
+      },
+      error: error => console.warn('Unable to read Vampire item timings.', error),
+    });
   }
 
+  /** The pill's line: see run-report.ts. */
+  get processingTimingSummary(): string {
+    return reportSummary(this.session.report);
+  }
+
+  /** The full run report, plus the disambiguation state the next run would use. */
   get processingTimingDetails(): string {
-    const timing = this.session.timing;
-    const lines: string[] = [];
-
-    if (timing.startedAt) lines.push(`Started: ${timing.startedAt}`);
-    if (timing.parseMs !== null) {
-      lines.push(`Parse phase: ${this.formatDuration(timing.parseMs, true)} · ${this.parseResultCount}/${this.expectedParseCount} parses`);
-    }
-    if (timing.vampireMs !== null) {
-      lines.push(`Vampire phase: ${this.formatDuration(timing.vampireMs, true)} · ${this.inferenceResultCount}/${this.expectedInferenceCount} items`);
-    } else if (this.session.hasRunVampire) {
-      lines.push(`Vampire phase: incomplete · ${this.inferenceResultCount}/${this.expectedInferenceCount} items`);
-    }
+    const lines = [reportDetails(this.session.report, id => this.reportLabel(id))];
     if (this.session.lastGswbOutputs !== null) {
-      lines.push(`Disambiguated sentences: ${this.disambiguatedSentenceCount} total`);
+      lines.push(`Disambiguated sentences: ${this.disambiguatedSentenceCount}`);
     }
-    if (this.session.hasRunVampire || this.session.lastVampireResults !== null || this.vampireProgressProofCount !== null) {
-      lines.push(`Proofs: ${this.vampireProofCount} total`);
-    }
-    if (timing.totalMs !== null) lines.push(`Overall: ${this.formatDuration(timing.totalMs, true)}`);
+    return lines.filter(line => !!line).join('\n');
+  }
 
-    return lines.join('\n');
+  /** A sentence or item as the report names it: its id and the start of its text. */
+  private reportLabel(id: string): string {
+    const item = this.regressionTestItems.find(candidate => String(candidate?.id ?? '') === id);
+    const text = item
+      ? [...(item.premises ?? []), ...(item.conclusion ?? [])].map((sid: string) => this.sentenceMap[sid] ?? '').join(' ')
+      : this.sentenceMap[id] ?? '';
+    const short = text.length > 40 ? `${text.slice(0, 39)}…` : text;
+    return short ? `${id} "${short}"` : id;
   }
 
   get disambiguatedSentenceCount(): number {
@@ -2071,11 +2089,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.testsuiteText = sentences;
     this.syncSessionStateFromUi();
 
-    this.session.timing = {
-      startedAt: new Date(runStartedAt).toISOString(),
-      parseMs: null,
-      vampireMs: null,
-      totalMs: null,
+    // A new parse starts a new report; in write mode its inference is gone with its results.
+    const parseReport: ParseReport = {
+      startedAt: new Date(runStartedAt).toISOString(), finishedAt: null, durationMs: null, phases: [],
+      parsing: null, composition: null,
+      sentences: { total: 0, successful: 0, failedIds: [] },
+      items: { total: 0, discourse: 0, stopped: [] },
+    };
+    this.session.report = {
+      parse: parseReport,
+      inference: this.testsuiteUpdateMode === 'write' ? null : this.session.report?.inference ?? null,
     };
 
     const gswbRunToken = ++this.gswbRunToken;
@@ -2138,9 +2161,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     let sequenceItems: SequenceDerivedItem[] = [];
     this.sequenceDerivationFailures = [];
     if (this.testsuiteUpdateMode === 'write') this.derivedSequenceVariants.clear();
+    const endParsing = startPhase(parseReport.phases, PARSE_PHASES.parsing);
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
         if (gswbRunToken !== this.gswbRunToken) return;
+        endParsing();
+        parseReport.parsing = timingStats(data?.timingsMs ?? {});
 
         if (data.hasOwnProperty("annotations")) {
           console.log("Annotations:", data.annotations);
@@ -2207,20 +2233,28 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         const batch$: Observable<GswbBatchOutput> = Object.keys(this.gswbMultipleRequest?.items ?? {}).length
           ? this.batchDeduce(this.gswbMultipleRequest)
           : of({ outputs: {}, report: '' });
+        const endComposition = startPhase(parseReport.phases, PARSE_PHASES.composition);
         batch$.pipe(
           switchMap(result => {
             if (gswbRunToken !== this.gswbRunToken) return EMPTY;
+            endComposition();
             this.stopGswbSummaryPolling();
+            const endDiscourse = sequenceItems.length
+              ? startPhase(parseReport.phases, PARSE_PHASES.discourse) : () => {};
             return this.deriveItemsInSequence(sequenceItems, rules, logicType, gswbRunToken).pipe(
+              tap(() => endDiscourse()),
               map(sequenceOutputs => ({ ...(result.outputs ?? {}), ...sequenceOutputs })));
           }),
         ).subscribe((outputs: Record<string, GswbOutput>) => {
           if (gswbRunToken !== this.gswbRunToken) return;
+          // GSWB's own time per sentence, batch and discourse items alike.
+          parseReport.composition = timingStats(Object.fromEntries(
+            Object.entries(outputs).map(([sentenceId, output]) => [sentenceId, output?.elapsedMs])));
 
           this.applyAppendSnapshotToParsedState(outputs);
           this.renderGswbResults(outputs);
           this.commitParsedRegressionSnapshot();
-          this.session.timing.parseMs = Date.now() - runStartedAt;
+          this.finishParseReport(parseReport, runStartedAt, sequenceItems.length);
           this.loading = false;
           this.activeGswbRunStartedAt = null;
           this.saveSessionSnapshot();
@@ -2237,12 +2271,34 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       error => {
         this.stopGswbSummaryPolling();
         console.error('An error occurred:', error);
+        parseReport.phases.forEach(phase => phase.durationMs ??= 0);
+        this.finishParseReport(parseReport, runStartedAt, sequenceItems.length,
+          error?.message ?? 'batch parsing failed');
         this.saveSessionSnapshot();
         this.displayMessage("An error occurred during batch parsing.", "red");
         this.loading = false;
         this.activeGswbRunStartedAt = null;
       }
     );
+  }
+
+  /** Closes the parse report: its duration, and what the parse produced -- counted over the
+   *  whole testsuite as it now stands (an append parse adds to it). */
+  private finishParseReport(
+    report: ParseReport, startedAtMs: number, discourseItems: number, failure?: string,
+  ): void {
+    const outputs = this.session.lastGswbOutputs ?? {};
+    const sentenceIds = Object.keys(this.sentenceMap ?? {});
+    const failedIds = sentenceIds.filter(id => !(outputs[id]?.solutions?.length));
+    report.finishedAt = new Date().toISOString();
+    report.durationMs = Date.now() - startedAtMs;
+    report.sentences = { total: sentenceIds.length, successful: sentenceIds.length - failedIds.length, failedIds };
+    report.items = {
+      total: this.regressionTestItems.length,
+      discourse: discourseItems,
+      stopped: [...this.sequenceDerivationFailures],
+    };
+    if (failure) report.failure = failure;
   }
 
   /** The discourse items this parse derives in sequence: every item with more than one
@@ -2531,6 +2587,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
+    // This run's report replaces the previous run's.
+    this.session.report = {
+      parse: this.session.report?.parse ?? null,
+      inference: {
+        startedAt: new Date(vampireStartedAt).toISOString(), finishedAt: null, durationMs: null, phases: [],
+        runKind: this.currentVampireRunKind,
+        itemsInRun: this.vampireCurrentRunItemCount,
+        selected: explicitSelection,
+        preparation: null, vampire: null,
+        results: { total: 0, correct: 0, wrong: 0, notParsed: 0, noVerdict: 0 },
+        proofs: 0,
+      },
+    };
+
     // Fixed for this run: which anaphora branches go to Vampire. The setting can change while
     // the run prepares or afterwards without touching it.
     this.runAnaphoraSelection = { ...this.anaphoraSelection() };
@@ -2579,14 +2649,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // a batch that had not been sent yet, so it cancelled nothing, and the run the user
     // stopped started a few seconds later. 2026-09-08.
     this.nliPreparationSubscription?.unsubscribe();
+    const inferenceReport = this.session.report.inference!;
+    const endPreparation = startPhase(inferenceReport.phases, INFERENCE_PHASES.preparation);
+    const preparationMs: Record<string, number> = {};
     this.nliPreparationSubscription = from(itemBuilds).pipe(
-      concatMap(build => this.prepareNliItem(build, gswbOutputs, useDisambiguated, typed, logicType, pruning)),
+      concatMap(build => defer(() => {
+        const started = Date.now();
+        return this.prepareNliItem(build, gswbOutputs, useDisambiguated, typed, logicType, pruning).pipe(
+          tap(() => preparationMs[build.itemId] = Date.now() - started));
+      })),
       toArray()
     ).subscribe({
       next: prepared => {
         // Preparation is long and entirely client-side, so a run can be superseded or
         // aborted while it is still going. Nothing below may reach Vampire in that case.
         if (vampireRunToken !== this.vampireRunToken) return;
+        endPreparation();
+        inferenceReport.preparation = timingStats(preparationMs);
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
         const failures: string[] = [...stoppedItems];
         const degradations: string[] = [];
@@ -2626,6 +2705,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (!bundleCount) {
           this.displayMessage("Could not build TPTP reasoning checks for any reading.", "red");
           this.loading = false;
+          this.finishInferenceReport('no reasoning checks could be built');
           return;
         }
         const skipped = hasPostProcessingRules(this.session.pragmaticsRulesText)
@@ -3306,6 +3386,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  large); a restored session asks for them once per item (`sequenceVariantsFor`). */
   private readonly derivedSequenceVariants = new Map<string, SequenceVariant[]>();
 
+  /** Ends the running inference's Vampire phase; set at submission. */
+  private endVampirePhase: (() => void) | null = null;
+
   /** This parse's discourse items that stopped at a sentence without semantics, as
    *  "item: sentence -- reason"; shown in the parsing summary. */
   private sequenceDerivationFailures: string[] = [];
@@ -3404,6 +3487,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.submittedProofBundleCount(vampireRequest));
 
     this.vampireRunInFlight = true;
+    const inferenceReport = this.session.report?.inference;
+    this.endVampirePhase = inferenceReport ? startPhase(inferenceReport.phases, INFERENCE_PHASES.vampire) : null;
 
     // Clear the PREVIOUS run's progress record before polling starts. It is only cleared
     // automatically on cancel, so after a normal run it stays in Redis describing a
@@ -3463,6 +3548,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  to be busy. */
   private failVampireRun(): void {
     this.endVampireRun();
+    this.finishInferenceReport('no results came back');
     this.vampirePendingItemCount = null;
     this.activeVampireRunStartedAt = null;
     this.loading = false;
@@ -3648,6 +3734,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.vampirePendingItemCount = null;
           this.activeVampireRunStartedAt = null;
           this.loading = false;
+          this.finishInferenceReport(progress.failure ?? 'the inference service failed');
           this.clearVampireProgressIndicator();
           const reason = progress.failure ?? 'the inference service reported no reason';
           this.displayMessage(
@@ -3746,6 +3833,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
           this.endVampireRun();
+          this.finishInferenceReport('no items were processed');
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
@@ -3774,15 +3862,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }
 
         if (finalSnapshot) {
-          this.session.timing.vampireMs = Date.now() - vampireStartedAt;
-          if (this.session.timing.startedAt) {
-            this.session.timing.totalMs = Date.now() - new Date(this.session.timing.startedAt).getTime();
-          }
           this.loading = false;
           this.vampirePendingItemCount = null;
           this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
           this.endVampireRun();
+          this.finishInferenceReport();
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
@@ -3798,6 +3883,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.activeGswbRunStartedAt = null;
           this.activeVampireRunStartedAt = null;
           this.endVampireRun();
+          this.finishInferenceReport('results could not be reloaded');
           this.clearVampireProgressIndicator();
           this.saveSessionSnapshot(undefined, undefined, undefined, this.abortRequestInFlight ? 'current' : 'autosave');
           this.abortRequestInFlight = false;
@@ -4130,14 +4216,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const results = this.session.lastVampireResults;
     if (!results || !Object.keys(results).length) return;
     this.renderVampireResults(results, { item_count: Object.keys(results).length, proof_count: 0 } as VampireSessionSummary, false, false);
-  }
-
-  private formatDuration(ms: number | null, precise = false): string {
-    if (ms === null || Number.isNaN(ms)) return 'n/a';
-
-    if (ms < 1000) return `${Math.round(ms)}ms`;
-    const seconds = ms / 1000;
-    return precise ? `${seconds.toFixed(2)}s` : `${seconds.toFixed(1)}s`;
   }
 
   batchMultistage(sentences: String) {

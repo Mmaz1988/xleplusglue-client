@@ -1,4 +1,5 @@
 import { SafeHtml } from '@angular/platform-browser';
+import { RegressionRunReport, emptyRunReport } from '../regression-testing-interface/run-report';
 
 /** A batch parse: per sentence id, exactly what `/apply_rules_xle` returns for that
  *  sentence -- one `LigerSolutionAnnotation` per syntactic analysis, each with its own
@@ -8,6 +9,8 @@ export interface LigerBatchParsingAnalysis {
   annotations: { [key: string]: LigerSolutionAnnotationResponse };
   ruleApplicationGraph: LigerGraphComponent[];
   report: string;
+  /** Per sentence id: milliseconds for its XLE parse and rule application. */
+  timingsMs?: { [key: string]: number };
 }
 
 /** The pre-Stage-4 batch shape, still returned by `/multistage_to_batch` and
@@ -749,6 +752,8 @@ export interface GswbOutput {
    *  (regression, LFGxDRT), not on its own: its readings are that item's part, numbered into
    *  the sequence, and are folded as they are rather than derived again. */
   derivedInSequence?: { itemId: string; sentenceIndex: number };
+  /** Milliseconds GSWB took for this deduction. */
+  elapsedMs?: number;
   /** Why the sentence has no readings, when it was not derived or derived nothing -- e.g.
    *  an earlier sentence of its item has no semantics. */
   failure?: string;
@@ -803,13 +808,6 @@ export interface InferenceReportRow {
   reason: string;
   /** The sentence texts that have no reading; empty unless `status` is `unparsed`. */
   unparsedSentences: string[];
-}
-
-export interface RegressionRunTiming {
-  startedAt: string | null;
-  parseMs: number | null;
-  vampireMs: number | null;
-  totalMs: number | null;
 }
 
 export interface RegressionSessionSummary {
@@ -884,6 +882,9 @@ export interface RegressionSessionAnalysis {
   system: RegressionSessionAnalysisSystem;
   human: RegressionSessionAnalysisHuman;
   save_state: RegressionSessionSaveState;
+  /** The report on the parse and inference steps the session holds (see run-report.ts).
+   *  Absent in sessions saved before it existed. */
+  report?: RegressionRunReport;
   /** v4: **one XlePlusGlueDocument per NLI item**, keyed by item id -- or per sentence id
    *  when a run has no NLI items (a parse-only testsuite). Each is exactly the shape chat
    *  builds per conversation and glue-vis per discourse: one document is one discourse.
@@ -979,7 +980,7 @@ export interface RegressionTestingSession {
   hasRunVampire: boolean;
   /** See RegressionSessionMetadata.enableInference. Defaults to true. */
   enableInference: boolean;
-  timing: RegressionRunTiming;
+  report: RegressionRunReport;
 }
 
 function createRegressionSessionFilePart(filename = '', text = '', loadedText = text): RegressionSessionFilePart {
@@ -1234,6 +1235,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       // last change to the document, and the session snapshot is fingerprinted to decide
       // whether an autosave is needed. Re-stamping it on every snapshot would make every
       // fingerprint unique and turn autosave into a loop.
+      report: JSON.parse(JSON.stringify(session?.report ?? emptyRunReport())),
       documents: Object.fromEntries(
         Object.entries(session?.analysisDocuments ?? {}).map(([key, document]) => [key, {
           ...persistedAnalysisDocument(document),
@@ -1316,7 +1318,7 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     sortedMCmap: { ...(saveState?.sortedMCmap ?? document?.sortedMCmap ?? {}) },
     hasRunVampire: Boolean(metadata?.hasRunVampire ?? document?.hasRunVampire),
     enableInference: metadata?.enableInference ?? document?.enableInference ?? true,
-    timing: document?.timing ?? base.timing,
+    report: analysis?.report ?? base.report,
   };
 }
 
@@ -1382,12 +1384,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     sortedMCmap: {},
     hasRunVampire: false,
     enableInference: true,
-    timing: {
-      startedAt: null,
-      parseMs: null,
-      vampireMs: null,
-      totalMs: null,
-    },
+    report: emptyRunReport(),
   };
 }
 
@@ -1521,6 +1518,8 @@ export interface VampireProgress {
    *  results live in `last_session`; copying them here made every per-branch snapshot
    *  rewrite the whole run's output. */
   itemResults: { [key: string]: number };
+  /** Per completed item: milliseconds from its start to its last check. */
+  itemTimingsMs?: { [key: string]: number };
   itemCount: number;
   proofCount: number;
   totalItemCount: number;

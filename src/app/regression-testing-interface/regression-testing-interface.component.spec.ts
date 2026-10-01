@@ -480,18 +480,19 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.vampireProgressPercent).toBe(50);
   });
 
-  it('shows vampire pending only while a vampire run is active', () => {
-    component.session.timing.parseMs = 1200;
-    component['activeVampireRunStartedAt'] = 123;
+  it('shows the run report in the pill, and nothing before a run', () => {
+    expect(component.hasTimingInfo).toBeFalse();
+    component.session.report = {
+      parse: {
+        startedAt: new Date().toISOString(), finishedAt: null, durationMs: null, phases: [],
+        parsing: null, composition: null,
+        sentences: { total: 0, successful: 0, failedIds: [] }, items: { total: 0, discourse: 0, stopped: [] },
+      },
+      inference: null,
+    };
 
-    expect(component.processingTimingSummary).toContain('Vampire pending');
-
-    component['activeVampireRunStartedAt'] = null;
-    component.session.hasRunVampire = true;
-    component.inferenceResults = [{ id: 'I1' } as any];
-    component.regressionTestItems = [{ id: 'I1' } as any, { id: 'I2' } as any];
-
-    expect(component.processingTimingSummary).toContain('Vampire call incomplete');
+    expect(component.hasTimingInfo).toBeTrue();
+    expect(component.processingTimingSummary).toBe('Parsing…');
   });
 
   it('counts disambiguated sentences when selected solutions differ from all solutions', () => {
@@ -516,34 +517,28 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.vampireProofCount).toBe(3);
   });
 
-  it('includes parse, vampire, and disambiguated counts in the timing details', () => {
-    component.session.timing.startedAt = '2026-05-18T21:00:00.000Z';
-    component.session.timing.parseMs = 1234;
-    component.session.timing.vampireMs = 2345;
-    component.session.timing.totalMs = 3579;
+  it('names the slowest and fastest sentence by id and text, and adds the disambiguation state', () => {
     component.sentenceMap = { S1: 'One', S2: 'Two' };
-    component.regressionTestResults = [{ sentence_id: 'S1' } as any, { sentence_id: 'S2' } as any];
-    component.regressionTestItems = [{ id: 'I1' } as any, { id: 'I2' } as any];
-    component.session.lastVampireResults = {
-      I1: [{ proof_files: ['p1'] } as any],
-      I2: [{ proof_files: ['p2', 'p3'] } as any],
-    } as any;
     component.session.lastGswbOutputs = {
       S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
       S2: { solutions: [{ id: 'c', solution: 'c' }], log: '', derivation: null, discriminants: [] },
     } as any;
-    component.session.selectedSolutionIdsBySentence = {
-      S1: ['a'],
-      S2: ['c'],
+    component.session.selectedSolutionIdsBySentence = { S1: ['a'], S2: ['c'] };
+    component.session.report = {
+      parse: {
+        startedAt: '2026-10-01T10:00:00.000Z', finishedAt: '2026-10-01T10:00:05.000Z', durationMs: 5000,
+        phases: [{ name: 'Parsing (LiGER)', startedAt: '2026-10-01T10:00:00.000Z', durationMs: 3000 }],
+        parsing: { count: 2, totalMs: 3000, averageMs: 1500, fastest: { id: 'S1', ms: 1000 }, slowest: { id: 'S2', ms: 2000 } },
+        composition: null,
+        sentences: { total: 2, successful: 2, failedIds: [] }, items: { total: 0, discourse: 0, stopped: [] },
+      },
+      inference: null,
     };
 
     const details = component.processingTimingDetails;
 
-    expect(details).toContain('Parse phase: 1.23s · 2/2 parses');
-    expect(details).toContain('Vampire phase: 2.35s · 0/2 items');
-    expect(details).toContain('Disambiguated sentences: 1 total');
-    expect(details).toContain('Proofs: 3 total');
-    expect(details).toContain('Overall: 3.58s');
+    expect(details).toContain('fastest S1 "One" 1.00s · slowest S2 "Two" 2.00s');
+    expect(details).toContain('Disambiguated sentences: 1');
   });
 
   it('does not show a saving message for current session no-ops', () => {
@@ -613,12 +608,22 @@ describe('RegressionTestingInterfaceComponent', () => {
       I1: [{ proof_files: ['p1'] } as any],
     } as any;
 
+    snapshot.report = {
+      parse: null,
+      inference: {
+        startedAt: '2026-10-01T10:00:00.000Z', finishedAt: '2026-10-01T10:01:00.000Z', durationMs: 60000,
+        phases: [], runKind: 'initial', itemsInRun: 1, selected: false, preparation: null, vampire: null,
+        results: { total: 1, correct: 1, wrong: 0, notParsed: 0, noVerdict: 0 }, proofs: 1,
+      },
+    };
+
     (component as any).hydrateSession(snapshot);
 
     expect(component.hasTimingInfo).toBeTrue();
     expect(component['vampirePreserveExistingResults']).toBeTrue();
-    expect(component.processingTimingDetails).toContain('Disambiguated sentences: 1 total');
-    expect(component.processingTimingDetails).toContain('Proofs: 1 total');
+    expect(component.processingTimingSummary).toBe('Inference 1m00s · 1/1 correct');
+    expect(component.processingTimingDetails).toContain('Disambiguated sentences: 1');
+    expect(component.processingTimingDetails).toContain('Proofs: 1');
   });
 
   describe('the rule set, from the LiGER workspace', () => {
