@@ -662,10 +662,10 @@ describe('ChatComponent', () => {
       const ranking = {
         method: 'cosine-description', model: 'test-model', layers: [-1], pooling: 'mean', createdAt: 'now',
         relations: [
-          { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the dog', cosine: 0.7, recencyRank: 1 },
-          { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the cat', cosine: 0.9, recencyRank: 2 },
+          { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the dog', score: 0.85, cosine: 0.7, recencyRank: 1 },
+          { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the cat', score: 0.95, cosine: 0.9, recencyRank: 2 },
         ],
-        branches: [{ discourseId: 'pcdrs-1', score: 0.7, rank: 2 }, { discourseId: 'pcdrs-2', score: 0.9, rank: 1 }],
+        branches: [{ discourseId: 'pcdrs-1', score: 0.85, rank: 2 }, { discourseId: 'pcdrs-2', score: 0.95, rank: 1 }],
         warnings: [],
       };
 
@@ -683,7 +683,7 @@ describe('ChatComponent', () => {
 
         expect(component.chatDocument.discourseUpdates?.[0].anaphoraRanking).toEqual(ranking as any);
         expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>cat</svg>', '<svg>dog</svg>']);
-        expect(reply().branchLabels?.[0]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean cos 0.900 · it → the cat (cos 0.90, recency 2)');
+        expect(reply().branchLabels?.[0]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean score 0.950 · it → the cat (score 0.950, cos 0.90, recency 2)');
         expect(dataServiceSpy.lmRankAnaphora).toHaveBeenCalledTimes(1);
       });
 

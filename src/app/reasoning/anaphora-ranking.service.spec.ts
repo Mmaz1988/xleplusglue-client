@@ -74,8 +74,8 @@ function ranking(ranks: [string, number, number | null][]): AnaphoraRanking {
     pooling: 'mean',
     createdAt: 'now',
     relations: [
-      { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the big cat', cosine: 0.816, recencyRank: 2 },
-      { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the black dog', cosine: 0.788, recencyRank: 1 },
+      { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the big cat', score: 0.908, cosine: 0.816, recencyRank: 2 },
+      { semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the black dog', score: 0.894, cosine: 0.788, recencyRank: 1 },
     ],
     branches: ranks.map(([discourseId, rank, score]) => ({ discourseId, rank, score })),
     warnings: [],
@@ -135,21 +135,21 @@ describe('anaphora ranking document helpers', () => {
   });
 
   it('captions a branch with its rank, score and each binding', () => {
-    const ranked = { ...twoBranches(), anaphoraRanking: ranking([['b-dog', 2, 0.788], ['b-cat', 1, 0.816]]) };
+    const ranked = { ...twoBranches(), anaphoraRanking: ranking([['b-dog', 2, 0.894], ['b-cat', 1, 0.908]]) };
     expect(anaphoraRankingCaption(ranked, 'b-cat'))
-      .toBe('rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2)');
+      .toBe('rank 1 · mean score 0.908 · it → the big cat (score 0.908, cos 0.82, recency 2)');
     expect(anaphoraRankingCaption(twoBranches(), 'b-cat')).toBe('');
   });
 
   it('captions a substitution ranking with its score and the words substituted', () => {
     const substitution: AnaphoraRanking = {
-      ...ranking([['b-dog', 2, -5.668], ['b-cat', 1, -5.258]]),
+      ...ranking([['b-dog', 2, 0.003], ['b-cat', 1, 0.25]]),
       method: 'mlm-substitution',
       relations: [{ semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'big cat',
-        score: -5.258, cosine: null, substitution: 'The big cat', recencyRank: 2 }],
+        score: 0.25, cosine: null, logProb: -1.386, substitution: 'The big cat', recencyRank: 2 }],
     };
     expect(anaphoraRankingCaption({ ...twoBranches(), anaphoraRanking: substitution }, 'b-cat'))
-      .toBe('rank 1 · mean score -5.258 · it → big cat (score -5.26, "The big cat", recency 2)');
+      .toBe('rank 1 · mean score 0.250 · it → big cat (score 0.250, logp -1.39, "The big cat", recency 2)');
   });
 });
 
@@ -165,7 +165,7 @@ describe('discourseBranchesForDisplay', () => {
       { ...branch('b-cat', [['x4', 'x1']]), drsString: 'drs-cat' },
       { ...branch('b2-cat', [['x4', 'x1']], 'sem-2'), drsString: 'drs-2' },
     ]);
-    const document = documentWith({ ...discourse, anaphoraRanking: ranking([['b-dog', 3, 0.788], ['b-cat', 1, 0.816], ['b2-cat', 1, 0.816]]) });
+    const document = documentWith({ ...discourse, anaphoraRanking: ranking([['b-dog', 3, 0.894], ['b-cat', 1, 0.908], ['b2-cat', 1, 0.908]]) });
     document.reasoningUpdates = [{
       id: 'ru-n0', premiseElementIds: ['sentence-1'], hypothesisElementIds: ['sentence-1'], logicType: 'fof',
       assignments: [
@@ -181,7 +181,7 @@ describe('discourseBranchesForDisplay', () => {
     expect(render.map(item => [item.id, item.semantic])).toEqual([['b-cat', 'P'], ['b-dog', 'P'], ['b2-cat', 'drs-2']]);
     expect(solutions.map(solution => [solution.id, solution.solution]))
       .toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
-    expect(labels[0]).toBe('reading 1/2 · rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2) · Vampire: neutral ×2, entailment ×1');
+    expect(labels[0]).toBe('reading 1/2 · rank 1 · mean score 0.908 · it → the big cat (score 0.908, cos 0.82, recency 2) · Vampire: neutral ×2, entailment ×1');
     expect(labels[1]).toContain('reading 1/2 · rank 3');
     expect(labels[1]).toContain('Vampire: failed ×1');
     expect(labels[2]).toContain('reading 2/2');

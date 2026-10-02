@@ -258,15 +258,16 @@ export interface AnaphoraRankedRelation {
   antecedent: string;
   pronounText: string;       // the pronoun's lexical description in the input, e.g. "it"
   antecedentText: string;    // the antecedent's lexical description, e.g. "black dog"
-  score?: number | null;     // method-specific, higher is better (a cosine, or a log-probability)
-  cosine: number | null;     // cosine rankings only; null otherwise or without an embedding
+  score?: number | null;     // in [0, 1] for every method, higher is better
+  cosine: number | null;     // cosine rankings: the raw cosine behind score ((cos + 1) / 2); null otherwise
+  logProb?: number | null;   // mlm-substitution: the raw mean log-probability behind score (e^logProb)
   substitution?: string | null; // mlm-substitution: the words that replaced the pronoun
   recencyRank: number | null; // symbolic baseline: 1 = nearest admitted antecedent before the pronoun
 }
 
 export interface AnaphoraRankedBranch {
   discourseId: string;
-  score: number | null;      // mean relation score over the branch; null if it has none scored
+  score: number | null;      // mean relation score over the branch, in [0, 1]; null if it has none scored
   rank: number;              // 1-based, highest score first; equal scores share a rank
 }
 

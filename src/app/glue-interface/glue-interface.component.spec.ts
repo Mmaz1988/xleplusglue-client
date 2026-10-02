@@ -341,10 +341,10 @@ describe('GlueInterfaceComponent', () => {
     const ranking = {
       method: 'cosine-description', model: 'test-model', layers: [-1], pooling: 'mean', createdAt: 'now',
       relations: [
-        { semanticOrigin: 's1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the black dog', cosine: 0.788, recencyRank: 1 },
-        { semanticOrigin: 's1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the big cat', cosine: 0.816, recencyRank: 2 },
+        { semanticOrigin: 's1', pronoun: 'x4', antecedent: 'x2', pronounText: 'it', antecedentText: 'the black dog', score: 0.894, cosine: 0.788, recencyRank: 1 },
+        { semanticOrigin: 's1', pronoun: 'x4', antecedent: 'x1', pronounText: 'it', antecedentText: 'the big cat', score: 0.908, cosine: 0.816, recencyRank: 2 },
       ],
-      branches: [{ discourseId: 's1-pcdrs-1', score: 0.788, rank: 2 }, { discourseId: 's1-pcdrs-2', score: 0.816, rank: 1 }],
+      branches: [{ discourseId: 's1-pcdrs-1', score: 0.894, rank: 2 }, { discourseId: 's1-pcdrs-2', score: 0.908, rank: 1 }],
       warnings: [],
     };
     const storedUpdate = () => (component as any).analysisDocument.discourseUpdates?.[0];
@@ -397,7 +397,7 @@ describe('GlueInterfaceComponent', () => {
       expect(storedUpdate().anaphoraRanking).toEqual(ranking);
       expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
       expect(shownIds()).toEqual(['s1-pcdrs-2', 's1-pcdrs-1']);
-      expect(component.pcdrsDisplayLabels[0]).toBe('rank 1 · mean cos 0.816 · it → the big cat (cos 0.82, recency 2)');
+      expect(component.pcdrsDisplayLabels[0]).toBe('rank 1 · mean score 0.908 · it → the big cat (score 0.908, cos 0.82, recency 2)');
       expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent).toContain('Ranked by test-model');
 
       component.togglePcdrsOrder();
