@@ -1,4 +1,4 @@
-import {Component, ElementRef, ViewChild, AfterViewInit, Input, Output, EventEmitter} from '@angular/core';
+import {Component, ElementRef, ViewChild, AfterViewInit, Input, OnInit, Output, EventEmitter} from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { LogComponent } from './log/log.component';
 import { EditorComponent } from '../editor/editor.component';
@@ -21,8 +21,11 @@ import { DocumentBuilderService } from '../document-builder/document-builder.ser
 })
 
 
-export class GswbVisComponent implements AfterViewInit {
+export class GswbVisComponent implements OnInit, AfterViewInit {
   @Input() structureJson: LigerStructure | null = null;
+  /** What the premises editor opens with; the standalone view passes a demo set, the analysis
+   *  page nothing (LiGER fills it). */
+  @Input() initialPremises: string | null = null;
   @Input() canPostProcess = false;
   /** Set when post-processing cannot run whatever the semantics: shown, and the button is
    *  disabled. */
@@ -45,7 +48,8 @@ export class GswbVisComponent implements AfterViewInit {
   @ViewChild('semvis') semvis: SemVisComponent;
   @ViewChild('log1') log: EditorComponent;
   @ViewChild('dialog') dialog: DialogComponent;
-  @ViewChild('gswbPrefs') gswbPreferences : GswbSettingsComponent;
+  // Static: always in the template, so ngOnInit can set the defaults before the first check.
+  @ViewChild('gswbPrefs', { static: true }) gswbPreferences : GswbSettingsComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
   meaningConstructors = '';
   proofInputs: GswbProofInput[] = [];
@@ -63,7 +67,11 @@ export class GswbVisComponent implements AfterViewInit {
 
   private pendingState: GswbWorkspaceState | null = null;
 
-  ngAfterViewInit() {
+  /** Both before the first check, so nothing bound changes after it (dev mode would throw
+   *  ExpressionChangedAfterItHasBeenChecked): the default preferences decide svgSolutions, and
+   *  the editor reports its initial content as an edit, which holding the same text already
+   *  makes no change. */
+  ngOnInit(): void {
     if (this.gswbPreferences) {
       this.gswbPreferences.gswbPreferences = { ...APP_DEFAULTS.gswb.preferences };
       this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences)
@@ -71,6 +79,12 @@ export class GswbVisComponent implements AfterViewInit {
       console.error("ERROR: `gswbPreferences` ViewChild not initialized!");
     }
 
+    if (this.initialPremises) {
+      this.meaningConstructors = this.initialPremises;
+    }
+  }
+
+  ngAfterViewInit() {
     this.applyPendingState();
   }
 

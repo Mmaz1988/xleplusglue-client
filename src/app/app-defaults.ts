@@ -33,6 +33,18 @@ export const APP_DEFAULTS = {
       "#a ant #a & @DR-GF-LINK(#a,#b) & @REFL-BIND(#b,#c)",
   },
   gswb: {
+    /** What the standalone GSWB view opens with: two quantifiers, so two scope readings. */
+    demoPremises: "{\n" +
+      "//Every man saw a woman.\n" +
+      "[1] (\\P.(\\Q.([],[([x],[])+P@x->Q@x]))) : ((f2_e -o f2_t) -o ((f2_e -o f1_t) -o f1_t))\n" +
+      "[2] (\\x.([],[man(x)])) : (f2_e -o f2_t)\n" +
+      "[3] (\\P.(\\Q.([x],[])+P@x+Q@x)) : ((f3_e -o f3_t) -o ((f3_e -o f1_t) -o f1_t))\n" +
+      "[4] (\\x.([],[woman(x)])) : (f3_e -o f3_t)\n" +
+      "[5] (\\V.(\\x.(\\e.(V@e+([],[arg1(e,x)]))))) : ((g4_v -o g4_t) -o (f2_e -o (g4_v -o g4_t))) || noscope\n" +
+      "[6] (\\V.(\\x.(\\e.(V@e+([],[arg2(e,x)]))))) : ((g4_v -o g4_t) -o (f3_e -o (g4_v -o g4_t))) || noscope\n" +
+      "[7] (\\V.([e],[])+V@e) : ((g4_v -o g4_t) -o f1_t)\n" +
+      "[8] (\\v.([],[see(v)])) : (g4_v -o g4_t)\n" +
+      "}\n",
     preferences: {
       prover: 1,
       debugging: false,
