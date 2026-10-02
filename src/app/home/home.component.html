@@ -1,21 +1,105 @@
-<div>
-<h1> The XLE+Glue web application</h1>
+<div class="home">
+  <header class="hero">
+    <h1>XLE+Glue</h1>
+    <p class="lead">
+      A web workbench for exploring LFG's Glue semantics: parse sentences with an XLE grammar,
+      rewrite the resulting structures with LiGER, compose their meanings with the Glue Semantics
+      Workbench, and reason about whole discourses with a theorem prover.
+    </p>
+  </header>
 
+  <section>
+    <h2>The pipeline</h2>
+    <ol class="pipeline">
+      <li>
+        <span class="stage-name">XLE</span>
+        <span class="stage-text">LFG parsing into c- and f-structures</span>
+      </li>
+      <li>
+        <span class="stage-name">LiGER</span>
+        <span class="stage-text">Graph rewriting from f-structures to meaning constructors</span>
+      </li>
+      <li>
+        <span class="stage-name">GSWB</span>
+        <span class="stage-text">Linear-logic proofs that compose the sentence meaning</span>
+      </li>
+      <li>
+        <span class="stage-name">LFGxDRT</span>
+        <span class="stage-text">DRSs: merging sentences into discourses, resolving anaphora</span>
+      </li>
+      <li>
+        <span class="stage-name">Vampire</span>
+        <span class="stage-text">Consistency, informativity and entailment checks</span>
+      </li>
+    </ol>
+  </section>
 
-<p>This application presents several resources used for exploring LFG's glue semantics. Concretely, it presents the
-<a href="https://github.com/Mmaz1988/GlueSemWorkbench_v2"> Glue semantics workbench </a>and the <a href="https://github.com/Mmaz1988/liger">
-    LiGER rewrite system </a>. It also serves as a revised frontend for the original
-  <a href="https://github.com/Mmaz1988/xle-glueworkbench-interface">XLE + Glue</a>. As all of these resources, this frontend is open source.
-It is available at: <a href="https://github.com/Mmaz1988/xleplusglue-client">XLE+Glue client</a> </p>
+  <section>
+    <h2>Interfaces</h2>
+    <div class="cards">
+      <a class="card" routerLink="/demo">
+        <span class="card-title">Analysis</span>
+        <span class="card-text">Parse one or more sentences, inspect their syntax and semantics, and merge sentences
+          into sequences (LFGxDRT).</span>
+      </a>
+      <a class="card" routerLink="/chat">
+        <span class="card-title">Chat</span>
+        <span class="card-text">Build a discourse sentence by sentence; each new sentence is checked against the
+          context for consistency and informativity, with pronouns resolved along the way.</span>
+      </a>
+      <a class="card" routerLink="/regression">
+        <span class="card-title">Regression testing</span>
+        <span class="card-text">Run a grammar against a test suite of inference items and compare the prover's
+          verdicts with their gold labels.</span>
+      </a>
+      <a class="card" routerLink="/regression-dashboard">
+        <span class="card-title">Inference banks</span>
+        <span class="card-text">Browse saved inference banks and reopen them in the regression testing interface.</span>
+      </a>
+      <a class="card" routerLink="/graph-inspector">
+        <span class="card-title">Post processing</span>
+        <span class="card-text">Upload a graph, apply post-processing rules to it, and query it, with the matches
+          highlighted.</span>
+      </a>
+      <a class="card" routerLink="/liger">
+        <span class="card-title">LiGER</span>
+        <span class="card-text">The LiGER rewrite system on its own: rules, rewritten graphs and meaning
+          constructors.</span>
+      </a>
+      <a class="card" routerLink="/glue">
+        <span class="card-title">GSWB</span>
+        <span class="card-text">The Glue Semantics Workbench on its own: meaning constructors in, derivations and
+          readings out.</span>
+      </a>
+    </div>
+  </section>
 
-<h2>Using the system</h2>
+  <section>
+    <h2>Try it: querying a graph</h2>
+    <p class="section-intro">
+      LiGER represents linguistic structures as graphs and finds patterns in them with a query language.
+      The same queries make up the left-hand side of its rewrite rules. Run one below and its matches are
+      highlighted on the graph; the post-processing view does the same on your own graphs.
+    </p>
+    <app-query-demo></app-query-demo>
+  </section>
 
-This system is designed for explorative analysis of formal linguistic annotation tools. It provides several interfaces:
-
-<ul>
-  <li> <a href="/demo ">Demo</a> - a simple interface for testing the LiGER rewrite system and the Glue semantics workbench.</li>
-  <li> <a href="/regression-dashboard">Inference banks</a> - browse saved inference banks and reopen them in the testing interface.</li>
-  <li> <a href="/regression">Regression testing</a> - An interface for incremental testing of XLE+Glue grammars.</li>
-  <li> <a href="/inference">Inference</a> - An interface for testing the inference capabilities of XLE+Glue.</li>
-</ul>
+  <section>
+    <h2>Source code</h2>
+    <p class="section-intro">All components are open source.</p>
+    <ul class="repos">
+      <li><a href="https://github.com/Mmaz1988/xleplusglue" target="_blank" rel="noopener">xleplusglue</a>:
+        the integration repository (Docker setup, grammars, Vampire service)</li>
+      <li><a href="https://github.com/Mmaz1988/xleplusglue-client" target="_blank" rel="noopener">xleplusglue-client</a>:
+        this web frontend</li>
+      <li><a href="https://github.com/Mmaz1988/liger" target="_blank" rel="noopener">LiGER</a>:
+        the linguistic graph rewrite system</li>
+      <li><a href="https://github.com/Mmaz1988/GlueSemWorkbench_v2" target="_blank" rel="noopener">Glue Semantics Workbench</a>:
+        the linear-logic Glue prover</li>
+      <li><a href="https://github.com/Mmaz1988/LFGxDRT" target="_blank" rel="noopener">LFGxDRT</a>:
+        the DRS library behind sequencing, anaphora resolution and the reasoning checks</li>
+      <li><a href="https://github.com/Mmaz1988/xle-glueworkbench-interface" target="_blank" rel="noopener">XLE + Glue (original)</a>:
+        the earlier interface this application replaces</li>
+    </ul>
+  </section>
 </div>

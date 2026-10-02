@@ -1,0 +1,168 @@
+:host {
+  display: block;
+}
+
+.demo-sentence {
+  margin: 0 0 0.75rem;
+  color: #4a5568;
+}
+
+.demo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .demo-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.demo-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* The graph fills its column (graph-vis's .fluid-boxes mode), at a demo-sized height. */
+.demo-graph {
+  --graph-height: 440px;
+  min-width: 0;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.examples-label {
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+.example {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.6rem;
+  margin: 0;
+  border: 1px solid #b8c4d6;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.example:hover,
+.example.active {
+  border-color: var(--box-border-color, #00a9e0);
+  background: #e6f6fc;
+}
+
+/* Framed like the graph inspector's query box: the shared text-box border over a toolbar row. */
+.query-box {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: var(--box-border-width, 3px) solid var(--box-border-color, #00a9e0);
+  border-radius: var(--text-box-radius, 0);
+  background: #fff;
+  height: 140px;
+  overflow: hidden;
+  resize: vertical;
+}
+
+.pane-toolbar {
+  display: flex; align-items: center; gap: 6px; flex: none;
+  padding: 3px 8px; border-bottom: 1px solid #d8dee8; background: #f7f9fc;
+  font-family: Roboto, sans-serif; font-size: 12px;
+}
+
+.file-label {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; font-size: 12px; color: #243247;
+}
+
+.query-box app-editor { display: block; flex: 1; min-height: 0; }
+:host ::ng-deep .query-box .editor-container {
+  min-width: 0; height: 100%; box-sizing: border-box; border: 0;
+}
+:host ::ng-deep .query-box .CodeMirror {
+  width: 100%; height: 100%; resize: none;
+}
+
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.run-row button {
+  margin: 0;
+}
+
+.status {
+  font-size: 0.9rem;
+  color: #4a5568;
+}
+
+.status.ok {
+  color: #2e7d32;
+}
+
+.status.error {
+  color: #c62828;
+}
+
+.solutions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.solution {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  border: 1px solid #d9d9d9;
+  border-radius: 0.4rem;
+  background: #fff;
+  cursor: pointer;
+}
+
+.solution:hover {
+  border-color: #ff8f00;
+}
+
+/* Same orange as graph-vis's query-match nodes, so the selected row and its nodes read as one. */
+.solution.active {
+  border-color: #ff8f00;
+  background: #fff3e0;
+}
+
+.solution-index {
+  font-weight: 600;
+  min-width: 1.2rem;
+}
+
+.solution-bindings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 0.85rem;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #666;
+}

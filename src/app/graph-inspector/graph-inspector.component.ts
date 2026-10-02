@@ -4,6 +4,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { GraphVisComponent } from '../liger-vis/liger-graph-vis/graph-vis.component';
 import { MISSING_PRAGMATICS_MESSAGE, LigerQuerySolution, LigerRule, LigerRuleAnnotation, LigerRuleAnnotationFact, LigerRuleAnnotationResponse, LigerStructure, LigerStructureQueryRequest, LigerStructureRuleRequest, LigerStructureUploadRequest } from '../models/models';
 import { APP_DEFAULTS } from '../app-defaults';
+import { applyQueryHighlights, cloneGraphElement, solutionNodeIds } from './query-highlights';
 import { LigerWorkspaceService, isEdited } from '../liger-workspace/liger-workspace.service';
 
 @Component({
@@ -500,34 +501,15 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
   }
 
   private solutionNodeIds(solution: LigerQuerySolution): Set<string> {
-    const ids = new Set<string>();
-
-    Object.values(solution.bindings).forEach(nodes => {
-      Object.keys(nodes).forEach(nodeId => ids.add(String(nodeId)));
-    });
-
-    return ids;
+    return solutionNodeIds(solution);
   }
 
   private cloneGraphElements(elements: any[]): any[] {
-    return elements.map(element => this.cloneGraphElement(element));
+    return elements.map(element => cloneGraphElement(element));
   }
 
   private applyQueryHighlights(elements: any[], highlightedIds: Set<string>): any[] {
-    return elements.map(element => {
-      const nodeId = element?.data?.id;
-      if (!nodeId) {
-        return element;
-      }
-
-      const nextElement = this.cloneGraphElement(element);
-      if (highlightedIds.has(String(nextElement.data.id))) {
-        nextElement.data.query_selector = 'query-match';
-      } else {
-        delete nextElement.data.query_selector;
-      }
-      return nextElement;
-    });
+    return applyQueryHighlights(elements, highlightedIds);
   }
 
   private ruleHighlightedNodeIds(): Set<string> {
@@ -711,13 +693,6 @@ export class GraphInspectorComponent implements AfterViewInit, OnChanges {
     }
 
     return ids;
-  }
-
-  private cloneGraphElement(element: any): any {
-    return {
-      ...element,
-      data: element?.data ? {...element.data} : element?.data,
-    };
   }
 
   private initializeFromRouteState(state: any): void {

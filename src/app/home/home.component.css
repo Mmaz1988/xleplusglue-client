@@ -1,8 +1,96 @@
-div {
-  padding-left: 20px;
+.home {
+  max-width: 1200px;
+  padding: 0 20px 3rem;
+  font-family: Roboto, sans-serif;
+  color: #243247;
 }
 
+.hero h1 {
+  margin-bottom: 0.25rem;
+}
 
-p {
-  width: 800px;
+.lead {
+  max-width: 800px;
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+section {
+  margin-top: 2rem;
+}
+
+section h2 {
+  font-size: 1.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-intro {
+  max-width: 800px;
+  line-height: 1.5;
+}
+
+.pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pipeline li {
+  flex: 1 1 10rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid var(--box-border-color, #00a9e0);
+  background: #f3f9fc;
+}
+
+.stage-name {
+  font-weight: 700;
+}
+
+.stage-text {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: #4a5568;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #d8dee8;
+  border-radius: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+  background: #fff;
+}
+
+.card:hover {
+  border-color: var(--box-border-color, #00a9e0);
+  box-shadow: 0 2px 8px rgba(0, 169, 224, 0.15);
+}
+
+.card-title {
+  font-weight: 700;
+  color: #00799f;
+}
+
+.card-text {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.repos {
+  line-height: 1.7;
 }

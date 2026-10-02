@@ -26,6 +26,7 @@ import { RegressionTestingInterfaceComponent } from './regression-testing-interf
 import {AppRoutingModule} from "./app-routing.module";
 import { AppliedRulesGraphComponent } from './regression-testing-interface/applied-rules-graph/applied-rules-graph.component';
 import { HomeComponent } from './home/home.component';
+import { QueryDemoComponent } from './home/query-demo/query-demo.component';
 import { RegressionDashboardComponent } from './regression-dashboard/regression-dashboard.component';
 import { ToggleDisplayComponent } from './utilities/toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
@@ -80,6 +81,7 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     RegressionDashboardComponent,
     AppliedRulesGraphComponent,
     HomeComponent,
+    QueryDemoComponent,
     ToggleDisplayComponent,
     GswbSettingsComponent,
     GrammarLoaderComponent,

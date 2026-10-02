@@ -1,0 +1,45 @@
+<p class="demo-sentence">f-structure of <q>{{ sentence }}</q></p>
+
+<div class="demo-layout">
+  <div class="demo-controls">
+    <div class="examples">
+      <span class="examples-label">Examples</span>
+      <button type="button" class="example" *ngFor="let example of examples"
+              [class.active]="example.query === queryText"
+              (click)="useExample(example)">{{ example.label }}</button>
+    </div>
+
+    <div class="query-box">
+      <div class="pane-toolbar">
+        <span class="file-label">query</span>
+      </div>
+      <app-editor #queryEditor [mode]="'liger'" [showControls]="false" [initialContent]="queryText"
+                  (contentChange)="queryText = $event"></app-editor>
+    </div>
+
+    <div class="run-row">
+      <button type="button" (click)="runQuery()" [disabled]="loading">Run query</button>
+      <span class="status" [class.ok]="statusKind === 'ok'" [class.error]="statusKind === 'error'">{{ status }}</span>
+    </div>
+
+    <ol class="solutions" *ngIf="solutions.length">
+      <li *ngFor="let solution of solutions; let i = index">
+        <button type="button" class="solution" [class.active]="activeSolutionIndex === i" (click)="selectSolution(i)">
+          <span class="solution-index">{{ i + 1 }}</span>
+          <span class="solution-bindings">
+            <span *ngFor="let binding of bindingText(solution)">{{ binding }}</span>
+          </span>
+        </button>
+      </li>
+    </ol>
+
+    <p class="hint">
+      <code>#a</code> variables bind graph nodes, <code>%p</code> variables bind values;
+      <code>&amp;</code> joins constraints and <code>GF := ...</code> defines a hierarchy to use as <code>@GF</code>.
+    </p>
+  </div>
+
+  <div class="demo-graph fluid-boxes">
+    <app-graph-vis #graph [graphID]="'home-query-demo-cy'" [graphStyle]="'liger'"></app-graph-vis>
+  </div>
+</div>
