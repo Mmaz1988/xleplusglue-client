@@ -4,6 +4,7 @@ import { proofInputsFrom } from '../document-builder/proof-inputs';
 import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
 import { ActivatedRoute } from '@angular/router';
 import {
+  AnaphoraRankerSelection,
   LigerRuleAnnotation,
   LigerStructure,
   GswbMultipleRequest,
@@ -53,6 +54,7 @@ import { APP_DEFAULTS } from '../app-defaults';
 import {
   ALL_ANAPHORA_BRANCHES,
   AnaphoraSelectionPolicy,
+  anaphoraRankerSelection,
   anaphoraSelectionPolicy,
   carryAnaphoraRanking,
   compositeAnalysisId,
@@ -3341,6 +3343,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     if (!discourse.length) return;
 
+    const rankers = this.anaphoraRankers();
     const update = carryAnaphoraRanking(
       document.discourseUpdates?.find(existing => existing.id === `du-${sequenceId}`),
       {
@@ -3349,12 +3352,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         sourceElementKind: 'sequence',
         discourse,
         semDiscourseMapping,
-      });
+      },
+      rankers);
     document.discourseUpdates = [
       ...(document.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
       update,
     ];
-    if (needsAnaphoraRanking(update)) {
+    if (needsAnaphoraRanking(update, rankers)) {
       this.rankDiscourseUpdate(build.itemId, update);
     }
     console.info('[Regression] discourse update registered', {
@@ -3370,7 +3374,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private rankDiscourseUpdate(itemId: string, update: DiscourseUpdate): void {
     const done = new ReplaySubject<void>(1);
     this.pendingRankings.set(itemId, done);
-    this.anaphoraRanking.rankAndAttach(() => this.session.analysisDocuments[itemId], update)
+    this.anaphoraRanking.rankAndAttach(() => this.session.analysisDocuments[itemId], update, this.anaphoraRankers())
       .subscribe({
         next: ({ update: ranked }) => {
           const document = this.session.analysisDocuments[itemId];
@@ -4195,6 +4199,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   /** The selection the settings ask for -- applied to the next run, not to existing verdicts. */
   private anaphoraSelection(): AnaphoraSelectionPolicy {
     return anaphoraSelectionPolicy(this.vampirePreferences?.vampirePreferences ?? this.session.vampirePreferences);
+  }
+
+  /** The anaphora rankers the settings ask for -- applied to rankings computed from now on. */
+  private anaphoraRankers(): AnaphoraRankerSelection {
+    return anaphoraRankerSelection(this.vampirePreferences?.vampirePreferences ?? this.session.vampirePreferences);
   }
 
   /** Every item's verdict as its document records it (its run's selection, or `override`). */

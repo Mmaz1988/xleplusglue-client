@@ -258,7 +258,9 @@ export interface AnaphoraRankedRelation {
   antecedent: string;
   pronounText: string;       // the pronoun's lexical description in the input, e.g. "it"
   antecedentText: string;    // the antecedent's lexical description, e.g. "black dog"
-  score?: number | null;     // in [0, 1] for every method, higher is better
+  score?: number | null;     // the first ranker's score: in [0, 1] for every ranker, higher is better
+  scores?: Record<string, number | null>; // every selected ranker's score (absent on old rankings)
+  raw?: Record<string, number | null>;    // the raw value behind each: logProb, cosine, recencyRank
   cosine: number | null;     // cosine rankings: the raw cosine behind score ((cos + 1) / 2); null otherwise
   logProb?: number | null;   // mlm-substitution: the raw mean log-probability behind score (e^logProb)
   substitution?: string | null; // mlm-substitution: the words that replaced the pronoun
@@ -267,13 +269,17 @@ export interface AnaphoraRankedRelation {
 
 export interface AnaphoraRankedBranch {
   discourseId: string;
-  score: number | null;      // mean relation score over the branch, in [0, 1]; null if it has none scored
-  rank: number;              // 1-based, highest score first; equal scores share a rank
+  score: number | null;      // combined score in [0, 1] (one ranker: its mean relation score); null if none scored
+  rank: number;              // 1-based within the branch's reading, highest score first; equal scores share a rank
+  scores?: Record<string, number | null>; // per ranker: mean relation score (absent on old rankings)
+  ranks?: Record<string, number>;         // per ranker: competition rank within the reading
 }
 
 /** lm `/rank_anaphora` response, stored as-is on the DiscourseUpdate it ranks. */
 export interface AnaphoraRanking {
-  method: string;            // "mlm-substitution", "cosine-lexical" or "cosine-description"
+  method: string;            // readable summary: "mlm-substitution", or "borda(mlm-substitution>recency)"
+  methods?: AnaphoraRankerId[]; // the rankers, in priority order; absent on old rankings: [method]
+  averager?: AnaphoraAverager;  // absent on old rankings
   model: string;
   layers: number[];
   pooling: string;
@@ -289,6 +295,22 @@ export interface LmRankAnaphoraRequest {
   syntax: Record<string, LigerStructure>;
   semantics: { semanticOrigin: string; syntacticOrigin: string; drs: LigerStructure }[];
   branches: { discourseId: string; semanticOrigin: string; relations: { pronoun: string; antecedent: string }[] }[];
+  methods: AnaphoraRankerId[];
+  averager: AnaphoraAverager;
+}
+
+/** The anaphora rankers lm `/rank_anaphora` can run; every one scores in [0, 1]. */
+export const ANAPHORA_RANKERS = ['mlm-substitution', 'cosine-lexical', 'cosine-description', 'recency'] as const;
+export type AnaphoraRankerId = typeof ANAPHORA_RANKERS[number];
+
+/** How several rankers are fused into one score per branch, within each reading. */
+export const ANAPHORA_AVERAGERS = ['borda', 'rrf', 'weighted'] as const;
+export type AnaphoraAverager = typeof ANAPHORA_AVERAGERS[number];
+
+/** Which rankers run, in priority order (first = most important), and how they are fused. */
+export interface AnaphoraRankerSelection {
+  rankers: AnaphoraRankerId[];
+  averager: AnaphoraAverager;
 }
 
 /** GSWB `/render_pcdrs`: branches to render to SVG again. `semantic` is the DRS the branch was
@@ -1366,6 +1388,8 @@ export function createRegressionTestingSession(): RegressionTestingSession {
       layered: false,
       anaphora_selection: 'all',
       anaphora_top_k: 1,
+      anaphora_rankers: ['mlm-substitution'],
+      anaphora_averager: 'borda',
     },
     sentenceMap: {},
     regressionTestItems: [],
@@ -1414,6 +1438,10 @@ export interface VampirePreferences {
    *  never reasoned over. Recorded on the run's ReasoningUpdates. */
   anaphora_selection?: AnaphoraSelectionMode;
   anaphora_top_k?: number;
+  /** The anaphora rankers to run, selected ones only, in priority order; and the averager that
+   *  fuses them. Absent (sessions saved before): APP_DEFAULTS.anaphoraRanking. */
+  anaphora_rankers?: string[];
+  anaphora_averager?: string;
 }
 
 export type AnaphoraSelectionMode = 'all' | 'top_k';

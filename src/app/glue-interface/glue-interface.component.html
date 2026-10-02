@@ -98,6 +98,11 @@
       <span *ngIf="collapseAnaphoraLoading">Collapsing...</span>
     </button>
   </div>
+  <app-anaphora-ranker-settings
+    class="pcdrs-ranker-settings"
+    [rankers]="anaphoraRankerPreferences.anaphora_rankers"
+    [averager]="anaphoraRankerPreferences.anaphora_averager"
+    (selectionChange)="onAnaphoraRankersChange($event)"></app-anaphora-ranker-settings>
   <div #pcdrsResults class="pcdrs-results" *ngIf="pcdrsSolutions.length" tabindex="-1">
     <h3>{{ showCollapsedAnaphora ? 'Collapsed anaphora' : 'PCDRS solutions' }}</h3>
     <div class="pcdrs-ranking" *ngIf="pcdrsRankingStatusText()">

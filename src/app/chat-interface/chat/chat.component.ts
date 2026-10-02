@@ -1,6 +1,7 @@
 import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@angular/core';
 import { DataService } from '../../data.service';
 import {
+  AnaphoraRankerSelection,
   AnaphoraMappingModel,
   ChatMessage,
   context,
@@ -27,6 +28,7 @@ import { isLfgxdrtPreferences } from '../../app-defaults';
 import {
   compositeAnalysisId,
   majorityVerdict,
+  anaphoraRankerSelection,
   anaphoraRankingCaption,
   carryAnaphoraRanking,
   needsAnaphoraRanking,
@@ -1433,22 +1435,34 @@ export class ChatComponent {
 
   private upsertDiscourseUpdate(update: DiscourseUpdate): void {
     const previous = this.chatDocument.discourseUpdates?.find(existing => existing.id === update.id);
-    const stored = carryAnaphoraRanking(previous, update);
-    this.chatDocument.discourseUpdates = [
-      ...(this.chatDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
-      stored,
-    ];
-    this.emitChatDocument();
-    if (needsAnaphoraRanking(stored)) {
+    const rankers = this.anaphoraRankers();
+    const stored = carryAnaphoraRanking(previous, update, rankers);
+    this.storeDiscourseUpdate(stored);
+    if (needsAnaphoraRanking(stored, rankers)) {
       this.rankDiscourseUpdate(stored);
     }
   }
 
+  private storeDiscourseUpdate(update: DiscourseUpdate): void {
+    this.chatDocument.discourseUpdates = [
+      ...(this.chatDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
+      update,
+    ];
+    this.emitChatDocument();
+  }
+
+  /** The anaphora rankers the chat's settings ask for. */
+  private anaphoraRankers(): AnaphoraRankerSelection {
+    return anaphoraRankerSelection(this.vampirePreferences?.vampirePreferences);
+  }
+
   /** Stored first, ranked afterwards, never waited on: the turn is complete without it. */
   private rankDiscourseUpdate(update: DiscourseUpdate): void {
-    this.anaphoraRanking.rankAndAttach(() => this.chatDocument, update).subscribe(({ update: ranked }) => {
+    this.anaphoraRanking.rankAndAttach(() => this.chatDocument, update, this.anaphoraRankers()).subscribe(({ update: ranked }) => {
       if (!ranked) return;
-      this.upsertDiscourseUpdate(ranked);
+      // Stored as lm answered, never re-requested on its account: a ranking that does not match
+      // what was asked (an older lm) would otherwise be requested again forever.
+      this.storeDiscourseUpdate(ranked);
       this.chatHistory.forEach(message => this.orderBranchesByRanking(message));
       this.changeDetector.detectChanges();
     });

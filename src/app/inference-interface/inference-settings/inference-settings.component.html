@@ -55,4 +55,11 @@
       <input type="number" min="1" step="1" formControlName="anaphora_top_k" id="anaphora-top-k" name="anaphora-top-k">
     </label>
   </div>
+
+  <div *ngIf="showAnaphoraRankers" class="anaphora-rankers">
+    <app-anaphora-ranker-settings
+      [rankers]="vampirePreferencesForm.value.anaphora_rankers"
+      [averager]="vampirePreferencesForm.value.anaphora_averager"
+      (selectionChange)="onRankerSelectionChange($event)"></app-anaphora-ranker-settings>
+  </div>
 </form>

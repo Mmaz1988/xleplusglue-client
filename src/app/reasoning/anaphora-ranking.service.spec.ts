@@ -5,6 +5,7 @@ import { FormBuilder } from '@angular/forms';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
 import { InferenceSettingsComponent } from '../inference-interface/inference-settings/inference-settings.component';
 import {
+  anaphoraRankerSelection,
   anaphoraRankingCaption,
   anaphoraSelectionPolicy,
   inferenceResultsFromDocument,
@@ -19,8 +20,11 @@ import {
   orderByAnaphoraRanking,
   validateDiscourseUpdate,
 } from '../analysis-model';
-import { AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, XlePlusGlueDocument } from '../models/models';
+import { AnaphoraRankerSelection, AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, XlePlusGlueDocument } from '../models/models';
 import { AnaphoraRankingOutcome, AnaphoraRankingResult, AnaphoraRankingService } from './anaphora-ranking.service';
+
+/** What the `ranking()` fixture was computed with: an old ranking, named by `method` alone. */
+const COSINE: AnaphoraRankerSelection = { rankers: ['cosine-description'], averager: 'borda' };
 
 const structure = { id: 'syn', constraints: [], annotations: [], choiceSpace: {} } as any;
 const drs = { id: 'drs', constraints: [], annotations: [], choiceSpace: {} } as any;
@@ -86,7 +90,8 @@ describe('anaphora ranking document helpers', () => {
   const twoBranches = () => update([branch('b-dog', [['x4', 'x2']]), branch('b-cat', [['x4', 'x1']])]);
 
   it('builds the lm request from the stored syntax and semantic graph, with referent labels', () => {
-    const prepared = anaphoraRankingRequest(documentWith(), twoBranches());
+    const prepared = anaphoraRankingRequest(documentWith(), twoBranches(),
+      { rankers: ['mlm-substitution', 'recency'], averager: 'rrf' });
     expect('request' in prepared).toBeTrue();
     if (!('request' in prepared)) return;
     expect(prepared.request.syntax).toEqual({ 'syn-1': structure });
@@ -95,13 +100,15 @@ describe('anaphora ranking document helpers', () => {
       { discourseId: 'b-dog', semanticOrigin: 'sem-1', relations: [{ pronoun: 'x4', antecedent: 'x2' }] },
       { discourseId: 'b-cat', semanticOrigin: 'sem-1', relations: [{ pronoun: 'x4', antecedent: 'x1' }] },
     ]);
+    expect(prepared.request.methods).toEqual(['mlm-substitution', 'recency']);
+    expect(prepared.request.averager).toBe('rrf');
   });
 
   it('does not ask lm when nothing is bound or the graph is not stored', () => {
-    expect('reason' in anaphoraRankingRequest(documentWith(), update([branch('b', [])]))).toBeTrue();
-    expect('reason' in anaphoraRankingRequest(documentWith(undefined, null), twoBranches())).toBeTrue();
-    expect(needsAnaphoraRanking(update([branch('b', [])]))).toBeFalse();
-    expect(needsAnaphoraRanking(twoBranches())).toBeTrue();
+    expect('reason' in anaphoraRankingRequest(documentWith(), update([branch('b', [])]), COSINE)).toBeTrue();
+    expect('reason' in anaphoraRankingRequest(documentWith(undefined, null), twoBranches(), COSINE)).toBeTrue();
+    expect(needsAnaphoraRanking(update([branch('b', [])]), COSINE)).toBeFalse();
+    expect(needsAnaphoraRanking(twoBranches(), COSINE)).toBeTrue();
   });
 
   it('rejects a ranking of a branch the update does not have', () => {
@@ -113,9 +120,40 @@ describe('anaphora ranking document helpers', () => {
 
   it('keeps a ranking across re-upserts with the same bindings, drops it when the bindings change', () => {
     const ranked = { ...twoBranches(), anaphoraRanking: ranking([['b-dog', 2, 0.788], ['b-cat', 1, 0.816]]) };
-    expect(carryAnaphoraRanking(ranked, twoBranches()).anaphoraRanking).toBe(ranked.anaphoraRanking);
+    expect(carryAnaphoraRanking(ranked, twoBranches(), COSINE).anaphoraRanking).toBe(ranked.anaphoraRanking);
+    expect(needsAnaphoraRanking(ranked, COSINE)).toBeFalse();
     const regenerated = update([branch('b-dog', [['x4', 'x3']]), branch('b-cat', [['x4', 'x1']])]);
-    expect(carryAnaphoraRanking(ranked, regenerated).anaphoraRanking).toBeUndefined();
+    expect(carryAnaphoraRanking(ranked, regenerated, COSINE).anaphoraRanking).toBeUndefined();
+  });
+
+  it('drops a ranking computed with other rankers, so a changed selection re-ranks', () => {
+    const fused: AnaphoraRanking = { ...ranking([['b-dog', 2, 0.5], ['b-cat', 1, 0.5]]),
+      method: 'borda(mlm-substitution>recency)', methods: ['mlm-substitution', 'recency'], averager: 'borda' };
+    const ranked = { ...twoBranches(), anaphoraRanking: fused };
+    const same: AnaphoraRankerSelection = { rankers: ['mlm-substitution', 'recency'], averager: 'borda' };
+    expect(carryAnaphoraRanking(ranked, twoBranches(), same).anaphoraRanking).toBe(fused);
+    expect(needsAnaphoraRanking(ranked, same)).toBeFalse();
+
+    for (const changed of [
+      { rankers: ['recency', 'mlm-substitution'], averager: 'borda' },
+      { rankers: ['mlm-substitution', 'recency'], averager: 'weighted' },
+      { rankers: ['mlm-substitution'], averager: 'borda' },
+    ] as AnaphoraRankerSelection[]) {
+      expect(carryAnaphoraRanking(ranked, twoBranches(), changed).anaphoraRanking).toBeUndefined();
+      expect(needsAnaphoraRanking(ranked, changed)).toBeTrue();
+    }
+
+    // One ranker: the averager changes nothing, so the old ranking stays.
+    const old = { ...twoBranches(), anaphoraRanking: ranking([['b-dog', 2, 0.788], ['b-cat', 1, 0.816]]) };
+    expect(needsAnaphoraRanking(old, { rankers: ['cosine-description'], averager: 'rrf' })).toBeFalse();
+  });
+
+  it('reads the ranker selection from preferences, with defaults for sessions saved before', () => {
+    expect(anaphoraRankerSelection(undefined)).toEqual({ rankers: ['mlm-substitution'], averager: 'borda' });
+    expect(anaphoraRankerSelection({ anaphora_rankers: ['recency', 'vibes', 'recency', 'cosine-lexical'], anaphora_averager: 'rrf' }))
+      .toEqual({ rankers: ['recency', 'cosine-lexical'], averager: 'rrf' });
+    expect(anaphoraRankerSelection({ anaphora_rankers: [], anaphora_averager: 'median' }))
+      .toEqual({ rankers: ['mlm-substitution'], averager: 'borda' });
   });
 
   it('attaches a late ranking only to the update it was computed for', () => {
@@ -150,6 +188,28 @@ describe('anaphora ranking document helpers', () => {
     };
     expect(anaphoraRankingCaption({ ...twoBranches(), anaphoraRanking: substitution }, 'b-cat'))
       .toBe('rank 1 · mean score 0.250 · it → big cat (score 0.250, logp -1.39, "The big cat", recency 2)');
+  });
+
+  it('captions a fused ranking with the combined score, every ranker\'s rank and per-ranker scores', () => {
+    const fused: AnaphoraRanking = {
+      ...ranking([]),
+      method: 'borda(mlm-substitution>recency)',
+      methods: ['mlm-substitution', 'recency'],
+      averager: 'borda',
+      relations: [{ semanticOrigin: 'sem-1', pronoun: 'x4', antecedent: 'x1', pronounText: 'he', antecedentText: 'man',
+        score: 0.25, scores: { 'mlm-substitution': 0.25, recency: 0.5 }, raw: { 'mlm-substitution': -1.386, recency: 2 },
+        cosine: null, logProb: -1.386, substitution: 'The man', recencyRank: 2 }],
+      branches: [
+        { discourseId: 'b-cat', rank: 1, score: 0.5, scores: { 'mlm-substitution': 0.25, recency: 0.5 },
+          ranks: { 'mlm-substitution': 1, recency: 2 } },
+        { discourseId: 'b-dog', rank: 2, score: 0.5, scores: { 'mlm-substitution': 0.012, recency: 1 },
+          ranks: { 'mlm-substitution': 2, recency: 1 } },
+      ],
+    };
+    expect(anaphoraRankingCaption({ ...twoBranches(), anaphoraRanking: fused }, 'b-cat'))
+      .toBe('rank 1 · borda 0.500 (mlm 1st, recency 2nd) · he → man (mlm 0.250, recency 0.500, "The man")');
+    expect(anaphoraRankingCaption({ ...twoBranches(), anaphoraRanking: fused }, 'b-dog'))
+      .toBe('rank 2 · borda 0.500 (mlm 2nd, recency 1st) · x4 → x2 (mlm n/a, recency n/a)');
   });
 });
 
@@ -335,6 +395,19 @@ describe('anaphora branch selection for verdicts', () => {
     expect(settings.vampirePreferencesForm.value.anaphora_selection).toBe('all');
     expect(settings.vampirePreferencesForm.value.anaphora_top_k).toBe(1);
   });
+
+  it('carries the ranker selection through the settings form and restores old sessions with defaults', () => {
+    const settings = new InferenceSettingsComponent(new FormBuilder());
+    expect(settings.vampirePreferences.anaphora_rankers).toEqual(['mlm-substitution']);
+
+    settings.onRankerSelectionChange({ rankers: ['recency', 'mlm-substitution'], averager: 'weighted' });
+    expect(settings.vampirePreferences.anaphora_rankers).toEqual(['recency', 'mlm-substitution']);
+    expect(settings.vampirePreferences.anaphora_averager).toBe('weighted');
+
+    settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, layered: false });
+    expect(settings.vampirePreferencesForm.value.anaphora_rankers).toEqual(['mlm-substitution']);
+    expect(settings.vampirePreferencesForm.value.anaphora_averager).toBe('borda');
+  });
 });
 
 describe('AnaphoraRankingService', () => {
@@ -354,9 +427,10 @@ describe('AnaphoraRankingService', () => {
     const discourseUpdate = update([branch('b-cat', [['x4', 'x1']])]);
     const results: AnaphoraRankingResult[] = [];
 
-    service.rank(documentWith(), discourseUpdate).subscribe(result => results.push(result));
-    service.rank(documentWith(), discourseUpdate).subscribe(result => results.push(result));
+    service.rank(documentWith(), discourseUpdate, COSINE).subscribe(result => results.push(result));
+    service.rank(documentWith(), discourseUpdate, COSINE).subscribe(result => results.push(result));
     expect(dataService.lmRankAnaphora).toHaveBeenCalledTimes(1);
+    expect(dataService.lmRankAnaphora.calls.first().args[0].methods).toEqual(['cosine-description']);
 
     first.next(ranking([['b-cat', 1, 0.8]]));
     first.complete();
@@ -373,7 +447,7 @@ describe('AnaphoraRankingService', () => {
     let outcome: AnaphoraRankingOutcome | undefined;
     let errored = false;
 
-    service.rankAndAttach(() => documentWith(discourseUpdate), discourseUpdate)
+    service.rankAndAttach(() => documentWith(discourseUpdate), discourseUpdate, COSINE)
       .subscribe({ next: value => outcome = value, error: () => errored = true });
 
     expect(errored).toBeFalse();
@@ -383,7 +457,7 @@ describe('AnaphoraRankingService', () => {
 
   it('does not call lm when there is nothing to rank', () => {
     let result: AnaphoraRankingResult | undefined;
-    service.rank(documentWith(), update([branch('b', [])])).subscribe(value => result = value);
+    service.rank(documentWith(), update([branch('b', [])]), COSINE).subscribe(value => result = value);
     expect(result?.status).toBe('not-applicable');
     expect(dataService.lmRankAnaphora).not.toHaveBeenCalled();
   });
@@ -395,7 +469,7 @@ describe('AnaphoraRankingService', () => {
     let current = documentWith(asked);
     let outcome: AnaphoraRankingOutcome | undefined;
 
-    service.rankAndAttach(() => current, asked).subscribe(value => outcome = value);
+    service.rankAndAttach(() => current, asked, COSINE).subscribe(value => outcome = value);
     current = documentWith(update([branch('b-new', [['x4', 'x2']])]));
     pending.next(ranking([['b-cat', 1, 0.8]]));
     pending.complete();

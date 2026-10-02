@@ -57,6 +57,8 @@ import { PillComponent } from './utilities/pill/pill.component';
 import {HoverSidebarComponent} from "./utilities/hover-sidebar/hover-sidebar.component";
 import {OverlayModule} from "@angular/cdk/overlay";
 import { ScrollingModule } from '@angular/cdk/scrolling';
+import { DragDropModule } from '@angular/cdk/drag-drop';
+import { AnaphoraRankerSettingsComponent } from './reasoning/anaphora-ranker-settings/anaphora-ranker-settings.component';
 import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.component';
 
 @NgModule({
@@ -95,6 +97,7 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     TestResultComponent,
     InferenceInterfaceComponent,
     InferenceSettingsComponent,
+    AnaphoraRankerSettingsComponent,
     GswbVisContainerComponent,
     CenterContainerComponent,
     LigerVisContainerComponent,
@@ -119,7 +122,8 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     MatTabsModule,
     BrowserAnimationsModule,
     OverlayModule,
-    ScrollingModule],
+    ScrollingModule,
+    DragDropModule],
   providers: [],
   bootstrap: [AppComponent],
 })

@@ -1,4 +1,11 @@
+import { APP_DEFAULTS } from './app-defaults';
 import {
+  ANAPHORA_AVERAGERS,
+  ANAPHORA_RANKERS,
+  AnaphoraAverager,
+  AnaphoraRankedBranch,
+  AnaphoraRankerId,
+  AnaphoraRankerSelection,
   AnaphoraRanking,
   AnaphoraSelectionMode,
   DiscourseAnalysis,
@@ -285,13 +292,43 @@ export function validateDiscourseUpdate(document: XlePlusGlueDocument, update: D
   });
 }
 
+/** The ranker selection a view's preferences ask for. Unknown or repeated rankers are dropped;
+ *  absent fields (sessions saved before rankers were selectable) mean APP_DEFAULTS. Every view
+ *  reads its selection through this. */
+export function anaphoraRankerSelection(
+  preferences: Pick<VampirePreferences, 'anaphora_rankers' | 'anaphora_averager'> | undefined,
+): AnaphoraRankerSelection {
+  const known = new Set<string>(ANAPHORA_RANKERS);
+  const rankers = [...new Set((preferences?.anaphora_rankers ?? []).filter(id => known.has(id)))] as AnaphoraRankerId[];
+  const defaults = APP_DEFAULTS.anaphoraRanking;
+  const averager = (ANAPHORA_AVERAGERS as readonly string[]).includes(preferences?.anaphora_averager ?? '')
+    ? preferences!.anaphora_averager as AnaphoraAverager
+    : defaults.averager as AnaphoraAverager;
+  return { rankers: rankers.length ? rankers : defaults.rankers as AnaphoraRankerId[], averager };
+}
+
+/** The rankers a stored ranking ran, in priority order; old rankings ran one, named by `method`. */
+export function anaphoraRankingMethods(ranking: AnaphoraRanking): string[] {
+  return ranking.methods?.length ? ranking.methods : [ranking.method];
+}
+
+/** Whether `ranking` was computed with `selection`. The averager only matters for two or more
+ *  rankers: with one, the scores and ranks are that ranker's whatever the averager. */
+export function anaphoraRankingMatchesSelection(ranking: AnaphoraRanking, selection: AnaphoraRankerSelection): boolean {
+  const methods = anaphoraRankingMethods(ranking);
+  return methods.join('>') === selection.rankers.join('>')
+    && (selection.rankers.length === 1 || ranking.averager === selection.averager);
+}
+
 /** The `/rank_anaphora` request for a discourse update, built from the document alone: the
- *  source element's stored syntax and semantic graphs plus each branch's anaphora mapping.
- *  Every view produces the same request for the same document, whichever view built it.
+ *  source element's stored syntax and semantic graphs plus each branch's anaphora mapping, and
+ *  the selected rankers. Every view produces the same request for the same document and
+ *  selection, whichever view built it.
  *  Returns a reason instead when there is nothing to rank or the inputs are not stored. */
 export function anaphoraRankingRequest(
   document: XlePlusGlueDocument,
   update: DiscourseUpdate,
+  selection: AnaphoraRankerSelection,
 ): { request: LmRankAnaphoraRequest } | { reason: string } {
   if (!update.discourse.some(branch => branch.anaphoraMapping.relations.length)) {
     return { reason: 'no branch binds a pronoun' };
@@ -330,6 +367,8 @@ export function anaphoraRankingRequest(
           antecedent: relation.antecedent,
         })),
       })),
+      methods: [...selection.rankers],
+      averager: selection.averager,
     },
   };
 }
@@ -350,18 +389,26 @@ export function anaphoraRankingStillApplies(ranked: DiscourseUpdate, current: Di
   return bindingsKey(ranked.discourse) === bindingsKey(current.discourse);
 }
 
-/** `next` carrying `previous`'s ranking when that ranking still applies to it. Views call this
- *  when they replace a discourse update, so re-upserting unchanged branches does not drop the
- *  ranking and trigger another lm call. */
-export function carryAnaphoraRanking(previous: DiscourseUpdate | undefined, next: DiscourseUpdate): DiscourseUpdate {
-  if (next.anaphoraRanking || !previous?.anaphoraRanking || !anaphoraRankingStillApplies(previous, next)) {
+/** `next` carrying `previous`'s ranking when that ranking still applies to it and was computed
+ *  with the selected rankers. Views call this when they replace a discourse update, so
+ *  re-upserting unchanged branches does not drop the ranking and trigger another lm call, while
+ *  a changed ranker selection does. */
+export function carryAnaphoraRanking(
+  previous: DiscourseUpdate | undefined,
+  next: DiscourseUpdate,
+  selection: AnaphoraRankerSelection,
+): DiscourseUpdate {
+  if (next.anaphoraRanking || !previous?.anaphoraRanking || !anaphoraRankingStillApplies(previous, next)
+    || !anaphoraRankingMatchesSelection(previous.anaphoraRanking, selection)) {
     return next;
   }
   return { ...next, anaphoraRanking: previous.anaphoraRanking };
 }
 
-export function needsAnaphoraRanking(update: DiscourseUpdate): boolean {
-  return !update.anaphoraRanking && update.discourse.some(branch => branch.anaphoraMapping.relations.length);
+/** Whether `update` binds a pronoun and has no ranking computed with `selection`. */
+export function needsAnaphoraRanking(update: DiscourseUpdate, selection: AnaphoraRankerSelection): boolean {
+  return update.discourse.some(branch => branch.anaphoraMapping.relations.length)
+    && (!update.anaphoraRanking || !anaphoraRankingMatchesSelection(update.anaphoraRanking, selection));
 }
 
 /** The update as it now stands in `document` with `ranking` attached, or null when the ranking
@@ -664,16 +711,41 @@ export function inferenceResultsFromDocument(
   return results;
 }
 
+const RANKER_SHORT_NAMES: Record<string, string> = {
+  'mlm-substitution': 'mlm',
+  'cosine-lexical': 'cos-lex',
+  'cosine-description': 'cos-desc',
+  'recency': 'recency',
+};
+
+function rankerShortName(ranker: string): string {
+  return RANKER_SHORT_NAMES[ranker] ?? ranker;
+}
+
+function ordinal(rank: number): string {
+  const tens = rank % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[rank % 10] ?? 'th';
+  return `${rank}${suffix}`;
+}
+
+function scoreText(score: number | null | undefined): string {
+  return score == null ? 'n/a' : score.toFixed(3);
+}
+
 /** One-line description of how `discourseId` was ranked within `update`, shared by every view
- *  so they caption the same ranking the same way. Scores are in [0, 1] for every method; the
- *  raw value behind each follows it:
+ *  so they caption the same ranking the same way. Scores are in [0, 1] for every ranker. One
+ *  ranker -- the raw value behind each score follows it:
  *  "rank 1 · mean score 0.250 · he → man (score 0.250, logp -1.39, "The man", recency 2)".
+ *  Several -- the combined score, each ranker's rank, and each binding's per-ranker scores:
+ *  "rank 1 · borda 0.500 (mlm 1st, recency 2nd) · he → man (mlm 0.250, recency 0.500, "The man")".
  *  Empty when unranked. */
 export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: string): string {
   const ranking = update.anaphoraRanking;
   const branch = ranking?.branches.find(candidate => candidate.discourseId === discourseId);
   const discourse = update.discourse.find(candidate => candidate.id === discourseId);
   if (!ranking || !branch || !discourse) return '';
+  const methods = anaphoraRankingMethods(ranking);
+  if (methods.length > 1) return fusedRankingCaption(ranking, methods, branch, discourse);
 
   const bindings = discourse.anaphoraMapping.relations.map(relation => {
     const pronoun = relation.pronounDisplay ?? relation.pronounReferentId;
@@ -688,6 +760,27 @@ export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: str
   });
   const score = branch.score == null ? 'no score' : `mean score ${branch.score.toFixed(3)}`;
   return [`rank ${branch.rank}`, score, ...bindings].join(' · ');
+}
+
+function fusedRankingCaption(
+  ranking: AnaphoraRanking,
+  methods: string[],
+  branch: AnaphoraRankedBranch,
+  discourse: DiscourseAnalysis,
+): string {
+  const perRanker = methods
+    .map(method => `${rankerShortName(method)} ${branch.ranks?.[method] == null ? 'n/a' : ordinal(branch.ranks[method])}`)
+    .join(', ');
+  const combined = `${ranking.averager ?? 'combined'} ${branch.score == null ? 'n/a' : branch.score.toFixed(3)} (${perRanker})`;
+  const bindings = discourse.anaphoraMapping.relations.map(relation => {
+    const pronoun = relation.pronounDisplay ?? relation.pronounReferentId;
+    const scored = ranking.relations.find(candidate => candidate.semanticOrigin === discourse.semanticOrigin
+      && candidate.pronoun === pronoun && candidate.antecedent === relation.antecedent);
+    const scores = methods.map(method => `${rankerShortName(method)} ${scoreText(scored?.scores?.[method])}`);
+    const substitution = scored?.substitution ? [`"${scored.substitution}"`] : [];
+    return `${scored?.pronounText || pronoun} → ${scored?.antecedentText || relation.antecedent} (${[...scores, ...substitution].join(', ')})`;
+  });
+  return [`rank ${branch.rank}`, combined, ...bindings].join(' · ');
 }
 
 const NLI_LABEL_NAMES: Record<NliLabel, string> = { '1': 'entailment', '0': 'neutral', '-1': 'contradiction' };

@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import { AsyncSubject, Observable, Subject, catchError, concatMap, defer, map, of, tap, timeout } from 'rxjs';
 import { DataService } from '../data.service';
-import { anaphoraRankingRequest, attachAnaphoraRanking } from '../analysis-model';
-import { AnaphoraRanking, DiscourseUpdate, XlePlusGlueDocument } from '../models/models';
+import { anaphoraRankingMatchesSelection, anaphoraRankingRequest, attachAnaphoraRanking } from '../analysis-model';
+import { AnaphoraRankerSelection, AnaphoraRanking, DiscourseUpdate, XlePlusGlueDocument } from '../models/models';
 
 export type AnaphoraRankingResult =
   | { status: 'ranked'; ranking: AnaphoraRanking }
@@ -35,9 +35,14 @@ export class AnaphoraRankingService {
     this.queue.pipe(concatMap(job => job)).subscribe();
   }
 
-  rank(document: XlePlusGlueDocument, update: DiscourseUpdate): Observable<AnaphoraRankingResult> {
+  /** Ranks with `selection`'s rankers and averager (see anaphoraRankerSelection). */
+  rank(
+    document: XlePlusGlueDocument,
+    update: DiscourseUpdate,
+    selection: AnaphoraRankerSelection,
+  ): Observable<AnaphoraRankingResult> {
     // Built now, from the document as it is when the update is stored.
-    const prepared = anaphoraRankingRequest(document, update);
+    const prepared = anaphoraRankingRequest(document, update, selection);
     if ('reason' in prepared) {
       return of({ status: 'not-applicable', reason: prepared.reason });
     }
@@ -65,22 +70,30 @@ export class AnaphoraRankingService {
   rankAndAttach(
     currentDocument: () => XlePlusGlueDocument | undefined,
     update: DiscourseUpdate,
+    selection: AnaphoraRankerSelection,
   ): Observable<AnaphoraRankingOutcome> {
     const document = currentDocument();
     if (!document) {
       return of({ result: { status: 'not-applicable', reason: 'no document' }, update: null });
     }
-    return this.rank(document, update).pipe(map(result => {
+    return this.rank(document, update, selection).pipe(map(result => {
       if (result.status !== 'ranked') {
         if (result.status === 'unavailable') {
           console.warn('[AnaphoraRanking] lm ranking unavailable', { updateId: update.id, reason: result.reason });
         }
         return { result, update: null };
       }
+      if (!anaphoraRankingMatchesSelection(result.ranking, selection)) {
+        // Kept all the same -- it is lm's answer -- but the views will not ask again for it.
+        console.warn('[AnaphoraRanking] lm ranked with other rankers than asked (an lm image without ranker fusion?)', {
+          updateId: update.id, asked: selection, answered: result.ranking.methods ?? result.ranking.method,
+        });
+      }
       const latest = currentDocument();
       const attached = latest ? attachAnaphoraRanking(latest, update, result.ranking) : null;
       console.info('[AnaphoraRanking] ranked', {
         updateId: update.id,
+        method: result.ranking.method,
         branches: result.ranking.branches.length,
         attached: !!attached,
         warnings: result.ranking.warnings.length,

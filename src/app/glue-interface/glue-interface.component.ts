@@ -4,12 +4,13 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
+import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRankerSelection, AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, VampirePreferences, XlePlusGlueDocument } from '../models/models';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
-import { anaphoraRankingCaption, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
+import { APP_DEFAULTS } from '../app-defaults';
+import { anaphoraRankerSelection, anaphoraRankingCaption, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
 import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 
@@ -65,6 +66,12 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   pcdrsGenerationOrder = false;
   /** Latest ranking outcome per discourse update id; 'pending' while lm is working. */
   anaphoraRankingStatus: Record<string, AnaphoraRankingResult | { status: 'pending' }> = {};
+  /** The anaphora rankers this view ranks with: the same preferences fields as regression's and
+   *  chat's Vampire settings, held here because analysis has no Vampire settings. */
+  anaphoraRankerPreferences: Pick<VampirePreferences, 'anaphora_rankers' | 'anaphora_averager'> = {
+    anaphora_rankers: [...APP_DEFAULTS.anaphoraRanking.rankers],
+    anaphora_averager: APP_DEFAULTS.anaphoraRanking.averager,
+  };
   private lastSequenceLength = 0;
   private sentenceAnalyses: SentenceAnalysis[] = [];
   private sequenceAnalyses: SequenceAnalysis[] = [];
@@ -279,25 +286,51 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   private upsertDiscourseUpdate(update: DiscourseUpdate): void {
-    const stored = carryAnaphoraRanking(this.discourseUpdateById(update.id), update);
-    this.analysisDocument.discourseUpdates = [
-      ...(this.analysisDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
-      stored,
-    ];
-    this.persistAnalysisDocument();
-    if (needsAnaphoraRanking(stored)) {
+    const rankers = this.anaphoraRankers();
+    const stored = carryAnaphoraRanking(this.discourseUpdateById(update.id), update, rankers);
+    this.storeDiscourseUpdate(stored);
+    if (needsAnaphoraRanking(stored, rankers)) {
       this.rankDiscourseUpdate(stored);
     }
+  }
+
+  private storeDiscourseUpdate(update: DiscourseUpdate): void {
+    this.analysisDocument.discourseUpdates = [
+      ...(this.analysisDocument.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
+      update,
+    ];
+    this.persistAnalysisDocument();
+  }
+
+  private anaphoraRankers(): AnaphoraRankerSelection {
+    return anaphoraRankerSelection(this.anaphoraRankerPreferences);
+  }
+
+  /** A changed ranker selection re-ranks the stored discourse updates right away: this view
+   *  shows their rankings, and an lm call per update is cheap here. */
+  onAnaphoraRankersChange(selection: AnaphoraRankerSelection): void {
+    this.anaphoraRankerPreferences = { anaphora_rankers: selection.rankers, anaphora_averager: selection.averager };
+    (this.analysisDocument.discourseUpdates ?? [])
+      .filter(update => needsAnaphoraRanking(update, selection) && this.anaphoraRankingStatus[update.id]?.status !== 'pending')
+      .forEach(update => this.rankDiscourseUpdate(update));
   }
 
   /** Stored first, ranked afterwards: nothing here waits for lm, and an unavailable lm only
    *  leaves the update unranked. */
   private rankDiscourseUpdate(update: DiscourseUpdate): void {
     this.anaphoraRankingStatus[update.id] = { status: 'pending' };
-    this.anaphoraRanking.rankAndAttach(() => this.analysisDocument, update).subscribe(({ result, update: ranked }) => {
+    const asked = this.anaphoraRankers();
+    this.anaphoraRanking.rankAndAttach(() => this.analysisDocument, update, asked).subscribe(({ result, update: ranked }) => {
       this.anaphoraRankingStatus[update.id] = result;
       if (ranked) {
-        this.upsertDiscourseUpdate(ranked);
+        // Stored as lm answered, never re-requested on its account: a ranking that does not
+        // match what was asked (an older lm) would otherwise be requested again forever.
+        this.storeDiscourseUpdate(ranked);
+        const current = this.anaphoraRankers();
+        if (JSON.stringify(current) !== JSON.stringify(asked)) {
+          // The selection changed while lm was working.
+          this.rankDiscourseUpdate(ranked);
+        }
       }
       this.refreshPcdrsDisplay();
     });

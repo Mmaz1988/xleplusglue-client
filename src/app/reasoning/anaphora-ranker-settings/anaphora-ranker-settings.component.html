@@ -1,0 +1,23 @@
+<fieldset class="anaphora-rankers">
+  <legend>Anaphora rankers</legend>
+  <ol class="ranker-list" cdkDropList (cdkDropListDropped)="drop($event)">
+    <li *ngFor="let row of rows" cdkDrag class="ranker-row" [class.unselected]="!row.selected">
+      <span class="drag-handle" cdkDragHandle title="Drag to change the priority">⠿</span>
+      <label>
+        <input type="checkbox" [checked]="row.selected" (change)="toggle(row)"
+               [disabled]="row.selected && selectedCount === 1"
+               [attr.data-ranker]="row.id">
+        {{ rankerLabels[row.id] }}
+      </label>
+    </li>
+  </ol>
+  <label class="averager">
+    Averager:
+    <select (change)="setAverager($any($event.target).value)" [disabled]="selectedCount < 2">
+      <option *ngFor="let averager of averagers" [value]="averager"
+              [selected]="averager === selectedAverager">{{ averagerLabels[averager] }}</option>
+    </select>
+    <span *ngIf="selectedCount < 2" class="hint">(select two or more rankers)</span>
+  </label>
+  <p class="hint order-hint">{{ orderHint }}</p>
+</fieldset>

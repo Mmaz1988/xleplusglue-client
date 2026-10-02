@@ -351,6 +351,8 @@ describe('GlueInterfaceComponent', () => {
     const shownIds = () => component.pcdrsDisplaySolutions.map(solution => solution.id);
 
     beforeEach(() => {
+      // What the `ranking` fixture was computed with.
+      component.anaphoraRankerPreferences = { anaphora_rankers: ['cosine-description'], anaphora_averager: 'borda' };
       (component as any).analysisDocument.sentences.push(sentence);
       (component as any).analysisDocument.elements.push({ kind: 'sentence', id: 'sentence-1' });
       dataServiceMock.gswbGeneratePcdrs.and.returnValue(of({
@@ -388,6 +390,8 @@ describe('GlueInterfaceComponent', () => {
           { discourseId: 's1-pcdrs-1', semanticOrigin: 's1', relations: [{ pronoun: 'x4', antecedent: 'x2' }] },
           { discourseId: 's1-pcdrs-2', semanticOrigin: 's1', relations: [{ pronoun: 'x4', antecedent: 'x1' }] },
         ],
+        methods: ['cosine-description'],
+        averager: 'borda',
       });
 
       lm.next(ranking);
@@ -416,6 +420,35 @@ describe('GlueInterfaceComponent', () => {
       expect(storedUpdate().discourse.every((entry: any) => entry.collapsed)).toBeTrue();
       expect(storedUpdate().anaphoraRanking).toEqual(ranking);
       expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
+    });
+
+    it('stores a ranking lm computed with other rankers once, without asking again', () => {
+      // An lm image without ranker fusion ignores `methods`: its answer never matches.
+      component.anaphoraRankerPreferences = { anaphora_rankers: ['mlm-substitution', 'recency'], anaphora_averager: 'borda' };
+      const lm = new Subject<any>();
+      dataServiceMock.lmRankAnaphora.and.returnValue(lm);
+      component.generatePcdrs();
+      lm.next(ranking);
+      lm.complete();
+
+      expect(storedUpdate().anaphoraRanking).toEqual(ranking);
+      expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-ranks the stored PCDRS when the ranker selection changes, and only then', () => {
+      dataServiceMock.lmRankAnaphora.and.returnValue(of(ranking));
+      component.generatePcdrs();
+      expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
+
+      component.onAnaphoraRankersChange({ rankers: ['cosine-description'], averager: 'rrf' });
+      expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
+
+      const fused = { ...ranking, method: 'borda(cosine-description>recency)', methods: ['cosine-description', 'recency'], averager: 'borda' };
+      dataServiceMock.lmRankAnaphora.and.returnValue(of(fused));
+      component.onAnaphoraRankersChange({ rankers: ['cosine-description', 'recency'], averager: 'borda' });
+      expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(2);
+      expect(dataServiceMock.lmRankAnaphora.calls.mostRecent().args[0].methods).toEqual(['cosine-description', 'recency']);
+      expect(storedUpdate().anaphoraRanking).toEqual(fused);
     });
 
     it('works unchanged when lm is down', () => {

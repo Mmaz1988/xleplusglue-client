@@ -61,6 +61,12 @@ export const APP_DEFAULTS = {
   inference: {
     axioms: '',
   },
+  /** Anaphora ranking (lm /rank_anaphora): rankers in priority order and the averager fusing
+   *  them. One ranker behaves as before fusion existed. */
+  anaphoraRanking: {
+    rankers: ['mlm-substitution'] as string[],
+    averager: 'borda',
+  },
   vampire: {
     chat: {
       logic_type: 1,
@@ -69,6 +75,8 @@ export const APP_DEFAULTS = {
       layered: false,
       anaphora_selection: 'all' as const,
       anaphora_top_k: 1,
+      anaphora_rankers: ['mlm-substitution'],
+      anaphora_averager: 'borda',
     },
     regression: {
       logic_type: 0,
@@ -77,6 +85,8 @@ export const APP_DEFAULTS = {
       layered: false,
       anaphora_selection: 'all' as const,
       anaphora_top_k: 1,
+      anaphora_rankers: ['mlm-substitution'],
+      anaphora_averager: 'borda',
     },
   },
 };
