@@ -39,7 +39,7 @@ describe('AnaphoraRankerSettingsComponent', () => {
 
   it('lists the selected rankers first, in priority order, then the rest', () => {
     setInputs(['recency', 'mlm-substitution'], 'rrf');
-    expect(shownOrder()).toEqual(['recency*', 'mlm-substitution*', 'cosine-lexical', 'cosine-description']);
+    expect(shownOrder()).toEqual(['recency*', 'mlm-substitution*', 'mlm-slot', 'cosine-lexical', 'cosine-description']);
     expect(averagerSelect().value).toBe('rrf');
   });
 
@@ -66,7 +66,7 @@ describe('AnaphoraRankerSettingsComponent', () => {
     checkbox('recency').click();
     fixture.detectChanges();
     expect(emitted.at(-1)!.rankers).toEqual(['mlm-substitution', 'cosine-lexical']);
-    expect(shownOrder()).toEqual(['mlm-substitution*', 'cosine-lexical*', 'cosine-description', 'recency']);
+    expect(shownOrder()).toEqual(['mlm-substitution*', 'cosine-lexical*', 'mlm-slot', 'cosine-description', 'recency']);
   });
 
   it('reorders by drag and drop, emitting the new priority order', () => {
