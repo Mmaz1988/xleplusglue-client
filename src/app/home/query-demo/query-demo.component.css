@@ -45,7 +45,9 @@
   margin-right: 0.25rem;
 }
 
+/* The global button style is white on teal; these are light chips and rows instead. */
 .example {
+  color: #243247;
   font-size: 0.85rem;
   padding: 0.2rem 0.6rem;
   margin: 0;
@@ -56,6 +58,7 @@
 }
 
 .example:hover,
+.example:active,
 .example.active {
   border-color: var(--box-border-color, #00a9e0);
   background: #e6f6fc;
@@ -134,6 +137,7 @@
   text-align: left;
   border: 1px solid #d9d9d9;
   border-radius: 0.4rem;
+  color: #243247;
   background: #fff;
   cursor: pointer;
 }
@@ -143,6 +147,7 @@
 }
 
 /* Same orange as graph-vis's query-match nodes, so the selected row and its nodes read as one. */
+.solution:active,
 .solution.active {
   border-color: #ff8f00;
   background: #fff3e0;
