@@ -1,9 +1,16 @@
 .center-container {
-  display: flex;
-  justify-content: center;
-  padding: 16px;
+  padding: 16px 0;
   overflow: auto;
   background: #f5f5f5;
   width: 100%;
   flex-shrink: 0;
+}
+
+/* The same column as regression testing's; the host's .fluid-boxes lets the boxes inside
+   fill it, as they fill a column of the analysis page's split view. */
+.column {
+  max-width: calc(var(--single-column-width) + 2 * var(--single-column-padding));
+  margin: 0 auto;
+  padding: 0 var(--single-column-padding);
+  box-sizing: border-box;
 }

@@ -32,9 +32,9 @@ textarea{
    60px minimum padding also keeps the content clear of the session sidebar's handle. */
 .frame {
   position: relative;
-  max-width: calc(1000px + 2 * 60px);
+  max-width: calc(var(--single-column-width) + 2 * var(--single-column-padding));
   margin: 0 auto;
-  padding: 0 60px;
+  padding: 0 var(--single-column-padding);
   box-sizing: border-box;
 }
 

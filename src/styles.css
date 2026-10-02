@@ -11,6 +11,10 @@
   --graph-box-radius: 25px;
   --editor-height: 300px;
   --graph-height: 590px;
+  /* A page that is one column (regression, the standalone LiGER and GSWB views): content
+     about 120 editor characters wide, centred, with this padding on either side. */
+  --single-column-width: 1000px;
+  --single-column-padding: 60px;
 }
 
 h1 {
