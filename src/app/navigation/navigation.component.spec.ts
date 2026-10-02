@@ -1,3 +1,5 @@
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { RouterTestingModule } from '@angular/router/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { NavigationComponent } from './navigation.component';
@@ -8,7 +10,10 @@ describe('NavigationComponent', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      declarations: [NavigationComponent]
+      imports: [RouterTestingModule],
+      declarations: [NavigationComponent],
+      // Shallow: the child components are not under test here.
+      schemas: [NO_ERRORS_SCHEMA],
     });
     fixture = TestBed.createComponent(NavigationComponent);
     component = fixture.componentInstance;

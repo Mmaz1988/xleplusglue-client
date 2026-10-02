@@ -1,3 +1,5 @@
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { EditorComponent } from './editor.component';
@@ -8,7 +10,10 @@ describe('EditorComponent', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      declarations: [EditorComponent]
+      imports: [FormsModule],
+      declarations: [EditorComponent],
+      // Shallow: the child components are not under test here.
+      schemas: [NO_ERRORS_SCHEMA],
     });
     fixture = TestBed.createComponent(EditorComponent);
     component = fixture.componentInstance;

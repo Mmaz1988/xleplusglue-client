@@ -1,3 +1,5 @@
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { InferenceSettingsComponent } from './inference-settings.component';
@@ -8,7 +10,10 @@ describe('InferenceSettingsComponent', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      declarations: [InferenceSettingsComponent]
+      imports: [ReactiveFormsModule],
+      declarations: [InferenceSettingsComponent],
+      // Shallow: the child components are not under test here.
+      schemas: [NO_ERRORS_SCHEMA],
     });
     fixture = TestBed.createComponent(InferenceSettingsComponent);
     component = fixture.componentInstance;
