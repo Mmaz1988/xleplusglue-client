@@ -72,7 +72,9 @@ export class ChatInterfaceComponent implements OnInit, AfterViewInit, OnDestroy 
     }
 
     this.tabsInitialized = true;
-
+    // The flag changed after this view was checked: check it again, or dev mode throws
+    // ExpressionChangedAfterItHasBeenChecked.
+    this.cdRef.detectChanges();
   }
 
 

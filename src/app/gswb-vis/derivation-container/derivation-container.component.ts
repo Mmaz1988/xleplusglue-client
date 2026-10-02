@@ -16,16 +16,10 @@ export class DerivationContainerComponent {
   @ViewChild('graphVis') graphVis: GswbGraphVisComponent;
 
 
-  showEditor: boolean; // Set to true to display the editor component
-  showGraph: boolean; // Set to true to display the graph component
-
-
-
-  ngAfterViewInit(): void {
-    // Check if the child components are available
-    this.showEditor = false;
-    this.showGraph = false;
-  }
+  // Both hidden until gswb-vis picks one. Set here, not in ngAfterViewInit: changing them
+  // after the first check is an ExpressionChangedAfterItHasBeenChecked error in dev mode.
+  showEditor = false; // Set to true to display the editor component
+  showGraph = false; // Set to true to display the graph component
 
   editorVisUpdateContent(content: string)
   {

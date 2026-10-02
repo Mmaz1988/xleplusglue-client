@@ -61,8 +61,10 @@ export class AppliedRulesGraphComponent implements AfterViewInit, OnDestroy {
 
   ngOnInit(): void {
 
+    // Headless until renderGraph draws into this component's own container. No element has
+    // the id 'cy', and cytoscape treats a null container (unlike an absent one) as one to
+    // render into, so looking it up threw.
     this.cy = cytoscape({
-      container: document.getElementById('cy'),
       style: this.style as cytoscape.Stylesheet[],
       layout: {
         name: 'dagre'

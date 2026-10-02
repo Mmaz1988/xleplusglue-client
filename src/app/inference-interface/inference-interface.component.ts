@@ -37,7 +37,9 @@ export class InferenceInterfaceComponent {
     }
 
     this.tabsInitialized = true;
-
+    // The flag changed after this view was checked: check it again, or dev mode throws
+    // ExpressionChangedAfterItHasBeenChecked.
+    this.cdRef.detectChanges();
 
   }
 
