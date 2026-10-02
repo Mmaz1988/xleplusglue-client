@@ -1434,7 +1434,8 @@ export interface VampirePreferences {
   layered: boolean; //Processes with and without additional axioms
   /** Which anaphora branches the NEXT Vampire run sends to Vampire. 'all' (the default, and what a
    *  session saved without this field means): every formally generated branch. 'top_k': per
-   *  reading, only the `anaphora_top_k` best branches by language-model ranking; the others are
+   *  reading, only the branches binding one of the `anaphora_top_k` best-ranked anaphora mappings
+   *  (branches binding the same way share a rank; see selectedAnaphoraBranchIds); the others are
    *  never reasoned over. Recorded on the run's ReasoningUpdates. */
   anaphora_selection?: AnaphoraSelectionMode;
   anaphora_top_k?: number;

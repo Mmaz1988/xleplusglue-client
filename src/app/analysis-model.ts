@@ -426,17 +426,40 @@ export function attachAnaphoraRanking(
   return { ...current, anaphoraRanking: ranking };
 }
 
-/** `branches` ordered by their ranking (stable: equal ranks and unranked branches keep their
- *  generation order, unranked ones last). Without a ranking, generation order. */
+/** `branches` grouped by reading, each reading ordered by its ranking. Ranks only compare
+ *  branches of one reading (semantic origin of one discourse update), so readings are never
+ *  interleaved: they come in the order they first appear in `branches`, each with its branches
+ *  by rank (stable: equal ranks keep their generation order, unranked ones last in their reading).
+ *  Branches of no ranked update come last, in generation order. */
 export function orderByAnaphoraRanking<T extends { id: string }>(
   branches: T[],
-  ranking: AnaphoraRanking | undefined,
+  updates: (DiscourseUpdate | undefined)[],
 ): T[] {
-  if (!ranking) return [...branches];
-  const rankById = new Map(ranking.branches.map(branch => [branch.discourseId, branch.rank]));
+  const placement = new Map<string, { reading: string; rank: number }>();
+  updates.forEach(update => {
+    if (!update?.anaphoraRanking) return;
+    const rankById = new Map(update.anaphoraRanking.branches.map(branch => [branch.discourseId, branch.rank]));
+    update.discourse.forEach(branch => placement.set(branch.id, {
+      reading: `${update.id}|${branch.semanticOrigin}`,
+      rank: rankById.get(branch.id) ?? Number.MAX_SAFE_INTEGER,
+    }));
+  });
+  const readingOrder = new Map<string, number>();
+  branches.forEach(branch => {
+    const reading = placement.get(branch.id)?.reading;
+    if (reading !== undefined && !readingOrder.has(reading)) readingOrder.set(reading, readingOrder.size);
+  });
   return branches
-    .map((branch, index) => ({ branch, index, rank: rankById.get(branch.id) ?? Number.POSITIVE_INFINITY }))
-    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((branch, index) => {
+      const placed = placement.get(branch.id);
+      return {
+        branch,
+        index,
+        reading: placed ? readingOrder.get(placed.reading)! : Number.MAX_SAFE_INTEGER,
+        rank: placed?.rank ?? Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .sort((a, b) => a.reading - b.reading || a.rank - b.rank || a.index - b.index)
     .map(entry => entry.branch);
 }
 
@@ -581,7 +604,10 @@ export function anaphoraSelectionPolicy(preferences: VampirePreferences | undefi
 }
 
 /** The anaphora branch ids that survive `policy`, per reading: within each semantic origin,
- *  branches ranked by score ("1224", unscored after scored) and kept while their rank <= k.
+ *  every branch whose score is among the k best distinct scores (dense ranks, "1223"). k
+ *  counts anaphora mappings, not branches: several branches binding the same way score the
+ *  same, and they are kept or dropped together without using up k. Unscored branches rank
+ *  after every score.
  *  A reading with no scored branch keeps all of its branches -- the ranking says nothing
  *  about it -- and so does every reading when the update has no ranking. Readings are never
  *  compared with each other: choosing between syntactic or scope readings is not the ranker's
@@ -595,11 +621,11 @@ export function selectedAnaphoraBranchIds(update: DiscourseUpdate, policy: Anaph
   origins.forEach(origin => {
     const branches = update.discourse.filter(branch => branch.semanticOrigin === origin);
     const scores = branches.map(branch => scoreById.get(branch.id) ?? null);
-    const scored = scores.filter((score): score is number => score !== null).sort((a, b) => b - a);
-    if (!scored.length) return;
+    const distinct = [...new Set(scores.filter((score): score is number => score !== null))];
+    if (!distinct.length) return;
     branches.forEach((branch, index) => {
       const score = scores[index];
-      const rank = score === null ? scored.length + 1 : 1 + scored.filter(other => other > score).length;
+      const rank = score === null ? distinct.length + 1 : 1 + distinct.filter(other => other > score).length;
       if (rank > policy.k) ids.delete(branch.id);
     });
   });
@@ -810,7 +836,7 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
     const origins = [...new Set(update.discourse.map(branch => branch.semanticOrigin))];
     origins.forEach((origin, readingIndex) => {
       const branches = orderByAnaphoraRanking(
-        update.discourse.filter(branch => branch.semanticOrigin === origin), update.anaphoraRanking);
+        update.discourse.filter(branch => branch.semanticOrigin === origin), [update]);
       branches.forEach(branch => {
         const bindings = branch.anaphoraMapping.relations.length
           ? branch.anaphoraMapping.relations
@@ -828,7 +854,7 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         });
         const verdicts = own.length
           ? `Vampire: ${[...counts].map(([outcome, count]) => `${outcome} ×${count}`).join(', ')}`
-          : topK && sentIds.size ? `not sent to Vampire (top ${topK.k})` : 'no reasoning over this branch';
+          : topK && sentIds.size ? `not sent to Vampire (top ${topK.k} mapping${topK.k === 1 ? '' : 's'} per reading)` : 'no reasoning over this branch';
 
         solutions.push({ id: branch.id, solution: branch.drsString } as GswbSolution);
         labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].join(' · '));

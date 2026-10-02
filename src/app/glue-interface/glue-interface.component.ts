@@ -914,15 +914,14 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   private refreshPcdrsDisplay(): void {
-    const ranking = this.currentPcdrsRanking();
+    const update = this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId) : undefined;
     const ordered = this.pcdrsGenerationOrder
       ? this.pcdrsSolutions
-      : orderByAnaphoraRanking(this.pcdrsSolutions, ranking);
+      : orderByAnaphoraRanking(this.pcdrsSolutions, [update]);
     this.pcdrsDisplaySolutions = ordered.map(solution =>
       this.showCollapsedAnaphora && this.collapsedPcdrsById[solution.id]
         ? this.collapsedPcdrsById[solution.id]
         : solution);
-    const update = this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId) : undefined;
     this.pcdrsDisplayLabels = ordered.map(solution => update ? anaphoraRankingCaption(update, solution.id) : '');
   }
 

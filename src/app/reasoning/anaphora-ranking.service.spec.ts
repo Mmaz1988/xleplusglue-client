@@ -167,9 +167,22 @@ describe('anaphora ranking document helpers', () => {
 
   it('orders by rank, keeping generation order for ties and unranked branches last', () => {
     const branches = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
-    const result = ranking([['a', 2, 0.5], ['b', 1, 0.9], ['c', 2, 0.5]]);
-    expect(orderByAnaphoraRanking(branches, result).map(entry => entry.id)).toEqual(['b', 'a', 'c', 'd']);
-    expect(orderByAnaphoraRanking(branches, undefined).map(entry => entry.id)).toEqual(['a', 'b', 'c', 'd']);
+    const ranked = { ...update([branch('a', [['x4', 'x1']]), branch('b', [['x4', 'x2']]), branch('c', [['x4', 'x1']])]),
+      anaphoraRanking: ranking([['a', 2, 0.5], ['b', 1, 0.9], ['c', 2, 0.5]]) };
+    expect(orderByAnaphoraRanking(branches, [ranked]).map(entry => entry.id)).toEqual(['b', 'a', 'c', 'd']);
+    expect(orderByAnaphoraRanking(branches, [undefined]).map(entry => entry.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('never interleaves readings: each reading in turn, by its own ranks', () => {
+    // Ranks are per reading: both readings have a rank 1. A scope reading renumbers referents,
+    // so its ranks say nothing about the other reading's.
+    const ranked = {
+      ...update([branch('r1-a', [['x4', 'x1']]), branch('r1-b', [['x4', 'x2']]),
+        branch('r2-a', [['x5', 'x2']], 'sem-2'), branch('r2-b', [['x5', 'x1']], 'sem-2')]),
+      anaphoraRanking: ranking([['r1-a', 2, 0.5], ['r1-b', 1, 0.9], ['r2-a', 2, 0.4], ['r2-b', 1, 0.8]]),
+    };
+    const branches = ['r1-a', 'r2-a', 'r1-b', 'r2-b'].map(id => ({ id }));
+    expect(orderByAnaphoraRanking(branches, [ranked]).map(entry => entry.id)).toEqual(['r1-b', 'r1-a', 'r2-b', 'r2-a']);
   });
 
   it('captions a branch with its rank, score and each binding', () => {
@@ -299,6 +312,8 @@ describe('anaphora branch selection for verdicts', () => {
     const tied = { ...update([branch('a', [['x4', 'x1']]), branch('b', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]),
       anaphoraRanking: ranking([['a', 1, 0.9], ['b', 1, 0.9], ['c', 3, 0.1]]) };
     expect([...selectedAnaphoraBranchIds(tied, { mode: 'top_k', k: 1 })]).toEqual(['a', 'b']);
+    // k counts mappings: the duplicate of the best one does not push the second-best one out.
+    expect([...selectedAnaphoraBranchIds(tied, { mode: 'top_k', k: 2 })]).toEqual(['a', 'b', 'c']);
     expect(selectedAnaphoraBranchIds(update([branch('a', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]), { mode: 'top_k', k: 1 }).size).toBe(2);
   });
 
@@ -368,7 +383,7 @@ describe('anaphora branch selection for verdicts', () => {
 
     const { solutions, labels, counted } = discourseBranchesForDisplay(document);
     expect(counted).toEqual(['b-event', 'b2-cat', 'b2-dog']);
-    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('not sent to Vampire (top 1)');
+    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('not sent to Vampire (top 1 mapping per reading)');
     expect(labels[solutions.findIndex(solution => solution.id === 'b2-dog')]).toContain('Vampire: not run ×1');
   });
 

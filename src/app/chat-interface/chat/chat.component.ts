@@ -32,6 +32,7 @@ import {
   anaphoraRankingCaption,
   carryAnaphoraRanking,
   needsAnaphoraRanking,
+  orderByAnaphoraRanking,
   reasoningUpdateId,
   validateAnalysisDocument,
   validateReasoningUpdate
@@ -1468,8 +1469,9 @@ export class ChatComponent {
     });
   }
 
-  /** Orders a message's DRS branches by the ranking of the discourse update each belongs to
-   *  and appends the ranking caption; unranked branches keep their place after ranked ones. */
+  /** Orders a message's DRS branches by reading, each reading by the ranking of the discourse
+   *  update it belongs to (see orderByAnaphoraRanking), and appends the ranking caption;
+   *  unranked branches keep their place after ranked ones. */
   private orderBranchesByRanking(message: ChatMessage): void {
     if (!message.branchSolutions?.length) return;
     let original = this.branchesInGenerationOrder.get(message);
@@ -1480,18 +1482,13 @@ export class ChatComponent {
     const ranked = (this.chatDocument.discourseUpdates ?? []).filter(update => update.anaphoraRanking);
     if (!ranked.length) return;
 
-    const entries = original.solutions.map((solution, index) => {
+    const labelled = original.solutions.map((solution, index) => {
       const update = ranked.find(candidate => candidate.anaphoraRanking!.branches
         .some(branch => branch.discourseId === solution.id));
-      const rank = update?.anaphoraRanking!.branches.find(branch => branch.discourseId === solution.id)?.rank;
       const caption = update ? anaphoraRankingCaption(update, solution.id) : '';
-      return {
-        solution,
-        label: [original!.labels[index], caption].filter(Boolean).join(' · '),
-        rank: rank ?? Number.POSITIVE_INFINITY,
-        index,
-      };
-    }).sort((a, b) => a.rank - b.rank || a.index - b.index);
+      return { id: solution.id, solution, label: [original!.labels[index], caption].filter(Boolean).join(' · ') };
+    });
+    const entries = orderByAnaphoraRanking(labelled, ranked);
 
     message.branchSolutions = entries.map(entry => entry.solution);
     message.branchLabels = entries.map(entry => entry.label);

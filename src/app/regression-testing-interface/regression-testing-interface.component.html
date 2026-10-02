@@ -343,7 +343,7 @@
               <div *ngIf="row.data.anaphoraSelection?.mode === 'top_k'" class="report-row-note">
                 <ng-container *ngIf="row.data.anaphoraSelection!.applied; else unranked">
                   Vampire ran on {{ row.data.anaphoraSelection!.used }} of {{ row.data.anaphoraSelection!.total }} anaphora branches
-                  (top {{ row.data.anaphoraSelection!.k }} per reading)
+                  (top {{ row.data.anaphoraSelection!.k }} mapping{{ row.data.anaphoraSelection!.k === 1 ? '' : 's' }} per reading)
                 </ng-container>
                 <ng-template #unranked>No ranking in time: all {{ row.data.anaphoraSelection!.total }} anaphora branches sent to Vampire</ng-template>
               </div>
