@@ -23,10 +23,13 @@ describe('HomeComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('links every interface in the navigation, and not the deactivated inference view', () => {
-    const links = Array.from(fixture.nativeElement.querySelectorAll('a.card') as NodeListOf<HTMLAnchorElement>)
-      .map(link => link.getAttribute('href'));
-    expect(links).toEqual(jasmine.arrayWithExactContents(
-      ['/demo', '/chat', '/regression', '/regression-dashboard', '/graph-inspector', '/liger', '/glue']));
+  it('links every interface in the navigation, grouped by use, and not the deactivated inference view', () => {
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('.cards') as NodeListOf<HTMLElement>)
+      .map(row => Array.from(row.querySelectorAll('a.card')).map(link => link.getAttribute('href')));
+    expect(rows).toEqual([
+      ['/demo', '/liger', '/glue', '/graph-inspector'],
+      ['/regression', '/regression-dashboard'],
+      ['/chat'],
+    ]);
   });
 });
