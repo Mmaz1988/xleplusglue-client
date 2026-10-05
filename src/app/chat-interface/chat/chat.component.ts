@@ -19,6 +19,9 @@ import {
   XlePlusGlueDocument,
   POST_PROCESSING_SKIPPED_NOTICE,
   hasPostProcessingRules,
+  GrammarAxioms,
+  mergeGrammarAxioms,
+  VampirePreferences,
 } from '../../models/models';
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -80,8 +83,12 @@ export class ChatComponent {
 
   /** The rule set's axioms (the LiGER workspace's, edits included). */
   @Input() axioms: string = '';
-  /** Axioms GSWB returned with the readings of this conversation, as TPTP. Kept apart from
-   *  the rule set's: they belong to the conversation, not to a config file. Both are sent. */
+  /** Axioms the rules added to this conversation's parses, untranslated (LiGER AXIOM /
+   *  TPTP_AXIOM). Kept apart from the rule set's: they belong to the conversation, not to a
+   *  config file. Both are sent; Vampire encodes these for the request's logic type. */
+  derivedGrammarAxioms: GrammarAxioms = { prolog: [], tptp: [] };
+  private turnVampirePreferences: VampirePreferences | null = null;
+  /** derivedGrammarAxioms as shown in the chat's axiom tab. */
   derivedAxioms = '';
   @Output() derivedAxiomsChange = new EventEmitter<string>();
 
@@ -99,8 +106,6 @@ export class ChatComponent {
   userInput: string = ''; // Stores user input
   meaningConstructors: string = '';
 
-  axiomCounter = 0;
-
   // needs to be updated as chat goes on
   context: context[] = [];
 
@@ -116,14 +121,9 @@ export class ChatComponent {
     this.context = [];
     this.chatHistory = [];
     this.userInput = '';
+    this.derivedGrammarAxioms = { prolog: [], tptp: [] };
     this.derivedAxioms = '';
-    this.axiomCounter = 0;
     this.derivedAxiomsChange.emit(this.derivedAxioms);
-  }
-
-  /** What Vampire gets: the rule set's axioms, then the conversation's. */
-  get allAxioms(): string {
-    return [this.axioms, this.derivedAxioms].filter(text => text.trim() !== '').join('\n');
   }
 
   /** One-indexed turn number for the current exchange, derived from how many surviving
@@ -164,10 +164,11 @@ export class ChatComponent {
       this.pushChatMessage({ text: POST_PROCESSING_SKIPPED_NOTICE, sender: 'Bot' });
     }
 
-    // If logicType is 0 create string 'fof' if 1 create string 'tff'
-    const logicType = this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
+    // This turn's Vampire settings, read once: the check formulas are typed for the logic
+    // the request names even if the settings change while the turn prepares.
+    this.turnVampirePreferences = { ...this.vampirePreferences.vampirePreferences };
 
-    const ligerRequest = { sentence: userMessage, ruleString: this.ruleString, logicType: logicType };
+    const ligerRequest = { sentence: userMessage, ruleString: this.ruleString };
 
     this.dataService.ligerAnnotate(ligerRequest).subscribe({
       next: data => {
@@ -198,19 +199,7 @@ export class ChatComponent {
           }));
         this.meaningConstructors = proofInputs.map(input => input.meaningConstructors).join('\n');
 
-        if (Array.isArray(selectedSolution.axioms) && selectedSolution.axioms.length > 0) {
-          let extractedAxioms = '';
-          for (const axiom of selectedSolution.axioms) {
-            if (axiom.trim() !== '' && !this.allAxioms.includes(axiom.trim())) {
-              extractedAxioms += `${logicType}(axiom${this.axiomCounter},axiom,${axiom}).\n`;
-              this.axiomCounter++;
-            }
-          }
-
-          if (extractedAxioms.trim() !== '') {
-            this.addDerivedAxioms(extractedAxioms);
-          }
-        }
+        this.addDerivedAxioms(selectedSolution.axioms);
 
         // LFGxDRT derives every reading inside the discourse's sequence (turn 1 as a sequence
         // of one), so a standalone deduction here would only be thrown away.
@@ -247,11 +236,12 @@ export class ChatComponent {
             const vampRequest: vampireRequest = {
               text: userMessage,
               context: this.context,
-              axioms: this.allAxioms,
+              axioms: this.axioms,
+              grammar_axioms: this.derivedGrammarAxioms,
               hypothesis: userSem,
               pruning: pruneContext,
               active_indices: this.activeIndices,
-              vampire_preferences: this.vampirePreferences.vampirePreferences,
+              vampire_preferences: this.turnPreferences(),
               session_key: this.sessionKey,
               turn_index: this.currentTurnIndex()
             };
@@ -365,7 +355,6 @@ export class ChatComponent {
       // parsed again for it: the structures of the /apply_rules_xle parse above are
       // supplied, which gives the same output as parsing (keys and SYN-IDs included, since
       // liger 4ec828b/614b9bd; see DocumentBuilderService.SequenceMergeRebase).
-      const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
       // Same shared derivation every later turn uses, with no previous sentences --
       // so turn 1 gets the full syntactic cross product by construction rather than by
       // a second implementation that has to remember to. This is what used to be chat's
@@ -374,7 +363,6 @@ export class ChatComponent {
       this.documentBuilder.deriveSentenceInSequence([], {
         newSentence: { id: 'sentence-1', text: userMessage, structures: suppliableStructures(ligerSolutions) },
         ruleString: this.ruleString,
-        logicType: typed ? 'tff' : 'fof',
         gswbPreferences: this.gswbPreferences.gswbPreferences,
       }).subscribe({
         next: readings => {
@@ -416,7 +404,7 @@ export class ChatComponent {
     pruneContext: boolean,
     ligerSolutions: any[] = []
   ): void {
-    const typed = this.vampirePreferences.vampirePreferences.logic_type !== 0;
+    const typed = this.turnPreferences().logic_type !== 0;
 
     const contextIndices = this.activeIndices.length
       ? this.activeIndices.filter(index => index >= 0 && index < this.context.length)
@@ -548,7 +536,6 @@ export class ChatComponent {
         // The structures of this turn's /apply_rules_xle parse: not parsed again per context.
         newSentence: { id: newSentenceId, text: userMessage, structures: suppliableStructures(ligerSolutions) },
         ruleString: this.ruleString,
-        logicType: typed ? 'tff' : 'fof',
         gswbPreferences: this.gswbPreferences.gswbPreferences,
       },
     }).pipe(
@@ -671,9 +658,10 @@ export class ChatComponent {
         }
         const request: vampireRequest = {
           text: userMessage,
-          axioms: this.allAxioms,
+          axioms: this.axioms,
+          grammar_axioms: this.derivedGrammarAxioms,
           pruning: pruneContext,
-          vampire_preferences: this.vampirePreferences.vampirePreferences,
+          vampire_preferences: this.turnPreferences(),
           tptp_checks: expanded.map((item: any) => item.checks),
           session_key: this.sessionKey,
           turn_index: this.currentTurnIndex()
@@ -734,7 +722,7 @@ export class ChatComponent {
           sourceElementId: compositeAnalysisId([item.priorElementId, item.newSentenceId]),
           sourceElementKind: 'sequence',
           // Same source the TPTP itself was built from, not GSWB's output style.
-          logicType: this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff',
+          logicType: this.turnPreferences().logic_type === 0 ? 'fof' : 'tff',
           ruleString: this.pragmaticsRules(),
           pruned: pruneContext,
           assignments: [],
@@ -1507,8 +1495,20 @@ export class ChatComponent {
     this.clearSelection.emit();
   }
 
-  private addDerivedAxioms(tptp: string): void {
-    this.derivedAxioms = this.derivedAxioms ? `${this.derivedAxioms}\n${tptp}` : tptp;
+  /** The Vampire settings this turn started with (see sendMessage). */
+  private turnPreferences(): VampirePreferences {
+    return this.turnVampirePreferences ?? this.vampirePreferences.vampirePreferences;
+  }
+
+  private addDerivedAxioms(axioms: GrammarAxioms | null | undefined): void {
+    const merged = mergeGrammarAxioms([this.derivedGrammarAxioms, axioms]);
+    if (merged.prolog.length === this.derivedGrammarAxioms.prolog.length
+        && merged.tptp.length === this.derivedGrammarAxioms.tptp.length) return;
+    this.derivedGrammarAxioms = merged;
+    this.derivedAxioms = [
+      ...merged.tptp,
+      ...merged.prolog.map(term => `${term}   (Prolog; translated by Vampire)`),
+    ].join('\n');
     this.derivedAxiomsChange.emit(this.derivedAxioms);
   }
 

@@ -83,7 +83,6 @@ export interface SequenceMergeRebase {
    *  analysis (see `suppliableStructures`). Absent: LiGER parses the sentence. */
   newSentence: { id: string; text: string; structures?: LigerStructure[] };
   ruleString?: string;
-  logicType?: 'fof' | 'tff';
   gswbPreferences: GswbPreferences;
   /** The user's disambiguation choice for this sentence, as GSWB discriminant
    *  **identifiers** -- not solution ids.
@@ -116,10 +115,8 @@ export interface SequenceMergeRequest {
   resolveDrs: boolean;
   /** Passed through to the syntax-merge `ligerSequence` call only (never to a semantic
    *  derivation -- there isn't one, in the non-rebase path). Optional because glue-vis's
-   *  own callers don't configure these; chat does (its own grammar/logic-type
-   *  preferences). Ignored when `rebase` is set -- rebase carries its own copies. */
+   *  own callers don't configure these; chat does (its own grammar preferences). Ignored when `rebase` is set -- rebase carries its own copies. */
   ruleString?: string;
-  logicType?: 'fof' | 'tff';
   /** Absent (the default): glue-vis's path -- `current`'s own semantic/solution fields
    *  are the merge input, unchanged. Present: chat's path, see SequenceMergeRebase. */
   rebase?: SequenceMergeRebase;
@@ -445,7 +442,7 @@ export class DocumentBuilderService {
         )
       ),
       toArray(),
-      concatMap(pairs => this.mergeSyntaxForPairs(pairs, request.knownSentences, request.ruleString, request.logicType)),
+      concatMap(pairs => this.mergeSyntaxForPairs(pairs, request.knownSentences, request.ruleString)),
       map(pairs => ({
         pairs,
         sequenceAnalyses: this.aggregateSequenceAnalyses(pairs),
@@ -633,7 +630,6 @@ export class DocumentBuilderService {
       sentences: [...previousSentences.map(sentence => sentence.text), rebase.newSentence.text],
       sentenceIds: [...previousSentences.map(sentence => sentence.id), rebase.newSentence.id],
       ruleString: rebase.ruleString,
-      logicType: rebase.logicType,
       parsedSentences: parsedSentences.length ? parsedSentences : undefined,
     }).pipe(
       switchMap(sequence => this.deriveCurrentPart(sequence, rebase, newSentenceIndex)),
@@ -683,13 +679,11 @@ export class DocumentBuilderService {
   sequenceVariants(
     sentences: SequenceSentenceInput[],
     ruleString: string | undefined,
-    logicType: 'fof' | 'tff' | undefined,
   ): Observable<{ variants: SequenceVariant[]; solutions: LigerSolutionAnnotation[] }> {
     return this.dataService.ligerSequence({
       sentences: sentences.map(sentence => sentence.text),
       sentenceIds: sentences.map(sentence => sentence.id),
       ruleString,
-      logicType,
       parsedSentences: sentences.map(sentence => sentence.structures),
     }).pipe(map(sequence => {
       const solutions = (Array.isArray(sequence?.solutions) ? sequence.solutions : []) as LigerSolutionAnnotation[];
@@ -726,11 +720,10 @@ export class DocumentBuilderService {
   deriveSequenceParts(
     sentences: SequenceSentenceInput[],
     ruleString: string | undefined,
-    logicType: 'fof' | 'tff' | undefined,
     gswbPreferences: GswbPreferences,
   ): Observable<DerivedSequenceParts> {
     const sequenceStartedAt = Date.now();
-    return this.sequenceVariants(sentences, ruleString, logicType).pipe(
+    return this.sequenceVariants(sentences, ruleString).pipe(
       switchMap(({ variants, solutions }) => {
         const sequenceMs = Date.now() - sequenceStartedAt;
         const parts: DerivedSequencePart[] = [];
@@ -1025,7 +1018,6 @@ export class DocumentBuilderService {
     pairs: SequenceMergePair[],
     knownSentences: SentenceAnalysis[],
     ruleString?: string,
-    logicType?: 'fof' | 'tff',
   ): Observable<SequenceMergePair[]> {
     const groups = new Map<string, SequenceMergePair[]>();
     pairs.forEach(pair => {
@@ -1065,7 +1057,6 @@ export class DocumentBuilderService {
           sentences: sentences.map(sentence => sentence.text),
           sentenceIds: sentences.map(sentence => sentence.id),
           ruleString,
-          logicType,
           parsedSentences: sentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
         }).pipe(
           map(sequence => {

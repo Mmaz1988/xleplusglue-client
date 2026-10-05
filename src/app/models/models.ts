@@ -109,6 +109,25 @@ export interface LigerConfigTreeFile {
 
 export type SynSemMapping = Record<string, string[]>;
 
+/** The axioms a structure's LiGER rules added, untranslated: AXIOM values as Prolog
+ *  FOL/DRS terms, TPTP_AXIOM values as TPTP formulas. The Vampire service encodes both for
+ *  the logic type of the run that uses them (see grammarAxiomsOf). */
+export interface GrammarAxioms {
+  prolog: string[];
+  tptp: string[];
+}
+
+/** The union of several axiom sets, order kept, duplicates dropped. */
+export function mergeGrammarAxioms(sets: Array<GrammarAxioms | null | undefined>): GrammarAxioms {
+  const prolog = new Set<string>();
+  const tptp = new Set<string>();
+  for (const set of sets) {
+    (set?.prolog ?? []).forEach(term => term?.trim() && prolog.add(term.trim()));
+    (set?.tptp ?? []).forEach(formula => formula?.trim() && tptp.add(formula.trim()));
+  }
+  return { prolog: [...prolog], tptp: [...tptp] };
+}
+
 export interface SyntacticAnalysis {
   synId: string;
   structure: LigerStructure;
@@ -116,7 +135,7 @@ export interface SyntacticAnalysis {
   meaningConstructors?: string;
   numberOfMCsets?: number;
   appliedRules?: LigerRule[];   // from LigerRuleAnnotation.appliedRules -- per syntax variant
-  axioms?: string[];            // from LigerRuleAnnotation.axioms -- per syntax variant
+  axioms?: GrammarAxioms;       // from LigerRuleAnnotation.axioms -- per syntax variant
 }
 
 export interface SemanticAnalysis {
@@ -449,7 +468,7 @@ export interface LigerRuleAnnotation {
   appliedRules: LigerRule[];
   meaningConstructors?: string;
   numberOfMCsets?: number;
-  axioms?: string[];
+  axioms?: GrammarAxioms;
   highlightedNodeIds?: string[];
   highlightedNodeIdsByRule?: Record<string, string[]>;
   addedAnnotationsByRule?: Record<string, LigerRuleAnnotationFact[] | Record<string, LigerRuleAnnotationFact>>;
@@ -490,7 +509,7 @@ export interface LigerSolutionAnnotation {
   appliedRules: LigerRule[];
   meaningConstructors: string;
   numberOfMCsets: number;
-  axioms?: string[];
+  axioms?: GrammarAxioms;
   sequenceParts?: LigerSequencePart[];
   sentenceAnalysis?: SentenceAnalysis;
   sequenceAnalysis?: LigerSequenceAnalysis;
@@ -509,7 +528,6 @@ export interface LigerSequenceRequest {
   sentences: string[];
   sentenceIds?: string[];
   ruleString?: string;
-  logicType?: string;
   parsedLastSentence?: LigerStructure[];
   parsedSentences?: LigerStructure[][];
 }
@@ -930,6 +948,8 @@ export interface RegressionSessionSaveState {
   lastGswbOutputs: Record<string, GswbOutput> | null;
   lastAnnotations: Record<string, LigerSolutionAnnotationResponse> | null;
   lastVampireResults: Record<string, check[]> | null;
+  /** The logic type of the last inference run, set when it starts. Parsing does not depend
+   *  on it: grammar axioms stay untranslated until Vampire encodes them for a run. */
   lastLogicType: 'fof' | 'tff';
   lastVampireScopeIdsBySentence: Record<string, string[]>;
   lastVampireMcIdsBySentence: Record<string, string[]>;
@@ -1473,6 +1493,8 @@ export interface vampireRequest {
   text: string;
   context?: context[];
   axioms?: string;
+  /** The rules' axioms, untranslated; encoded by Vampire for the request's logic type. */
+  grammar_axioms?: GrammarAxioms;
   hypothesis?: string;
   pruning?: boolean;
   active_indices?: number[];
@@ -1506,7 +1528,10 @@ hypothesis: str*/
 export interface nliItem {
   premises: string[];
   hypothesis: string[];
+  /** The background axiom files' TPTP, as loaded (already encoded). */
   axioms: string;
+  /** The rules' axioms, untranslated; encoded by Vampire for the run's logic type. */
+  grammar_axioms?: GrammarAxioms;
   premise_sentence_ids?: string[];
   hypothesis_sentence_ids?: string[];
   tptp_checks?: GswbReasoningChecksOutput[];

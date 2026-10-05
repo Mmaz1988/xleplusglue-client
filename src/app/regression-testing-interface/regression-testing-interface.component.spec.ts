@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { Subject, of, throwError } from 'rxjs';
+import { EMPTY, Subject, of, throwError } from 'rxjs';
 
 import { RegressionTestingInterfaceComponent } from './regression-testing-interface.component';
 import { DataService } from '../data.service';
@@ -276,7 +276,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe(() => {
         const calls = dataServiceSpy.ligerSequence.calls.all().map(call => call.args[0] as any);
         // No one-sentence seed call: S1's syntax is its batch analysis (B1), per reading.
@@ -319,7 +319,7 @@ describe('RegressionTestingInterfaceComponent', () => {
 
     it('folds the stored readings: no parse, no deduction, one merge per branch and sentence', done => {
       const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
-      (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+      (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
         .subscribe(() => {
           expect(dataServiceSpy.ligerSequence).not.toHaveBeenCalled();
           expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
@@ -341,7 +341,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         sequenceParts: v.partKeys.map((key, sourceIndex) => ({ sourceIndex, solutionKey: key })),
         sequenceAnalysis: { sentences: v.syntax.map(syntax => ({ syntax: [syntax] })) },
       })) } as any));
-      (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+      (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
         .subscribe(() => {
           expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
           expect((dataServiceSpy.ligerSequence.calls.mostRecent().args[0] as any).sentenceIds).toEqual(['S1', 'S2', 'S3']);
@@ -367,7 +367,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy, false);
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe(() => {
         const calls = dataServiceSpy.ligerSequence.calls.all().map(call => call.args[0] as any);
         expect(calls.find(call => call.sentenceIds.join(',') === 'S1')!.parsedSentences).toBeUndefined();
@@ -381,7 +381,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe(() => {
         const request = reasoningPipeline.prepareReasoningChecks.calls.mostRecent().args[0];
         // The prior is the merged premises alone -- the conclusion must not appear in the
@@ -404,7 +404,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe(() => {
         expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(2);
         expect(dataServiceSpy.gswbDeduce.calls.allArgs().map(([request]: any[]) => request.premises))
@@ -424,7 +424,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     reasoningPipeline.prepareReasoningChecks.and.returnValue(
       throwError(() => new Error('no post-processed sequence interpretations')));
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe((pair: any) => {
         expect(pair.itemId).toBe('n1');
         expect(pair.assignments).toEqual([]);
@@ -439,7 +439,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     mockChainEndpoints(dataServiceSpy);
     dataServiceSpy.ligerSequence.and.returnValue(of({ solutions: [] } as any));
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, 'fof', false)
+    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe((pair: any) => {
         expect(pair.itemId).toBe('n1');
         expect(pair.assignments).toEqual([]);
@@ -2125,6 +2125,77 @@ describe('RegressionTestingInterfaceComponent', () => {
       (component as any).runVampireFromCurrentState(false);
 
       expect(itemsSubmitted()).toEqual(['n2']);
+    });
+  });
+
+  /** The logic type is a property of the inference run, not of the parse: switching fof ->
+   *  tff and rerunning used to type the checks for the parse-time logic while the request
+   *  named the new one, and Vampire rejected every problem. */
+  describe('logic type of an inference run', () => {
+    let submitted: jasmine.Spy;
+
+    beforeEach(() => {
+      submitted = spyOn<any>(component, 'submitVampireRequest');
+      component['contextPruning'] = { nativeElement: { checked: false } } as any;
+      component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
+      component['session'].regressionTestItems = [
+        { id: 'n1', premises: ['S1'], conclusion: ['S2'], gold_label: '1' },
+      ];
+      component['session'].axiomsText = 'tff(t, type, t: $o).';
+      component['session'].lastAnnotations = {
+        S1: { solutions: [{ axioms: { prolog: ['all(X,p(X))'], tptp: ['![X]: q(X)'] } }] },
+        S2: { solutions: [{ axioms: { prolog: ['all(X,p(X))'], tptp: [] } }] },
+      } as any;
+      component['session'].lastGswbOutputs = {
+        S1: { solutions: [{ id: 'a', solution: 'p' }], log: '', derivation: null, discriminants: [] },
+        S2: { solutions: [{ id: 'b', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+      } as any;
+      // Parsed while fof was selected; tff selected since.
+      component['session'].lastLogicType = 'fof';
+      component['vampirePreferences'].vampirePreferences = { logic_type: 1 } as any;
+    });
+
+    it('is read when the run starts and recorded for it', () => {
+      (component as any).runVampireFromCurrentState(false);
+
+      expect(component['session'].lastLogicType).toBe('tff');
+      expect((component as any).runVampirePreferences.logic_type).toBe(1);
+    });
+
+    it('types the reasoning checks for that logic', () => {
+      component['session'].gswbPreferences.outputstyle = 5;
+      // LFGxDRT reasons only over readings with a semantic graph.
+      for (const output of Object.values(component['session'].lastGswbOutputs!)) {
+        output.solutions.forEach((solution: any) => solution.graph = { nodes: [], edges: [] });
+      }
+      const prepare = spyOn<any>(component, 'prepareNliItem').and.returnValue(EMPTY);
+
+      (component as any).runVampireFromCurrentState(false);
+
+      expect(prepare).toHaveBeenCalled();
+      expect(prepare.calls.mostRecent().args[3]).toBeTrue();
+    });
+
+    it('sends the rules\' axioms untranslated, next to the rule set\'s TPTP', () => {
+      (component as any).runVampireFromCurrentState(false);
+
+      const item = submitted.calls.mostRecent().args[0]['n1'];
+      expect(item.axioms).toBe('tff(t, type, t: $o).');
+      expect(item.grammar_axioms).toEqual({ prolog: ['all(X,p(X))'], tptp: ['![X]: q(X)'] });
+    });
+
+    it('sends the settings the run started with, even if they change meanwhile', () => {
+      submitted.and.callThrough();
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.clearVampireProgress.and.returnValue(of({}) as any);
+      dataServiceSpy.callBatchVampire.and.returnValue(EMPTY as any);
+      (component as any).runVampireFromCurrentState(false);
+      component['vampirePreferences'].vampirePreferences = { logic_type: 0 } as any;
+
+      (component as any).submitVampireRequest(
+        { n1: { premises: [], hypothesis: [], axioms: '' } }, false, Date.now(), component['vampireRunToken'], true);
+
+      expect(dataServiceSpy.callBatchVampire.calls.mostRecent().args[0].vampire_preferences.logic_type).toBe(1);
     });
   });
 

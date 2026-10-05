@@ -43,6 +43,9 @@ import {
   sameReasoningUpdate,
   POST_PROCESSING_SKIPPED_NOTICE,
   hasPostProcessingRules,
+  mergeGrammarAxioms,
+  GrammarAxioms,
+  VampirePreferences,
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
@@ -1474,7 +1477,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.session.lastGswbOutputs = outputs;
           this.loading = false;
           this.activeGswbRunStartedAt = null;
-          this.session.lastLogicType = this.session.lastLogicType ?? 'fof';
           this.saveSessionSnapshot();
           if (afterRender) afterRender();
         }
@@ -2148,9 +2150,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.gswbPreferences.onSubmit();
 
-    const logicType: 'fof' | 'tff' =
-      this.vampirePreferences.vampirePreferences.logic_type === 0 ? 'fof' : 'tff';
-
     this.parse_testfile(sentences);
 
     this.displayMessage("Sending testsuite to LiGER for parsing ...", "blue");
@@ -2161,7 +2160,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const ligerMultipleRequest = {
       sentences: this.testsuiteUpdateMode === 'append' ? appendSentences : this.sentenceMap,
       ruleString: rules,
-      logicType: logicType
     };
     this.logBackendPayload('LiGER batch annotate request', this.testsuiteUpdateMode, ligerMultipleRequest);
 
@@ -2221,7 +2219,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
           this.session.lastGswbOutputs = null;
           this.session.lastAnnotations = data.annotations;
-          this.session.lastLogicType = logicType;
           this.saveSessionSnapshot();
         }
 
@@ -2252,7 +2249,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
                 compositionStartedAt, Date.now() - compositionStartedAt);
             }
             this.stopGswbSummaryPolling();
-            return this.deriveItemsInSequence(sequenceItems, rules, logicType, gswbRunToken, parseReport.phases).pipe(
+            return this.deriveItemsInSequence(sequenceItems, rules, gswbRunToken, parseReport.phases).pipe(
               map(sequenceOutputs => ({ ...(result.outputs ?? {}), ...sequenceOutputs })));
           }),
         ).subscribe((outputs: Record<string, GswbOutput>) => {
@@ -2345,7 +2342,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  a stopped one with no readings and the reason -- marked as derived in sequence, so the
    *  fold at inference merges these readings instead of deriving them again. */
   private deriveItemsInSequence(
-    items: SequenceDerivedItem[], ruleString: string, logicType: 'fof' | 'tff', runToken: number,
+    items: SequenceDerivedItem[], ruleString: string, runToken: number,
     phases: RunPhase[],
   ): Observable<Record<string, GswbOutput>> {
     if (!items.length) return of({});
@@ -2356,7 +2353,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         if (runToken !== this.gswbRunToken) return EMPTY;
         this.displayMessage(`Deriving discourse items in sequence (${index + 1} of ${items.length}) ...`, "blue");
         return this.documentBuilder.deriveSequenceParts(
-          item.inputs, ruleString, logicType, this.gswbPreferences.gswbPreferences,
+          item.inputs, ruleString, this.gswbPreferences.gswbPreferences,
         ).pipe(
           catchError(error => of<DerivedSequenceParts>({
             variants: [],
@@ -2449,7 +2446,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     const gswbOutputs = this.session.lastGswbOutputs;
     const annotations = this.session.lastAnnotations;
-    const logicType = this.session.lastLogicType;
+    // The Vampire settings this run uses, read once: the check formulas are typed (and the
+    // grammar axioms encoded by the Vampire service) for the same logic the request names,
+    // even if the settings change while the run prepares. The logic type used to be the one
+    // saved at parse time, so a run after switching fof -> tff sent untyped formulas to a
+    // tff problem and every check failed to parse.
+    this.runVampirePreferences = { ...this.vampirePreferences.vampirePreferences };
+    const logicType: 'fof' | 'tff' = this.runVampirePreferences.logic_type === 0 ? 'fof' : 'tff';
+    this.session.lastLogicType = logicType;
     const vampireStartedAt = Date.now();
     const vampireRunToken = ++this.vampireRunToken;
     this.vampirePreserveExistingResults = Object.keys(this.session.lastVampireResults ?? {}).length > 0;
@@ -2520,8 +2524,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         continue;
       }
 
-      let axioms = this.session.axiomsText;
-      let axiomCounter = 0;
+      const grammarAxioms: Array<GrammarAxioms | undefined> = [];
 
       const premise_strings: string[] = [];
       for (let premise of item.premises) {
@@ -2536,21 +2539,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             premise_strings.push(sols.join('\n'));
           }
 
-          // Axioms are per syntactic analysis now; collect across all of them, deduped
-          // by the existing `axioms.includes` guard below.
-          const premiseAxioms = (annotations[premise]?.solutions ?? [])
-            .flatMap(solution => solution.axioms ?? []);
-          if (premiseAxioms.length) {
-            for (let axiom of premiseAxioms) {
-              if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
-                axioms += logicType + "(" +
-                  "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
-                axiomCounter++;
-              }
-            }
-          } else {
-            // optional: console.log("No axioms for premise:", premise);
-          }
+          // Axioms are per syntactic analysis; collected across all of them, untranslated.
+          // The Vampire service encodes them for this run's logic type.
+          grammarAxioms.push(...(annotations[premise]?.solutions ?? [])
+            .map(solution => solution.axioms));
         }
       }
 
@@ -2563,19 +2555,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             conclusion_strings.push(sols.join('\n'));
           }
 
-          const conclusionAxioms = (annotations[conclusion]?.solutions ?? [])
-            .flatMap(solution => solution.axioms ?? []);
-          if (conclusionAxioms.length) {
-            for (let axiom of conclusionAxioms) {
-              if (axiom.trim() !== '' && !axioms.includes(axiom.trim())) {
-                axioms += logicType + "(" +
-                  "axiom" + axiomCounter + ",axiom," + axiom + ').\n';
-                axiomCounter++;
-              }
-            }
-          } else {
-            // optional: console.log("No axioms for conclusion:", conclusion);
-          }
+          grammarAxioms.push(...(annotations[conclusion]?.solutions ?? [])
+            .map(solution => solution.axioms));
         }
       }
 
@@ -2583,7 +2564,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         inference_items[item.id] = {
           premises: premise_strings,
           hypothesis: conclusion_strings,
-          axioms: axioms,
+          axioms: this.session.axiomsText ?? '',
+          grammar_axioms: mergeGrammarAxioms(grammarAxioms),
           premise_sentence_ids: item.premises,
           hypothesis_sentence_ids: item.conclusion
         };
@@ -2675,7 +2657,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.nliPreparationSubscription = from(itemBuilds).pipe(
       concatMap(build => defer(() => {
         const started = Date.now();
-        return this.prepareNliItem(build, gswbOutputs, useDisambiguated, typed, logicType, pruning).pipe(
+        return this.prepareNliItem(build, gswbOutputs, useDisambiguated, typed, pruning).pipe(
           tap(() => preparationMs[build.itemId] = Date.now() - started));
       })),
       toArray()
@@ -2773,7 +2755,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean,
     typed: boolean,
-    logicType: 'fof' | 'tff',
     pruning: boolean
   ): Observable<PreparedNliPair> {
     const ruleString = this.session.rulesText;
@@ -2792,12 +2773,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // readings. Otherwise (other semantic types, or a session parsed before that) each later
     // sentence is derived per context as it is folded in.
     const variants$: Observable<SequenceVariant[] | null> = this.isDerivedInSequence(build, gswbOutputs)
-      ? this.sequenceVariantsFor(build, ruleString, logicType)
+      ? this.sequenceVariantsFor(build, ruleString)
       : of(null);
 
     return variants$.pipe(
       switchMap(variants => this.seedNliChainBranches(
-        document, build.premiseSentenceIds[0], gswbOutputs, useDisambiguated, ruleString, logicType, variants).pipe(
+        document, build.premiseSentenceIds[0], gswbOutputs, useDisambiguated, ruleString, variants).pipe(
         map(seed => {
           if (!seed.length) {
             throw new Error(`No selected reading for ${build.premiseSentenceIds[0]}.`);
@@ -2810,7 +2791,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
               ? this.foldSequencePart(document, branches, next, index + 1, variants,
                   this.selectedSolutions(next.sentenceId, gswbOutputs, useDisambiguated), resolveDrs)
               : this.foldSentenceIntoBranches(
-                  document, branches, next, ruleString, logicType, gswbPreferences, resolveDrs,
+                  document, branches, next, ruleString, gswbPreferences, resolveDrs,
                   this.selectedDiscriminantIdentifiers(next.sentenceId, gswbOutputs, useDisambiguated)))),
           of(seedBranches)
         )),
@@ -2865,7 +2846,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean,
     ruleString: string,
-    logicType: 'fof' | 'tff',
     variants: SequenceVariant[] | null = null,
   ): Observable<NliChainBranch[]> {
     // Derived in sequence: each reading's syntax is its part's syntax in the sequence.
@@ -2874,7 +2854,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           variant.partKeys[0] === (solution.solutionKey || solution.proofId))?.syntax[0]
       : undefined;
     return this.registerBatchParsedSentence(
-      document, sentenceId, gswbOutputs, useDisambiguated, ruleString, logicType, sequenceSyntax).pipe(
+      document, sentenceId, gswbOutputs, useDisambiguated, ruleString, sequenceSyntax).pipe(
       map(registered => {
         if (!registered) return [];
         return registered.map(({ syntax, semantic }) => ({
@@ -2905,13 +2885,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  selected readings (see `batchSyntaxFor`) -- since Stage 4 it normally has one per
    *  analysis. */
   private seedSentenceSyntax(
-    sentenceId: string, ruleString: string, logicType: 'fof' | 'tff'
+    sentenceId: string, ruleString: string
   ): Observable<SyntacticAnalysis> {
     return this.dataService.ligerSequence({
       sentences: [this.sentenceMap[sentenceId] ?? ''],
       sentenceIds: [sentenceId],
       ruleString,
-      logicType,
     }).pipe(
       map(sequence => {
         const solution = sequence?.solutions?.[0];
@@ -2960,7 +2939,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean,
     ruleString: string,
-    logicType: 'fof' | 'tff',
     sequenceSyntax?: (solution: GswbSolution) => SyntacticAnalysis | undefined,
   ): Observable<{ syntax: SyntacticAnalysis; semantic: SemanticAnalysis }[] | null> {
     let solutions = this.selectedSolutions(sentenceId, gswbOutputs, useDisambiguated);
@@ -2980,7 +2958,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       ? of(solution => sequenceSyntax(solution)!)
       : fromBatch
         ? of(solution => fromBatch.get(solution)!)
-        : this.seedSentenceSyntax(sentenceId, ruleString, logicType).pipe(map(syntax => () => syntax));
+        : this.seedSentenceSyntax(sentenceId, ruleString).pipe(map(syntax => () => syntax));
 
     return syntaxOf$.pipe(
       map(syntaxOf => {
@@ -3031,7 +3009,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     branches: NliChainBranch[],
     next: { sentenceId: string; side: 'premise' | 'hypothesis' },
     ruleString: string,
-    logicType: 'fof' | 'tff',
     gswbPreferences: GswbPreferences,
     resolveDrs: boolean,
     selectedDiscriminantIdentifiers: string[] = [],
@@ -3055,7 +3032,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           structures: suppliableStructures(this.session.lastAnnotations?.[next.sentenceId]?.solutions),
         },
         ruleString,
-        logicType,
         gswbPreferences,
         selectedDiscriminantIdentifiers,
       },
@@ -3113,7 +3089,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  run parsed it, otherwise asked for again -- one `ligerSequence` over the stored
    *  structures, which numbers the parts the same way (S0.. across the call). */
   private sequenceVariantsFor(
-    build: NliItemBuild, ruleString: string, logicType: 'fof' | 'tff',
+    build: NliItemBuild, ruleString: string,
   ): Observable<SequenceVariant[]> {
     const known = this.derivedSequenceVariants.get(build.itemId);
     if (known) return of(known);
@@ -3121,7 +3097,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (!inputs) {
       return throwError(() => new Error(`${build.itemId}: a sentence has no suppliable structure.`));
     }
-    return this.documentBuilder.sequenceVariants(inputs, ruleString, logicType).pipe(
+    return this.documentBuilder.sequenceVariants(inputs, ruleString).pipe(
       map(({ variants }) => {
         this.derivedSequenceVariants.set(build.itemId, variants);
         return variants;
@@ -3465,12 +3441,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         premises: tptpMode ? [] : item.premises,
         hypothesis: tptpMode ? [] : item.hypothesis,
         axioms: item.axioms,
+        grammar_axioms: item.grammar_axioms,
         ...(tptpMode ? { tptp_checks: item.tptp_checks ?? [] } : {})
       }])
     );
     const vampireRequest: vampireMultipleRequest = {
       nli_items: tptpItems,
-      vampire_preferences: this.vampirePreferences.vampirePreferences,
+      vampire_preferences: this.runVampirePreferences ?? this.vampirePreferences.vampirePreferences,
       pruning,
       session_key: this.redisSessionKey
     };
@@ -4194,6 +4171,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   /** The selection the current (or last) Vampire run of this page started with, and per item
    *  whether a ranking was there to apply it. */
   private runAnaphoraSelection: AnaphoraSelectionPolicy | null = null;
+  /** The Vampire settings of the current inference run, fixed when it starts. */
+  private runVampirePreferences: VampirePreferences | null = null;
   private runAnaphoraSelectionApplied: Record<string, boolean> = {};
 
   /** The selection the settings ask for -- applied to the next run, not to existing verdicts. */

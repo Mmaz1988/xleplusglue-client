@@ -56,35 +56,35 @@ describe('ChatComponent', () => {
   });
 
   describe('axioms', () => {
-    it('sends the rule set\'s axioms, then the conversation\'s', () => {
-      component.axioms = 'tff(a, type, a: $o).';
-      (component as any).addDerivedAxioms('fof(axiom0,axiom,p).\n');
+    const grammar = (prolog: string[], tptp: string[] = []) => ({ prolog, tptp });
 
-      expect(component.allAxioms).toBe('tff(a, type, a: $o).\nfof(axiom0,axiom,p).\n');
+    it('keeps the rules\' axioms untranslated, apart from the rule set\'s', () => {
+      component.axioms = 'tff(a, type, a: $o).';
+      (component as any).addDerivedAxioms(grammar(['all(X,p(X))'], ['![X]: q(X)']));
+
+      expect(component.derivedGrammarAxioms).toEqual(grammar(['all(X,p(X))'], ['![X]: q(X)']));
       // The rule set's axioms are the workspace's: the conversation never writes into them.
       expect(component.axioms).toBe('tff(a, type, a: $o).');
     });
 
-    it('sends only the rule set\'s while the conversation has none, and vice versa', () => {
-      component.axioms = 'tff(a, type, a: $o).';
-      expect(component.allAxioms).toBe('tff(a, type, a: $o).');
+    it('adds each axiom once across turns', () => {
+      (component as any).addDerivedAxioms(grammar(['all(X,p(X))']));
+      (component as any).addDerivedAxioms(grammar(['all(X,p(X))', 'all(X,r(X))']));
+      (component as any).addDerivedAxioms(undefined);
 
-      component.axioms = '';
-      (component as any).addDerivedAxioms('fof(axiom0,axiom,p).');
-      expect(component.allAxioms).toBe('fof(axiom0,axiom,p).');
+      expect(component.derivedGrammarAxioms).toEqual(grammar(['all(X,p(X))', 'all(X,r(X))']));
     });
 
     it('drops the conversation\'s axioms on a new conversation, and says so', () => {
       const emitted: string[] = [];
       component.derivedAxiomsChange.subscribe(value => emitted.push(value));
-      (component as any).addDerivedAxioms('fof(axiom0,axiom,p).');
-      component.axiomCounter = 1;
+      (component as any).addDerivedAxioms(grammar([], ['![X]: q(X)']));
 
       component.resetConversationState();
 
+      expect(component.derivedGrammarAxioms).toEqual(grammar([]));
       expect(component.derivedAxioms).toBe('');
-      expect(component.axiomCounter).toBe(0);
-      expect(emitted).toEqual(['fof(axiom0,axiom,p).', '']);
+      expect(emitted).toEqual(['![X]: q(X)', '']);
     });
   });
 

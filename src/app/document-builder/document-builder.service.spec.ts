@@ -401,7 +401,6 @@ describe('DocumentBuilderService', () => {
           rebase: {
             newSentence: currentSentence,
             ruleString: 'rules',
-            logicType: 'fof',
             gswbPreferences: {} as any,
           },
         }).subscribe();
@@ -433,7 +432,7 @@ describe('DocumentBuilderService', () => {
           previousContexts: [contextOf(parseA, 'a'), contextOf(parseB, 'b'), contextOf(parseA, 'c')],
           knownSentences: [],
           resolveDrs: true,
-          rebase: { newSentence: currentSentence, ruleString: 'rules', logicType: 'fof', gswbPreferences: {} as any },
+          rebase: { newSentence: currentSentence, ruleString: 'rules', gswbPreferences: {} as any },
         }).subscribe(result => pairs = result.pairs);
 
         expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(2);
@@ -456,7 +455,6 @@ describe('DocumentBuilderService', () => {
           rebase: {
             newSentence: { ...currentSentence, structures: newStructures },
             ruleString: 'rules',
-            logicType: 'fof',
             gswbPreferences: {} as any,
           },
         }).subscribe();
@@ -489,7 +487,6 @@ describe('DocumentBuilderService', () => {
           rebase: {
             newSentence: currentSentence,
             ruleString: 'rules',
-            logicType: 'fof',
             gswbPreferences: {} as any,
           },
         }).subscribe(r => result = r);
@@ -528,7 +525,6 @@ describe('DocumentBuilderService', () => {
           rebase: {
             newSentence: currentSentence,
             ruleString: 'rules',
-            logicType: 'fof',
             gswbPreferences: {} as any,
           },
         }).subscribe(r => result = r);
@@ -562,7 +558,6 @@ describe('DocumentBuilderService', () => {
           rebase: {
             newSentence: currentSentence,
             ruleString: 'rules',
-            logicType: 'fof',
             gswbPreferences: {} as any,
           },
         }).subscribe(r => result = r);
@@ -610,7 +605,6 @@ describe('DocumentBuilderService', () => {
             rebase: {
               newSentence: currentSentence,
               ruleString: 'rules',
-              logicType: 'fof',
               gswbPreferences: {} as any,
             },
           }).subscribe(r => result = r);
@@ -701,7 +695,6 @@ describe('DocumentBuilderService', () => {
             rebase: {
               newSentence: currentSentence,
               ruleString: 'rules',
-              logicType: 'fof',
               gswbPreferences: {} as any,
             },
           }).subscribe(r => result = r);
@@ -731,7 +724,6 @@ describe('DocumentBuilderService', () => {
             rebase: {
               newSentence: currentSentence,
               ruleString: 'rules',
-              logicType: 'fof',
               gswbPreferences: {} as any,
             },
           }).subscribe(r => result = r);
@@ -773,7 +765,6 @@ describe('DocumentBuilderService', () => {
             rebase: {
               newSentence: currentSentence,
               ruleString: 'rules',
-              logicType: 'fof',
               gswbPreferences: {} as any,
               ...(selectedDiscriminantIdentifiers ? { selectedDiscriminantIdentifiers } : {}),
             },
@@ -808,7 +799,7 @@ describe('DocumentBuilderService', () => {
             current: [], previousContexts: [previousContext], knownSentences: [previousSentence],
             resolveDrs: true,
             rebase: {
-              newSentence: currentSentence, ruleString: 'rules', logicType: 'fof',
+              newSentence: currentSentence, ruleString: 'rules',
               gswbPreferences: {} as any,
               selectedDiscriminantIdentifiers: ['A < B', 'mc-x'],
             },
@@ -833,7 +824,6 @@ describe('DocumentBuilderService', () => {
           service.deriveSentenceInSequence([], {
             newSentence: { id: 'sentence-1', text: 'A man appeared.', structures: given },
             ruleString: 'rules',
-            logicType: 'fof',
             gswbPreferences: {} as any,
           }).subscribe({ error: () => {} });
 
@@ -865,7 +855,6 @@ describe('DocumentBuilderService', () => {
           service.deriveSentenceInSequence([], {
             newSentence: { id: 'sentence-1', text: 'A man saw a monkey with a telescope.' },
             ruleString: 'rules',
-            logicType: 'fof',
             gswbPreferences: {} as any,
           }).subscribe(r => readings = r);
 
@@ -928,7 +917,7 @@ describe('DocumentBuilderService', () => {
       dataServiceMock.gswbDeduce.and.callFake((request: any) =>
         of({ solutions: request.proofs.map((proof: any) => reading(`${proof.sentenceId}-${proof.proofId}`, proof.proofId)) }));
 
-      service.deriveSequenceParts(inputs, 'rules', 'fof', {} as any).subscribe(result => {
+      service.deriveSequenceParts(inputs, 'rules', {} as any).subscribe(result => {
         expect(dataServiceMock.ligerSequence).toHaveBeenCalledTimes(1);
         expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(3);
         const proofKeys = dataServiceMock.gswbDeduce.calls.allArgs()
@@ -946,7 +935,7 @@ describe('DocumentBuilderService', () => {
         solutions: request.proofs[0].proofId === 'S1' ? [] : [reading('r', request.proofs[0].proofId)],
       }));
 
-      service.deriveSequenceParts(inputs, 'rules', 'fof', {} as any).subscribe(result => {
+      service.deriveSequenceParts(inputs, 'rules', {} as any).subscribe(result => {
         // Part 2 derived nothing: 2 deductions, not 3.
         expect(dataServiceMock.gswbDeduce).toHaveBeenCalledTimes(2);
         expect(result.parts[0].failure).toBeUndefined();
