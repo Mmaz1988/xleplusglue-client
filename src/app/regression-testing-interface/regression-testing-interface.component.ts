@@ -2480,6 +2480,19 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const previousVampireResults = this.session.lastVampireResults ?? {};
 
 
+    // Parsed before grammar axioms left LiGER untranslated: those are TPTP already encoded
+    // for the parse-time logic, and reading them as GrammarAxioms would drop them silently.
+    const legacyAxiomSentences = Object.entries(annotations)
+      .filter(([, annotation]) => (annotation?.solutions ?? [])
+        .some(solution => Array.isArray(solution?.axioms)))
+      .map(([sentenceId]) => sentenceId);
+    if (legacyAxiomSentences.length) {
+      this.displayMessage("This session was parsed before grammar axioms were passed on "
+        + "untranslated. Parse the testsuite again before running inference.", "red");
+      console.warn('[Regression] legacy (pre-encoded) grammar axioms', legacyAxiomSentences);
+      return;
+    }
+
     this.displayMessage("Sending NLI items to Vampire ...", "blue");
     console.log("Preparing call to Vampire ...");
 

@@ -2184,6 +2184,16 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(item.grammar_axioms).toEqual({ prolog: ['all(X,p(X))'], tptp: ['![X]: q(X)'] });
     });
 
+    it('refuses a session whose axioms were encoded at parse time, rather than dropping them', () => {
+      component['session'].lastAnnotations = {
+        S1: { solutions: [{ axioms: ['(![A]: p(A))'] }] },
+      } as any;
+
+      (component as any).runVampireFromCurrentState(false);
+
+      expect(submitted).not.toHaveBeenCalled();
+    });
+
     it('sends the settings the run started with, even if they change meanwhile', () => {
       submitted.and.callThrough();
       const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
