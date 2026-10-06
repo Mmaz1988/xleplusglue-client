@@ -49,7 +49,7 @@ import {
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
-import { catchError, defer, EMPTY, Observable, ReplaySubject, Subscription, concatMap, forkJoin, finalize, from, timeout, map, of, switchMap, throwError, toArray } from "rxjs";
+import { catchError, defer, EMPTY, Observable, ReplaySubject, Subscription, concatMap, filter, forkJoin, finalize, from, repeat, take, timeout, map, of, switchMap, throwError, toArray } from "rxjs";
 import { tap } from "rxjs/operators";
 import { InferenceSettingsComponent } from "../inference-interface/inference-settings/inference-settings.component";
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
@@ -145,6 +145,13 @@ type ParsedRegressionRunSnapshot = {
   annotations: Record<string, LigerSolutionAnnotationResponse> | null;
   gswbOutputs: Record<string, GswbOutput> | null;
 };
+
+/** A fresh id for one Vampire submission. */
+function newRunId(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -253,6 +260,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  nothing would ever clear. `vampireRunToken` cannot stand in for this: no terminal path
    *  bumps it, so its guard passes for exactly the run being torn down. 2026-09-08. */
   private vampireRunInFlight = false;
+  /** The id this tab gave its current Vampire submission. The service refuses a second run
+   *  of a session while one is active, and a cancel names the run it is meant for, so an
+   *  abort can wait for exactly that run to stop. Null before the first submission. */
+  private vampireRunId: string | null = null;
+  /** How long an abort waits for the service to confirm the run stopped. */
+  private readonly vampireStopTimeoutMs = 30000;
   /** Whether the progress poll has seen THIS run reported as running yet. Guards the
    *  terminal states in `pollVampireProgress` against a previous run's leftover record. */
   private vampireProgressSawRunning = false;
@@ -1712,8 +1725,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
     this.pendingAutosave = false;
     this.displayMessage('Requesting run abort...', 'blue');
-    this.dataService.requestVampireCancel(this.redisSessionKey).subscribe({
-      next: () => {
+    const cancelledRunId = this.vampireRunId;
+    this.dataService.requestVampireCancel(this.redisSessionKey, cancelledRunId).pipe(
+      // The cancel only asks. Until the service says the run is gone it may still be
+      // writing progress and results, and a run started meanwhile would run beside it --
+      // so the session stays locked ("abort in flight") until then.
+      switchMap(() => {
+        this.displayMessage('Stopping the inference run...', 'blue');
+        return this.waitForVampireRunToStop(cancelledRunId);
+      })
+    ).subscribe({
+      next: stopped => {
+        if (!stopped) {
+          console.warn('[Regression] the inference service did not confirm the stop', { cancelledRunId });
+          this.setSessionLoadStatus('error', 'Abort not confirmed',
+            `The inference service did not confirm within ${this.vampireStopTimeoutMs / 1000}s that `
+            + 'the run stopped. A new run is refused until it has.');
+        }
         this.gswbRunToken++;
         this.vampireRunToken++;
         this.stopGswbSummaryPolling();
@@ -1889,7 +1917,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         .map((sid: string) => this.sentenceMap[sid])
         .filter((s: any) => typeof s === 'string' && s.trim().length > 0)
         .join(' / ');
-      const reason = update?.failure || (update ? 'No reading assignment produced a verdict.' : 'Never attempted.');
+      const reason = update?.failure
+        || (update && this.resultsBelongToAnotherPreparation(itemId, this.session.lastVampireResults?.[itemId])
+          ? 'The stored results belong to an earlier preparation of this item (their assignment ids '
+            + 'do not match); run it again.'
+          : update ? 'No reading assignment produced a verdict.' : 'Never attempted.');
       failed.push({ id: itemId, sentences, reason });
     }
 
@@ -3511,7 +3543,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       nli_items: tptpItems,
       vampire_preferences: this.runVampirePreferences ?? this.vampirePreferences.vampirePreferences,
       pruning,
-      session_key: this.redisSessionKey
+      session_key: this.redisSessionKey,
+      run_id: newRunId(),
     };
 
     // The last line of defence: every caller reaches here through an async chain that may
@@ -3525,6 +3558,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.lastVampireMcIdsBySentence = this.cloneSelectionRecord(this.session.selectedMcIdsBySentence);
     this.session.lastVampireSolutionIdsBySentence = this.cloneSelectionRecord(this.session.selectedSolutionIdsBySentence);
     this.session.hasRunVampire = true;
+    this.vampireRunId = vampireRequest.run_id ?? null;
     this.saveSessionSnapshot();
 
     this.loading = true;
@@ -3597,6 +3631,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.vampireRunInFlight = false;
     this.vampireActiveItemId = null;
     this.stopVampireSummaryPolling();
+  }
+
+  /** Emits once: true when the service no longer runs `runId` for this session (or runs
+   *  nothing, when `runId` is null), false after `vampireStopTimeoutMs`. Asks at once, then
+   *  every half second. An unreachable service counts as stopped: it is running nothing. */
+  private waitForVampireRunToStop(runId: string | null): Observable<boolean> {
+    return defer(() => this.dataService.getVampireProgress(this.redisSessionKey)).pipe(
+      catchError(() => of(null)),
+      repeat({ delay: 500 }),
+      map(progress => progress?.activeRunId ?? null),
+      filter(active => active === null || (runId !== null && active !== runId)),
+      take(1),
+      map(() => true),
+      timeout({ first: this.vampireStopTimeoutMs, with: () => of(false) }),
+    );
   }
 
   /** Stop the client-side NLI preparation chain. Safe to call when none is running. */
@@ -3783,6 +3832,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.dataService.getVampireProgress(this.redisSessionKey).subscribe({
       next: progress => {
         if (runToken !== this.vampireRunToken) return;
+        // A record written by another run -- one still stopping, or a finished one whose
+        // record the pre-submission clear did not remove -- says nothing about this run.
+        // Reading it made the bar alternate between two runs' counts.
+        if (progress?.runId && this.vampireRunId && progress.runId !== this.vampireRunId) return;
         this.vampireProgressItemCount = (progress?.itemCount ?? 0) + this.vampireProgressBaselineCount;
         this.vampireProgressProofCount = progress?.proofCount ?? this.vampireProgressProofCount;
         this.vampireActiveItemId = progress?.activeItemId ? String(progress.activeItemId) : null;
@@ -3873,10 +3926,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.vampireSummaryRequestInFlight = true;
 
-    forkJoin({
-      session: this.dataService.getLastSession(this.redisSessionKey),
-      summary: this.dataService.getLastSessionSummary(this.redisSessionKey)
-    }).pipe(
+    // One after the other: forkJoin over concurrent HttpClient calls can drop one's
+    // notification and never emit, and this is the call that ends a run.
+    this.dataService.getLastSession(this.redisSessionKey).pipe(
+      concatMap(session => this.dataService.getLastSessionSummary(this.redisSessionKey).pipe(
+        map(summary => ({ session, summary })))),
       timeout(this.vampireSummaryRequestTimeoutMs),
       finalize(() => this.releaseVampireSummaryRequestLock())
     ).subscribe({
@@ -4101,6 +4155,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
+  /** Whether `checks` carry assignment ids and none of them is an assignment of the item's
+   *  reasoning update. Checks without ids (the legacy Prolog path) never qualify. */
+  private resultsBelongToAnotherPreparation(itemId: string, checks: check[] | undefined): boolean {
+    const ids = (checks ?? []).map(check => check?.assignment_id).filter((id): id is string => !!id);
+    if (!ids.length) return false;
+    const update = (this.session.analysisDocuments[itemId]?.reasoningUpdates ?? [])
+      .find(candidate => candidate.id === `ru-${itemId}`);
+    if (!update) return false;
+    const known = new Set((update.assignments ?? []).map(assignment => assignment.id));
+    return !ids.some(id => known.has(id));
+  }
+
   private renderVampireResults(results: Record<string, check[]>, _summary: VampireSessionSummary, finalSnapshot: boolean, preserveExisting = false): void {
     const mergedResults: Record<string, check[]> = preserveExisting && this.session.lastVampireResults
       ? { ...this.session.lastVampireResults, ...results }
@@ -4143,6 +4209,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       // document is then the only source of truth for it, not a reason to drop it.
       const fromDocument = documentResults[testItem.id];
       if ((!value || value.length === 0) && !fromDocument) continue;
+      // Results that carry assignment ids none of which the item's assignments have were
+      // computed for a different preparation of the item (a run from before a re-parse).
+      // Counting them by position gave the item a verdict in the report while its document
+      // had none, so the same item showed both a verdict and a failure.
+      if (!fromDocument && this.resultsBelongToAnotherPreparation(testItem.id, value)) {
+        console.warn('[Regression] results do not match the item\'s assignments; not counted',
+          { itemId: testItem.id });
+        continue;
+      }
 
       let entailment_label = '0';
       if (value && value.length > 0) {
@@ -4438,7 +4513,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }),
       catchError(err => {
         console.error("An error occurred:", err);
-        this.displayMessage("An error occurred during Vampire processing.", "red");
+        this.displayMessage(err?.status === 409
+          ? 'An earlier inference run of this session is still stopping. Try again in a moment.'
+          : "An error occurred during Vampire processing.", "red");
         this.loading = false;
         return EMPTY;
       })

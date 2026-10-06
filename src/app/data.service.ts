@@ -249,8 +249,14 @@ callVampire(vampireRequest: vampireRequest){
     return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/last_session/${sessionKey}`));
   }
 
-  requestVampireCancel(sessionKey: string = this.defaultRedisSessionKey): Observable<any> {
-    return this.withSessionTimeout(this.http.post(`${this.vampirepage}/vampire_progress/${sessionKey}/cancel`, {}));
+  /** Cancels the session's active Vampire run -- only if it is `runId`, when given -- and
+   *  kills its Vampire process. The run is gone once progress reports another `activeRunId`. */
+  requestVampireCancel(sessionKey: string = this.defaultRedisSessionKey, runId: string | null = null): Observable<{
+    cancelledRunId: string | null; activeRunId: string | null;
+  }> {
+    const query = runId ? `?run_id=${encodeURIComponent(runId)}` : '';
+    return this.withSessionTimeout(this.http.post<{ cancelledRunId: string | null; activeRunId: string | null }>(
+      `${this.vampirepage}/vampire_progress/${sessionKey}/cancel${query}`, {}));
   }
 
   getVampireProgress(sessionKey: string = this.defaultRedisSessionKey): Observable<VampireProgress> {

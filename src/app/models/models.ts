@@ -1519,6 +1519,8 @@ export interface vampireMultipleRequest {
   pruning: boolean;
   vampire_preferences?: VampirePreferences;
   session_key?: string;
+  /** Names the run on its progress record and in cancel requests. */
+  run_id?: string;
 }
 
 /*class VampireNLI(BaseModel):
@@ -1560,7 +1562,11 @@ export interface VampireSessionSummary {
  *  rather than for the session's overall result totals. */
 export interface VampireProgress {
   sessionKey: string;
+  /** The run this record describes. */
   runId: string | null;
+  /** The run the inference service is executing for the session right now, or null. Added
+   *  by the service on read; the authority on whether a cancelled run has stopped. */
+  activeRunId?: string | null;
   /** `failed` means the run died server-side. Without it a dead run kept its last
    *  `running` snapshot forever and the client polled it indefinitely, so a crash
    *  presented as a run that had merely stopped progressing. */

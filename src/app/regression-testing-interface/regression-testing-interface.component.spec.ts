@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -973,6 +973,85 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component['abortRequestInFlight']).toBeFalse();
     expect(component.loading).toBeFalse();
     expect(component.canRunInference).toBeTrue();
+  });
+
+  /** 2026-10-06: an aborted run kept running beside the run that replaced it, because the
+   *  abort unlocked the session as soon as the cancel was acknowledged. */
+  it('keeps the session locked after an abort until the service has stopped the cancelled run', fakeAsync(() => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.requestVampireCancel.and.returnValue(of({ cancelledRunId: 'run-1', activeRunId: 'run-1' }));
+    let serverRun: string | null = 'run-1';
+    dataServiceSpy.getVampireProgress.and.callFake(() => of({ runId: 'run-1', state: 'cancel_requested',
+      activeRunId: serverRun } as any));
+    component.loading = true;
+    component['activeVampireRunStartedAt'] = 123;
+    component['vampireRunId'] = 'run-1';
+
+    component.abortCurrentRun();
+
+    expect(dataServiceSpy.requestVampireCancel).toHaveBeenCalledWith(component.redisSessionKey, 'run-1');
+    tick(1500);
+    expect(component['abortRequestInFlight']).toBeTrue();
+    expect(component.isSessionActionLocked).toBeTrue();
+    expect(dataServiceSpy.getLastSession).not.toHaveBeenCalled();
+
+    serverRun = null;
+    tick(500);
+
+    expect(dataServiceSpy.getLastSession).toHaveBeenCalled();
+    expect(component['abortRequestInFlight']).toBeFalse();
+    expect(component.loading).toBeFalse();
+  }));
+
+  it('unlocks after the stop timeout and says the abort was not confirmed', fakeAsync(() => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    dataServiceSpy.requestVampireCancel.and.returnValue(of({ cancelledRunId: 'run-1', activeRunId: 'run-1' }));
+    dataServiceSpy.getVampireProgress.and.returnValue(of({ runId: 'run-1', activeRunId: 'run-1' } as any));
+    component.loading = true;
+    component['vampireRunId'] = 'run-1';
+
+    component.abortCurrentRun();
+    tick(30500);
+
+    expect(component['abortRequestInFlight']).toBeFalse();
+    expect(component.sessionLoadMessage).toContain('Abort not confirmed');
+  }));
+
+  it('ignores a progress record written by another run', () => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    component['vampireRunId'] = 'run-new';
+    component['vampireProgressItemCount'] = 3;
+    dataServiceSpy.getVampireProgress.and.returnValue(of({ runId: 'run-old', state: 'running', itemCount: 26,
+      proofCount: 26, activeItemId: 'n9' } as any));
+
+    (component as any).pollVampireProgress(component['vampireRunToken']);
+
+    expect(component['vampireProgressItemCount']).toBe(3);
+    expect(component['vampireActiveItemId']).toBeNull();
+  });
+
+  it('does not count results whose assignment ids belong to another preparation of the item', () => {
+    component.session.hasRunVampire = true;
+    component['regressionTestItems'] = [{ id: 'n8', premises: ['S0'], conclusion: ['S1'], gold_label: '1' }];
+    component['sentenceMap'] = { S0: 'Premise.', S1: 'Hypothesis.' };
+    component.session.analysisDocuments = {
+      n8: {
+        ...createRegressionAnalysisDocument('n8'),
+        reasoningUpdates: [{
+          id: 'ru-n8', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], itemId: 'n8',
+          logicType: 'fof', ruleString: '', pruned: false,
+          assignments: [{ id: 'current-a1', premiseSemanticIds: [], hypothesisSemanticIds: [], checks: {} as any }],
+        } as any],
+      },
+    } as any;
+    const stale = [{ glyph: '', informative: false, consistent: true, relevant: false, proof_files: [],
+      assignment_id: 'earlier-a1' }];
+    component.session.lastVampireResults = { n8: stale };
+
+    (component as any).renderVampireResults({ n8: stale }, { item_count: 1, proof_count: 1 }, true, false);
+
+    expect(component.inferenceResults.map(result => result.id)).toEqual([]);
+    expect(component.failedInferenceItems[0].reason).toContain('earlier preparation');
   });
 
   it('surfaces items that produced no verdict instead of silently dropping them from the count', () => {
