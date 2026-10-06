@@ -2121,6 +2121,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       // Selecting discriminants IS the commitment to using them, so there is no second
       // mode: what Skip used to mean has no button and no checkbox.
       component['session'].regressionTestResults = [{ sentence_id: 'S1' } as any];
+      component['session'].lastGswbOutputs = {} as any;
 
       component.runInference();
 
@@ -2278,6 +2279,122 @@ describe('RegressionTestingInterfaceComponent', () => {
       (component as any).runVampireFromCurrentState(false);
 
       expect(itemsSubmitted()).toEqual(['n2']);
+    });
+  });
+
+  /** Building the TPTP checks is part of the run: until it hands over to Vampire nothing may
+   *  start another run or switch the session under it, and abort stops it locally. */
+  describe('while the TPTP checks are being built', () => {
+    let submitted: jasmine.Spy;
+    let prepare: jasmine.Spy;
+    let preparation: Subject<any>;
+
+    beforeEach(() => {
+      submitted = spyOn<any>(component, 'submitVampireRequest');
+      preparation = new Subject<any>();
+      prepare = spyOn<any>(component, 'prepareNliItem').and.returnValue(preparation.asObservable());
+      component['contextPruning'] = { nativeElement: { checked: false } } as any;
+      component['session'].gswbPreferences.outputstyle = 5;
+      component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
+      component['session'].regressionTestItems = [
+        { id: 'n1', premises: ['S1'], conclusion: ['S2'], gold_label: '1' },
+      ];
+      component['session'].regressionTestResults = [{ sentence_id: 'S1' } as any];
+      component['session'].lastAnnotations = {} as any;
+      component['session'].lastGswbOutputs = {
+        S1: { solutions: [{ id: 'a', solution: 'p', graph: { nodes: [], edges: [] } }],
+          log: '', derivation: null, discriminants: [] },
+        S2: { solutions: [{ id: 'b', solution: 'c', graph: { nodes: [], edges: [] } }],
+          log: '', derivation: null, discriminants: [] },
+      } as any;
+      // Run inference reasons over the selected (disambiguated) readings.
+      component['session'].selectedSolutionIdsBySentence = { S1: ['a'], S2: ['b'] };
+    });
+
+    it('holds the run lock from the start of the run', () => {
+      component.runInference();
+
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(component.preparingInference).toBeTrue();
+      expect(component.runLocked).toBeTrue();
+      expect(component.canRunInference).toBeFalse();
+      expect(component.isSessionActionLocked).toBeTrue();
+      expect(component.canAbortRun).toBeTrue();
+    });
+
+    it('starts no second run, neither inference nor parse', () => {
+      const parse = spyOn<any>(component, 'parse_testfile');
+      // A parse that got through would ask before overwriting; a real confirm() blocks the browser.
+      spyOn<any>(component, 'confirmWriteModeOverwrite').and.returnValue(true);
+      component.runInference();
+
+      component.runInference();
+      component.batchParse('A dog barks.');
+
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(parse).not.toHaveBeenCalled();
+    });
+
+    it('aborts locally: nothing is cancelled at, or later sent to, Vampire', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      component.runInference();
+
+      component.abortCurrentRun();
+      preparation.next({ itemId: 'n1', assignments: [], failures: [], degradations: [] });
+      preparation.complete();
+
+      expect(dataServiceSpy.requestVampireCancel).not.toHaveBeenCalled();
+      expect(submitted).not.toHaveBeenCalled();
+      expect(component.loading).toBeFalse();
+      expect(component.preparingInference).toBeFalse();
+      expect(component['session'].report?.inference?.failure).toBe('aborted');
+    });
+
+    it('releases the lock when no checks could be built', () => {
+      component.runInference();
+
+      preparation.next({ itemId: 'n1', assignments: [], failures: ['n1: no reading'], degradations: [] });
+      preparation.complete();
+
+      expect(submitted).not.toHaveBeenCalled();
+      expect(component.loading).toBeFalse();
+      expect(component.preparingInference).toBeFalse();
+    });
+
+    it('releases the lock when building fails', () => {
+      component.runInference();
+
+      preparation.error(new Error('collapse failed'));
+
+      expect(component.loading).toBeFalse();
+      expect(component.preparingInference).toBeFalse();
+      expect(component['session'].report?.inference?.failure).toBe('reasoning checks could not be built');
+    });
+
+    it('releases the lock when there is nothing to run', () => {
+      // Already reasoned over, with the readings selected now: nothing to redo.
+      component['session'].lastVampireSolutionIdsBySentence = { S1: ['a'], S2: ['b'] };
+      component['session'].inferenceResults = [
+        { id: 'n1', premises: [], conclusion: '', predictedLabel: '1', goldLabel: '1',
+          premiseIds: [], conclusionIds: [], mismatch: false, glyphs: [] },
+      ];
+
+      component.runInference();
+
+      expect(prepare).not.toHaveBeenCalled();
+      expect(component.loading).toBeFalse();
+      expect(component.preparingInference).toBeFalse();
+    });
+
+    it('leaves the lock to the run that superseded it', () => {
+      component.runInference();
+      // A newer run took over (as an abort-and-rerun would): the old chain's failure must
+      // not unlock the view under it.
+      component['vampireRunToken']++;
+
+      preparation.error(new Error('late failure of the superseded run'));
+
+      expect(component.loading).toBeTrue();
     });
   });
 

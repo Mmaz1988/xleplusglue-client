@@ -214,6 +214,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   inferenceSummary = "";
   parsingSummary = "";
   loading: boolean = false;
+  /** An inference run is building its TPTP checks: it holds the run lock (`loading`) but has
+   *  sent nothing to Vampire yet. */
+  preparingInference = false;
   sessionLoadState: 'idle' | 'loading' | 'success' | 'error' = 'idle';
   sessionLoadMessage = '';
   sessionLoadDetails = '';
@@ -1791,12 +1794,16 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *
    *  Replaces Continue/Skip, whose only difference was the argument below. */
   runInference(): void {
-    if (!this.hasParsedExamples) return;
+    if (!this.canRunInference) return;
     this.runVampireFromCurrentState(/*useDisambiguated*/ true);
   }
 
   abortCurrentRun(): void {
     if (!this.loading || (this.saveOperationInProgress && this.activeSaveAction !== null) || this.abortRequestInFlight) return;
+    if (this.preparingInference) {
+      this.abortInferencePreparation();
+      return;
+    }
 
     this.abortRequestInFlight = true;
     // Bumped BEFORE the cancel request goes out: the preparation chain checks this token,
@@ -2255,6 +2262,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.errorhandle.nativeElement.textContent = "";
     this.sessionPersistenceEnabled = true;
     this.loading = true;
+    this.preparingInference = false;
     const runStartedAt = Date.now();
     const baseSnapshot = this.captureParsedRegressionSnapshot();
 
@@ -2626,6 +2634,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.session.lastLogicType = logicType;
     const vampireStartedAt = Date.now();
     const vampireRunToken = ++this.vampireRunToken;
+    // The run holds the lock from here, not only once it reaches Vampire: building the TPTP
+    // checks takes minutes, and a parse or session switch meanwhile left it to submit the
+    // old parse's checks into the new state.
+    this.loading = true;
+    this.preparingInference = true;
     this.vampirePreserveExistingResults = Object.keys(this.session.lastVampireResults ?? {}).length > 0;
     // Dropped up front: these describe the last preparation, and a run that prepares
     // nothing (a non-LFGxDRT run, or an aborted one) must not write the previous run's
@@ -2660,6 +2673,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.displayMessage("This session was parsed before grammar axioms were passed on "
         + "untranslated. Parse the testsuite again before running inference.", "red");
       console.warn('[Regression] legacy (pre-encoded) grammar axioms', legacyAxiomSentences);
+      this.endInferencePreparation(vampireRunToken);
       return;
     }
 
@@ -2769,6 +2783,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.displayMessage(stoppedItems.length
         ? `No items to reason over; ${stoppedItems.length} stopped at a sentence without semantics.`
         : "No missing Vampire items to process.", "blue");
+      this.endInferencePreparation(vampireRunToken);
       return;
     }
 
@@ -2819,7 +2834,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     if (!itemBuilds.length) {
       this.displayMessage("No reading assignments to build TPTP reasoning checks from.", "red");
-      this.loading = false;
+      this.endInferencePreparation(vampireRunToken);
       return;
     }
 
@@ -2889,7 +2904,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           { pairCount: prepared.length, bundleCount, failures, degradations });
         if (!bundleCount) {
           this.displayMessage("Could not build TPTP reasoning checks for any reading.", "red");
-          this.loading = false;
+          this.endInferencePreparation(vampireRunToken);
           this.finishInferenceReport('no reasoning checks could be built');
           return;
         }
@@ -2910,8 +2925,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       },
       error: error => {
         console.warn('[Regression] NLI reasoning preparation failed', error);
+        if (vampireRunToken !== this.vampireRunToken) return;
         this.displayMessage("Could not build TPTP reasoning checks.", "red");
-        this.loading = false;
+        this.endInferencePreparation(vampireRunToken);
+        this.finishInferenceReport('reasoning checks could not be built');
       }
     });
   }
@@ -3651,6 +3668,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.saveSessionSnapshot();
 
     this.loading = true;
+    this.preparingInference = false;
     this.vampirePendingItemCount = Object.keys(inference_items).length;
     this.activeVampireRunStartedAt = vampireStartedAt;
     // Only results this run is NOT redoing are a head start. Counting every prior result
@@ -3738,6 +3756,27 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   /** Stop the client-side NLI preparation chain. Safe to call when none is running. */
+  /** An inference run ends before anything reached Vampire: it gives up the lock it took when
+   *  it started. Only the current run may -- a superseded run's lock is its successor's. */
+  private endInferencePreparation(runToken: number): void {
+    if (runToken !== this.vampireRunToken) return;
+    this.preparingInference = false;
+    this.loading = false;
+  }
+
+  /** Abort while the TPTP checks are still being built. Nothing was sent to Vampire, so
+   *  there is nothing to cancel there -- `vampireRunId` is still the previous run's, and
+   *  cancelling it would wait on a run that is long gone. */
+  private abortInferencePreparation(): void {
+    this.vampireRunToken++;
+    this.stopNliPreparation();
+    this.finishInferenceReport('aborted');
+    this.preparingInference = false;
+    this.loading = false;
+    this.saveSessionSnapshot();
+    this.displayMessage('Inference aborted while building the TPTP checks; nothing was sent to Vampire.', 'blue');
+  }
+
   private stopNliPreparation(): void {
     this.nliPreparationSubscription?.unsubscribe();
     this.nliPreparationSubscription = null;

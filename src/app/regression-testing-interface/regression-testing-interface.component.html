@@ -195,12 +195,12 @@
 <button (click)="batchParse(testfile.getContent())" [disabled]="runLocked">
   <span *ngIf="!loading">Parse all</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-  <span *ngIf="loading">Loading...</span>
+  <span *ngIf="loading">{{ preparingInference ? 'Building TPTP checks...' : 'Loading...' }}</span>
 </button>
   <button class="button beta" (click)="batchMultistage(testfile.getContent())" [disabled]="runLocked">
     <span *ngIf="!loading">Multistage</span>
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-    <span *ngIf="loading">Loading...</span>
+    <span *ngIf="loading">{{ preparingInference ? 'Building TPTP checks...' : 'Loading...' }}</span>
   </button>
   <button *ngIf="loading || isVampireProgressVisible" (click)="abortCurrentRun()" [disabled]="!canAbortRun">
     <span *ngIf="!isAbortInProgress">Abort and save</span>
