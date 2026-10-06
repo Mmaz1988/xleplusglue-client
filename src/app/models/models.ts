@@ -656,12 +656,21 @@ export interface GswbDiscriminant {
   surfaceLabel?: string;
   originIds?: string[];
   surfaceLabelsByOrigin?: Record<string, string>;
+  /** Scope discriminants: first SYN-ID of the outscoping and of the outscoped element. */
+  surfaceKey?: Array<number | null>;
+  /** Scope discriminants: whether the scoping follows the surface order. Absent: unknown. */
+  surfaceAligned?: boolean | null;
 }
 
 export interface GswbSolution {
   solution: string;
   id: string;
   sourceIndex?: number;
+  /** For a solution of a proof: insitu modifiers outscoped by something to their left. */
+  insituViolations?: number | null;
+  /** For a solution of a proof: scope pairs whose outer element comes later in the sentence.
+   *  GSWB orders a proof's solutions by these two counts. */
+  surfaceOrderViolations?: number | null;
   graph?: LigerStructure;
   semantic?: string;
   anaphoraMapping?: string;

@@ -49,4 +49,21 @@ describe('SemVisComponent', () => {
     const separators = component.scope_rows.filter(row => row.kind === 'separator');
     expect(separators.length).toBe(0);
   });
+
+  it('lists surface-order scopings first within a bucket, without moving any between buckets', () => {
+    component.setDiscriminants([
+      { id: 'inv', type: 'scope', identifier: 'every > the', associatedSolutions: ['1'],
+        surfaceKey: [9, 1], surfaceAligned: false },
+      { id: 'unk', type: 'scope', identifier: 'unknown', associatedSolutions: ['3'] },
+      { id: 'late', type: 'scope', identifier: 'a > every', associatedSolutions: ['4'],
+        surfaceKey: [5, 9], surfaceAligned: true },
+      { id: 'surf', type: 'scope', identifier: 'the > every', associatedSolutions: ['2'],
+        surfaceKey: [1, 9], surfaceAligned: true },
+      { id: 'both', type: 'scope', identifier: 'overlap', associatedSolutions: ['1', '2'] },
+    ]);
+
+    const labels = component.scope_rows
+      .map(row => row.kind === 'item' ? row.disc.identifier : '|');
+    expect(labels).toEqual(['the > every', 'a > every', 'unknown', 'every > the', '|', 'overlap']);
+  });
 });

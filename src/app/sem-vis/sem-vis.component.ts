@@ -332,6 +332,10 @@ export class SemVisComponent implements AfterViewInit {
         }
       }
 
+      // Within a bucket, scopings that follow the surface order first, then by where their
+      // elements start, then as GSWB listed them. Buckets themselves are left as they are.
+      buckets.forEach(bucket => bucket.items.sort((a, b) => SemVisComponent.compareBySurface(a, b)));
+
       const rows: DiscRow[] = [];
       buckets.forEach((bucket, bucketIndex) => {
         if (bucketIndex > 0) {
@@ -345,6 +349,18 @@ export class SemVisComponent implements AfterViewInit {
 
     this.scope_rows = decorate(this.scope_discriminants);
     this.mc_rows = decorate(this.mc_discriminants);
+  }
+
+  private static compareBySurface(a: DiscView, b: DiscView): number {
+    const aligned = (d: DiscView) => d.surfaceAligned === true ? 0 : d.surfaceAligned === false ? 2 : 1;
+    const byAlignment = aligned(a) - aligned(b);
+    if (byAlignment !== 0) return byAlignment;
+    for (let i = 0; i < 2; i++) {
+      const left = a.surfaceKey?.[i] ?? Number.MAX_SAFE_INTEGER;
+      const right = b.surfaceKey?.[i] ?? Number.MAX_SAFE_INTEGER;
+      if (left !== right) return left - right;
+    }
+    return a._order - b._order;
   }
 
   private hasIntersection(a: Set<string>, b: Set<string>): boolean {
