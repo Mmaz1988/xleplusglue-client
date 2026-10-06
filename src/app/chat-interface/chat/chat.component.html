@@ -1,9 +1,4 @@
-<!-- Pruning Checkbox Above Chat Window -->
-<div class="pruning-container">
-  <input type="checkbox" #contextPruning id="contextPruning" />
-  <label for="contextPruning">Pruning</label>
-</div>
-
+<div class="chat-layout">
 <div class="chat-container">
   <!-- Chat History -->
   <div class="chat-history">
@@ -71,4 +66,65 @@
     <input [(ngModel)]="userInput" (keyup.enter)="sendMessage()" placeholder="Type your message..." />
     <button (click)="sendMessage()">Send</button>
   </div>
+</div>
+
+<!-- What the next turn will run with, and what the last one did. Kept beside the chat
+     instead of being repeated as messages. -->
+<aside class="turn-panel" [class.closed]="!sidePanelOpen">
+  <button type="button" class="turn-panel-toggle" (click)="sidePanelOpen = !sidePanelOpen"
+          [attr.aria-expanded]="sidePanelOpen">
+    {{ sidePanelOpen ? 'Hide' : 'Turn context' }}
+  </button>
+
+  <!-- [hidden], not *ngIf: the pruning checkbox is read through a ViewChild. -->
+  <div [hidden]="!sidePanelOpen">
+    <h4>Rule set</h4>
+    <dl>
+      <dt>Pragmatics rules</dt>
+      <dd>{{ hasPragmaticsRules ? 'loaded' : 'none' }}</dd>
+      <dt>Axioms</dt>
+      <dd>{{ axiomLineCount }} line{{ axiomLineCount === 1 ? '' : 's' }}</dd>
+      <dt>From this conversation</dt>
+      <dd>{{ derivedAxiomCount }} axiom{{ derivedAxiomCount === 1 ? '' : 's' }}</dd>
+    </dl>
+    <p *ngIf="!hasPragmaticsRules" class="turn-panel-notice">{{ postProcessingSkippedNotice }}</p>
+
+    <h4>Next turn</h4>
+    <dl>
+      <ng-container *ngFor="let row of nextTurnSettings">
+        <dt>{{ row[0] }}</dt>
+        <dd>{{ row[1] }}</dd>
+      </ng-container>
+    </dl>
+    <label class="pruning-toggle">
+      <input type="checkbox" #contextPruning id="contextPruning" />
+      Pruning
+    </label>
+
+    <h4>Last turn</h4>
+    <p *ngIf="!lastTurn" class="turn-panel-empty">None yet.</p>
+    <dl *ngIf="lastTurn">
+      <dt>Input</dt>
+      <dd>{{ lastTurn.sentence }}</dd>
+      <dt>Time</dt>
+      <dd>{{ lastTurn.durationMs === null ? 'running…' : (lastTurn.durationMs / 1000 | number:'1.1-1') + 's' }}</dd>
+      <dt>Pronouns</dt>
+      <dd>{{ lastTurn.pragmatics ? 'resolved by the pragmatics rules' : 'not resolved (no pragmatics rules)' }}</dd>
+      <ng-container *ngIf="lastTurn.branches !== null">
+        <dt>Branches reasoned over</dt>
+        <dd>{{ lastTurn.branches }}</dd>
+        <dt>Readings carried forward</dt>
+        <dd>{{ lastTurn.survivingReadings }}</dd>
+      </ng-container>
+      <ng-container *ngIf="lastTurn.degraded || lastTurn.dropped || lastTurn.mergeFailures">
+        <dt>Unresolved</dt>
+        <dd class="turn-panel-warning">
+          <span *ngIf="lastTurn.mergeFailures">{{ lastTurn.mergeFailures }} context(s) not merged. </span>
+          <span *ngIf="lastTurn.degraded">{{ lastTurn.degraded }} branch(es) without anaphora binding. </span>
+          <span *ngIf="lastTurn.dropped">{{ lastTurn.dropped }} branch(es) not prepared.</span>
+        </dd>
+      </ng-container>
+    </dl>
+  </div>
+</aside>
 </div>

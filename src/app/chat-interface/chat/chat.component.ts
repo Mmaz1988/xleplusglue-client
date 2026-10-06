@@ -49,6 +49,23 @@ import {
 } from '../../document-builder/document-builder.service';
 
 
+/** The side panel's account of one turn. */
+export interface ChatTurnSummary {
+  sentence: string;
+  startedAt: number;
+  /** Null while the turn runs. */
+  durationMs: number | null;
+  /** Whether pragmatics rules were loaded, i.e. pronouns could be resolved. */
+  pragmatics: boolean;
+  /** Reasoning branches sent to Vampire; null for a first turn or one that did not get there. */
+  branches: number | null;
+  /** Readings carried forward to the next turn. */
+  survivingReadings: number | null;
+  degraded: number;
+  dropped: number;
+  mergeFailures: number;
+}
+
 @Component({
   selector: 'app-chat',
   templateUrl: './chat.component.html',
@@ -109,7 +126,55 @@ export class ChatComponent {
   // needs to be updated as chat goes on
   context: context[] = [];
 
-  loading: boolean = false; // Tracks whether the bot is responding
+  private loadingValue = false;
+  /** Whether the bot is responding. Turning it off closes the turn the side panel reports. */
+  get loading(): boolean {
+    return this.loadingValue;
+  }
+  set loading(value: boolean) {
+    this.loadingValue = value;
+    if (!value && this.lastTurn && this.lastTurn.durationMs === null) {
+      this.lastTurn.durationMs = Date.now() - this.lastTurn.startedAt;
+    }
+  }
+
+  /** What the side panel says about the most recent turn. Null before the first one. */
+  lastTurn: ChatTurnSummary | null = null;
+  /** Whether the side panel is open. */
+  sidePanelOpen = true;
+
+  /** The no-pragmatics notice, shown in the side panel rather than repeated every turn. */
+  readonly postProcessingSkippedNotice = POST_PROCESSING_SKIPPED_NOTICE;
+
+  get hasPragmaticsRules(): boolean {
+    return hasPostProcessingRules(this.pragmaticsRuleString);
+  }
+
+  /** Non-blank, non-comment lines of the rule set's axioms. */
+  get axiomLineCount(): number {
+    return (this.axioms ?? '').split('\n')
+      .filter(line => line.trim() && !line.trim().startsWith('%') && !line.trim().startsWith('//')).length;
+  }
+
+  get derivedAxiomCount(): number {
+    return this.derivedGrammarAxioms.prolog.length + this.derivedGrammarAxioms.tptp.length;
+  }
+
+  /** The reasoning settings the next turn will read, as label/value pairs. */
+  get nextTurnSettings(): Array<[string, string]> {
+    const prefs = this.vampirePreferences?.vampirePreferences;
+    if (!prefs) return [];
+    const rows: Array<[string, string]> = [
+      ['Logic', prefs.logic_type === 0 ? 'fof' : 'tff'],
+      ['Max duration', `${prefs.max_duration ?? ''}s`],
+      ['Model building', prefs.model_building ? 'on' : 'off'],
+      ['Anaphora branches', prefs.anaphora_selection === 'top_k' ? `top ${prefs.anaphora_top_k ?? ''}` : 'all'],
+    ];
+    if (prefs.anaphora_rankers?.length) {
+      rows.push(['Rankers', prefs.anaphora_rankers.join(', ')]);
+    }
+    return rows;
+  }
 
   static emptyChatDocument(): XlePlusGlueDocument {
     return { id: '', semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [] };
@@ -158,11 +223,19 @@ export class ChatComponent {
     // Add user message to history
     this.pushChatMessage({ text: userMessage, sender: 'User' });
 
-    // Without them every turn binds no pronoun, which would read as a linguistic result
-    // rather than a setup choice -- so it is said, once per turn, and the turn goes on.
-    if (!hasPostProcessingRules(this.pragmaticsRuleString)) {
-      this.pushChatMessage({ text: POST_PROCESSING_SKIPPED_NOTICE, sender: 'Bot' });
-    }
+    // Without pragmatics rules no pronoun is bound. The side panel says so for as long as
+    // it holds; the turn records it, so a verdict can be read against it afterwards.
+    this.lastTurn = {
+      sentence: userMessage,
+      startedAt: Date.now(),
+      durationMs: null,
+      pragmatics: hasPostProcessingRules(this.pragmaticsRuleString),
+      branches: null,
+      survivingReadings: null,
+      degraded: 0,
+      dropped: 0,
+      mergeFailures: 0,
+    };
 
     // This turn's Vampire settings, read once: the check formulas are typed for the logic
     // the request names even if the settings change while the turn prepares.
@@ -813,6 +886,11 @@ export class ChatComponent {
   ): void {
     const dropped: string[] = prepared.flatMap(item => item?.failures ?? []);
     const degraded: string[] = prepared.flatMap(item => item?.degradations ?? []);
+    if (this.lastTurn) {
+      this.lastTurn.dropped = dropped.length;
+      this.lastTurn.degraded = degraded.length;
+      this.lastTurn.mergeFailures = mergeFailures.length;
+    }
     if (!dropped.length && !degraded.length && !mergeFailures.length) {
       return;
     }
@@ -1078,6 +1156,10 @@ export class ChatComponent {
     // context. Those are different things: the context is one entry per surviving reading
     // (2 here), which can never account for the 72 bundles that were actually checked.
     const branches = prepared.length ? this.branchDetail(prepared, verdictFor) : null;
+    if (this.lastTurn) {
+      this.lastTurn.branches = prepared.length;
+      this.lastTurn.survivingReadings = newContext.length;
+    }
     const semantic = branches
       ? ''
       : newContext.map((item: context) => item.semantic || item.prolog_drs).filter(Boolean).join('\n');

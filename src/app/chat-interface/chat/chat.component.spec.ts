@@ -106,7 +106,7 @@ describe('ChatComponent', () => {
     expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
   });
 
-  it('runs a turn without post-processing rules and says post-processing was skipped', () => {
+  it('runs a turn without post-processing rules and says so in the side panel, not the chat', () => {
     component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
     component.ruleString = 'rules';
     component.pragmaticsRuleString = null;
@@ -114,10 +114,35 @@ describe('ChatComponent', () => {
     dataServiceSpy.ligerAnnotate.and.returnValue(new Subject());
 
     component.sendMessage();
+    fixture.detectChanges();
 
     expect(dataServiceSpy.ligerAnnotate).toHaveBeenCalled();
     expect(component.chatHistory.map(message => message.text))
-      .toContain(POST_PROCESSING_SKIPPED_NOTICE);
+      .not.toContain(POST_PROCESSING_SKIPPED_NOTICE);
+    expect(component.lastTurn?.pragmatics).toBeFalse();
+    const panel: HTMLElement = fixture.nativeElement.querySelector('.turn-panel');
+    expect(panel.textContent).toContain(POST_PROCESSING_SKIPPED_NOTICE);
+    expect(panel.textContent).toContain('Kim arrived');
+    expect(panel.textContent).toContain('running');
+  });
+
+  it('closes the side panel\'s turn when the reply is in', () => {
+    component.vampirePreferences = { vampirePreferences: { logic_type: 1 } } as any;
+    component.userInput = 'Kim arrived';
+    dataServiceSpy.ligerAnnotate.and.returnValue(new Subject());
+
+    component.sendMessage();
+    expect(component.lastTurn?.durationMs).toBeNull();
+    component.loading = false;
+
+    expect(component.lastTurn?.durationMs).toEqual(jasmine.any(Number));
+    expect(component.nextTurnSettings[0]).toEqual(['Logic', 'tff']);
+  });
+
+  it('keeps the pruning checkbox readable while the side panel is hidden', () => {
+    component.sidePanelOpen = false;
+    fixture.detectChanges();
+    expect(component.contextPruning.nativeElement.checked).toBeFalse();
   });
 
   /** One reasoning assignment: a rule branch x PCDRS mapping of `merged`. Every assignment
