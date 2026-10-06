@@ -49,7 +49,7 @@ export class RegressionDashboardComponent implements OnInit {
     this.cleanUpStore();
   }
 
-  /** Opening the dashboard sweeps the store (unnamed sessions untouched for a day, results
+  /** Opening the dashboard sweeps the store (unnamed sessions no browser holds open, results
    *  and progress left without a session) and then lists what is left. The session open in
    *  the testing interface is never swept; a failed sweep only means the list is read as is. */
   private cleanUpStore(): void {

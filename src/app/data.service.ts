@@ -308,7 +308,26 @@ callVampire(vampireRequest: vampireRequest){
     return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`));
   }
 
-  /** Sweeps unnamed sessions untouched for a day and results/progress records left without a
+  /** Marks a regression session as open in this tab (renew every couple of minutes; it lapses
+   *  after ten), so the store cleanup leaves it alone. */
+  holdSessionLease(sessionKey: string, holderId: string): Observable<unknown> {
+    return this.withSessionTimeout(this.http.post(this.sessionLeaseUrl(sessionKey, holderId), {}));
+  }
+
+  releaseSessionLease(sessionKey: string, holderId: string): Observable<unknown> {
+    return this.withSessionTimeout(this.http.post(`${this.sessionLeaseUrl(sessionKey, holderId)}/release`, {}));
+  }
+
+  /** For a release sent while the page unloads, where HttpClient requests are cancelled. */
+  sessionLeaseReleaseUrl(sessionKey: string, holderId: string): string {
+    return `${this.sessionLeaseUrl(sessionKey, holderId)}/release`;
+  }
+
+  private sessionLeaseUrl(sessionKey: string, holderId: string): string {
+    return `${this.redispage}/session_lease/${encodeURIComponent(sessionKey)}/${encodeURIComponent(holderId)}`;
+  }
+
+  /** Sweeps unnamed sessions no browser holds open and results/progress records left without a
    *  session (Redis/redis_store.py cleanup_regression_store). `keep`: sessions open here. */
   cleanupRegressionSessions(keep: string[], dryRun = false): Observable<RegressionStoreCleanupReport> {
     return this.withSessionTimeout(this.http.post<RegressionStoreCleanupReport>(

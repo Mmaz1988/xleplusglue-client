@@ -391,6 +391,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   maxBufferPx = 1200;
 
   ngAfterViewInit() {
+    this.startSessionLease();
     if (this.gswbPreferences) {
       this.gswbPreferences.gswbPreferences = { ...APP_DEFAULTS.gswb.preferences };
       this.gswbPreferences.updateFormFromPreferences(this.gswbPreferences.gswbPreferences);
@@ -733,7 +734,68 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return typeof window === 'undefined' ? true : window.confirm(message);
   }
 
+  /** This tab's claim on the session it has open: the store sweeps unnamed sessions no
+   *  browser holds open every 30 minutes, so the lease is renewed well inside its 10-minute
+   *  life, moved when the session changes, and released when the view or the page goes. */
+  private readonly sessionLeaseHolderId = newRunId();
+  private leasedSessionKey: string | null = null;
+  private sessionLeaseTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly sessionLeaseRenewMs = 2 * 60 * 1000;
+  private readonly releaseLeaseOnPageHide = () => this.releaseSessionLeaseOnUnload();
+
+  private startSessionLease(): void {
+    this.renewSessionLease();
+    this.sessionLeaseTimer = setInterval(() => this.renewSessionLease(), this.sessionLeaseRenewMs);
+    window.addEventListener('pagehide', this.releaseLeaseOnPageHide);
+  }
+
+  private stopSessionLease(): void {
+    if (this.sessionLeaseTimer !== null) {
+      clearInterval(this.sessionLeaseTimer);
+      this.sessionLeaseTimer = null;
+    }
+    window.removeEventListener('pagehide', this.releaseLeaseOnPageHide);
+    this.releaseSessionLease();
+  }
+
+  /** Holds the lease on the open session, moving it off a session this tab has left. */
+  private renewSessionLease(): void {
+    const sessionKey = this.redisSessionKey;
+    if (this.leasedSessionKey && this.leasedSessionKey !== sessionKey) {
+      this.releaseSessionLease();
+    }
+    if (!sessionKey || sessionKey === 'last_session') return;
+    this.leasedSessionKey = sessionKey;
+    this.dataService.holdSessionLease(sessionKey, this.sessionLeaseHolderId).subscribe({
+      error: error => console.warn('Unable to renew the session lease.', { sessionKey, error }),
+    });
+  }
+
+  private releaseSessionLease(): void {
+    const sessionKey = this.leasedSessionKey;
+    if (!sessionKey) return;
+    this.leasedSessionKey = null;
+    this.dataService.releaseSessionLease(sessionKey, this.sessionLeaseHolderId).subscribe({
+      error: () => undefined,
+    });
+  }
+
+  /** A closing page cancels HttpClient requests; a keepalive fetch outlives it. Failing is
+   *  harmless -- the lease lapses on its own. */
+  private releaseSessionLeaseOnUnload(): void {
+    const sessionKey = this.leasedSessionKey;
+    if (!sessionKey) return;
+    try {
+      fetch(this.dataService.sessionLeaseReleaseUrl(sessionKey, this.sessionLeaseHolderId),
+        { method: 'POST', keepalive: true }).catch(() => undefined);
+    } catch {
+      // The lease lapses on its own.
+    }
+  }
+
   private setPersistedActiveSessionKey(sessionKey: string): void {
+    // The open session may just have changed (save as, load, new session).
+    if (this.sessionLeaseTimer !== null) this.renewSessionLease();
     try {
       if (sessionKey) {
         localStorage.setItem(this.activeSessionStorageKey, sessionKey);
@@ -1687,6 +1749,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   ngOnDestroy(): void {
+    this.stopSessionLease();
     this.workspaceSubscription?.unsubscribe();
     this.stopGswbSummaryPolling();
     this.stopNliPreparation();

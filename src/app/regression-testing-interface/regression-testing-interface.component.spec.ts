@@ -35,6 +35,9 @@ describe('RegressionTestingInterfaceComponent', () => {
       'patchRegressionSession',
       'deleteRegressionSession',
       'deleteRegressionSessions',
+      'holdSessionLease',
+      'releaseSessionLease',
+      'sessionLeaseReleaseUrl',
       'requestVampireCancel',
       'getLastSession',
       'getLastSessionSummary',
@@ -58,6 +61,8 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.patchRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.deleteRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.deleteRegressionSessions.and.returnValue(of({ status: 'ok', deleted: [] } as any));
+    dataServiceSpy.holdSessionLease.and.returnValue(of({}));
+    dataServiceSpy.releaseSessionLease.and.returnValue(of({}));
     dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));
     dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
     dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
@@ -977,7 +982,31 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.canRunInference).toBeTrue();
   });
 
+  describe('session lease', () => {
+    it('holds the open session, moves the lease when the session changes and releases it on destroy', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      const holder = component['sessionLeaseHolderId'];
+      const first = 'session-2026-10-06_09-00-00-000Z';
+      component.session.redisSessionKey = first;
+      (component as any).startSessionLease();
+      expect(dataServiceSpy.holdSessionLease).toHaveBeenCalledWith(first, holder);
+
+      component.session.redisSessionKey = 'degree-basic';
+      (component as any).renewSessionLease();
+      expect(dataServiceSpy.releaseSessionLease).toHaveBeenCalledWith(first, holder);
+      expect(dataServiceSpy.holdSessionLease).toHaveBeenCalledWith('degree-basic', holder);
+
+      component.ngOnDestroy();
+      expect(dataServiceSpy.releaseSessionLease).toHaveBeenCalledWith('degree-basic', holder);
+      expect(component['sessionLeaseTimer']).toBeNull();
+    });
+  });
+
   describe('Save As and unnamed sessions', () => {
+    // Save As persists the new key as this browser's active session; later tests must not
+    // start from it.
+    afterEach(() => localStorage.removeItem('regression-testing-active-session-key'));
+
     it('removes the unnamed session it was saved from', () => {
       const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
       component.session.redisSessionKey = 'session-2026-10-05_19-22-24-695Z';
