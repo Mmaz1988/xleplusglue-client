@@ -46,6 +46,7 @@ import {
   mergeGrammarAxioms,
   GrammarAxioms,
   VampirePreferences,
+  isDefaultSessionKey,
 } from '../models/models';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
@@ -1333,6 +1334,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.displayMessage('Please enter a session name before saving.', 'red');
       return;
     }
+    // Names of that shape mark unnamed working sessions: hidden from the inference banks and
+    // swept by the store cleanup after a day.
+    if (isDefaultSessionKey(sessionKey)) {
+      this.displayMessage('That name has the form of an unsaved session ("session-<time>"); please choose another.', 'red');
+      return;
+    }
+    const previousSessionKey = this.redisSessionKey;
 
     const snapshot = this.buildSessionSnapshot();
     snapshot.metadata.id = sessionKey;
@@ -1367,6 +1375,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         // fingerprints describing the old one.
         this.lastSavedSectionFingerprints = this.sessionSectionFingerprints(snapshot);
         this.setPersistedActiveSessionKey(this.selectedSessionKey);
+        this.discardUnnamedSession(previousSessionKey, sessionKey);
         this.loadRecentSessions();
         this.setSessionLoadStatus('success', `Saved session as ${sessionKey}`, `Session key: ${sessionKey}`);
       },
@@ -1375,6 +1384,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         this.setSessionLoadStatus('error', `Failed to save session as ${sessionKey}`, 'The session could not be stored.');
       }
     });
+  }
+
+  /** After Save As the view works under the new name, and an unnamed session it was saved
+   *  from is a copy nothing will open again -- so it goes, with its results and progress,
+   *  instead of waiting for the store cleanup. A named session saved under a second name is
+   *  a bank of its own and stays. */
+  private discardUnnamedSession(previousSessionKey: string, newSessionKey: string): void {
+    if (!isDefaultSessionKey(previousSessionKey) || previousSessionKey === newSessionKey) return;
+    this.dataService.deleteRegressionSessions([previousSessionKey]).subscribe({
+      error: error => console.warn('Unable to remove the unnamed session after Save As.', { previousSessionKey, error }),
+    });
+  }
+
+  /** Saved sessions for the session list: banks only, the open session is listed as Current. */
+  get namedRecentSessions(): RegressionSessionSummary[] {
+    return this.recentSessions.filter(session =>
+      session.sessionKey !== this.redisSessionKey && !isDefaultSessionKey(session.sessionKey));
   }
 
   /** Turn automatic saving on or off.

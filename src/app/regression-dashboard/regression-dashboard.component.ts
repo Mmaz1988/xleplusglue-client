@@ -5,6 +5,7 @@ import { map } from 'rxjs/operators';
 import { DataService } from '../data.service';
 import {
   createRegressionTestingSession,
+  isDefaultSessionKey,
   RegressionSessionSummary,
   RegressionTestingSession,
   RegressionSessionDocument,
@@ -40,14 +41,41 @@ export class RegressionDashboardComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    const cachedSessions = this.sessionCardCache.getAll();
+    const cachedSessions = this.sessionCardCache.getAll().filter(card => !isDefaultSessionKey(card.sessionKey));
     if (cachedSessions.length > 0) {
       this.sessions = cachedSessions;
       this.statusMessage = `Loaded ${cachedSessions.length} cached inference bank${cachedSessions.length === 1 ? '' : 's'}.`;
-      return;
     }
+    this.cleanUpStore();
+  }
 
-    this.refreshSessions();
+  /** Opening the dashboard sweeps the store (unnamed sessions untouched for a day, results
+   *  and progress left without a session) and then lists what is left. The session open in
+   *  the testing interface is never swept; a failed sweep only means the list is read as is. */
+  private cleanUpStore(): void {
+    const keep = [this.getPersistedActiveSessionKey()].filter(key => !!key);
+    this.statusMessage = 'Cleaning up unsaved sessions...';
+    this.dataService.cleanupRegressionSessions(keep).subscribe({
+      next: report => {
+        const removed = (report?.sessions?.length ?? 0) + (report?.results?.length ?? 0)
+          + (report?.progress?.length ?? 0);
+        if (removed) {
+          console.info('[Dashboard] store cleanup', report);
+        }
+        this.refreshSessions(() => {
+          if (removed) {
+            this.statusMessage += ` Cleaned up ${report.sessions.length} unsaved session`
+              + `${report.sessions.length === 1 ? '' : 's'} and ${removed - report.sessions.length} `
+              + `leftover record${removed - report.sessions.length === 1 ? '' : 's'} `
+              + `(${(report.bytes / 1e6).toFixed(1)} MB).`;
+          }
+        });
+      },
+      error: error => {
+        console.warn('Unable to clean up the session store.', error);
+        this.refreshSessions();
+      }
+    });
   }
 
   /** `done` runs once the list has been read, successfully or not. */
@@ -63,7 +91,8 @@ export class RegressionDashboardComponent implements OnInit {
       })
     ).subscribe({
       next: summaries => {
-        const sessions = summaries ?? [];
+        // Banks are the sessions saved under a name; unnamed working sessions are not shown.
+        const sessions = (summaries ?? []).filter(summary => !isDefaultSessionKey(summary.sessionKey));
         if (sessions.length === 0) {
           this.sessions = [];
           this.sessionCardCache.clear();

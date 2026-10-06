@@ -48,8 +48,8 @@
       <label for="sessionSelect">Session:</label>
       <select id="sessionSelect" [(ngModel)]="selectedSessionKey" [disabled]="isSessionActionLocked">
         <option [value]="redisSessionKey">Current: {{ session.id }}</option>
-        <ng-container *ngFor="let session of recentSessions">
-          <option *ngIf="session.sessionKey !== redisSessionKey" [value]="session.sessionKey">
+        <ng-container *ngFor="let session of namedRecentSessions">
+          <option [value]="session.sessionKey">
             {{ session.displayLabel }} | parses: {{ session.parseCount }} | inference: {{ session.inferenceCount }}
           </option>
         </ng-container>

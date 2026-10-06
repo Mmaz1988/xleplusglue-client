@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, timeout } from 'rxjs';
 import {
   AnaphoraRanking,
+  RegressionStoreCleanupReport,
   GswbRenderPcdrsRequest,
   LmRankAnaphoraRequest,
   GswbRequest,
@@ -305,6 +306,13 @@ callVampire(vampireRequest: vampireRequest){
 
   deleteRegressionSession(sessionKey: string): Observable<any> {
     return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`));
+  }
+
+  /** Sweeps unnamed sessions untouched for a day and results/progress records left without a
+   *  session (Redis/redis_store.py cleanup_regression_store). `keep`: sessions open here. */
+  cleanupRegressionSessions(keep: string[], dryRun = false): Observable<RegressionStoreCleanupReport> {
+    return this.withSessionTimeout(this.http.post<RegressionStoreCleanupReport>(
+      `${this.vampirepage}/regression_sessions/cleanup`, { keep, dryRun }));
   }
 
   /** Deletes several banks in one call -- their sessions, results and progress records --

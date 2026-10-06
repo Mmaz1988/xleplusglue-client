@@ -18,7 +18,10 @@ describe('RegressionDashboardComponent deletion', () => {
 
   beforeEach(() => {
     dataService = jasmine.createSpyObj('DataService',
-      ['listRegressionSessions', 'loadRegressionSession', 'deleteRegressionSessions']);
+      ['listRegressionSessions', 'loadRegressionSession', 'deleteRegressionSessions', 'cleanupRegressionSessions']);
+    dataService.cleanupRegressionSessions.and.returnValue(of({ dryRun: false, sessions: [], results: [],
+      progress: [], indexEntries: [], bytes: 0 }));
+    dataService.listRegressionSessions.and.returnValue(of([]));
     cache = jasmine.createSpyObj('RegressionDashboardCacheService',
       ['getAll', 'get', 'replaceAll', 'upsert', 'remove', 'clear']);
     // Every listed bank is cached, so a refresh needs no per-bank load.
@@ -113,5 +116,21 @@ describe('RegressionDashboardComponent deletion', () => {
     expect(component.isSelected('b')).toBeFalse();
     expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
     expect(dataService.deleteRegressionSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('sweeps the store on opening, keeping the open session, and lists named banks only', () => {
+    localStorage.setItem('regression-testing-active-session-key', 'session-2026-10-06_09-00-00-000Z');
+    dataService.cleanupRegressionSessions.calls.reset();
+    dataService.cleanupRegressionSessions.and.returnValue(of({ dryRun: false,
+      sessions: ['session-2026-10-01_08-50-54-457Z'], results: ['first-degree'], progress: [], indexEntries: [],
+      bytes: 2_000_000 }));
+    dataService.listRegressionSessions.and.returnValue(of([summary('session-2026-10-06_09-00-00-000Z'), summary('a')]));
+
+    component.ngOnInit();
+
+    expect(dataService.cleanupRegressionSessions).toHaveBeenCalledWith(['session-2026-10-06_09-00-00-000Z']);
+    expect(component.sessions.map(session => session.sessionKey)).toEqual(['a']);
+    expect(component.statusMessage).toContain('Cleaned up 1 unsaved session and 1 leftover record (2.0 MB).');
+    localStorage.removeItem('regression-testing-active-session-key');
   });
 });

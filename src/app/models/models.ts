@@ -1374,6 +1374,28 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
   };
 }
 
+/** The key a regression session has until it is saved under a name ("session-" and its
+ *  creation time, below). Inference banks are the named ones; Save As refuses this shape so
+ *  the two never mix. Mirrors Redis/redis_store.py's DEFAULT_SESSION_KEY. */
+export const DEFAULT_SESSION_KEY = /^session-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{3}Z$/;
+
+/** What a store cleanup deleted (or, on a dry run, would delete). */
+export interface RegressionStoreCleanupReport {
+  dryRun: boolean;
+  /** Unnamed sessions removed with their results and progress. */
+  sessions: string[];
+  /** Vampire results and progress records left without a session. */
+  results: string[];
+  progress: string[];
+  /** Index entries whose session no longer existed. */
+  indexEntries: string[];
+  bytes: number;
+}
+
+export function isDefaultSessionKey(sessionKey: string | null | undefined): boolean {
+  return DEFAULT_SESSION_KEY.test(String(sessionKey ?? ''));
+}
+
 export function createRegressionTestingSession(): RegressionTestingSession {
   const createdAt = new Date().toISOString();
   const sessionId = `session-${createdAt.replace(/[:.]/g, '-').replace('T', '_')}`;

@@ -34,6 +34,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       'saveRegressionSession',
       'patchRegressionSession',
       'deleteRegressionSession',
+      'deleteRegressionSessions',
       'requestVampireCancel',
       'getLastSession',
       'getLastSessionSummary',
@@ -56,6 +57,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.saveRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.patchRegressionSession.and.returnValue(of({} as any));
     dataServiceSpy.deleteRegressionSession.and.returnValue(of({} as any));
+    dataServiceSpy.deleteRegressionSessions.and.returnValue(of({ status: 'ok', deleted: [] } as any));
     dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));
     dataServiceSpy.getLastSessionSummary.and.returnValue(of({ item_count: 0, proof_count: 0 }));
     dataServiceSpy.getLastGswbSession.and.returnValue(of({ outputs: {} } as any));
@@ -973,6 +975,49 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component['abortRequestInFlight']).toBeFalse();
     expect(component.loading).toBeFalse();
     expect(component.canRunInference).toBeTrue();
+  });
+
+  describe('Save As and unnamed sessions', () => {
+    it('removes the unnamed session it was saved from', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      component.session.redisSessionKey = 'session-2026-10-05_19-22-24-695Z';
+      component.saveAsSessionName = 'degree-basic';
+
+      component.saveSessionAs();
+
+      expect(dataServiceSpy.saveRegressionSession.calls.mostRecent().args[0]).toBe('degree-basic');
+      expect(dataServiceSpy.deleteRegressionSessions).toHaveBeenCalledOnceWith(['session-2026-10-05_19-22-24-695Z']);
+    });
+
+    it('keeps a named session it was saved from: that is a bank of its own', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      component.session.redisSessionKey = 'degree-basic';
+      component.saveAsSessionName = 'degree-basic-v2';
+
+      component.saveSessionAs();
+
+      expect(dataServiceSpy.deleteRegressionSessions).not.toHaveBeenCalled();
+    });
+
+    it('refuses a name of the unnamed-session shape', () => {
+      const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      component.saveAsSessionName = 'session-2026-01-01_00-00-00-000Z';
+
+      component.saveSessionAs();
+
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+    });
+
+    it('lists only named sessions besides the current one', () => {
+      component.session.redisSessionKey = 'session-2026-10-06_09-00-00-000Z';
+      component.recentSessions = [
+        { sessionKey: 'session-2026-10-05_19-22-24-695Z' } as any,
+        { sessionKey: 'degree-basic' } as any,
+        { sessionKey: 'session-2026-10-06_09-00-00-000Z' } as any,
+      ];
+      expect(component.namedRecentSessions.map(entry => entry.sessionKey)).toEqual(['degree-basic']);
+    });
   });
 
   /** 2026-10-06: an aborted run kept running beside the run that replaced it, because the
