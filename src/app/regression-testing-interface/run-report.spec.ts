@@ -1,5 +1,5 @@
 import {
-  INFERENCE_PHASES, PARSE_PHASES, RegressionRunReport, addToPhase, formatDuration, reportSummary,
+  INFERENCE_PHASES, PARSE_PHASES, RegressionRunReport, addToPhase, formatDuration, reportMarkdown, reportSummary,
   reportTables, startPhase, timingStats, totalDurationMs,
 } from './run-report';
 import { createRegressionTestingSession, regressionDocumentToSession, regressionSessionToDocument } from '../models/models';
@@ -43,7 +43,7 @@ describe('run report', () => {
   it('totals parse and inference only, not the time between them', () => {
     // 10:01 to 10:30 is waiting/disambiguating: in neither step.
     expect(totalDurationMs(report())).toBe(180000);
-    expect(reportSummary(report())).toBe('Parse 1m00s · Inference 2m00s · Total 3m00s · 1/2 correct');
+    expect(reportSummary(report())).toBe('Parse 1m00s · Inference 2m00s · Total 3m00s · 1/2 correct · 1 not parsed');
   });
 
   it('says a step runs while it runs', () => {
@@ -111,5 +111,27 @@ describe('run report', () => {
     const document: any = regressionSessionToDocument(createRegressionTestingSession());
     delete document.analysis.report;
     expect(regressionDocumentToSession(document).report).toEqual({ parse: null, inference: null });
+  });
+  it('says how many items have no verdict, so a missing verdict does not read as a wrong one', () => {
+    const r = report();
+    r.inference!.results = { total: 26, correct: 25, wrong: 0, notParsed: 0, noVerdict: 1 };
+    expect(reportSummary(r)).toBe('Parse 1m00s · Inference 2m00s · Total 3m00s · 25/26 correct · 1 no verdict');
+  });
+
+  it('renders the report, settings, confusion matrix and items as Markdown, escaping table cells', () => {
+    const markdown = reportMarkdown(report(), {
+      sessionKey: 'bank-1',
+      settings: [['Grammar', 'g.lfg']],
+      items: [{ id: 'n0', gold: 'Entailment', predicted: 'Neutral', status: 'wrong', reason: '',
+        premises: ['A | B', 'C'], hypothesis: 'D' }],
+      confusion: { labels: ['1', '0'], names: { '1': 'Entailment', '0': 'Neutral' }, counts: [[0, 1], [0, 0]] },
+    }, new Date('2026-10-01T11:00:00.000Z'));
+
+    expect(markdown).toContain('# Regression report: bank-1');
+    expect(markdown).toContain('| Grammar | g.lfg |');
+    expect(markdown).toContain('| Entailment | 0 | 1 |');
+    expect(markdown).toContain('| n0 | Entailment | Neutral | wrong | A \\| B<br>C | D |  |');
+    expect(markdown).toContain('## Timings');
+    expect(markdown).toContain('| Correct | 1 / 2 |');
   });
 });

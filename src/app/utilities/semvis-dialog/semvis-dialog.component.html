@@ -1,5 +1,6 @@
 <dialog class="center-dialog" #dialog>
   <h3>{{ title }}</h3>
+  <p *ngIf="subtitle" class="dialog-subtitle">{{ subtitle }}</p>
 
   <label *ngIf="filterIds" class="dialog-filter">
     <input type="checkbox" [checked]="filterActive" (change)="toggleFilter($any($event.target).checked)">

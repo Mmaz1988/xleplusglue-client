@@ -83,7 +83,7 @@ import {
 } from '../document-builder/document-builder.service';
 import { LigerWorkspaceService, RuleSetOrigin } from '../liger-workspace/liger-workspace.service';
 import {
-  INFERENCE_PHASES, PARSE_PHASES, ParseReport, RunPhase, addToPhase, reportSummary, reportTables, startPhase,
+  INFERENCE_PHASES, PARSE_PHASES, ParseReport, RunPhase, addToPhase, reportMarkdown, reportSummary, reportTables, startPhase,
   timingStats,
 } from './run-report';
 
@@ -1397,6 +1397,55 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     link.click();
     setTimeout(() => window.URL.revokeObjectURL(url), 10000);
     this.displayMessage(`Downloaded ${name}.json`, 'green');
+  }
+
+  /** The run report, every item's outcome and the confusion matrix as a Markdown file. Like
+   *  the JSON download, it is built from the live session and needs no request. */
+  downloadReportMarkdown(): void {
+    const prefs = this.session.vampirePreferences;
+    const settings: Array<[string, string]> = [
+      ['Grammar', this.session.grammarPath || 'Not loaded'],
+      ['Rule set', this.session.rulesFilename || 'Not loaded'],
+      ['Axioms', this.session.axiomsFilename || 'None'],
+      ['Testsuite', this.session.testsuiteFilename || 'Not loaded'],
+      ['Logic type', this.session.lastLogicType || (prefs?.logic_type === 0 ? 'fof' : 'tff')],
+      ['Max duration (s)', String(prefs?.max_duration ?? '')],
+      ['Model building', String(prefs?.model_building ?? '')],
+      ['Anaphora selection', `${prefs?.anaphora_selection ?? 'all'}`
+        + (prefs?.anaphora_selection === 'top_k' ? ` (k = ${prefs?.anaphora_top_k ?? ''})` : '')],
+      ['Anaphora rankers', (prefs?.anaphora_rankers ?? []).join(', ')],
+    ];
+    const items = this.inferenceReportRows.map(row => ({
+      id: row.id,
+      gold: this.labelText(row.data.goldLabel),
+      predicted: this.labelText(row.data.predictedLabel),
+      status: row.status === 'done' ? (row.data.mismatch ? 'wrong' : 'correct') : row.status,
+      reason: row.status === 'unparsed' ? `No reading: ${row.unparsedSentences.join(' / ')}` : row.reason,
+      premises: row.data.premises ?? [],
+      hypothesis: row.data.conclusion ?? '',
+    }));
+    const confusion = this.inferenceResults.length ? {
+      labels: [...this.labels],
+      names: { ...this.labelName },
+      counts: this.cmView.map(goldRow => goldRow.rows.map(cell => cell.v)),
+    } : null;
+
+    const name = `${this.redisSessionKey}-report-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    const markdown = reportMarkdown(this.session.report, {
+      sessionKey: this.redisSessionKey, settings, items, confusion,
+    });
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name}.md`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+    this.displayMessage(`Downloaded ${name}.md`, 'green');
+  }
+
+  private labelText(label: string): string {
+    return (this.labelName as Record<string, string>)[label] ?? (label || '');
   }
 
   createNewSession(): void {
@@ -4765,6 +4814,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const open = (items: GswbSolution[], svgSolutions: boolean, itemLabels: string[]) => this.discourseDialog.open({
       sentenceId: itemId,
       title: `Discourses — ${itemId}`,
+      subtitle: this.itemTextForHeader(itemId),
       items,
       itemLabels,
       svgSolutions,
@@ -4793,10 +4843,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
+  /** An item's premises and hypothesis, one per line, for a dialog header. */
+  private itemTextForHeader(itemId: string): string {
+    const item = this.regressionTestItems.find(candidate => String(candidate?.id ?? '') === itemId);
+    if (!item) return '';
+    const texts = (ids: any[]) => (ids ?? []).map((sid: any) => this.sentenceMap[String(sid ?? '')] ?? String(sid ?? ''));
+    return [
+      ...texts(item.premises).map((text: string) => `P: ${text}`),
+      ...texts(item.conclusion).map((text: string) => `H: ${text}`),
+    ].join('\n');
+  }
+
   openSemVisDialog(payload: any): void {
     const sid = payload.sentenceId;
 
     this.semvisDialog.open({
+      title: `Solutions — ${sid}`,
+      subtitle: this.sentenceMap[sid] ?? '',
       ...payload,
       svgSolutions: this.session.gswbPreferences.outputstyle === 5,
       selectedScopeIds: this.session.selectedScopeIdsBySentence[sid] ?? [],

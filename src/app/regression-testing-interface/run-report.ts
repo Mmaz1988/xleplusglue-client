@@ -159,7 +159,12 @@ export function reportSummary(report: RegressionRunReport | null | undefined): s
     parts.push(`Total ${formatDuration(total)}`);
   }
   if (inference?.finishedAt && inference.results.total) {
-    parts.push(`${inference.results.correct}/${inference.results.total} correct`);
+    const { correct, total, wrong, notParsed, noVerdict } = inference.results;
+    parts.push(`${correct}/${total} correct`);
+    // An item without a verdict is not a wrong one; say which it is.
+    if (wrong) parts.push(`${wrong} wrong`);
+    if (noVerdict) parts.push(`${noVerdict} no verdict`);
+    if (notParsed) parts.push(`${notParsed} not parsed`);
   }
   return parts.join(' · ');
 }
@@ -255,3 +260,74 @@ export const INFERENCE_PHASES = {
   preparation: 'Preparation (checks, TPTP)',
   vampire: 'Vampire',
 } as const;
+
+/** One NLI item as the Markdown report lists it. */
+export interface MarkdownReportItem {
+  id: string;
+  gold: string;
+  predicted: string;
+  status: string;
+  /** Why it has no verdict, if it has none. */
+  reason: string;
+  premises: string[];
+  hypothesis: string;
+}
+
+/** Everything the downloadable report shows besides the run report itself. */
+export interface MarkdownReportInput {
+  sessionKey: string;
+  /** Run settings as label/value pairs (grammar, rule files, logic type, ...). */
+  settings: Array<[string, string]>;
+  items: MarkdownReportItem[];
+  /** Gold label rows by predicted label columns, in `labels` order. */
+  confusion: { labels: string[]; names: Record<string, string>; counts: number[][] } | null;
+}
+
+/** The run report, the items and the confusion matrix as one Markdown document. */
+export function reportMarkdown(report: RegressionRunReport | null | undefined, input: MarkdownReportInput,
+                               now = new Date()): string {
+  const cell = (value: unknown) => String(value ?? '')
+    .replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+  const table = (header: string[], rows: unknown[][]) => [
+    `| ${header.map(cell).join(' | ')} |`,
+    `| ${header.map(() => '---').join(' | ')} |`,
+    ...rows.map(row => `| ${row.map(cell).join(' | ')} |`),
+  ].join('\n');
+
+  const lines: string[] = [`# Regression report: ${input.sessionKey}`, '', `Generated ${now.toISOString()}`, ''];
+  const summary = reportSummary(report);
+  if (summary) lines.push(`**${summary}**`, '');
+
+  if (input.settings.length) {
+    lines.push('## Settings', '', table(['Setting', 'Value'], input.settings), '');
+  }
+
+  const { timings, outcomes } = reportTables(report, now);
+  if (timings.length) {
+    lines.push('## Timings', '', table(
+      ['Step', 'Started', 'Duration', 'Per', 'Count', 'Average', 'Fastest', 'Slowest'],
+      timings.map(row => [
+        row.phase ? `↳ ${row.label}` : row.label, row.started, row.duration, row.per, row.count, row.average,
+        row.fastest ? `${row.fastest.duration} (${row.fastest.id})` : '',
+        row.slowest ? `${row.slowest.duration} (${row.slowest.id})` : '',
+      ])), '');
+  }
+  if (outcomes.length) {
+    lines.push('## Outcomes', '', table(['', ''], outcomes), '');
+  }
+
+  if (input.confusion) {
+    const { labels, names, counts } = input.confusion;
+    lines.push('## Confusion matrix', '', 'Rows: gold label. Columns: predicted label.', '', table(
+      ['Gold / predicted', ...labels.map(label => names[label] ?? label)],
+      labels.map((gold, g) => [names[gold] ?? gold, ...labels.map((_, p) => counts[g]?.[p] ?? 0)])), '');
+  }
+
+  if (input.items.length) {
+    lines.push('## Items', '', table(
+      ['Id', 'Gold', 'Predicted', 'Status', 'Premises', 'Hypothesis', 'Note'],
+      input.items.map(item => [item.id, item.gold, item.predicted, item.status,
+        item.premises.join('\n'), item.hypothesis, item.reason])), '');
+  }
+  return lines.join('\n');
+}

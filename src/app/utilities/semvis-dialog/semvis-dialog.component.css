@@ -43,3 +43,8 @@
   margin-bottom: 0.5rem;
   font-size: 0.9rem;
 }
+
+.dialog-subtitle {
+  margin: -4px 0 8px;
+  white-space: pre-line;
+}

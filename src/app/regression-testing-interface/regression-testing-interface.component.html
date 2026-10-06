@@ -33,6 +33,11 @@
       the stored copy, so it works with autosave off, or with the services down.
     </p>
 
+    <button type="button" (click)="downloadReportMarkdown()" [disabled]="!hasParsedExamples">Download report (.md)</button>
+    <p class="sidebar-hint">
+      The run report, every item's outcome and the confusion matrix as a Markdown file.
+    </p>
+
     <div class="session-id-row" title="Redis session key">{{ redisSessionKey }}</div>
   </app-hover-sidebar>
 

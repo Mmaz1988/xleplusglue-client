@@ -19,6 +19,8 @@ export class SemvisDialogComponent {
 
   private activeSentenceId: string | null = null;
   title = 'Solutions';
+  /** A second header line, e.g. the sentence the solutions belong to. */
+  subtitle = '';
   /** Ids the dialog can narrow the items to, with a checkbox to show all; null: no such filter. */
   filterIds: string[] | null = null;
   filterLabel = '';
@@ -36,11 +38,13 @@ export class SemvisDialogComponent {
     /** Caption per item, index-aligned with `items`. */
     itemLabels?: string[];
     title?: string;
+    subtitle?: string;
     /** When given, the dialog opens showing only these items, with a checkbox to show all. */
     filter?: { ids: string[]; label: string };
   }): void {
     this.activeSentenceId = payload.sentenceId;
     this.title = payload.title ?? 'Solutions';
+    this.subtitle = payload.subtitle ?? '';
     this.filterIds = payload.filter ? [...payload.filter.ids] : null;
     this.filterLabel = payload.filter?.label ?? '';
     this.filterActive = !!payload.filter;
