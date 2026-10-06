@@ -6,13 +6,13 @@
     </div>
 
     <div class="dashboard-actions">
-      <button type="button" (click)="refreshSessions()" [disabled]="loading">Refresh sessions</button>
-      <button type="button" (click)="triggerImportClick(importInput)" [disabled]="importing">Import JSON</button>
-      <button type="button" (click)="toggleSelectionMode()">
+      <button type="button" (click)="refreshSessions()" [disabled]="loading || deleting">Refresh sessions</button>
+      <button type="button" (click)="triggerImportClick(importInput)" [disabled]="importing || deleting">Import JSON</button>
+      <button type="button" (click)="toggleSelectionMode()" [disabled]="deleting">
         {{ selectionMode ? 'Exit selection mode' : 'Select banks for deletion' }}
       </button>
-      <button type="button" (click)="deleteSelectedSessions()" [disabled]="!selectionMode || selectedSessionKeys.size === 0">
-        Delete selected banks
+      <button type="button" (click)="deleteSelectedSessions()" [disabled]="deleting || !selectionMode || selectedSessionKeys.size === 0">
+        {{ deleting ? 'Deleting…' : 'Delete selected banks' }}
       </button>
     </div>
   </div>

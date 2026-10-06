@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, forkJoin, of } from 'rxjs';
+import { catchError, concatMap, finalize, from, of, toArray } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { DataService } from '../data.service';
 import {
@@ -23,6 +23,10 @@ export class RegressionDashboardComponent implements OnInit {
 
   sessions: RegressionDashboardSessionCard[] = [];
   loading = false;
+  /** True from the delete request until the list has been re-read from the store. Kept
+   *  apart from `loading` so nothing -- refresh, import, opening, selecting -- can act on a
+   *  list that is about to change. */
+  deleting = false;
   selectionMode = false;
   selectedSessionKeys = new Set<string>();
   statusMessage = '';
@@ -46,12 +50,18 @@ export class RegressionDashboardComponent implements OnInit {
     this.refreshSessions();
   }
 
-  refreshSessions(): void {
+  /** `done` runs once the list has been read, successfully or not. */
+  refreshSessions(done?: () => void): void {
     this.loading = true;
     this.statusMessage = 'Loading inference banks...';
+    let hydrating = false;
 
     // Load the list first, then hydrate each card with the saved session snapshot.
-    this.dataService.listRegressionSessions().subscribe({
+    this.dataService.listRegressionSessions().pipe(
+      finalize(() => {
+        if (!hydrating) done?.();
+      })
+    ).subscribe({
       next: summaries => {
         const sessions = summaries ?? [];
         if (sessions.length === 0) {
@@ -62,8 +72,12 @@ export class RegressionDashboardComponent implements OnInit {
           return;
         }
 
-        forkJoin(
-          sessions.map(summary => {
+        // One bank at a time: forkJoin over many concurrent HttpClient calls can drop one
+        // completion and never emit, which left the dashboard loading -- and, after a
+        // delete, locked -- for good.
+        hydrating = true;
+        from(sessions).pipe(
+          concatMap(summary => {
             const cached = this.getCachedSessionCard(summary);
             if (cached) {
               return of(cached);
@@ -73,7 +87,9 @@ export class RegressionDashboardComponent implements OnInit {
               map(session => this.enrichSummary(summary, regressionDocumentToSession(session))),
               catchError(() => of(this.enrichSummary(summary)))
             );
-          })
+          }),
+          toArray(),
+          finalize(() => done?.())
         ).subscribe({
           next: cards => {
             this.sessions = cards.sort((a, b) => this.toTimestamp(b.updatedAt) - this.toTimestamp(a.updatedAt));
@@ -98,6 +114,7 @@ export class RegressionDashboardComponent implements OnInit {
   }
 
   toggleSelectionMode(): void {
+    if (this.deleting) return;
     this.selectionMode = !this.selectionMode;
     if (!this.selectionMode) {
       this.selectedSessionKeys.clear();
@@ -109,7 +126,7 @@ export class RegressionDashboardComponent implements OnInit {
   }
 
   toggleSessionSelection(sessionKey: string, checked?: boolean): void {
-    if (!this.selectionMode) return;
+    if (!this.selectionMode || this.deleting) return;
 
     if (checked === undefined) {
       if (this.selectedSessionKeys.has(sessionKey)) {
@@ -128,56 +145,51 @@ export class RegressionDashboardComponent implements OnInit {
   }
 
   openSession(session: RegressionSessionSummary): void {
-    if (this.selectionMode) return;
+    if (this.selectionMode || this.deleting) return;
 
     this.persistActiveSessionKey(session.sessionKey);
     this.router.navigate(['/regression'], { queryParams: { session: session.sessionKey } });
   }
 
   deleteSelectedSessions(): void {
-    if (this.selectedSessionKeys.size === 0) return;
+    if (this.selectedSessionKeys.size === 0 || this.deleting) return;
 
     const keys = [...this.selectedSessionKeys];
-    const message = `Delete ${keys.length} selected inference bank${keys.length === 1 ? '' : 's'}?`;
+    const plural = keys.length === 1 ? '' : 's';
+    const message = `Delete ${keys.length} selected inference bank${plural}?`;
     if (typeof window !== 'undefined' && !window.confirm(message)) {
       return;
     }
 
-    this.loading = true;
-    this.statusMessage = 'Deleting selected inference banks...';
+    this.deleting = true;
+    this.statusMessage = `Deleting ${keys.length} inference bank${plural}...`;
 
-    forkJoin(
-      keys.map(sessionKey =>
-        this.dataService.deleteRegressionSession(sessionKey).pipe(
-          map(() => ({ sessionKey, success: true })),
-          catchError(error => {
-            console.warn(`Unable to delete regression session ${sessionKey}.`, error);
-            return of({ sessionKey, success: false });
-          })
-        )
-      )
-    ).subscribe({
-      next: results => {
-        const deletedKeys = results.filter(result => result.success).map(result => result.sessionKey);
-        const activeSessionKey = this.getPersistedActiveSessionKey();
-        if (deletedKeys.includes(activeSessionKey)) {
+    // One request for the whole selection: the store rewrites its index once. Parallel
+    // single deletes each rewrote it from the same old copy and put each other's banks back.
+    this.dataService.deleteRegressionSessions(keys).subscribe({
+      next: result => {
+        const deletedKeys = result?.deleted ?? keys;
+        if (deletedKeys.includes(this.getPersistedActiveSessionKey())) {
           this.clearPersistedActiveSessionKey();
         }
-
         this.removeSessionCards(deletedKeys);
         this.selectedSessionKeys.clear();
         this.selectionMode = false;
-        this.loading = false;
-        const failedCount = results.length - deletedKeys.length;
-        this.statusMessage = failedCount === 0
-          ? `Deleted ${deletedKeys.length} inference bank${deletedKeys.length === 1 ? '' : 's'}.`
-          : `Deleted ${deletedKeys.length} inference bank${deletedKeys.length === 1 ? '' : 's'}, but ${failedCount} could not be deleted.`;
+        this.finishDeletion(`Deleted ${deletedKeys.length} inference bank${deletedKeys.length === 1 ? '' : 's'}.`);
       },
       error: error => {
-        console.warn('Unable to delete one or more regression sessions.', error);
-        this.loading = false;
-        this.statusMessage = 'Some banks could not be deleted.';
+        console.warn('Unable to delete the selected regression sessions.', error);
+        this.finishDeletion('The selected banks could not be deleted.');
       }
+    });
+  }
+
+  /** Re-reads the list from the store, so the dashboard shows what is stored rather than
+   *  what this tab assumes the delete did, and only then lifts the lock. */
+  private finishDeletion(message: string): void {
+    this.refreshSessions(() => {
+      this.deleting = false;
+      this.statusMessage = message;
     });
   }
 

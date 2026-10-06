@@ -301,6 +301,13 @@ callVampire(vampireRequest: vampireRequest){
     return this.withSessionTimeout(this.http.delete(`${this.vampirepage}/regression_session/${sessionKey}`));
   }
 
+  /** Deletes several banks in one call -- their sessions, results and progress records --
+   *  so the store updates its index once instead of once per bank. */
+  deleteRegressionSessions(sessionKeys: string[]): Observable<{ status: string; deleted: string[] }> {
+    return this.withSessionTimeout(this.http.post<{ status: string; deleted: string[] }>(
+      `${this.vampirepage}/regression_sessions/delete`, { sessionKeys }));
+  }
+
   saveAnalysisDocument(sessionKey: string, document: XlePlusGlueDocument): Observable<{ status: string; document: XlePlusGlueDocument }> {
     return this.http.put<{ status: string; document: XlePlusGlueDocument }>(
       `${this.redispage}/analysis_document/${sessionKey}`, document);
