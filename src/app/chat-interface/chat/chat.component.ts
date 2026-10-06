@@ -20,6 +20,7 @@ import {
   POST_PROCESSING_SKIPPED_NOTICE,
   hasPostProcessingRules,
   GrammarAxioms,
+  grammarAxiomCount,
   mergeGrammarAxioms,
   VampirePreferences,
 } from '../../models/models';
@@ -101,9 +102,9 @@ export class ChatComponent {
   /** The rule set's axioms (the LiGER workspace's, edits included). */
   @Input() axioms: string = '';
   /** Axioms the rules added to this conversation's parses, untranslated (LiGER AXIOM /
-   *  TPTP_AXIOM). Kept apart from the rule set's: they belong to the conversation, not to a
+   *  TPTP_AXIOM / TFF_TYPE). Kept apart from the rule set's: they belong to the conversation, not to a
    *  config file. Both are sent; Vampire encodes these for the request's logic type. */
-  derivedGrammarAxioms: GrammarAxioms = { prolog: [], tptp: [] };
+  derivedGrammarAxioms: GrammarAxioms = { prolog: [], tptp: [], tffTypes: [] };
   private turnVampirePreferences: VampirePreferences | null = null;
   /** derivedGrammarAxioms as shown in the chat's axiom tab. */
   derivedAxioms = '';
@@ -157,7 +158,7 @@ export class ChatComponent {
   }
 
   get derivedAxiomCount(): number {
-    return this.derivedGrammarAxioms.prolog.length + this.derivedGrammarAxioms.tptp.length;
+    return grammarAxiomCount(this.derivedGrammarAxioms);
   }
 
   /** The reasoning settings the next turn will read, as label/value pairs. */
@@ -186,7 +187,7 @@ export class ChatComponent {
     this.context = [];
     this.chatHistory = [];
     this.userInput = '';
-    this.derivedGrammarAxioms = { prolog: [], tptp: [] };
+    this.derivedGrammarAxioms = { prolog: [], tptp: [], tffTypes: [] };
     this.derivedAxioms = '';
     this.derivedAxiomsChange.emit(this.derivedAxioms);
   }
@@ -1584,10 +1585,10 @@ export class ChatComponent {
 
   private addDerivedAxioms(axioms: GrammarAxioms | null | undefined): void {
     const merged = mergeGrammarAxioms([this.derivedGrammarAxioms, axioms]);
-    if (merged.prolog.length === this.derivedGrammarAxioms.prolog.length
-        && merged.tptp.length === this.derivedGrammarAxioms.tptp.length) return;
+    if (grammarAxiomCount(merged) === grammarAxiomCount(this.derivedGrammarAxioms)) return;
     this.derivedGrammarAxioms = merged;
     this.derivedAxioms = [
+      ...(merged.tffTypes ?? []).map(type => `${type}   (tff type; dropped in fof)`),
       ...merged.tptp,
       ...merged.prolog.map(term => `${term}   (Prolog; translated by Vampire)`),
     ].join('\n');

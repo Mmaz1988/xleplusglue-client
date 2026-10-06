@@ -56,7 +56,8 @@ describe('ChatComponent', () => {
   });
 
   describe('axioms', () => {
-    const grammar = (prolog: string[], tptp: string[] = []) => ({ prolog, tptp });
+    const grammar = (prolog: string[], tptp: string[] = [], tffTypes: string[] = []) =>
+      ({ prolog, tptp, tffTypes });
 
     it('keeps the rules\' axioms untranslated, apart from the rule set\'s', () => {
       component.axioms = 'tff(a, type, a: $o).';
@@ -73,6 +74,21 @@ describe('ChatComponent', () => {
       (component as any).addDerivedAxioms(undefined);
 
       expect(component.derivedGrammarAxioms).toEqual(grammar(['all(X,p(X))', 'all(X,r(X))']));
+    });
+
+    it('declares each tff type once across turns, and shows it as a type', () => {
+      const emitted: string[] = [];
+      component.derivedAxiomsChange.subscribe(value => emitted.push(value));
+      (component as any).addDerivedAxioms(grammar([], [], ['big: ($i * $int) > $o']));
+      (component as any).addDerivedAxioms(grammar([], [], ['big: ($i * $int) > $o', 'th_big: $i > $int']));
+      // A parse stored before types existed has no tffTypes at all.
+      (component as any).addDerivedAxioms({ prolog: [], tptp: [] });
+
+      expect(component.derivedGrammarAxioms)
+        .toEqual(grammar([], [], ['big: ($i * $int) > $o', 'th_big: $i > $int']));
+      expect(component.derivedAxiomCount).toBe(2);
+      expect(emitted.length).toBe(2);
+      expect(emitted[1]).toContain('th_big: $i > $int   (tff type; dropped in fof)');
     });
 
     it('drops the conversation\'s axioms on a new conversation, and says so', () => {

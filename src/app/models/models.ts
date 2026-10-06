@@ -110,22 +110,32 @@ export interface LigerConfigTreeFile {
 export type SynSemMapping = Record<string, string[]>;
 
 /** The axioms a structure's LiGER rules added, untranslated: AXIOM values as Prolog
- *  FOL/DRS terms, TPTP_AXIOM values as TPTP formulas. The Vampire service encodes both for
- *  the logic type of the run that uses them (see grammarAxiomsOf). */
+ *  FOL/DRS terms, TPTP_AXIOM values as TPTP formulas, TFF_TYPE values as tff type
+ *  declaration bodies (`big: ($i * $int) > $o`). The Vampire service encodes them for the
+ *  logic type of the run that uses them, declaring each type once and only in tff (see
+ *  grammarAxiomsOf). `tffTypes` is absent from parses stored before it existed. */
 export interface GrammarAxioms {
   prolog: string[];
   tptp: string[];
+  tffTypes?: string[];
 }
 
 /** The union of several axiom sets, order kept, duplicates dropped. */
 export function mergeGrammarAxioms(sets: Array<GrammarAxioms | null | undefined>): GrammarAxioms {
   const prolog = new Set<string>();
   const tptp = new Set<string>();
+  const tffTypes = new Set<string>();
   for (const set of sets) {
     (set?.prolog ?? []).forEach(term => term?.trim() && prolog.add(term.trim()));
     (set?.tptp ?? []).forEach(formula => formula?.trim() && tptp.add(formula.trim()));
+    (set?.tffTypes ?? []).forEach(type => type?.trim() && tffTypes.add(type.trim()));
   }
-  return { prolog: [...prolog], tptp: [...tptp] };
+  return { prolog: [...prolog], tptp: [...tptp], tffTypes: [...tffTypes] };
+}
+
+/** How many entries an axiom set holds, types included. */
+export function grammarAxiomCount(axioms: GrammarAxioms | null | undefined): number {
+  return (axioms?.prolog?.length ?? 0) + (axioms?.tptp?.length ?? 0) + (axioms?.tffTypes?.length ?? 0);
 }
 
 export interface SyntacticAnalysis {

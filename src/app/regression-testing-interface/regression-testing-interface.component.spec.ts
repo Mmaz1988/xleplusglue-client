@@ -2296,7 +2296,9 @@ describe('RegressionTestingInterfaceComponent', () => {
       ];
       component['session'].axiomsText = 'tff(t, type, t: $o).';
       component['session'].lastAnnotations = {
-        S1: { solutions: [{ axioms: { prolog: ['all(X,p(X))'], tptp: ['![X]: q(X)'] } }] },
+        S1: { solutions: [{ axioms: { prolog: ['all(X,p(X))'], tptp: ['![X]: q(X)'],
+          tffTypes: ['big: ($i * $int) > $o'] } }] },
+        // Parsed before types existed: no tffTypes.
         S2: { solutions: [{ axioms: { prolog: ['all(X,p(X))'], tptp: [] } }] },
       } as any;
       component['session'].lastGswbOutputs = {
@@ -2334,7 +2336,8 @@ describe('RegressionTestingInterfaceComponent', () => {
 
       const item = submitted.calls.mostRecent().args[0]['n1'];
       expect(item.axioms).toBe('tff(t, type, t: $o).');
-      expect(item.grammar_axioms).toEqual({ prolog: ['all(X,p(X))'], tptp: ['![X]: q(X)'] });
+      expect(item.grammar_axioms).toEqual({ prolog: ['all(X,p(X))'], tptp: ['![X]: q(X)'],
+        tffTypes: ['big: ($i * $int) > $o'] });
     });
 
     it('refuses a session whose axioms were encoded at parse time, rather than dropping them', () => {
