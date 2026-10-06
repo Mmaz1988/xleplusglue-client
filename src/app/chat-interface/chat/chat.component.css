@@ -53,14 +53,29 @@
 .loading-spinner { width: 24px; height: 24px; border: 3px solid rgba(0,0,0,0.1); border-top-color: #00a9e0; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-/* Chat and the turn panel side by side; the panel drops below on narrow screens. */
-.chat-layout { display: flex; gap: 16px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
-.chat-layout .chat-container { flex: 1 1 480px; margin: 0; }
+/* The chat fills the tab's height and stays centred at its own width; the turn panel sits in
+   the right-hand margin, so it does not push the chat off centre. */
+:host { display: block; width: 100%; height: 100%; }
+.chat-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 600px) minmax(0, 1fr);
+  column-gap: 16px;
+  height: 100%;
+}
+.chat-layout .chat-container { grid-column: 2; max-width: none; margin: 0; min-height: 0; }
 .turn-panel {
-  flex: 0 0 260px; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px;
+  grid-column: 3; align-self: start; justify-self: start;
+  width: 260px; max-width: 100%; max-height: 100%; overflow: auto; box-sizing: border-box;
+  padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px;
   background: #fafafa; font-size: 13px;
 }
-.turn-panel.closed { flex-basis: auto; padding: 6px; }
+/* Too narrow for a margin column: chat on top at full height, the panel below it. */
+@media (max-width: 1000px) {
+  .chat-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: 100% auto; row-gap: 16px; }
+  .chat-layout .chat-container { grid-column: 1; }
+  .turn-panel { grid-column: 1; width: 100%; max-height: none; }
+}
+.turn-panel.closed { width: auto; padding: 6px; }
 .turn-panel h4 { margin: 10px 0 4px; font-size: 13px; }
 .turn-panel dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin: 0; }
 .turn-panel dt { color: #555; }
