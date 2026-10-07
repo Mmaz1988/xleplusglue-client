@@ -64,7 +64,7 @@ export const APP_DEFAULTS = {
   /** Anaphora ranking (lm /rank_anaphora): rankers in priority order and the averager fusing
    *  them. One ranker behaves as before fusion existed. */
   anaphoraRanking: {
-    rankers: ['mlm-substitution'] as string[],
+    rankers: ['mlm-pronoun-product'] as string[],
     averager: 'borda',
   },
   vampire: {
@@ -75,7 +75,7 @@ export const APP_DEFAULTS = {
       layered: false,
       anaphora_selection: 'all' as const,
       anaphora_top_k: 1,
-      anaphora_rankers: ['mlm-substitution'],
+      anaphora_rankers: ['mlm-pronoun-product'],
       anaphora_averager: 'borda',
     },
     regression: {
@@ -85,7 +85,7 @@ export const APP_DEFAULTS = {
       layered: false,
       anaphora_selection: 'all' as const,
       anaphora_top_k: 1,
-      anaphora_rankers: ['mlm-substitution'],
+      anaphora_rankers: ['mlm-pronoun-product'],
       anaphora_averager: 'borda',
     },
   },
