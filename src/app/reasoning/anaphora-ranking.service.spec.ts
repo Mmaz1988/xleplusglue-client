@@ -149,11 +149,11 @@ describe('anaphora ranking document helpers', () => {
   });
 
   it('reads the ranker selection from preferences, with defaults for sessions saved before', () => {
-    expect(anaphoraRankerSelection(undefined)).toEqual({ rankers: ['mlm-substitution'], averager: 'borda' });
+    expect(anaphoraRankerSelection(undefined)).toEqual({ rankers: ['mlm-pronoun-product'], averager: 'borda' });
     expect(anaphoraRankerSelection({ anaphora_rankers: ['recency', 'vibes', 'recency', 'cosine-lexical'], anaphora_averager: 'rrf' }))
       .toEqual({ rankers: ['recency', 'cosine-lexical'], averager: 'rrf' });
     expect(anaphoraRankerSelection({ anaphora_rankers: [], anaphora_averager: 'median' }))
-      .toEqual({ rankers: ['mlm-substitution'], averager: 'borda' });
+      .toEqual({ rankers: ['mlm-pronoun-product'], averager: 'borda' });
   });
 
   it('attaches a late ranking only to the update it was computed for', () => {
@@ -413,14 +413,14 @@ describe('anaphora branch selection for verdicts', () => {
 
   it('carries the ranker selection through the settings form and restores old sessions with defaults', () => {
     const settings = new InferenceSettingsComponent(new FormBuilder());
-    expect(settings.vampirePreferences.anaphora_rankers).toEqual(['mlm-substitution']);
+    expect(settings.vampirePreferences.anaphora_rankers).toEqual(['mlm-pronoun-product']);
 
     settings.onRankerSelectionChange({ rankers: ['recency', 'mlm-substitution'], averager: 'weighted' });
     expect(settings.vampirePreferences.anaphora_rankers).toEqual(['recency', 'mlm-substitution']);
     expect(settings.vampirePreferences.anaphora_averager).toBe('weighted');
 
     settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, layered: false });
-    expect(settings.vampirePreferencesForm.value.anaphora_rankers).toEqual(['mlm-substitution']);
+    expect(settings.vampirePreferencesForm.value.anaphora_rankers).toEqual(['mlm-pronoun-product']);
     expect(settings.vampirePreferencesForm.value.anaphora_averager).toBe('borda');
   });
 });

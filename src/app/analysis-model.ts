@@ -738,7 +738,9 @@ export function inferenceResultsFromDocument(
 }
 
 const RANKER_SHORT_NAMES: Record<string, string> = {
+  'mlm-pronoun-product': 'mlm×pron',
   'mlm-substitution': 'mlm',
+  'mlm-pronoun': 'mlm-pron',
   'mlm-slot': 'mlm-slot',
   'cosine-lexical': 'cos-lex',
   'cosine-description': 'cos-desc',

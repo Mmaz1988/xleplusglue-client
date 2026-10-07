@@ -9,7 +9,9 @@ interface RankerRow {
 }
 
 export const ANAPHORA_RANKER_LABELS: Record<AnaphoraRankerId, string> = {
+  'mlm-pronoun-product': 'MLM + pronoun product',
   'mlm-substitution': 'MLM substitution',
+  'mlm-pronoun': 'MLM pronoun form',
   'mlm-slot': 'MLM masked slot',
   'cosine-lexical': 'Cosine (lexical)',
   'cosine-description': 'Cosine (description)',

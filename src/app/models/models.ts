@@ -329,7 +329,8 @@ export interface LmRankAnaphoraRequest {
 }
 
 /** The anaphora rankers lm `/rank_anaphora` can run; every one scores in [0, 1]. */
-export const ANAPHORA_RANKERS = ['mlm-substitution', 'mlm-slot', 'cosine-lexical', 'cosine-description', 'recency'] as const;
+export const ANAPHORA_RANKERS = ['mlm-pronoun-product', 'mlm-substitution', 'mlm-pronoun', 'mlm-slot', 'cosine-lexical',
+  'cosine-description', 'recency'] as const;
 export type AnaphoraRankerId = typeof ANAPHORA_RANKERS[number];
 
 /** How several rankers are fused into one score per branch, within each reading. */
@@ -1449,7 +1450,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
       layered: false,
       anaphora_selection: 'all',
       anaphora_top_k: 1,
-      anaphora_rankers: ['mlm-substitution'],
+      anaphora_rankers: ['mlm-pronoun-product'],
       anaphora_averager: 'borda',
     },
     sentenceMap: {},
