@@ -351,7 +351,7 @@ export class ReasoningPipelineService {
             anaphoraRelations,
             // Only `sequence` (the PCDRS itself) carries the branch's accommodation sites
             // inline; the prior and the checks get them from here.
-            presuppositionMapping: mapping.presuppositionMapping,
+            presuppositionRelations: mapping.presuppositionRelations,
             items,
             typed,
             parentSolutionId: mapping.id

@@ -686,9 +686,11 @@ export interface GswbSolution {
   semantic?: string;
   anaphoraMapping?: string;
   anaphoraRelations?: AnaphoraRelation[];
-  /** A PCDRS branch's accommodation sites, P:[p(x3,x1),...]: the presupposition of x3 in the
-   *  box of x1. Empty when nothing is accommodated. */
+  /** A PCDRS branch's accommodations between states, P:[p(s2,s1),...]: presupposition box s2
+   *  goes into box s1. Empty when nothing is accommodated. */
   presuppositionMapping?: string;
+  /** The same accommodations anchored on referents, for collapsing the prior and the checks. */
+  presuppositionRelations?: PresuppositionRelation[];
   proofId?: string;
   solutionKey?: string;
   mcSetId?: string;
@@ -696,6 +698,13 @@ export interface GswbSolution {
   synSemMapping?: SynSemMapping;
   sentenceAnalysis?: SentenceAnalysis;
   sequenceAnalysis?: SequenceAnalysis;
+}
+
+/** One accommodation anchored on referents: the presupposition introducing `presupposition`
+ *  goes into the box introducing `site` (`s0`: the outermost box). */
+export interface PresuppositionRelation {
+  presupposition: string;
+  site: string;
 }
 
 export interface GswbPcdrsRequest {
@@ -716,9 +725,9 @@ export interface GswbCollapseAnaphoraRequest {
    *  that collapses against it -- `semantic` alone carries no mapping (it's re-parsed from
    *  scratch server-side), so this must be supplied explicitly. */
   anaphoraRelations?: AnaphoraRelation[];
-  /** The branch's accommodation sites, for a `semantic` that does not carry them inline.
+  /** The branch's accommodations, for a `semantic` that does not carry them inline (P:[...]).
    *  Presuppositions are accommodated before the anaphora mapping is applied. */
-  presuppositionMapping?: string;
+  presuppositionRelations?: PresuppositionRelation[];
 }
 
 export interface GswbTptpBatchItem {
@@ -744,9 +753,9 @@ export interface GswbCollapseAndTptpBatchRequest {
   /** Same mapping semantics as GswbCollapseAnaphoraRequest.anaphoraRelations, applied
    *  identically to every item below. */
   anaphoraRelations?: AnaphoraRelation[];
-  /** The branch's accommodation sites (GswbSolution.presuppositionMapping), applied to every
-   *  item below that does not carry its own -- the prior and the checks do not. */
-  presuppositionMapping?: string;
+  /** The branch's accommodations (GswbSolution.presuppositionRelations), applied to every item
+   *  below that does not carry its own P:[...] -- the prior and the checks do not. */
+  presuppositionRelations?: PresuppositionRelation[];
   items: GswbTptpBatchItem[];
   typed: boolean;
 }
