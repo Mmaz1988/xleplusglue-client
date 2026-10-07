@@ -686,6 +686,9 @@ export interface GswbSolution {
   semantic?: string;
   anaphoraMapping?: string;
   anaphoraRelations?: AnaphoraRelation[];
+  /** A PCDRS branch's accommodation sites, P:[p(x3,x1),...]: the presupposition of x3 in the
+   *  box of x1. Empty when nothing is accommodated. */
+  presuppositionMapping?: string;
   proofId?: string;
   solutionKey?: string;
   mcSetId?: string;
@@ -713,6 +716,9 @@ export interface GswbCollapseAnaphoraRequest {
    *  that collapses against it -- `semantic` alone carries no mapping (it's re-parsed from
    *  scratch server-side), so this must be supplied explicitly. */
   anaphoraRelations?: AnaphoraRelation[];
+  /** The branch's accommodation sites, for a `semantic` that does not carry them inline.
+   *  Presuppositions are accommodated before the anaphora mapping is applied. */
+  presuppositionMapping?: string;
 }
 
 export interface GswbTptpBatchItem {
@@ -738,6 +744,9 @@ export interface GswbCollapseAndTptpBatchRequest {
   /** Same mapping semantics as GswbCollapseAnaphoraRequest.anaphoraRelations, applied
    *  identically to every item below. */
   anaphoraRelations?: AnaphoraRelation[];
+  /** The branch's accommodation sites (GswbSolution.presuppositionMapping), applied to every
+   *  item below that does not carry its own -- the prior and the checks do not. */
+  presuppositionMapping?: string;
   items: GswbTptpBatchItem[];
   typed: boolean;
 }

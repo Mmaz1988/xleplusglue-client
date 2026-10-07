@@ -349,6 +349,9 @@ export class ReasoningPipelineService {
           ].filter(item => !!item.semantic);
           return this.dataService.gswbCollapseAndTptpBatch({
             anaphoraRelations,
+            // Only `sequence` (the PCDRS itself) carries the branch's accommodation sites
+            // inline; the prior and the checks get them from here.
+            presuppositionMapping: mapping.presuppositionMapping,
             items,
             typed,
             parentSolutionId: mapping.id
