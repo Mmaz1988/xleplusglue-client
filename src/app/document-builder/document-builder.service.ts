@@ -125,6 +125,9 @@ export interface SequenceMergeRequest {
 export interface SequenceMergePair {
   merged: GswbSolution;
   previousElement: SentenceAnalysis | SequenceAnalysis;
+  /** The previous context's reading that went into this pair. Its `syntacticOrigin`
+   *  names the previous element's syntax this pair's syntax merge must use. */
+  previousSemantic?: SemanticAnalysis;
   currentElement?: SentenceAnalysis;
   /** The merged sequence's own syntax structure, attached once its syntax merge
    *  resolves -- needed as `sequenceStructure` for reasoning-check building. Absent if
@@ -436,6 +439,7 @@ export class DocumentBuilderService {
           map((merged): SequenceMergePair => ({
             merged,
             previousElement: previousContext.element,
+            previousSemantic: previousContext.semantic,
             currentElement: currentEntry.sentenceAnalysis,
             currentSemantic: currentEntry.semantic,
           }))
@@ -1006,98 +1010,172 @@ export class DocumentBuilderService {
     };
   }
 
-  /** Groups pairs by distinct (previous syntax, current syntax) identity and issues one
-   *  `ligerSequence` call per group -- reused across every semantic reading combination
-   *  sharing that group -- instead of once per pair. Groups are processed sequentially
-   *  (`concatMap`), same rationale as the pair merges above. A pair whose previous/
-   *  current element can't be resolved to a syntax, or whose previous sequence's
-   *  sentences can't all be found in `knownSentences`, keeps its `merged` semantic
-   *  result but is not attached a `sequenceAnalysis` -- it must not be silently dropped
-   *  from the result, only from sequence-registration (see SequenceMergeResult). */
+  /** One `ligerSequence` call per distinct syntax pairing -- the previous reading's own
+   *  syntax with the current reading's own syntax -- supplying exactly those parses, so the
+   *  call's single solution IS that pairing's merged structure. Shared by every semantic
+   *  reading combination of the pairing; sequential (`concatMap`), same rationale as the
+   *  pair merges above.
+   *
+   *  The merged syntax is named by its parents (`compositeAnalysisId`), never by LiGER's
+   *  own solution key: that key is positional within a call (`sequence-1-S0+S1` for any
+   *  call supplying one parse per sentence), so every pairing of an ambiguous sentence came
+   *  back under one id, `aggregateSequenceAnalyses` kept the first pairing's syntax for all
+   *  of them, and post-processing joined a reading's SRC ids against another parse's
+   *  SYN-IDs ("it was cute": the pronoun's referent linked to "be" through the expletive
+   *  parse). A previous Sequence's syntax id is such a composite too, which is how its
+   *  sentences' own parses are recovered here.
+   *
+   *  A pair whose syntax cannot be resolved keeps its `merged` semantic result but gets no
+   *  `sequenceAnalysis` -- it must not be silently dropped from the result, only from
+   *  sequence-registration (see SequenceMergeResult). Nor is it given some other parse. */
   private mergeSyntaxForPairs(
     pairs: SequenceMergePair[],
     knownSentences: SentenceAnalysis[],
     ruleString?: string,
   ): Observable<SequenceMergePair[]> {
-    const groups = new Map<string, SequenceMergePair[]>();
+    type Group = { syntaxId: string; sentences: SentenceAnalysis[]; parses: SyntacticAnalysis[]; pairs: SequenceMergePair[] };
+    const groups = new Map<string, Group>();
     pairs.forEach(pair => {
-      const key = `${this.syntaxIds(pair.previousElement)}=>${this.syntaxIds(pair.currentElement)}`;
-      const group = groups.get(key) ?? [];
-      group.push(pair);
-      groups.set(key, group);
+      const resolved = this.syntaxPairingOf(pair, knownSentences);
+      if ('failure' in resolved) {
+        console.error('[DocumentBuilder] cannot resolve the syntax this reading pair was derived from; skipping its syntax merge', {
+          mergedSemanticId: pair.merged.id,
+          previousElementId: pair.previousElement.id,
+          currentSentenceId: pair.currentElement?.id,
+          failure: resolved.failure,
+          missingSentenceIds: resolved.missingSentenceIds,
+        });
+        return;
+      }
+      const group = groups.get(resolved.syntaxId) ?? { ...resolved, pairs: [] };
+      group.pairs.push(pair);
+      groups.set(resolved.syntaxId, group);
     });
 
     return from(Array.from(groups.values())).pipe(
-      concatMap(group => {
-        const first = group[0];
-        if (!first.currentElement) {
-          return of(group);
-        }
-        let previousSentences: SentenceAnalysis[];
-        if ('sentenceIds' in first.previousElement) {
-          const missingSentenceIds: string[] = [];
-          previousSentences = first.previousElement.sentenceIds.map(id => {
-            const sentence = knownSentences.find(candidate => candidate.id === id);
-            if (!sentence) missingSentenceIds.push(id);
-            return sentence as SentenceAnalysis;
-          });
-          if (missingSentenceIds.length) {
-            console.error('[DocumentBuilder] cannot resolve previous sequence sentences for syntax merge; skipping syntax merge for this group', {
-              previousSequenceId: first.previousElement.id,
-              missingSentenceIds,
-              knownSentenceIds: knownSentences.map(sentence => sentence.id),
+      concatMap(group => this.dataService.ligerSequence({
+        sentences: group.sentences.map(sentence => sentence.text),
+        sentenceIds: group.sentences.map(sentence => sentence.id),
+        ruleString,
+        parsedSentences: group.parses.map(parse => [parse.structure]),
+      }).pipe(
+        map(sequence => {
+          const solutions = sequence?.solutions ?? [];
+          const solution = solutions[0];
+          const syntax = solution?.sequenceAnalysis;
+          const mergedSyntax = syntax?.syntax?.[0];
+          if (solutions.length !== 1 || !syntax || !mergedSyntax) {
+            console.error('[DocumentBuilder] syntax merge of one parse per sentence did not give exactly one sequence; skipping it', {
+              syntaxId: group.syntaxId, solutionCount: solutions.length,
             });
-            return of(group);
+            return;
           }
-        } else {
-          previousSentences = [first.previousElement];
-        }
-        const sentences = [...previousSentences, first.currentElement];
-        return this.dataService.ligerSequence({
-          sentences: sentences.map(sentence => sentence.text),
-          sentenceIds: sentences.map(sentence => sentence.id),
-          ruleString,
-          parsedSentences: sentences.map(sentence => sentence.syntax.map(syntax => syntax.structure)),
-        }).pipe(
-          map(sequence => {
-            const solution = sequence?.solutions?.[0];
-            const syntax = solution?.sequenceAnalysis;
-            if (!syntax) {
-              return group;
-            }
-            // The syntax id THIS group actually merged to -- not whatever
-            // GswbSolution.semanticAnalysis.syntacticOrigin the semantic merge (a
-            // separate, earlier HTTP call, keyed by GSWB's own solutionKey/parentId
-            // scheme) happened to carry. Those two ids live in different namespaces;
-            // a semantic must be tagged with ITS OWN syntax pairing's id, or
-            // validateSequenceAnalysis's per-semantic syntacticOrigin check fails
-            // wherever the two happen not to coincide -- confirmed live via
-            // misc/current/analysis-document-3x3syntaxambiguity.json, whose semantics
-            // carried syntacticOrigin values from *other* groups' syntax ids entirely.
-            const syntaxId = syntax.syntax[0]?.synId || syntax.id;
-            return group.map(pair => {
-              const semantic: SemanticAnalysis = {
-                ...this.semanticAnalysisFromMerged(pair.merged),
-                syntacticOrigin: syntaxId,
-              };
-              pair.merged.sequenceAnalysis = {
-                id: pair.merged.id || syntax.id,
-                text: syntax.text,
-                sentenceIds: syntax.sentences.map(sentence => sentence.id),
-                syntax: syntax.syntax,
-                semantics: [semantic],
-                synSemMapping: { [syntaxId]: [semantic.semId] },
-              };
-              pair.sequenceStructure = solution.structureJson;
-              return pair;
-            });
-          }),
-          catchError(() => of(group))
-        );
-      }),
+          const syntaxEntry: SyntacticAnalysis = { ...mergedSyntax, synId: group.syntaxId };
+          group.pairs.forEach(pair => {
+            const semantic: SemanticAnalysis = {
+              ...this.semanticAnalysisFromMerged(pair.merged),
+              syntacticOrigin: group.syntaxId,
+            };
+            pair.merged.sequenceAnalysis = {
+              id: pair.merged.id || syntax.id,
+              text: syntax.text,
+              sentenceIds: syntax.sentences.map(sentence => sentence.id),
+              syntax: [syntaxEntry],
+              semantics: [semantic],
+              synSemMapping: { [group.syntaxId]: [semantic.semId] },
+            };
+            pair.sequenceStructure = solution.structureJson;
+          });
+        }),
+        catchError(error => {
+          console.error('[DocumentBuilder] syntax merge failed; its pairs keep their semantics only', {
+            syntaxId: group.syntaxId, error,
+          });
+          return of(undefined);
+        }),
+      )),
       toArray(),
-      map(groupResults => groupResults.flat())
+      map(() => pairs),
     );
+  }
+
+  /** The sentences and the one parse of each that a pair's reading was derived from, and
+   *  the merged syntax id they make. */
+  private syntaxPairingOf(
+    pair: SequenceMergePair,
+    knownSentences: SentenceAnalysis[],
+  ): { syntaxId: string; sentences: SentenceAnalysis[]; parses: SyntacticAnalysis[] } | { failure: string; missingSentenceIds?: string[] } {
+    if (!pair.currentElement) {
+      return { failure: 'the current reading belongs to no known sentence' };
+    }
+    const current = this.parseOfReading(pair.currentElement, pair.currentSemantic);
+    if (!current) {
+      return {
+        failure: `reading ${pair.currentSemantic?.semId} names syntax ${pair.currentSemantic?.syntacticOrigin}, `
+          + `which is none of ${pair.currentElement.id}'s parses (${pair.currentElement.syntax.map(syntax => syntax.synId).join(', ')})`,
+      };
+    }
+    const previous = this.previousParses(pair.previousElement, pair.previousSemantic, knownSentences);
+    if ('failure' in previous) {
+      return previous;
+    }
+    const parses = [...previous.parses, current];
+    const structureless = parses.find(parse => !parse.structure);
+    if (structureless) {
+      return { failure: `parse ${structureless.synId} has no structure to supply` };
+    }
+    return {
+      syntaxId: compositeAnalysisId(parses.map(parse => parse.synId)),
+      sentences: [...previous.sentences, pair.currentElement],
+      parses,
+    };
+  }
+
+  /** The parse a sentence's reading came from: the one its `syntacticOrigin` names, or the
+   *  sentence's only parse. Several parses and no match is not guessed. */
+  private parseOfReading(sentence: SentenceAnalysis, semantic?: SemanticAnalysis): SyntacticAnalysis | undefined {
+    return sentence.syntax.find(syntax => syntax.synId === semantic?.syntacticOrigin)
+      ?? (sentence.syntax.length === 1 ? sentence.syntax[0] : undefined);
+  }
+
+  /** The previous element's sentences, each with the parse the previous reading came from.
+   *  A Sequence's syntax id is the composite of its sentences' parse ids, in order. */
+  private previousParses(
+    element: SentenceAnalysis | SequenceAnalysis,
+    semantic: SemanticAnalysis | undefined,
+    knownSentences: SentenceAnalysis[],
+  ): { sentences: SentenceAnalysis[]; parses: SyntacticAnalysis[] } | { failure: string; missingSentenceIds?: string[] } {
+    if (!('sentenceIds' in element)) {
+      const parse = this.parseOfReading(element, semantic);
+      return parse
+        ? { sentences: [element], parses: [parse] }
+        : { failure: `previous reading ${semantic?.semId} names syntax ${semantic?.syntacticOrigin}, which is none of ${element.id}'s parses` };
+    }
+    const sentences = element.sentenceIds
+      .map(id => knownSentences.find(candidate => candidate.id === id))
+      .filter((sentence): sentence is SentenceAnalysis => !!sentence);
+    if (sentences.length !== element.sentenceIds.length) {
+      const missingSentenceIds = element.sentenceIds.filter(id => !sentences.some(sentence => sentence.id === id));
+      return { failure: `${element.id}'s sentences are not all registered`, missingSentenceIds };
+    }
+    const syntaxId = semantic?.syntacticOrigin
+      ?? (element.syntax.length === 1 ? element.syntax[0].synId : undefined);
+    const parseIds = syntaxId?.split('+') ?? [];
+    if (parseIds.length !== sentences.length) {
+      return {
+        failure: `syntax ${syntaxId} of ${element.id} does not name one parse for each of its `
+          + `${sentences.length} sentences`,
+      };
+    }
+    const parses: SyntacticAnalysis[] = [];
+    for (let index = 0; index < parseIds.length; index++) {
+      const parse = sentences[index].syntax.find(syntax => syntax.synId === parseIds[index]);
+      if (!parse) {
+        return { failure: `${element.id}'s syntax ${syntaxId} names parse ${parseIds[index]}, which ${sentences[index].id} does not have` };
+      }
+      parses.push(parse);
+    }
+    return { sentences, parses };
   }
 
   /** One SequenceAnalysis per distinct sentence-pair id, unioning every syntax variant
@@ -1141,10 +1219,6 @@ export class DocumentBuilderService {
       pair.merged.sequenceAnalysis = analysis;
     });
     return Array.from(bySentencePair.values());
-  }
-
-  private syntaxIds(element?: SentenceAnalysis | SequenceAnalysis): string {
-    return element?.syntax.map(syntax => syntax.synId).join('+') ?? 'unknown';
   }
 
   /** Mirrors GswbVisComponent's own `semanticAnalysisFor` fallback shape, but scoped to

@@ -197,6 +197,35 @@ describe('GlueInterfaceComponent', () => {
       .toEqual(['drs-1', 'drs-2']);
   });
 
+  it('merges each sequence reading with the structure of its own parse pairing, not the sequence\'s first', () => {
+    // "every person saw the cat" + "it was cute": the expletive and the pronoun parse give
+    // two syntax entries; the pronoun reading's SRC ids only line up with its own.
+    component.liger = { structureJson: { id: 'syntax-graph' } } as any;
+    const sequence: SequenceAnalysis = {
+      id: 'sentence-1+sentence-2',
+      text: 'every person saw the cat\nit was cute',
+      sentenceIds: ['sentence-1', 'sentence-2'],
+      syntax: [
+        { synId: 'S0+S1', structure: { id: 'expletive-pairing' } as any, graph: { graphElements: [] } },
+        { synId: 'S0+S2', structure: { id: 'pronoun-pairing' } as any, graph: { graphElements: [] } },
+      ],
+      semantics: [
+        { syntacticOrigin: 'S0+S1', semId: 'sem-expletive', semString: 'E', semType: 'lfgxdrt' },
+        { syntacticOrigin: 'S0+S2', semId: 'sem-pronoun', semString: 'P', semType: 'lfgxdrt' },
+      ],
+      synSemMapping: { 'S0+S1': ['sem-expletive'], 'S0+S2': ['sem-pronoun'] },
+    };
+    const pronoun = { id: 'sem-pronoun', semantic: 'P', graph: { id: 'drs-pronoun' }, sequenceAnalysis: sequence };
+    component.glue = {
+      semvis: { index: 0, items: [pronoun], allItems: [pronoun], selectedScopeIds: [], selectedMcIds: [] },
+      gswbPreferences: { gswbPreferences: { betaReduce: true } },
+    } as any;
+
+    component.handlePostProcessing('inline');
+
+    expect(dataServiceMock.ligerMergeStructure.calls.mostRecent().args[0].syntax.id).toBe('pronoun-pairing');
+  });
+
   it('merges only discriminant-selected semantic solutions', () => {
     component.liger = {
       structureJson: { id: 'syntax-graph' }

@@ -487,11 +487,26 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  /** The structure of the syntax THIS reading came from. A sequence's analysis holds every
+   *  parse pairing of its sentences, and the reading's SRC ids only line up with the
+   *  SYN-IDs of its own: joined against another pairing's structure, post-processing links
+   *  referents to the wrong words ("it was cute": the pronoun's referent to "be"). */
   private syntaxForSolution(solution: GswbSolution): LigerStructure | null {
-    return solution.sequenceAnalysis?.syntax?.[0]?.structure
-      ?? solution.sentenceAnalysis?.syntax?.[0]?.structure
-      ?? this.liger?.structureJson
-      ?? null;
+    const analysis = solution.sequenceAnalysis ?? solution.sentenceAnalysis;
+    if (!analysis) {
+      return this.liger?.structureJson ?? null;
+    }
+    const semId = solution.semanticAnalysis?.semId ?? solution.id;
+    const origin = analysis.semantics.find(semantic => semantic.semId === semId)?.syntacticOrigin;
+    const own = analysis.syntax.find(syntax => syntax.synId === origin)
+      ?? (analysis.syntax.length === 1 ? analysis.syntax[0] : undefined);
+    if (!own) {
+      console.error('[Analysis] cannot tell which syntax a reading came from; not guessing one', {
+        solutionId: solution.id, semId, origin, syntaxIds: analysis.syntax.map(syntax => syntax.synId),
+      });
+      return null;
+    }
+    return own.structure;
   }
 
   selectPostProcessingResult(index: number, resetDownstream = true): void {
