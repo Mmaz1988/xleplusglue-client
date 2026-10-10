@@ -280,6 +280,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  narrows a run, it does not gate one. Deliberately NOT persisted: it describes the next
    *  run, not the session, and a stored selection would silently narrow a reloaded one. */
   private readonly selectedNliItemIds = new Set<string>();
+  /** Which sentences "Parse" should reparse. Empty means a parse of the whole testsuite.
+   *  Not persisted, for the same reason as the NLI item selection. */
+  private readonly selectedParseSentenceIds = new Set<string>();
   /** The in-flight NLI preparation chain, so abort and teardown can stop it. */
   private nliPreparationSubscription: Subscription | null = null;
   private vampireSummaryRequestInFlight = false;
@@ -331,7 +334,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     Array.from({ length: 3 }, () => [])
   );
 
-  /** Whether "Parse all" continues into Vampire on its own. Off means parsing stops when
+  /** Whether "Parse" continues into Vampire on its own. Off means parsing stops when
    *  parsing is done, and inference is a separate act -- the "Run inference" button.
    *  Persisted with the session, and true by default so an existing session
    *  behaves as it always did. */
@@ -697,6 +700,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // A parse can replace the items outright (write mode). Anything selected that no longer
     // exists has to go, or the next run is narrowed to items nobody can see.
     this.pruneNliItemSelection();
+    this.pruneParseSentenceSelection();
   }
 
   private logBackendPayload(stage: string, mode: 'write' | 'append', payload: unknown): void {
@@ -1172,6 +1176,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // session silently narrowed the next session's run to the two items that happened to
     // share their ids, and the other fourteen came back "Never attempted". 2026-09-08.
     this.selectedNliItemIds.clear();
+    this.selectedParseSentenceIds.clear();
     this.clearVampireProgressIndicator();
     this.pendingVampireFinalSnapshot = null;
     this.vampireSummaryRequestInFlight = false;
@@ -1669,8 +1674,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         successFullKeys.push(key);
       }
 
-      if (!this.session.selectedSolutionIdsBySentence[key] || this.session.selectedSolutionIdsBySentence[key].length === 0) {
-        this.session.selectedSolutionIdsBySentence[key] = sols.map(s => s.id);
+      // A selection naming a solution the sentence no longer has (it was reparsed) is stale.
+      const solutionIds = sols.map(s => s.id);
+      const selected = this.session.selectedSolutionIdsBySentence[key];
+      if (!selected?.length || !selected.every(id => solutionIds.includes(id))) {
+        this.session.selectedSolutionIdsBySentence[key] = solutionIds;
       }
 
       const regressionTestResult: RegressionParseResult = {
@@ -2141,6 +2149,66 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
+  get selectedParseSentenceCount(): number {
+    return this.selectedParseSentenceIds.size;
+  }
+
+  get allParseSentencesSelected(): boolean {
+    return this.regressionTestResults.length > 0
+      && this.regressionTestResults.every(result => this.selectedParseSentenceIds.has(result.sentence_id));
+  }
+
+  isParseSentenceSelected(id: string): boolean {
+    return this.selectedParseSentenceIds.has(id);
+  }
+
+  setParseSentenceSelected(id: string, selected: boolean): void {
+    if (selected) {
+      this.selectedParseSentenceIds.add(id);
+    } else {
+      this.selectedParseSentenceIds.delete(id);
+    }
+  }
+
+  toggleAllParseSentences(): void {
+    if (this.allParseSentencesSelected) {
+      this.selectedParseSentenceIds.clear();
+      return;
+    }
+    this.regressionTestResults.forEach(result => this.selectedParseSentenceIds.add(result.sentence_id));
+  }
+
+  private pruneParseSentenceSelection(): void {
+    for (const id of [...this.selectedParseSentenceIds]) {
+      if (!(id in (this.sentenceMap ?? {}))) this.selectedParseSentenceIds.delete(id);
+    }
+  }
+
+  /** "Parse": the ticked sentences of the parsing report, or the whole testsuite when none
+   *  is ticked (always the case before a first parse, when the report is empty). */
+  parse(testfile: string): void {
+    this.pruneParseSentenceSelection();
+    if (this.selectedParseSentenceIds.size) {
+      this.batchParse(testfile, new Set(this.selectedParseSentenceIds));
+    } else {
+      this.batchParse(testfile);
+    }
+  }
+
+  /** The sentences a reparse of `selected` has to parse: a discourse item (LFGxDRT, more
+   *  than one sentence) is derived in one sequence, so a sentence of one brings the item's
+   *  other sentences along -- parsed alone, it would be deduced out of its discourse. */
+  private sentencesToReparse(selected: Set<string>): string[] {
+    const ids = new Set(selected);
+    if (Number(this.gswbPreferences?.gswbPreferences?.outputstyle) === 5) {
+      for (const item of this.regressionTestItems ?? []) {
+        const sentenceIds: string[] = [...(item?.premises ?? []), ...(item?.conclusion ?? [])];
+        if (sentenceIds.length >= 2 && sentenceIds.some(id => ids.has(id))) sentenceIds.forEach(id => ids.add(id));
+      }
+    }
+    return Object.keys(this.sentenceMap ?? {}).filter(id => ids.has(id));
+  }
+
   /** Drop ids that no longer name an item. A selection that outlives the items it named
    *  would silently narrow the next run to nothing. */
   private pruneNliItemSelection(): void {
@@ -2247,14 +2315,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   /** Parses the testsuite with the session's rule set: the rules a session stores are the
-   *  rules its runs used. */
-  batchParse(sentences: string) {
+   *  rules its runs used.
+   *
+   *  With `reparse`, only those sentences are parsed again (with the rest of their discourse
+   *  items), as they stand in the session, and merged over the stored parse the way an
+   *  append parse is: the testsuite text is not reread, nothing else is reset, and the NLI
+   *  items that use them are selected for the next inference run. */
+  batchParse(sentences: string, reparse?: Set<string>) {
     if (this.runLocked) return;
     const rules = this.session.rulesText;
-    if (this.testsuiteUpdateMode === 'write' && this.hasExistingRegressionSessionData()) {
+    const partial = !!reparse?.size;
+    if (!partial && this.testsuiteUpdateMode === 'write' && this.hasExistingRegressionSessionData()) {
       const confirmed = this.confirmWriteModeOverwrite();
       if (!confirmed) {
-        this.displayMessage('Parse all cancelled.', 'blue');
+        this.displayMessage('Parse cancelled.', 'blue');
         return;
       }
     }
@@ -2267,13 +2341,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const baseSnapshot = this.captureParsedRegressionSnapshot();
 
     this.writeSnapshot = baseSnapshot;
-    this.appendSnapshot = this.testsuiteUpdateMode === 'append'
+    this.appendSnapshot = this.testsuiteUpdateMode === 'append' || partial
       ? this.cloneParsedRegressionSnapshot(this.writeSnapshot)
       : null;
     this.currentVampireRunKind = 'initial';
 
     const baseSentenceKeys = new Set(Object.keys(baseSnapshot.sentenceMap ?? {}));
-    this.session.testsuiteText = sentences;
+    if (!partial) this.session.testsuiteText = sentences;
     this.syncSessionStateFromUi();
 
     // A new parse starts a new report; in write mode its inference is gone with its results.
@@ -2285,12 +2359,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     };
     this.session.report = {
       parse: parseReport,
-      inference: this.testsuiteUpdateMode === 'write' ? null : this.session.report?.inference ?? null,
+      inference: this.testsuiteUpdateMode === 'write' && !partial ? null : this.session.report?.inference ?? null,
     };
 
     const gswbRunToken = ++this.gswbRunToken;
 
-    if (this.testsuiteUpdateMode === 'write') {
+    if (this.testsuiteUpdateMode === 'write' && !partial) {
       this.regressionTestResults = [];
       this.regressionTestItems = [];
       this.inferenceResults = [];
@@ -2300,7 +2374,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.updateConfusionMatrixView(Array.from({ length: 3 }, () => Array(3).fill(0)));
     }
 
-    if (this.testsuiteUpdateMode === 'write') {
+    if (this.testsuiteUpdateMode === 'write' && !partial) {
       this.session.selectedSolutionIdsBySentence = {};
       this.session.lastGswbOutputs = null;
       this.session.lastAnnotations = null;
@@ -2328,22 +2402,36 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.gswbPreferences.onSubmit();
 
-    this.parse_testfile(sentences);
+    const reparseIds = partial ? this.sentencesToReparse(reparse!) : [];
+    if (partial) {
+      // Their readings are new: a disambiguation of the old ones names solutions that are gone.
+      for (const id of reparseIds) {
+        delete this.session.selectedSolutionIdsBySentence[id];
+        delete this.session.selectedScopeIdsBySentence[id];
+        delete this.session.selectedMcIdsBySentence[id];
+      }
+    } else {
+      this.parse_testfile(sentences);
+    }
 
-    this.displayMessage("Sending testsuite to LiGER for parsing ...", "blue");
+    this.displayMessage(partial
+      ? `Sending ${reparseIds.length} sentence(s) to LiGER for reparsing ...`
+      : "Sending testsuite to LiGER for parsing ...", "blue");
 
     const appendSentences = Object.fromEntries(
       Object.entries(this.sentenceMap ?? {}).filter(([key]) => !baseSentenceKeys.has(key))
     );
     const ligerMultipleRequest = {
-      sentences: this.testsuiteUpdateMode === 'append' ? appendSentences : this.sentenceMap,
+      sentences: partial
+        ? Object.fromEntries(reparseIds.map(id => [id, this.sentenceMap[id]]))
+        : this.testsuiteUpdateMode === 'append' ? appendSentences : this.sentenceMap,
       ruleString: rules,
     };
     this.logBackendPayload('LiGER batch annotate request', this.testsuiteUpdateMode, ligerMultipleRequest);
 
     let sequenceItems: SequenceDerivedItem[] = [];
     this.sequenceDerivationFailures = [];
-    if (this.testsuiteUpdateMode === 'write') this.derivedSequenceVariants.clear();
+    if (this.testsuiteUpdateMode === 'write' && !partial) this.derivedSequenceVariants.clear();
     const parsingStartedAt = Date.now();
     this.dataService.ligerBatchAnnotate(ligerMultipleRequest).subscribe(
       data => {
@@ -2386,7 +2474,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
             };
           }
 
-          this.sortedMCmap = sortedMcMap;
+          // A partial parse (append, reparse) keeps the other sentences' constructors.
+          this.sortedMCmap = this.appendSnapshot ? { ...this.sortedMCmap, ...sortedMcMap } : sortedMcMap;
 
           this.gswbMultipleRequest = {
             items,
@@ -2395,8 +2484,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           };
           this.logBackendPayload('GSWB batch deduce request', this.testsuiteUpdateMode, this.gswbMultipleRequest);
 
-          this.session.lastGswbOutputs = null;
-          this.session.lastAnnotations = data.annotations;
+          if (this.appendSnapshot) {
+            // A partial parse (append, reparse) is merged over the stored one: saved
+            // half-way, it must not leave the session with only its own sentences.
+            this.session.lastAnnotations = { ...(this.appendSnapshot.annotations ?? {}), ...data.annotations };
+          } else {
+            this.session.lastGswbOutputs = null;
+            this.session.lastAnnotations = data.annotations;
+          }
           this.saveSessionSnapshot();
         }
 
@@ -2444,12 +2539,24 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.activeGswbRunStartedAt = null;
           this.saveSessionSnapshot();
           this.displayMessage(
-            this.testsuiteUpdateMode === 'append'
+            partial
+              ? `Reparsed ${reparseIds.length} sentence(s).`
+              : this.testsuiteUpdateMode === 'append'
               ? "Append parsing completed successfully."
               : "Batch processing completed successfully.",
             "green"
           );
 
+          if (partial) {
+            // The items over these sentences are what has to be reasoned over again.
+            const reparsed = new Set(reparseIds);
+            this.selectedNliItemIds.clear();
+            for (const item of this.regressionTestItems ?? []) {
+              const sentenceIds: string[] = [...(item?.premises ?? []), ...(item?.conclusion ?? [])];
+              if (sentenceIds.some(id => reparsed.has(id))) this.selectedNliItemIds.add(String(item.id));
+            }
+            this.selectedParseSentenceIds.clear();
+          }
           this.continueAfterParse();
         });
       },
@@ -5023,6 +5130,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       items,
       itemLabels,
       svgSolutions,
+      collapsible: true,
       // Opens on what the run sent to Vampire; the checkbox shows every branch.
       ...(counted ? { filter: { ids: counted, label: 'Only branches sent to Vampire' } } : {}),
     });
@@ -5067,6 +5175,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       subtitle: this.sentenceMap[sid] ?? '',
       ...payload,
       svgSolutions: this.session.gswbPreferences.outputstyle === 5,
+      collapsible: true,
       selectedScopeIds: this.session.selectedScopeIdsBySentence[sid] ?? [],
       selectedMcIds: this.session.selectedMcIdsBySentence[sid] ?? [],
     });

@@ -2503,4 +2503,78 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(dataServiceSpy.callBatchVampire).not.toHaveBeenCalled();
     });
   });
+
+  /** "Parse" with sentences ticked in the parsing report reparses just those. */
+  describe('reparsing selected sentences', () => {
+    const out = (id: string) => ({ solutions: [{ id, semantic: id, solution: id }], log: '', derivation: null, discriminants: [] });
+    let dataService: any;
+    let derive: jasmine.Spy;
+
+    beforeEach(() => {
+      dataService = TestBed.inject(DataService);
+      dataService.ligerBatchAnnotate = jasmine.createSpy('ligerBatchAnnotate').and.callFake((request: any) => of({
+        annotations: Object.fromEntries(Object.keys(request.sentences).map(id => [id, { solutions: [{ id: `new-${id}` }] }])),
+      }));
+      component['gswbPreferences'] = {
+        gswbPreferences: { outputstyle: 5 }, onSubmit: () => {},
+        gswbPreferencesForm: { valueChanges: of([]) }, updateFormFromPreferences: () => {},
+      } as any;
+      component.sentenceMap = { S1: 'A man appeared.', S2: 'He smiled.', S3: 'A dog barked.', S4: 'A dog exists.' };
+      component.regressionTestItems = [
+        { id: 'n1', premises: ['S1'], conclusion: ['S2'], gold_label: '1' },
+        { id: 'n2', premises: ['S3'], conclusion: ['S4'], gold_label: '1' },
+      ];
+      component.session.testsuiteText = 'the stored testsuite';
+      component.session.enableInference = false;
+      component.session.lastAnnotations = { S1: {}, S2: {}, S3: { old: true }, S4: { old: true } } as any;
+      component.session.lastGswbOutputs = { S1: out('old-1'), S2: out('old-2'), S3: out('old-3'), S4: out('old-4') } as any;
+      component.session.selectedSolutionIdsBySentence = { S1: ['old-1'], S3: ['old-3'] };
+      component.session.report = { parse: null, inference: { kept: true } as any };
+      component.regressionTestResults = ['S1', 'S2', 'S3', 'S4'].map(id => ({ sentence_id: id } as any));
+      // Items over two sentences are derived in sequence; this run's derivation is stubbed.
+      spyOn<any>(component, 'sequenceDerivedItems').and.callFake((annotations: any) =>
+        component.regressionTestItems
+          .filter(item => [...item.premises, ...item.conclusion].every((id: string) => id in annotations))
+          .map(item => ({ itemId: item.id, inputs: [] })));
+      derive = spyOn<any>(component, 'deriveItemsInSequence').and.callFake((items: any[]) => of(Object.fromEntries(
+        items.flatMap(item => component.regressionTestItems.find(candidate => candidate.id === item.itemId)!
+          .premises.concat(component.regressionTestItems.find(candidate => candidate.id === item.itemId)!.conclusion))
+          .map((id: string) => [id, out(`new-${id}`)]))));
+    });
+
+    it('parses the ticked sentences with the rest of their discourse item, and keeps the others', () => {
+      const confirm = spyOn<any>(component, 'confirmWriteModeOverwrite');
+      const reread = spyOn<any>(component, 'parse_testfile');
+      component.setParseSentenceSelected('S1', true);
+
+      component.parse('the testsuite as now edited');
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(reread).not.toHaveBeenCalled();
+      expect(Object.keys(dataService.ligerBatchAnnotate.calls.mostRecent().args[0].sentences)).toEqual(['S1', 'S2']);
+      expect(derive.calls.mostRecent().args[0].map((item: any) => item.itemId)).toEqual(['n1']);
+
+      const outputs = component.session.lastGswbOutputs as any;
+      expect(outputs.S1.solutions[0].id).toBe('new-S1');
+      expect(outputs.S2.solutions[0].id).toBe('new-S2');
+      expect(outputs.S3.solutions[0].id).toBe('old-3');
+      expect((component.session.lastAnnotations as any).S3).toEqual({ old: true });
+      // The reparsed sentence's old disambiguation is gone; the other one stays.
+      expect(component.session.selectedSolutionIdsBySentence['S1']).toEqual(['new-S1']);
+      expect(component.session.selectedSolutionIdsBySentence['S3']).toEqual(['old-3']);
+      expect(component.regressionTestResults.map(result => result.sentence_id)).toEqual(['S1', 'S2', 'S3', 'S4']);
+      expect(component.session.testsuiteText).toBe('the stored testsuite');
+      expect(component.session.report!.inference).toEqual({ kept: true } as any);
+      // The items over the reparsed sentences are what "Run inference" runs next.
+      expect(component.selectedNliItemCount).toBe(1);
+      expect(component.isNliItemSelected('n1')).toBeTrue();
+      expect(component.selectedParseSentenceCount).toBe(0);
+    });
+
+    it('parses the whole testsuite when nothing is ticked', () => {
+      const batchParse = spyOn(component, 'batchParse');
+      component.parse('the testsuite');
+      expect(batchParse).toHaveBeenCalledWith('the testsuite');
+    });
+  });
 });

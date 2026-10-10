@@ -192,11 +192,14 @@
   <h1>Run:</h1>
 
 
-<button (click)="batchParse(testfile.getContent())" [disabled]="runLocked">
-  <span *ngIf="!loading">Parse all</span>
+<button (click)="parse(testfile.getContent())" [disabled]="runLocked">
+  <span *ngIf="!loading">Parse</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">{{ preparingInference ? 'Building TPTP checks...' : 'Loading...' }}</span>
 </button>
+  <span *ngIf="selectedParseSentenceCount > 0" class="run-inference-scope">
+    {{ selectedParseSentenceCount }} sentence(s) selected — only those are reparsed, with the other sentences of their discourse items.
+  </span>
   <button class="button beta" (click)="batchMultistage(testfile.getContent())" [disabled]="runLocked">
     <span *ngIf="!loading">Multistage</span>
     <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
@@ -290,15 +293,21 @@
       <h3>Parsing report ({{ parseResultCount }} of {{ expectedParseCount }}):</h3>
       <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
         <div>
-          <!-- An empty line the height of the inference report's "Select all" bar, so both
-               lists start at the same height. -->
-          <div *ngIf="inferenceReportRows.length" class="report-selection-bar report-selection-spacer"
-               aria-hidden="true">
-            <button type="button" tabindex="-1">Select all</button>
+          <div *ngIf="regressionTestResults.length" class="report-selection-bar">
+            <button type="button" (click)="toggleAllParseSentences()" [disabled]="runLocked">
+              {{ allParseSentencesSelected ? 'Select none' : 'Select all' }}
+            </button>
+            <span class="report-selection-hint">
+              Tick the sentences "Parse" should reparse; none ticked parses the whole testsuite.
+            </span>
           </div>
           <div class="results-list">
              <div class="result-container"
                  *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId">
+              <label class="report-row-select" title="Reparse this sentence with the next Parse">
+                <input type="checkbox" [checked]="isParseSentenceSelected(element.sentence_id)" [disabled]="runLocked"
+                       (change)="setParseSentenceSelected(element.sentence_id, $any($event.target).checked)">
+              </label>
               <app-test-result
                 [data]="element"
                 [displayIndex]="i + 1"
