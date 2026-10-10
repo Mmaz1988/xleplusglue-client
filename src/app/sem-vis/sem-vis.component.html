@@ -17,6 +17,18 @@
       {{ solutionToggleLabel }}
     </button>
 
+    <!-- Collapse, in the window like the solution tags above: first the explicit
+         collapse, then a toggle between each item and its collapsed DRS. -->
+    <button
+      *ngIf="!solutionActionLabel && !solutionToggleLabel && (canCollapse || canToggleCollapsed || collapseLoading)"
+      type="button"
+      class="solution-action-tag"
+      [disabled]="collapseLoading"
+      title="Accommodate presuppositions and resolve anaphora (GSWB /collapse_anaphora)"
+      (click)="canToggleCollapsed ? toggleCollapsed() : collapseAll()">
+      {{ collapseLoading ? 'Collapsing…' : canToggleCollapsed ? (showCollapsed ? 'Show PCDRS' : 'Show collapsed') : 'Collapse' }}
+    </button>
+
     <!-- Your existing controls -->
     <div class="controls" *ngIf="items?.length; else noItems">
       <button type="button" (click)="prev()">◀ Prev</button>
@@ -28,17 +40,7 @@
 
       <button type="button" (click)="next()">Next ▶</button>
 
-      <span class="collapse-controls" *ngIf="canCollapse || canToggleCollapsed || collapseLoading">
-        <button type="button" *ngIf="canCollapse || collapseLoading" (click)="collapseAll()" [disabled]="collapseLoading"
-                title="Accommodate presuppositions and resolve anaphora (GSWB /collapse_anaphora)">
-          {{ collapseLoading ? 'Collapsing…' : 'Collapse' }}
-        </button>
-        <label *ngIf="canToggleCollapsed">
-          <input type="checkbox" [checked]="showCollapsed" (change)="toggleCollapsed()">
-          Collapsed
-        </label>
-        <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
-      </span>
+      <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
     </div>
 
     <ng-template #noItems>

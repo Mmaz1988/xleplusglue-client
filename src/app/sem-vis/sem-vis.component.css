@@ -168,15 +168,9 @@ button.chip.selected.current-hit{
   min-height: var(--editor-height);
 }
 
-/* Collapse / collapsed-view toggle, next to the pager. */
-.collapse-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: 0.75rem;
-}
-
+/* Why the shown item has no collapsed DRS, next to the pager. */
 .collapse-note {
+  margin-left: 0.75rem;
   color: #8a5a00;
   font-size: 0.85rem;
 }

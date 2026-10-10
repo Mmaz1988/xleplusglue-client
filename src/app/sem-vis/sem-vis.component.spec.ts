@@ -124,6 +124,25 @@ describe('SemVisComponent', () => {
       expect(component.collapseNote).toBe('');
     });
 
+    it('offers one button in the window: Collapse, then a toggle between the two views', () => {
+      component.items = [pcdrs('b1', '([x1],[ant(x1)])')];
+      const tag = () => fixture.nativeElement.querySelector('.solution-action-tag') as HTMLButtonElement;
+      fixture.detectChanges();
+      expect(tag().textContent!.trim()).toBe('Collapse');
+
+      tag().click();
+      fixture.detectChanges();
+      expect(shown()).toBe('<svg>c-b1</svg>');
+      expect(tag().textContent!.trim()).toBe('Show PCDRS');
+
+      tag().click();
+      fixture.detectChanges();
+      expect(shown()).toBe('<svg>b1</svg>');
+      expect(tag().textContent!.trim()).toBe('Show collapsed');
+      expect(dataService.gswbCollapseAnaphora).toHaveBeenCalledTimes(1);
+      expect(fixture.nativeElement.querySelector('.controls input[type=checkbox]')).toBeNull();
+    });
+
     it('shows the collapsed text DRS when the items are text', () => {
       const editor = { updateContent: jasmine.createSpy('updateContent') };
       component.sem = editor as any;
