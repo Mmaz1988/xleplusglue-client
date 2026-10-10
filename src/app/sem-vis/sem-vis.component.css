@@ -167,3 +167,16 @@ button.chip.selected.current-hit{
   border-radius: var(--text-box-radius);
   min-height: var(--editor-height);
 }
+
+/* Collapse / collapsed-view toggle, next to the pager. */
+.collapse-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.75rem;
+}
+
+.collapse-note {
+  color: #8a5a00;
+  font-size: 0.85rem;
+}

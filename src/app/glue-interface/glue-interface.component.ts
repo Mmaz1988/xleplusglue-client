@@ -8,7 +8,6 @@ import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRankerSelection, AnaphoraRanking, D
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
-import { SemVisComponent } from '../sem-vis/sem-vis.component';
 import { APP_DEFAULTS } from '../app-defaults';
 import { anaphoraRankerSelection, anaphoraRankingCaption, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
 import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
@@ -39,15 +38,12 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   @ViewChild('postProcessingSection') postProcessingSection?: ElementRef<HTMLElement>;
   @ViewChild('pcdrsResults') pcdrsResults?: ElementRef<HTMLElement>;
   @ViewChild(GraphInspectorComponent) inlineGraphInspector?: GraphInspectorComponent;
-  @ViewChild('pcdrsSemvis') pcdrsSemvis?: SemVisComponent;
 
   isFirstDivMinimized = false;
   isSecondDivMinimized = false;
   showInlinePostProcessing = false;
   postProcessingLoading = false;
   pcdrsLoading = false;
-  collapseAnaphoraLoading = false;
-  showCollapsedAnaphora = false;
   mergedStructureContent = '';
   mergedStructureFileName = 'merged-graph.json';
   mergedGraphElements: any[] = [];
@@ -57,7 +53,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   rulesApplicationLoading = false;
   pcdrsSolutions: GswbSolution[] = [];
   pcdrsDisplaySolutions: GswbSolution[] = [];
-  collapsedPcdrsById: Record<string, GswbSolution> = {};
   /** Captions for pcdrsDisplaySolutions, index-aligned: rank, score and each binding's cosine. */
   pcdrsDisplayLabels: string[] = [];
   /** The discourse update the shown PCDRS solutions belong to. */
@@ -242,8 +237,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.pcdrsDisplayLabels = [];
     this.pcdrsUpdateId = null;
     this.anaphoraRankingStatus = {};
-    this.collapsedPcdrsById = {};
-    this.showCollapsedAnaphora = false;
   }
 
   private snapshotSequenceAnalysis(analysis: SequenceAnalysis): SequenceAnalysis {
@@ -476,8 +469,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.pcdrsDisplaySolutions = [];
       this.pcdrsDisplayLabels = [];
       this.pcdrsUpdateId = null;
-      this.collapsedPcdrsById = {};
-      this.showCollapsedAnaphora = false;
       this.showInlinePostProcessing = true;
       setTimeout(() => this.postProcessingSection?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
     }, () => {
@@ -538,8 +529,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.pcdrsDisplaySolutions = [];
       this.pcdrsDisplayLabels = [];
       this.pcdrsUpdateId = null;
-      this.collapsedPcdrsById = {};
-      this.showCollapsedAnaphora = false;
     }
   }
 
@@ -718,8 +707,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       });
       this.pcdrsSolutions = responses.flatMap(response => response?.solutions ?? []);
       this.pcdrsUpdateId = null;
-      this.collapsedPcdrsById = {};
-      this.showCollapsedAnaphora = false;
 
       const sourceElement = candidates
         .map(candidate => candidate.result.semanticSolution.sequenceAnalysis ?? candidate.result.semanticSolution.sentenceAnalysis)
@@ -792,73 +779,6 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       && this.postProcessingResults.every(result => result.rulesApplied);
   }
 
-  collapseAllAnaphora(): void {
-    const candidates = this.pcdrsSolutions.filter(solution =>
-      !!solution.semantic && !this.collapsedPcdrsById[solution.id]);
-    if (!candidates.length || this.collapseAnaphoraLoading) {
-      return;
-    }
-
-    this.collapseAnaphoraLoading = true;
-    forkJoin(candidates.map(solution => this.dataService.gswbCollapseAnaphora({
-      semantic: solution.semantic as string,
-      parentSolutionId: solution.id,
-    }))).subscribe(responses => {
-      this.collapseAnaphoraLoading = false;
-      responses.forEach((response, index) => {
-        if (response) {
-          this.collapsedPcdrsById[candidates[index].id] = response;
-        }
-      });
-
-      const updatesById = new Map<string, DiscourseUpdate>();
-      responses.forEach((response, index) => {
-        if (!response) return;
-        const discourseId = candidates[index].id;
-        const update = updatesById.get(this.discourseUpdateContaining(discourseId)?.id ?? '')
-          ?? this.discourseUpdateContaining(discourseId);
-        if (!update) return;
-        const discourse = update.discourse.map(entry => entry.id === discourseId
-          ? {
-              ...entry,
-              drsString: response.semantic ?? entry.drsString,
-              drsGraph: response.graph ?? entry.drsGraph,
-              svg: response.solution ?? entry.svg,
-              anaphoraMapping: { relations: response.anaphoraRelations ?? entry.anaphoraMapping.relations },
-              collapsed: true,
-            }
-          : entry);
-        updatesById.set(update.id, { ...update, discourse });
-      });
-      updatesById.forEach(update => this.upsertDiscourseUpdate(update));
-
-      if (responses.length) {
-        this.showCollapsedAnaphora = true;
-      }
-      this.refreshPcdrsDisplay();
-    }, () => {
-      this.collapseAnaphoraLoading = false;
-    });
-  }
-
-  canCollapseAllAnaphora(): boolean {
-    return this.pcdrsSolutions.some(solution =>
-      !!solution.semantic && !this.collapsedPcdrsById[solution.id]);
-  }
-
-  canToggleCollapsedAnaphora(): boolean {
-    const selected = this.selectedPcdrsSolution();
-    return !!selected && !!this.collapsedPcdrsById[selected.id];
-  }
-
-  toggleCollapsedAnaphora(): void {
-    if (!this.canToggleCollapsedAnaphora()) {
-      return;
-    }
-    this.showCollapsedAnaphora = !this.showCollapsedAnaphora;
-    this.refreshPcdrsDisplay();
-  }
-
   /** Why post-processing is blocked even with a semantic solution: pragmatics rules are
    *  what post-processing runs, and the loaded rule set may list none (a single rule file
    *  never does). Null while nothing blocks it. */
@@ -911,32 +831,13 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       || this.mergedStructureContent.trim();
   }
 
-  private selectedPcdrsSolution(): GswbSolution | undefined {
-    const selectedIndex = this.pcdrsSemvis?.index ?? 0;
-    const displayed = this.pcdrsSemvis?.items?.[selectedIndex];
-    if (!displayed) {
-      return undefined;
-    }
-    const original = this.pcdrsSolutions.find(solution => solution.id === displayed.id);
-    if (original) {
-      return original;
-    }
-    const collapsedEntry = Object.entries(this.collapsedPcdrsById)
-      .find(([, collapsed]) => collapsed.id === displayed.id);
-    return collapsedEntry
-      ? this.pcdrsSolutions.find(solution => solution.id === collapsedEntry[0])
-      : undefined;
-  }
-
   private refreshPcdrsDisplay(): void {
     const update = this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId) : undefined;
     const ordered = this.pcdrsGenerationOrder
       ? this.pcdrsSolutions
       : orderByAnaphoraRanking(this.pcdrsSolutions, [update]);
-    this.pcdrsDisplaySolutions = ordered.map(solution =>
-      this.showCollapsedAnaphora && this.collapsedPcdrsById[solution.id]
-        ? this.collapsedPcdrsById[solution.id]
-        : solution);
+    // Collapsing is the sem-vis's own view of these items (Collapse, then a toggle).
+    this.pcdrsDisplaySolutions = ordered;
     this.pcdrsDisplayLabels = ordered.map(solution => update ? anaphoraRankingCaption(update, solution.id) : '');
   }
 

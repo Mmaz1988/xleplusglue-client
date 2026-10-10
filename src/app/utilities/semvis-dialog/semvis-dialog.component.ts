@@ -41,6 +41,8 @@ export class SemvisDialogComponent {
     subtitle?: string;
     /** When given, the dialog opens showing only these items, with a checkbox to show all. */
     filter?: { ids: string[]; label: string };
+    /** Offers the sem-vis's Collapse for LFGxDRT items with presuppositions or anaphora. */
+    collapsible?: boolean;
   }): void {
     this.activeSentenceId = payload.sentenceId;
     this.title = payload.title ?? 'Solutions';
@@ -78,6 +80,7 @@ export class SemvisDialogComponent {
         this.semVis.setDiscriminants(discriminants);
         this.semVis.meaningConstructors = meaningConstructors;
         this.semVis.svgSolutions = svgSolutions;
+        this.semVis.collapsible = Boolean(payload.collapsible);
         this.semVis.itemLabels = payload.itemLabels ?? [];
         this.semVis.setItems(items, startIndex);
 

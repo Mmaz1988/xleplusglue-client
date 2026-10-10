@@ -859,7 +859,8 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
           ? `Vampire: ${[...counts].map(([outcome, count]) => `${outcome} ×${count}`).join(', ')}`
           : topK && sentIds.size ? `not sent to Vampire (top ${topK.k} mapping${topK.k === 1 ? '' : 's'} per reading)` : 'no reasoning over this branch';
 
-        solutions.push({ id: branch.id, solution: branch.drsString } as GswbSolution);
+        // `semantic` is what the dialog's Collapse sends to GSWB: the PCDRS with its A:/P:.
+        solutions.push({ id: branch.id, solution: branch.drsString, semantic: branch.drsString } as GswbSolution);
         labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].join(' · '));
         render.push({
           id: branch.id,

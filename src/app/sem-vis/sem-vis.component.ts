@@ -1,7 +1,13 @@
-import {ChangeDetectorRef, Component, ViewChild, AfterViewInit, Output, Input, EventEmitter} from '@angular/core';
+import {ChangeDetectorRef, Component, ViewChild, AfterViewInit, Output, Input, EventEmitter, Injector} from '@angular/core';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
+import {catchError, concatMap, from, of, toArray} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
+import { DataService } from '../data.service';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
+
+/** What /collapse_anaphora can resolve: an LFGxDRT expression with a presupposition box, an
+ *  anaphor marker or an A:/P: mapping. Anything else has nothing to collapse. */
+const COLLAPSIBLE_DRS = /\bp\(\(|\bant\(|\bA:\[|\bP:\[/;
 
 type DiscStateBucket = 0 | 1 | 2; // 0=selected, 1=active, 2=inactive
 type DiscView = GswbDiscriminant & { _order: number; _stateBucket: DiscStateBucket };
@@ -25,6 +31,12 @@ export class SemVisComponent implements AfterViewInit {
   @Input() solutionToggleLabel: string | null = null;
   @Input() solutionToggleDisabled = false;
   @Output() solutionToggle = new EventEmitter<void>();
+
+  /** Offers "Collapse" for LFGxDRT items with presuppositions or anaphora (a PCDRS, or a
+   *  reading with p-boxes): GSWB's /collapse_anaphora, run on request for every such item,
+   *  after which the view toggles between each item and its collapsed DRS. View only: the
+   *  items, and anything their owner stores, stay as they are. */
+  @Input() collapsible = false;
 
   @Input()
   set items(value: GswbSolution[]) {
@@ -80,10 +92,95 @@ export class SemVisComponent implements AfterViewInit {
   scope_rows: DiscRow[] = [];
   mc_rows: DiscRow[] = [];
 
-  constructor(private sanitizer: DomSanitizer, private changeDetector: ChangeDetectorRef) {}
+  // ---- collapsed view ----
+  /** Collapsed DRS per item semantic: an id names a branch only within one item set. */
+  private collapsedBySemantic = new Map<string, GswbSolution>();
+  /** Semantics that GSWB could not collapse, with the reason. */
+  private collapseErrors = new Map<string, string>();
+  showCollapsed = false;
+  collapseLoading = false;
+
+  constructor(private sanitizer: DomSanitizer, private changeDetector: ChangeDetectorRef,
+              private injector?: Injector) {}
+
+  private isCollapsibleItem(item: GswbSolution | undefined): boolean {
+    return typeof item?.semantic === 'string' && COLLAPSIBLE_DRS.test(item.semantic);
+  }
+
+  /** The button: shown while some item could be collapsed and is not yet. */
+  get canCollapse(): boolean {
+    return this.collapsible && this.allItems.some(item =>
+      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(item.semantic!));
+  }
+
+  /** The toggle: shown once some item has a collapsed DRS. */
+  get canToggleCollapsed(): boolean {
+    return this.collapsible && this.allItems.some(item => !!this.collapsedFor(item));
+  }
+
+  private collapsedFor(item: GswbSolution | undefined): GswbSolution | undefined {
+    return item?.semantic ? this.collapsedBySemantic.get(item.semantic) : undefined;
+  }
+
+  /** Why the shown item is not collapsed while the collapsed view is on; '' otherwise. */
+  get collapseNote(): string {
+    if (!this.showCollapsed) return '';
+    const current = this.items[this.index];
+    if (!current || this.collapsedFor(current)) return '';
+    if (!this.isCollapsibleItem(current)) return 'nothing to collapse';
+    const error = current.semantic ? this.collapseErrors.get(current.semantic) : undefined;
+    return error ? `not collapsed: ${error}` : 'not collapsed';
+  }
+
+  /** Collapses every collapsible item that has no collapsed DRS yet, one request after
+   *  another, then shows the collapsed view. */
+  collapseAll(): void {
+    const pending = this.allItems.filter(item =>
+      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(item.semantic!));
+    if (!pending.length || this.collapseLoading || !this.injector) return;
+    const dataService = this.injector.get(DataService);
+    const items = this.allItems;
+    this.collapseLoading = true;
+    from(pending).pipe(
+      concatMap(item => dataService.gswbCollapseAnaphora({
+        semantic: item.semantic!, parentSolutionId: item.id,
+      }).pipe(catchError(error => {
+        this.collapseErrors.set(item.semantic!, error?.error?.message ?? error?.message ?? 'GSWB error');
+        return of(null);
+      }))),
+      toArray(),
+    ).subscribe(responses => {
+      this.collapseLoading = false;
+      // A new item set arrived meanwhile: these belong to the old one.
+      if (items !== this.allItems) return;
+      responses.forEach((response, index) => {
+        if (response) this.collapsedBySemantic.set(pending[index].semantic!, response);
+      });
+      this.showCollapsed = true;
+      this.applyCurrent();
+      this.changeDetector.markForCheck();
+    });
+  }
+
+  toggleCollapsed(): void {
+    if (!this.canToggleCollapsed) return;
+    this.showCollapsed = !this.showCollapsed;
+    this.applyCurrent();
+  }
 
   private assignItems(items: GswbSolution[]): void {
-    this._items = Array.isArray(items) ? items : [];
+    const next = Array.isArray(items) ? items : [];
+    // The same items again (reordered, say) keep their collapsed view; others start over,
+    // so a collapsed view is only ever shown after "Collapse" was asked for on these items.
+    const semantics = (list: GswbSolution[]) => new Set(list.map(item => item.semantic ?? item.id));
+    const before = semantics(this.allItems);
+    const after = semantics(next);
+    if (before.size !== after.size || [...after].some(key => !before.has(key))) {
+      this.collapsedBySemantic.clear();
+      this.collapseErrors.clear();
+      this.showCollapsed = false;
+    }
+    this._items = next;
     this.allItems = this._items;
     if (this.index >= this._items.length) {
       this.index = Math.max(this._items.length - 1, 0);
@@ -136,7 +233,10 @@ export class SemVisComponent implements AfterViewInit {
       return;
     }
 
-    const value = this.items[this.index].solution ?? '';
+    const current = this.items[this.index];
+    const collapsed = this.showCollapsed ? this.collapsedFor(current) : undefined;
+    // GSWB returns a collapsed DRS as SVG (`solution`) and as text (`semantic`).
+    const value = (collapsed ? (this.svgSolutions ? collapsed.solution : collapsed.semantic) : current.solution) ?? '';
 
     if (this.svgSolutions) {
       this.currentSvg = this.sanitizer.bypassSecurityTrustHtml(value);

@@ -27,6 +27,18 @@
       </span>
 
       <button type="button" (click)="next()">Next ▶</button>
+
+      <span class="collapse-controls" *ngIf="canCollapse || canToggleCollapsed || collapseLoading">
+        <button type="button" *ngIf="canCollapse || collapseLoading" (click)="collapseAll()" [disabled]="collapseLoading"
+                title="Accommodate presuppositions and resolve anaphora (GSWB /collapse_anaphora)">
+          {{ collapseLoading ? 'Collapsing…' : 'Collapse' }}
+        </button>
+        <label *ngIf="canToggleCollapsed">
+          <input type="checkbox" [checked]="showCollapsed" (change)="toggleCollapsed()">
+          Collapsed
+        </label>
+        <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
+      </span>
     </div>
 
     <ng-template #noItems>

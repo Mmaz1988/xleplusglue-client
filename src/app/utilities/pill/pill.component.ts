@@ -35,6 +35,8 @@ export class PillComponent {
   @Input() items: GswbSolution[] = [];
   /** Caption per item, index-aligned with `items`. */
   @Input() itemLabels: string[] = [];
+  /** sem-vis variant: offers Collapse for items with presuppositions or anaphora. */
+  @Input() collapsible = false;
 
   @Input() minimizedColor = '#2e7d32';
 

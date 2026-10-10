@@ -437,20 +437,6 @@ describe('GlueInterfaceComponent', () => {
       expect(shownIds()).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
     });
 
-    it('keeps the ranking when the branches are collapsed', () => {
-      const lm = new Subject<any>();
-      dataServiceMock.lmRankAnaphora.and.returnValue(lm);
-      component.generatePcdrs();
-      lm.next(ranking);
-      lm.complete();
-
-      component.collapseAllAnaphora();
-
-      expect(storedUpdate().discourse.every((entry: any) => entry.collapsed)).toBeTrue();
-      expect(storedUpdate().anaphoraRanking).toEqual(ranking);
-      expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
-    });
-
     it('stores a ranking lm computed with other rankers once, without asking again', () => {
       // An lm image without ranker fusion ignores `methods`: its answer never matches.
       component.anaphoraRankerPreferences = { anaphora_rankers: ['mlm-substitution', 'recency'], anaphora_averager: 'borda' };
@@ -628,37 +614,6 @@ describe('GlueInterfaceComponent', () => {
     expect(update.discourse.map((entry: any) => entry.ruleBranch)).toEqual([1, 2]);
     expect(update.structures).toBeUndefined();
     expect(update.mergedGraphs).toBeUndefined();
-  });
-
-  it('collapses all PCDRS solutions and switches their display', () => {
-    component.pcdrsSolutions = [{
-      id: 's1-pcdrs-1',
-      solution: '<svg></svg>',
-      semantic: '([x1,x2],[loves(x2,x1)]),A:[a(x2,x1)]'
-    }, {
-      id: 's1-pcdrs-2',
-      solution: '<svg></svg>',
-      semantic: '([x1,x2],[ant(x2)]),A:[a(x2,x1)]'
-    }];
-    component.pcdrsSemvis = { index: 0, items: component.pcdrsSolutions } as any;
-
-    component.collapseAllAnaphora();
-
-    expect(dataServiceMock.gswbCollapseAnaphora).toHaveBeenCalledWith({
-      semantic: '([x1,x2],[loves(x2,x1)]),A:[a(x2,x1)]',
-      parentSolutionId: 's1-pcdrs-1'
-    });
-    expect(dataServiceMock.gswbCollapseAnaphora).toHaveBeenCalledTimes(2);
-    expect(component.collapsedPcdrsById['s1-pcdrs-1']).toBeTruthy();
-    expect(component.collapsedPcdrsById['s1-pcdrs-2']).toBeTruthy();
-    expect(component.showCollapsedAnaphora).toBeTrue();
-    expect(component.pcdrsDisplaySolutions[0].id).toBe('s1-pcdrs-1-collapsed');
-    expect(component.pcdrsDisplaySolutions[1].id).toBe('s1-pcdrs-2-collapsed');
-
-    component.toggleCollapsedAnaphora();
-
-    expect(component.showCollapsedAnaphora).toBeFalse();
-    expect(component.pcdrsDisplaySolutions[0].id).toBe('s1-pcdrs-1');
   });
 
   describe('canonical document assembly', () => {

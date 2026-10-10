@@ -93,10 +93,6 @@
       <span *ngIf="!pcdrsLoading">Generate PCDRS for selected graph</span>
       <span *ngIf="pcdrsLoading">Generating PCDRS...</span>
     </button>
-    <button type="button" (click)="collapseAllAnaphora()" [disabled]="!canCollapseAllAnaphora() || collapseAnaphoraLoading">
-      <span *ngIf="!collapseAnaphoraLoading">Collapse all</span>
-      <span *ngIf="collapseAnaphoraLoading">Collapsing...</span>
-    </button>
   </div>
   <app-anaphora-ranker-settings
     class="pcdrs-ranker-settings"
@@ -104,7 +100,7 @@
     [averager]="anaphoraRankerPreferences.anaphora_averager"
     (selectionChange)="onAnaphoraRankersChange($event)"></app-anaphora-ranker-settings>
   <div #pcdrsResults class="pcdrs-results" *ngIf="pcdrsSolutions.length" tabindex="-1">
-    <h3>{{ showCollapsedAnaphora ? 'Collapsed anaphora' : 'PCDRS solutions' }}</h3>
+    <h3>PCDRS solutions</h3>
     <div class="pcdrs-ranking" *ngIf="pcdrsRankingStatusText()">
       <span class="pcdrs-ranking-status">{{ pcdrsRankingStatusText() }}</span>
       <label *ngIf="canTogglePcdrsOrder()">
@@ -117,8 +113,7 @@
       [items]="pcdrsDisplaySolutions"
       [itemLabels]="pcdrsDisplayLabels"
       [svgSolutions]="true"
-      [solutionToggleLabel]="canToggleCollapsedAnaphora() ? (showCollapsedAnaphora ? 'Show PCDRS' : 'Show collapsed') : null"
-      (solutionToggle)="toggleCollapsedAnaphora()"></app-sem-vis>
+      [collapsible]="true"></app-sem-vis>
   </div>
 </section>
 
