@@ -121,7 +121,7 @@
         <dt>Unresolved</dt>
         <dd class="turn-panel-warning">
           <span *ngIf="lastTurn.mergeFailures">{{ lastTurn.mergeFailures }} context(s) not merged. </span>
-          <span *ngIf="lastTurn.degraded">{{ lastTurn.degraded }} branch(es) without anaphora binding. </span>
+          <span *ngIf="lastTurn.degraded">{{ lastTurn.degraded }} branch(es) with unresolved pronouns. </span>
           <span *ngIf="lastTurn.dropped">{{ lastTurn.dropped }} branch(es) not prepared.</span>
         </dd>
       </ng-container>

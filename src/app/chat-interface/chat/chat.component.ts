@@ -904,7 +904,7 @@ export class ChatComponent {
       parts.push(`${mergeFailures.length} discourse context(s) could not be merged at all`);
     }
     if (degraded.length) {
-      parts.push(`${degraded.length} branch(es) were reasoned over without their anaphora binding`);
+      parts.push(`${degraded.length} branch(es) were reasoned over with unresolved pronouns`);
     }
     if (dropped.length) {
       parts.push(`${dropped.length} branch(es) could not be prepared at all`);

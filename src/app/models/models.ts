@@ -343,10 +343,10 @@ export interface AnaphoraRankerSelection {
   averager: AnaphoraAverager;
 }
 
-/** GSWB `/render_pcdrs`: branches to render to SVG again. `semantic` is the DRS the branch was
- *  generated from (the semantic origin's semString), which reproduces /generate_pcdrs exactly. */
+/** GSWB `/render_pcdrs`: branches to render to SVG again. `semantic` is the stored PCDRS, its
+ *  A: and P: inline; `anaphoraRelations`, when given, replace its A:. */
 export interface GswbRenderPcdrsRequest {
-  items: { id: string; semantic: string; anaphoraRelations: AnaphoraRelation[] }[];
+  items: { id: string; semantic: string; anaphoraRelations?: AnaphoraRelation[] }[];
 }
 
 // Reasoning layer (consistency/informativity NLI checks over a premise/conclusion pair).
@@ -379,6 +379,12 @@ export type NliLabel = '1' | '0' | '-1';
 export interface ReasoningCheck {
   tptp: string;
   canonicalSemantic?: string;
+  /** The discourse's reading rebased into this check (I11): its A: and P:, the discourse
+   *  state labels it used -> this check's, and what the collapse did. For debugging. */
+  anaphoraMapping?: string;
+  presuppositionMapping?: string;
+  stateMap?: Record<string, string>;
+  collapseReport?: string;
   graph?: LigerStructure;
   semanticSvg?: string;
 }
@@ -686,11 +692,12 @@ export interface GswbSolution {
   semantic?: string;
   anaphoraMapping?: string;
   anaphoraRelations?: AnaphoraRelation[];
-  /** A PCDRS branch's accommodations between states, P:[p(s2,s1),...]: presupposition box s2
-   *  goes into box s1. Empty when nothing is accommodated. */
+  /** A PCDRS reading's P:[p(s2,s1),...], an entry for every p-box: s2 resolved at s1. */
   presuppositionMapping?: string;
-  /** The same accommodations anchored on referents, for collapsing the prior and the checks. */
-  presuppositionRelations?: PresuppositionRelation[];
+  /** What collapsing the reading does, e.g. "s1 accommodated at s0; s3 bound at s0 (x3 ↦ x1)". */
+  collapseReport?: string;
+  /** Why the collapse rejects the reading; set instead of a solution. */
+  rejection?: string;
   proofId?: string;
   solutionKey?: string;
   mcSetId?: string;
@@ -698,13 +705,6 @@ export interface GswbSolution {
   synSemMapping?: SynSemMapping;
   sentenceAnalysis?: SentenceAnalysis;
   sequenceAnalysis?: SequenceAnalysis;
-}
-
-/** One accommodation anchored on referents: the presupposition introducing `presupposition`
- *  goes into the box introducing `site` (`s0`: the outermost box). */
-export interface PresuppositionRelation {
-  presupposition: string;
-  site: string;
 }
 
 export interface GswbPcdrsRequest {
@@ -716,18 +716,14 @@ export interface GswbPcdrsRequest {
 export interface GswbPcdrsOutput {
   parentSolutionId?: string;
   solutions: GswbSolution[];
+  /** The readings the collapse rejects, each with its mappings and `rejection`. */
+  rejected?: GswbSolution[];
 }
 
+/** The PCDRS's A: and P: come inline in `semantic`. */
 export interface GswbCollapseAnaphoraRequest {
   semantic: string;
   parentSolutionId?: string;
-  /** The structured mapping computed once by generate_pcdrs, reused across every check/branch
-   *  that collapses against it -- `semantic` alone carries no mapping (it's re-parsed from
-   *  scratch server-side), so this must be supplied explicitly. */
-  anaphoraRelations?: AnaphoraRelation[];
-  /** The branch's accommodations, for a `semantic` that does not carry them inline (P:[...]).
-   *  Presuppositions are accommodated before the anaphora mapping is applied. */
-  presuppositionRelations?: PresuppositionRelation[];
 }
 
 export interface GswbTptpBatchItem {
@@ -736,34 +732,33 @@ export interface GswbTptpBatchItem {
 }
 
 export interface GswbTptpBatchResult {
+  /** Empty if the item's collapse rejected the reading. */
   tptp: string;
   semantic?: string;
-  /** Set when the item was translated, but not as requested: its anaphora mapping could not
-   *  be applied and was dropped so the item would translate at all. A degraded item still
-   *  carries usable TPTP, so it is indistinguishable from a resolved one unless this is
-   *  surfaced. */
-  degraded?: string;
+  /** Why the collapse rejected the reading. Must be surfaced: the item has no TPTP. */
+  rejection?: string;
+  /** The reading the item was collapsed with: the sequence's, a check's rebased one, or the
+   *  context's part of it. */
+  anaphoraMapping?: string;
+  presuppositionMapping?: string;
+  /** For a check: the sequence's state labels used by the reading -> the check's. */
+  stateMap?: Record<string, string>;
+  collapseReport?: string;
   /** Pronouns in this item the mapping did not bind, named as in `semantic`. Their ant(x)
    *  marker was dropped, so each is a new referent, equal to no other. */
   unresolvedPronouns?: string[];
 }
 
+/** One reading's items: `sequence` (the PCDRS, A: and P: inline), `context` and the four
+ *  checks, which GSWB collapses with the sequence's reading. */
 export interface GswbCollapseAndTptpBatchRequest {
   parentSolutionId?: string;
-  /** Same mapping semantics as GswbCollapseAnaphoraRequest.anaphoraRelations, applied
-   *  identically to every item below. */
-  anaphoraRelations?: AnaphoraRelation[];
-  /** The branch's accommodations (GswbSolution.presuppositionRelations), applied to every item
-   *  below that does not carry its own P:[...] -- the prior and the checks do not. */
-  presuppositionRelations?: PresuppositionRelation[];
   items: GswbTptpBatchItem[];
   typed: boolean;
 }
 
 export interface GswbCollapseAndTptpBatchOutput {
   parentSolutionId?: string;
-  anaphoraMapping?: string;
-  anaphoraRelations?: AnaphoraRelation[];
   /** Keyed by the requesting GswbTptpBatchItem.name, one entry per item. */
   results: Record<string, GswbTptpBatchResult>;
 }
@@ -1132,8 +1127,10 @@ export function createRegressionAnalysisDocument(sessionId: string): XlePlusGlue
  *  is what makes the autosave payload unmanageable. They are rebuildable from the TPTP's
  *  source; the TPTP itself is not rebuildable from anything, so it stays. */
 function persistedReasoningCheck(check: ReasoningCheck): ReasoningCheck {
-  return { tptp: check?.tptp ?? '', ...(check?.canonicalSemantic
-    ? { canonicalSemantic: check.canonicalSemantic } : {}) };
+  const { tptp, canonicalSemantic, anaphoraMapping, presuppositionMapping, stateMap, collapseReport } = check ?? {} as ReasoningCheck;
+  return { tptp: tptp ?? '', ...(canonicalSemantic ? { canonicalSemantic } : {}),
+    ...(anaphoraMapping ? { anaphoraMapping } : {}), ...(presuppositionMapping ? { presuppositionMapping } : {}),
+    ...(stateMap ? { stateMap } : {}), ...(collapseReport ? { collapseReport } : {}) };
 }
 
 /** The parse response as STORED: without these fields nothing reads back.

@@ -124,6 +124,22 @@ describe('SemVisComponent', () => {
       expect(component.collapseNote).toBe('');
     });
 
+    it('shows what the collapse did, and why a rejected reading is not collapsed', () => {
+      dataService.gswbCollapseAnaphora.and.callFake((request: any) => of(request.parentSolutionId === 'bad'
+        ? { id: 'c-bad', rejection: 'Referent x2 occurs outside the scope (I9)' }
+        : { id: `c-${request.parentSolutionId}`, solution: `<svg>c-${request.parentSolutionId}</svg>`,
+            semantic: 'c', collapseReport: 's1 accommodated at s0' }) as any);
+      component.items = [pcdrs('b1', '([x1],[ant(x1)])'), pcdrs('bad', '([x2],[ant(x2)])')];
+
+      component.collapseAll();
+
+      expect(component.collapseNote).toBe('s1 accommodated at s0');
+      component.next();
+      expect(shown()).toBe('<svg>bad</svg>');
+      expect(component.collapseNote).toContain('rejected');
+      expect(component.collapseNote).toContain('I9');
+    });
+
     it('offers one button in the window: Collapse, then a toggle between the two views', () => {
       component.items = [pcdrs('b1', '([x1],[ant(x1)])')];
       const tag = () => fixture.nativeElement.querySelector('.solution-action-tag') as HTMLButtonElement;

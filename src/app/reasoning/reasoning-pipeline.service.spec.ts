@@ -116,16 +116,34 @@ describe('ReasoningPipelineService', () => {
     });
   });
 
-  it('passes structured anaphoraRelations rather than splicing them into the semantic', done => {
-    const relations = [{ pronounReferentId: 'x3', antecedent: 'x1' }];
+  it('sends the reading inline with the sequence and nothing beside it', done => {
     dataService.gswbGeneratePcdrs.and.returnValue(of({
-      solutions: [{ id: 'm1', semantic: 'P & Q', anaphoraRelations: relations }]
+      solutions: [{ id: 'm1', semantic: '([x1],[ant(x1)]),A:[a(x1,/)],P:[p(s1,s1)]', anaphoraRelations: [] }]
     }) as any);
 
     service.prepareReasoningChecks(request()).subscribe(() => {
       const sent = dataService.gswbCollapseAndTptpBatch.calls.mostRecent().args[0] as any;
-      expect(sent.anaphoraRelations).toEqual(relations);
-      expect(sent.items.every((item: any) => !item.semantic.includes(','))).toBe(true);
+      expect(sent.anaphoraRelations).toBeUndefined();
+      expect(sent.presuppositionRelations).toBeUndefined();
+      expect(sent.items.find((item: any) => item.name === 'sequence').semantic)
+        .toBe('([x1],[ant(x1)]),A:[a(x1,/)],P:[p(s1,s1)]');
+      done();
+    });
+  });
+
+  it('keeps each check\'s rebased reading and collapse report with it', done => {
+    const batch = tptpBatch();
+    (batch.results as any)['cons_neg_check'] = {
+      tptp: 'fof(c).', presuppositionMapping: 'P:[p(s2,s2),p(s6,s1)]', anaphoraMapping: 'A:[a(x3,x1)]',
+      stateMap: { s0: 's1', s3: 's6' }, collapseReport: 's2 accommodated at s1; s6 bound at s1 (x3 ↦ x1)'
+    };
+    dataService.gswbCollapseAndTptpBatch.and.returnValue(of(batch) as any);
+
+    service.prepareReasoningChecks(request()).subscribe(pair => {
+      const check = pair.assignments[0].checks['cons_neg_check'];
+      expect(check.presuppositionMapping).toBe('P:[p(s2,s2),p(s6,s1)]');
+      expect(check.stateMap).toEqual({ s0: 's1', s3: 's6' });
+      expect(check.collapseReport).toContain('bound at s1');
       done();
     });
   });
@@ -168,23 +186,32 @@ describe('ReasoningPipelineService', () => {
     });
   });
 
-  it('reports a branch GSWB could only translate by dropping its anaphora mapping', done => {
-    // The item still comes back with usable TPTP, so nothing downstream would notice on its
-    // own -- a degraded bundle must not be indistinguishable from a resolved one.
-    const degradedBatch = tptpBatch();
-    (degradedBatch.results as any)['context'] = {
-      tptp: 'fof(context).',
-      degraded: 'anaphora mapping could not be applied: no referent x7'
+  it('fails a branch whose reading an item\'s collapse rejects, saying why', done => {
+    // No fallback (I7): a rejected item has no TPTP, and the branch is not reasoned over.
+    const rejectedBatch = tptpBatch();
+    (rejectedBatch.results as any)['context'] = {
+      tptp: '', rejection: 'Referent x7 occurs outside the scope of the box that introduces it (I9)'
     };
-    dataService.gswbCollapseAndTptpBatch.and.returnValue(of(degradedBatch) as any);
+    dataService.gswbCollapseAndTptpBatch.and.returnValue(of(rejectedBatch) as any);
+
+    service.prepareReasoningChecks(request()).subscribe(pair => {
+      expect(pair.assignments).toEqual([]);
+      expect(pair.failures.length).toBe(1);
+      expect(pair.failures[0]).toContain('context');
+      expect(pair.failures[0]).toContain('x7');
+      done();
+    });
+  });
+
+  it('reports a branch whose reading leaves a pronoun unresolved', done => {
+    const batch = tptpBatch();
+    (batch.results as any)['sequence'] = { tptp: 'fof(s).', unresolvedPronouns: ['x4'] };
+    dataService.gswbCollapseAndTptpBatch.and.returnValue(of(batch) as any);
 
     service.prepareReasoningChecks(request()).subscribe(pair => {
       expect(pair.assignments.length).toBe(1);
-      expect(pair.failures).toEqual([]);
       expect(pair.degradations.length).toBe(1);
-      expect(pair.degradations[0]).toContain('x7');
-      expect(pair.degradations[0]).toContain('context');
-      expect(pair.assignments[0].degradations).toEqual(pair.degradations);
+      expect(pair.degradations[0]).toContain('x4');
       done();
     });
   });

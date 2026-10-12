@@ -1431,7 +1431,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(component.hasDiscourses('missing')).toBeFalse();
       });
 
-      it('renders the branches to SVG from the reading they came from, in rank order, without touching sentence selections', () => {
+      it('renders the branches to SVG from their stored PCDRS, in rank order, without touching sentence selections', () => {
         dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
           solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
         }));
@@ -1441,9 +1441,9 @@ describe('RegressionTestingInterfaceComponent', () => {
 
         const request = dataService.gswbRenderPcdrs.calls.mostRecent().args[0];
         expect(request.items.map((item: any) => item.id)).toEqual(['pcdrs-2', 'pcdrs-1']);
-        // The semantic /generate_pcdrs was sent, not the branch's flattened string.
-        expect(request.items[0].semantic).toBe('(A) + (B)');
-        expect(request.items[0].anaphoraRelations[0].antecedent).toBe('x1');
+        // The stored PCDRS, its A: and P: inline -- so P: is shown.
+        expect(request.items[0].semantic).toBe('drs-2');
+        expect(request.items[0].anaphoraRelations).toBeUndefined();
 
         const payload = open.calls.mostRecent().args[0];
         expect(payload.title).toBe('Discourses — n0');

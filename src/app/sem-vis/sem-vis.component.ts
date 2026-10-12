@@ -122,11 +122,14 @@ export class SemVisComponent implements AfterViewInit {
     return item?.semantic ? this.collapsedBySemantic.get(item.semantic) : undefined;
   }
 
-  /** Why the shown item is not collapsed while the collapsed view is on; '' otherwise. */
+  /** While the collapsed view is on: what the collapse did to the shown item, or why it is
+   *  not collapsed; '' otherwise. */
   get collapseNote(): string {
     if (!this.showCollapsed) return '';
     const current = this.items[this.index];
-    if (!current || this.collapsedFor(current)) return '';
+    if (!current) return '';
+    const collapsed = this.collapsedFor(current);
+    if (collapsed) return collapsed.collapseReport ?? '';
     if (!this.isCollapsibleItem(current)) return 'nothing to collapse';
     const error = current.semantic ? this.collapseErrors.get(current.semantic) : undefined;
     return error ? `not collapsed: ${error}` : 'not collapsed';
@@ -154,7 +157,11 @@ export class SemVisComponent implements AfterViewInit {
       // A new item set arrived meanwhile: these belong to the old one.
       if (items !== this.allItems) return;
       responses.forEach((response, index) => {
-        if (response) this.collapsedBySemantic.set(pending[index].semantic!, response);
+        if (response?.rejection) {
+          this.collapseErrors.set(pending[index].semantic!, `the reading is rejected: ${response.rejection}`);
+        } else if (response) {
+          this.collapsedBySemantic.set(pending[index].semantic!, response);
+        }
       });
       this.showCollapsed = true;
       this.applyCurrent();

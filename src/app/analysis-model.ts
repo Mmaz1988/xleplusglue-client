@@ -835,7 +835,6 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   const render: GswbRenderPcdrsRequest['items'] = [];
 
   (document.discourseUpdates ?? []).forEach(update => {
-    const semantics = findElementById(document, update.sourceElementId)?.semantics ?? [];
     const origins = [...new Set(update.discourse.map(branch => branch.semanticOrigin))];
     origins.forEach((origin, readingIndex) => {
       const branches = orderByAnaphoraRanking(
@@ -862,13 +861,9 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         // `semantic` is what the dialog's Collapse sends to GSWB: the PCDRS with its A:/P:.
         solutions.push({ id: branch.id, solution: branch.drsString, semantic: branch.drsString } as GswbSolution);
         labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].join(' · '));
-        render.push({
-          id: branch.id,
-          // The semantic /generate_pcdrs was sent; the branch's own flattened string renders
-          // without the sentence dividers.
-          semantic: semantics.find(semantic => semantic.semId === origin)?.semString || branch.drsString,
-          anaphoraRelations: branch.anaphoraMapping.relations,
-        });
+        // The stored PCDRS itself, A: and P: inline: its merge chain keeps the sentence
+        // dividers (I3), and P: is shown.
+        render.push({ id: branch.id, semantic: branch.drsString });
       });
     });
   });

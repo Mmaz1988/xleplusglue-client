@@ -91,10 +91,9 @@ export interface PreparedAssignment {
    *  what the caller displays and carries forward as the next turn's prior, which is why
    *  it stayed available when `contextTptp` narrowed to the prior alone. */
   sequenceTptp: string;
-  /** Items GSWB could translate only by dropping this branch's anaphora mapping, as
-   *  human-readable reasons. Non-empty means the bundle below is usable but NOT fully
-   *  resolved -- the pronoun it names bound to nothing. Must be shown to the user rather
-   *  than treated as a clean result. */
+  /** Pronouns this branch's reading does not bind, read as new referents, as
+   *  human-readable notes. Non-empty means the bundle below is usable but NOT fully
+   *  resolved. Must be shown to the user rather than treated as a clean result. */
   degradations: string[];
 }
 
@@ -111,7 +110,7 @@ export interface PreparedReasoningPair {
   failures: string[];
   /** Every degradation across this pair's assignments, flattened. A pair can have
    *  assignments and degradations at the same time: the bundles are usable, but some of
-   *  them lost their anaphora binding on the way. */
+   *  their pronouns are unresolved. */
   degradations: string[];
 }
 
@@ -202,7 +201,11 @@ export class ReasoningPipelineService {
           (result?.solutions ?? []).map(mapping => ({ mapping, ruleBranchIndex }))
         );
         if (!mappingsWithStructure.length) {
-          throw new Error('No post-processed sequence interpretations were generated.');
+          // Every reading the rules allow may be rejected by the collapse: say why.
+          const rejected = pcdrsResults.flatMap(({ result }) => result?.rejected ?? [])
+            .map(reading => `${reading.id}: ${reading.rejection}`);
+          throw new Error('No post-processed sequence interpretations were generated.'
+            + (rejected.length ? ` Rejected: ${rejected.join('; ')}` : ''));
         }
 
         // Two rule branches routinely yield the SAME anaphora mapping over the same DRS.
@@ -322,36 +325,23 @@ export class ReasoningPipelineService {
       mappingsWithStructure: mappingsWithStructure$
     }).pipe(
       switchMap(({ reasoningChecksResponse, mappingsWithStructure }) => {
-        // Shared across every mapping below -- each mapping only varies in which
-        // anaphoraRelations it uses to collapse these same four check ASTs.
+        // Shared across every reading below -- each varies only in the reading (A: and P:)
+        // these same four check ASTs are collapsed with.
         const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
         return forkJoin(mappingsWithStructure.map(({ mapping, ruleBranchIndex }) => {
-          // The mapping is computed once by generate_pcdrs above and reused as-is across
-          // the context collapse and all four checks. gswbCollapseAndTptpBatch re-parses
-          // each item's semantic from scratch server-side and carries no mapping of its
-          // own, so the structured anaphoraRelations must be passed explicitly rather
-          // than re-derived or spliced into the semantic text as a string. Folding the
-          // context plus all four checks into one batched request (instead of five
-          // separate collapse+translate round trips) keeps GSWB from being overwhelmed.
+          // The reading is the PCDRS's own, A: and P: inline in `sequence`; GSWB rebases it
+          // into each check and gives the context Q's part of it (I11). One batched request
+          // for the context plus all four checks keeps GSWB from being overwhelmed.
           //
           // Two non-check items, and they are not interchangeable:
           //   context  -- the PRIOR alone (Q). Reattached as the TPTP context axiom.
           //   sequence -- the merged premise+conclusion. Display/carry-forward only.
-          // Both are collapsed against the same mapping so the prior's referents keep the
-          // binding the sequence gave them. A relation whose pronoun lives only in the
-          // conclusion simply finds nothing to rewrite in the prior; one whose antecedent
-          // is unreachable there degrades that item alone, reported like any other.
-          const anaphoraRelations = mapping.anaphoraRelations ?? [];
           const items = [
             { name: 'context', semantic: request.premiseSemantic || '' },
             { name: 'sequence', semantic: mapping.semantic || '' },
             ...checkEntries.map(([name, check]: [string, any]) => ({ name, semantic: check.semantic }))
           ].filter(item => !!item.semantic);
           return this.dataService.gswbCollapseAndTptpBatch({
-            anaphoraRelations,
-            // Only `sequence` (the PCDRS itself) carries the branch's accommodation sites
-            // inline; the prior and the checks get them from here.
-            presuppositionRelations: mapping.presuppositionRelations,
             items,
             typed,
             parentSolutionId: mapping.id
@@ -361,24 +351,34 @@ export class ReasoningPipelineService {
               const sequenceTptp = result.results?.['sequence']?.tptp ?? '';
               const checks: Record<string, ReasoningCheck> = {};
               const missing: string[] = [];
-              // An item GSWB could only translate by dropping the mapping still yields TPTP,
-              // so nothing downstream would notice on its own. Collect the notes here and
-              // carry them all the way out.
-              const degradations = Object.entries(result.results ?? {})
-                .filter(([, item]) => !!item?.degraded)
-                .map(([name, item]) => `${mapping.id} (${name}): ${item.degraded}`);
+              // An item whose collapse rejects the reading has no TPTP (I7): the branch
+              // cannot be reasoned over, and says why.
+              const rejections = Object.entries(result.results ?? {})
+                .filter(([, item]) => !!item?.rejection)
+                .map(([name, item]) => `${name}: ${item.rejection}`);
+              if (rejections.length) {
+                return <PreparedBranch>{
+                  failure: `${mapping.id}: collapse rejects the reading (${rejections.join('; ')})`
+                };
+              }
               // A pronoun the mapping did not bind is read as a new referent. Named once per
-              // branch, from the whole sequence: the other items name the same pronouns, but
-              // each numbers its referents on its own.
+              // branch, from the whole sequence.
+              const degradations: string[] = [];
               const unresolved = result.results?.['sequence']?.unresolvedPronouns ?? [];
               if (unresolved.length) {
                 degradations.push(`${mapping.id}: unresolved pronoun(s) ${unresolved.join(', ')}`
                   + ' read as new referent(s)');
               }
               for (const name of REASONING_CHECK_NAMES) {
-                const tptp = result.results?.[name]?.tptp;
-                if (tptp) {
-                  checks[name] = { tptp };
+                const item = result.results?.[name];
+                if (item?.tptp) {
+                  checks[name] = {
+                    tptp: item.tptp,
+                    ...(item.anaphoraMapping ? { anaphoraMapping: item.anaphoraMapping } : {}),
+                    ...(item.presuppositionMapping ? { presuppositionMapping: item.presuppositionMapping } : {}),
+                    ...(item.stateMap ? { stateMap: item.stateMap } : {}),
+                    ...(item.collapseReport ? { collapseReport: item.collapseReport } : {}),
+                  };
                 } else {
                   missing.push(name);
                 }
@@ -428,7 +428,7 @@ export class ReasoningPipelineService {
           console.warn('[Reasoning] some branches could not be prepared', { scopeId, failures });
         }
         if (degradations.length) {
-          console.warn('[Reasoning] some branches lost their anaphora binding', { scopeId, degradations });
+          console.warn('[Reasoning] some branches have unresolved pronouns', { scopeId, degradations });
         }
         return { scopeId, assignments, failures, degradations };
       })
