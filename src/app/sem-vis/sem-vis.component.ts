@@ -4,6 +4,7 @@ import {catchError, concatMap, from, of, toArray} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
+import { AnaphoraRankingTable } from '../analysis-model';
 
 /** What /collapse_anaphora can resolve: an LFGxDRT expression with a presupposition box, an
  *  anaphor marker or an A:/P: mapping. Anything else has nothing to collapse. */
@@ -53,11 +54,22 @@ export class SemVisComponent implements AfterViewInit {
    *  discriminants narrows `items` to a subset, and a positional lookup would then caption
    *  a solution with another one's label. */
   get currentLabel(): string {
-    if (!this.itemLabels?.length) return '';
+    const position = this.currentPosition();
+    return position >= 0 ? this.itemLabels?.[position] ?? '' : '';
+  }
+
+  /** Optional ranking per item, index-aligned with `items` like `itemLabels`: shown as a
+   *  table in a pill, so the line between the buttons keeps its size. */
+  @Input() itemRankings: (AnaphoraRankingTable | null)[] = [];
+
+  get currentRanking(): AnaphoraRankingTable | null {
+    const position = this.currentPosition();
+    return position >= 0 ? this.itemRankings?.[position] ?? null : null;
+  }
+
+  private currentPosition(): number {
     const current = this.items[this.index];
-    if (!current) return '';
-    const position = this.allItems.indexOf(current);
-    return position >= 0 ? this.itemLabels[position] ?? '' : '';
+    return current ? this.allItems.indexOf(current) : -1;
   }
 
   @Output() selectionChange = new EventEmitter<{

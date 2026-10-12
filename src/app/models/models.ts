@@ -1,3 +1,4 @@
+import type { AnaphoraRankingTable } from '../analysis-model';
 import { SafeHtml } from '@angular/platform-browser';
 import { RegressionRunReport, emptyRunReport } from '../regression-testing-interface/run-report';
 
@@ -1699,5 +1700,7 @@ export interface ChatMessage {
    branchSolutions?: GswbSolution[];
    /** Per-branch caption, index-aligned with branchSolutions: mapping id + verdict. */
    branchLabels?: string[];
+   /** Per-branch ranking table, index-aligned with branchSolutions; derived, not stored. */
+   branchRankings?: (AnaphoraRankingTable | null)[];
 
  }

@@ -174,3 +174,29 @@ button.chip.selected.current-hit{
   color: #8a5a00;
   font-size: 0.85rem;
 }
+
+.status {
+  font-variant-numeric: tabular-nums;
+}
+
+.ranking-summary {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.ranking-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ranking-table th,
+.ranking-table td {
+  border: 1px solid #ddd;
+  padding: 2px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ranking-table th {
+  background: #f5f5f5;
+}

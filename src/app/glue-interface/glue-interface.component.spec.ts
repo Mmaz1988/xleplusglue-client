@@ -430,7 +430,8 @@ describe('GlueInterfaceComponent', () => {
       expect(storedUpdate().anaphoraRanking).toEqual(ranking);
       expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
       expect(shownIds()).toEqual(['s1-pcdrs-2', 's1-pcdrs-1']);
-      expect(component.pcdrsDisplayLabels[0]).toBe('rank 1 · mean score 0.908 · it → the big cat (score 0.908, cos 0.82, recency 2)');
+      expect(component.pcdrsDisplayLabels[0]).toBe('rank 1 · mean score 0.908');
+      expect(component.pcdrsDisplayRankings[0]?.rows).toEqual([['it', 'the big cat', '0.908', 'cos 0.82', '', '2']]);
       expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent).toContain('Ranked by test-model');
 
       component.togglePcdrsOrder();

@@ -724,7 +724,8 @@ describe('ChatComponent', () => {
 
         expect(component.chatDocument.discourseUpdates?.[0].anaphoraRanking).toEqual(ranking as any);
         expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>cat</svg>', '<svg>dog</svg>']);
-        expect(reply().branchLabels?.[0]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean score 0.950 · it → the cat (score 0.950, cos 0.90, recency 2)');
+        expect(reply().branchLabels?.[0]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean score 0.950');
+        expect(reply().branchRankings?.[0]?.rows).toEqual([['it', 'the cat', '0.950', 'cos 0.90', '', '2']]);
         expect(dataServiceSpy.lmRankAnaphora).toHaveBeenCalledTimes(1);
       });
 

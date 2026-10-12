@@ -9,7 +9,7 @@ import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.servic
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { APP_DEFAULTS } from '../app-defaults';
-import { anaphoraRankerSelection, anaphoraRankingCaption, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
+import { AnaphoraRankingTable, anaphoraRankerSelection, anaphoraRankingCaption, anaphoraRankingTable, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
 import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 
@@ -55,6 +55,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   pcdrsDisplaySolutions: GswbSolution[] = [];
   /** Captions for pcdrsDisplaySolutions, index-aligned: rank, score and each binding's cosine. */
   pcdrsDisplayLabels: string[] = [];
+  pcdrsDisplayRankings: (AnaphoraRankingTable | null)[] = [];
   /** The discourse update the shown PCDRS solutions belong to. */
   pcdrsUpdateId: string | null = null;
   /** Show PCDRS in the order GSWB generated them instead of by language-model rank. */
@@ -235,6 +236,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     this.pcdrsSolutions = [];
     this.pcdrsDisplaySolutions = [];
     this.pcdrsDisplayLabels = [];
+    this.pcdrsDisplayRankings = [];
     this.pcdrsUpdateId = null;
     this.anaphoraRankingStatus = {};
   }
@@ -468,6 +470,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.pcdrsSolutions = [];
       this.pcdrsDisplaySolutions = [];
       this.pcdrsDisplayLabels = [];
+    this.pcdrsDisplayRankings = [];
       this.pcdrsUpdateId = null;
       this.showInlinePostProcessing = true;
       setTimeout(() => this.postProcessingSection?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
@@ -528,6 +531,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       this.pcdrsSolutions = [];
       this.pcdrsDisplaySolutions = [];
       this.pcdrsDisplayLabels = [];
+    this.pcdrsDisplayRankings = [];
       this.pcdrsUpdateId = null;
     }
   }
@@ -841,6 +845,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     // Collapsing is the sem-vis's own view of these items (Collapse, then a toggle).
     this.pcdrsDisplaySolutions = ordered;
     this.pcdrsDisplayLabels = ordered.map(solution => update ? anaphoraRankingCaption(update, solution.id) : '');
+    this.pcdrsDisplayRankings = ordered.map(solution => update ? anaphoraRankingTable(update, solution.id) : null);
   }
 
   private currentPcdrsRanking(): AnaphoraRanking | undefined {

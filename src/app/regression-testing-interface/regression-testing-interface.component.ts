@@ -5122,13 +5122,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   openDiscourseDialog(itemId: string): void {
     const document = this.session.analysisDocuments[itemId];
     if (!document || this.discourseDialogLoadingItemId) return;
-    const { solutions, labels, render, counted } = discourseBranchesForDisplay(document);
+    const { solutions, labels, rankings, render, counted } = discourseBranchesForDisplay(document);
     const open = (items: GswbSolution[], svgSolutions: boolean, itemLabels: string[]) => this.discourseDialog.open({
       sentenceId: itemId,
       title: `Discourses — ${itemId}`,
       subtitle: this.itemTextForHeader(itemId),
       items,
       itemLabels,
+      itemRankings: rankings,
       svgSolutions,
       collapsible: true,
       // Opens on what the run sent to Vampire; the checkbox shows every branch.

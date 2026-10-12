@@ -4,6 +4,7 @@ import { OverlayModule } from '@angular/cdk/overlay';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 import {EditorComponent} from "../../editor/editor.component";
 import {GswbSolution} from "../../models/models";
+import { AnaphoraRankingTable } from '../../analysis-model';
 
 
 
@@ -35,6 +36,8 @@ export class PillComponent {
   @Input() items: GswbSolution[] = [];
   /** Caption per item, index-aligned with `items`. */
   @Input() itemLabels: string[] = [];
+  /** Ranking per item, index-aligned with `items` (see app-sem-vis). */
+  @Input() itemRankings: (AnaphoraRankingTable | null)[] = [];
   /** sem-vis variant: offers Collapse for items with presuppositions or anaphora. */
   @Input() collapsible = false;
 

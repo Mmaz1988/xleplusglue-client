@@ -77,6 +77,33 @@ describe('SemVisComponent', () => {
     expect(labels).toEqual(['the > every', 'a > every', 'unknown', 'every > the', '|', 'overlap']);
   });
 
+  it('keeps the line between the buttons fixed and shows the ranking as a table in a pill', () => {
+    component.svgSolutions = true;
+    component.items = [{ id: 'a', solution: '<svg>a</svg>' }, { id: 'b', solution: '<svg>b</svg>' }] as any;
+    component.itemLabels = ['rank 2 · mean score 0.100', 'rank 1 · mean score 0.900'];
+    component.itemRankings = [null, {
+      summary: 'rank 1 · mean score 0.900',
+      columns: ['Anaphor', 'Antecedent', 'Score'],
+      rows: [['it', 'the cat', '0.900'], ['he', 'Bill', '0.800']],
+    }];
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+
+    // Only the counter stands between Prev and Next; the caption comes after them.
+    const controls = element.querySelector('.controls')!;
+    const children = Array.from(controls.children).map(child => child.className || child.tagName.toLowerCase());
+    expect(children.slice(0, 3)).toEqual(['button', 'status', 'button']);
+    expect(element.querySelector('.status')!.textContent!.trim()).toBe('1 / 2 out of 2');
+    expect(element.querySelector('app-pill')).toBeNull();
+
+    component.next();
+    fixture.detectChanges();
+    expect(element.querySelector('.status-label')!.textContent).toContain('rank 1');
+    const rows = Array.from(element.querySelectorAll('app-pill .ranking-table tbody tr'))
+      .map(row => Array.from(row.querySelectorAll('td')).map(cell => cell.textContent!.trim()));
+    expect(rows).toEqual([['it', 'the cat', '0.900'], ['he', 'Bill', '0.800']]);
+  });
+
   describe('the collapsed view', () => {
     const pcdrs = (id: string, semantic: string) => ({ id, solution: `<svg>${id}</svg>`, semantic });
     const shown = () => String((component.currentSvg as any)?.changingThisBreaksApplicationSecurity ?? '');

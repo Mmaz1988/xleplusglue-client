@@ -33,12 +33,23 @@
     <div class="controls" *ngIf="items?.length; else noItems">
       <button type="button" (click)="prev()">◀ Prev</button>
 
-      <span class="status">
-        {{ index + 1 }} / {{ items.length }} out of {{allItems.length}}
-        <span class="status-label" *ngIf="currentLabel">{{ currentLabel }}</span>
-      </span>
+      <span class="status">{{ index + 1 }} / {{ items.length }} out of {{allItems.length}}</span>
 
       <button type="button" (click)="next()">Next ▶</button>
+
+      <!-- After the buttons, so captions of different lengths do not move them; the
+           ranking's per-binding detail is a table in a pill. -->
+      <app-pill *ngIf="currentRanking as ranking" badge="rank" variant="content" [minimizedColor]="'#1565c0'">
+        <div class="ranking-summary">{{ ranking.summary }}</div>
+        <table class="ranking-table">
+          <thead><tr><th *ngFor="let column of ranking.columns">{{ column }}</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let row of ranking.rows"><td *ngFor="let cell of row">{{ cell }}</td></tr>
+            <tr *ngIf="!ranking.rows.length"><td [attr.colspan]="ranking.columns.length">no binding</td></tr>
+          </tbody>
+        </table>
+      </app-pill>
+      <span class="status-label" *ngIf="currentLabel">{{ currentLabel }}</span>
 
       <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
     </div>

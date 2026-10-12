@@ -34,6 +34,7 @@ import {
   majorityVerdict,
   anaphoraRankerSelection,
   anaphoraRankingCaption,
+  anaphoraRankingTable,
   carryAnaphoraRanking,
   needsAnaphoraRanking,
   orderByAnaphoraRanking,
@@ -1557,12 +1558,14 @@ export class ChatComponent {
       const update = ranked.find(candidate => candidate.anaphoraRanking!.branches
         .some(branch => branch.discourseId === solution.id));
       const caption = update ? anaphoraRankingCaption(update, solution.id) : '';
-      return { id: solution.id, solution, label: [original!.labels[index], caption].filter(Boolean).join(' · ') };
+      return { id: solution.id, solution, label: [original!.labels[index], caption].filter(Boolean).join(' · '),
+        ranking: update ? anaphoraRankingTable(update, solution.id) : null };
     });
     const entries = orderByAnaphoraRanking(labelled, ranked);
 
     message.branchSolutions = entries.map(entry => entry.solution);
     message.branchLabels = entries.map(entry => entry.label);
+    message.branchRankings = entries.map(entry => entry.ranking);
   }
 
   private emitChatDocument(): void {

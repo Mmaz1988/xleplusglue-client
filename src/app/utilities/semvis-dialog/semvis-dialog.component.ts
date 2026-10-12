@@ -1,5 +1,6 @@
 import {Component, ElementRef, EventEmitter, Output, ViewChild} from '@angular/core';
 import {SemVisComponent} from "../../sem-vis/sem-vis.component";
+import { AnaphoraRankingTable } from "../../analysis-model";
 
 @Component({
   selector: 'app-semvis-dialog',
@@ -37,6 +38,8 @@ export class SemvisDialogComponent {
     svgSolutions?: boolean;
     /** Caption per item, index-aligned with `items`. */
     itemLabels?: string[];
+    /** Ranking table per item, index-aligned with `items`. */
+    itemRankings?: (AnaphoraRankingTable | null)[];
     title?: string;
     subtitle?: string;
     /** When given, the dialog opens showing only these items, with a checkbox to show all. */
@@ -82,6 +85,7 @@ export class SemvisDialogComponent {
         this.semVis.svgSolutions = svgSolutions;
         this.semVis.collapsible = Boolean(payload.collapsible);
         this.semVis.itemLabels = payload.itemLabels ?? [];
+        this.semVis.itemRankings = payload.itemRankings ?? [];
         this.semVis.setItems(items, startIndex);
 
       // restore selection and re-filter

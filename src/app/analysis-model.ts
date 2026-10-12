@@ -761,55 +761,57 @@ function scoreText(score: number | null | undefined): string {
   return score == null ? 'n/a' : score.toFixed(3);
 }
 
-/** One-line description of how `discourseId` was ranked within `update`, shared by every view
- *  so they caption the same ranking the same way. Scores are in [0, 1] for every ranker. One
- *  ranker -- the raw value behind each score follows it:
- *  "rank 1 · mean score 0.250 · he → man (score 0.250, logp -1.39, "The man", recency 2)".
- *  Several -- the combined score, each ranker's rank, and each binding's per-ranker scores:
- *  "rank 1 · borda 0.500 (mlm 1st, recency 2nd) · he → man (mlm 0.250, recency 0.500, "The man")".
- *  Empty when unranked. */
-export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: string): string {
+/** How one reading was ranked: a one-line summary and, per binding, a row of the table the sem
+ *  view shows in a pill. Shared by every view, so they show the same ranking the same way. */
+export interface AnaphoraRankingTable {
+  /** "rank 1 · mean score 0.250", or with several rankers
+   *  "rank 1 · borda 0.500 (mlm 1st, recency 2nd)". */
+  summary: string;
+  columns: string[];
+  /** One per binding: anaphor, antecedent, then the scores. */
+  rows: string[][];
+}
+
+/** The ranking of `discourseId` within `update`; null when unranked. Scores are in [0, 1] for
+ *  every ranker. One ranker: its score, the raw value behind it, the substituted text and the
+ *  recency rank. Several: each ranker's score and the substituted text. */
+export function anaphoraRankingTable(update: DiscourseUpdate, discourseId: string): AnaphoraRankingTable | null {
   const ranking = update.anaphoraRanking;
   const branch = ranking?.branches.find(candidate => candidate.discourseId === discourseId);
   const discourse = update.discourse.find(candidate => candidate.id === discourseId);
-  if (!ranking || !branch || !discourse) return '';
+  if (!ranking || !branch || !discourse) return null;
   const methods = anaphoraRankingMethods(ranking);
-  if (methods.length > 1) return fusedRankingCaption(ranking, methods, branch, discourse);
+  const fused = methods.length > 1;
 
-  const bindings = discourse.anaphoraMapping.relations.map(relation => {
+  const rows = discourse.anaphoraMapping.relations.map(relation => {
     const pronoun = relation.pronounDisplay ?? relation.pronounReferentId;
     const scored = ranking.relations.find(candidate => candidate.semanticOrigin === discourse.semanticOrigin
       && candidate.pronoun === pronoun && candidate.antecedent === relation.antecedent);
-    const recency = scored?.recencyRank == null ? 'n/a' : scored.recencyRank;
-    const raw = scored?.logProb != null ? `, logp ${scored.logProb.toFixed(2)}`
-      : scored?.cosine != null ? `, cos ${scored.cosine.toFixed(2)}` : '';
-    const scoreText = `score ${scored?.score == null ? 'n/a' : scored.score.toFixed(3)}${raw}`;
-    const substitution = scored?.substitution ? `, "${scored.substitution}"` : '';
-    return `${scored?.pronounText || pronoun} → ${scored?.antecedentText || relation.antecedent} (${scoreText}${substitution}, recency ${recency})`;
+    const binding = [scored?.pronounText || pronoun, scored?.antecedentText || relation.antecedent];
+    const substitution = scored?.substitution ?? '';
+    if (fused) {
+      return [...binding, ...methods.map(method => scoreText(scored?.scores?.[method])), substitution];
+    }
+    const raw = scored?.logProb != null ? `logp ${scored.logProb.toFixed(2)}`
+      : scored?.cosine != null ? `cos ${scored.cosine.toFixed(2)}` : '';
+    const recency = scored?.recencyRank == null ? 'n/a' : String(scored.recencyRank);
+    return [...binding, scoreText(scored?.score), raw, substitution, recency];
   });
-  const score = branch.score == null ? 'no score' : `mean score ${branch.score.toFixed(3)}`;
-  return [`rank ${branch.rank}`, score, ...bindings].join(' · ');
+  const columns = fused
+    ? ['Anaphor', 'Antecedent', ...methods.map(rankerShortName), 'Substitution']
+    : ['Anaphor', 'Antecedent', 'Score', 'Raw', 'Substitution', 'Recency'];
+
+  const summary = fused
+    ? `rank ${branch.rank} · ${ranking.averager ?? 'combined'} ${scoreText(branch.score)} (${methods
+      .map(method => `${rankerShortName(method)} ${branch.ranks?.[method] == null ? 'n/a' : ordinal(branch.ranks[method])}`)
+      .join(', ')})`
+    : `rank ${branch.rank} · ${branch.score == null ? 'no score' : `mean score ${branch.score.toFixed(3)}`}`;
+  return { summary, columns, rows };
 }
 
-function fusedRankingCaption(
-  ranking: AnaphoraRanking,
-  methods: string[],
-  branch: AnaphoraRankedBranch,
-  discourse: DiscourseAnalysis,
-): string {
-  const perRanker = methods
-    .map(method => `${rankerShortName(method)} ${branch.ranks?.[method] == null ? 'n/a' : ordinal(branch.ranks[method])}`)
-    .join(', ');
-  const combined = `${ranking.averager ?? 'combined'} ${branch.score == null ? 'n/a' : branch.score.toFixed(3)} (${perRanker})`;
-  const bindings = discourse.anaphoraMapping.relations.map(relation => {
-    const pronoun = relation.pronounDisplay ?? relation.pronounReferentId;
-    const scored = ranking.relations.find(candidate => candidate.semanticOrigin === discourse.semanticOrigin
-      && candidate.pronoun === pronoun && candidate.antecedent === relation.antecedent);
-    const scores = methods.map(method => `${rankerShortName(method)} ${scoreText(scored?.scores?.[method])}`);
-    const substitution = scored?.substitution ? [`"${scored.substitution}"`] : [];
-    return `${scored?.pronounText || pronoun} → ${scored?.antecedentText || relation.antecedent} (${[...scores, ...substitution].join(', ')})`;
-  });
-  return [`rank ${branch.rank}`, combined, ...bindings].join(' · ');
+/** The summary line of anaphoraRankingTable; empty when unranked. */
+export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: string): string {
+  return anaphoraRankingTable(update, discourseId)?.summary ?? '';
 }
 
 const NLI_LABEL_NAMES: Record<NliLabel, string> = { '1': 'entailment', '0': 'neutral', '-1': 'contradiction' };
@@ -821,6 +823,8 @@ const NLI_LABEL_NAMES: Record<NliLabel, string> = { '1': 'entailment', '0': 'neu
 export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   solutions: GswbSolution[];
   labels: string[];
+  /** Index-aligned with `solutions`: each branch's ranking table, null when unranked. */
+  rankings: (AnaphoraRankingTable | null)[];
   /** Branches a run sent to Vampire (with or without a verdict yet); undefined before any run. */
   counted?: string[];
   /** Index-aligned with `solutions`: what GSWB /render_pcdrs needs to render each as SVG. */
@@ -832,6 +836,7 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   const topK = (document.reasoningUpdates ?? []).find(update => update.anaphoraSelection?.mode === 'top_k')?.anaphoraSelection;
   const solutions: GswbSolution[] = [];
   const labels: string[] = [];
+  const rankings: (AnaphoraRankingTable | null)[] = [];
   const render: GswbRenderPcdrsRequest['items'] = [];
 
   (document.discourseUpdates ?? []).forEach(update => {
@@ -861,6 +866,7 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         // `semantic` is what the dialog's Collapse sends to GSWB: the PCDRS with its A:/P:.
         solutions.push({ id: branch.id, solution: branch.drsString, semantic: branch.drsString } as GswbSolution);
         labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].join(' · '));
+        rankings.push(anaphoraRankingTable(update, branch.id));
         // The stored PCDRS itself, A: and P: inline: its merge chain keeps the sentence
         // dividers (I3), and P: is shown.
         render.push({ id: branch.id, semantic: branch.drsString });
@@ -868,5 +874,5 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
     });
   });
 
-  return { solutions, labels, render, counted: sentIds.size ? solutions.map(s => s.id).filter(id => sentIds.has(id)) : undefined };
+  return { solutions, labels, rankings, render, counted: sentIds.size ? solutions.map(s => s.id).filter(id => sentIds.has(id)) : undefined };
 }
