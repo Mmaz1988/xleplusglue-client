@@ -505,6 +505,8 @@ export interface LigerSequencePart {
 export interface LigerRuleAnnotationResponse {
   sentence?: string;
   annotations: LigerRuleAnnotation[];
+  /** Set when rules (`?=> 0`) deleted every branch: why there is no annotation. */
+  failureMessage?: string;
 }
 
 export interface LigerRuleAnnotationFact {

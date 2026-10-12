@@ -631,8 +631,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         appliedRuleCounts: responses.map(result => result?.annotations?.[0]?.appliedRules?.length ?? 0),
       });
       this.rulesApplicationLoading = false;
+      const deleted = responses.map(result => result?.failureMessage).filter((message): message is string => !!message);
       if (typeof this.inlineGraphInspector?.displayMessage === 'function') {
-        this.inlineGraphInspector.displayMessage('Rules applied.', 'green');
+        this.inlineGraphInspector.displayMessage(deleted.length
+          ? `Rules applied; no reading left: ${deleted.join('; ')}` : 'Rules applied.', deleted.length ? 'red' : 'green');
       }
       this.selectPostProcessingResult(activeIndex, false);
     }, () => {

@@ -208,13 +208,10 @@ export class ReasoningPipelineService {
             + (rejected.length ? ` Rejected: ${rejected.join('; ')}` : ''));
         }
 
-        // Two rule branches routinely yield the SAME anaphora mapping over the same DRS.
-        // The anaphora rule's disjointness conjunct ends in `?=> #z KEEP +` with `#z`
-        // unbound, so LiGER mints a fresh introduced node (`a1`, `a2`, ...) per rule
-        // solution and forks a branch for each. The branches are then identical apart
-        // from which anonymous node carries that marker -- measured on
-        // "a man saw a man"/"he saw him": 12 branches, 12 distinct structures, but only
-        // 6 distinct POSSIBLE-ANT sets, each appearing exactly twice.
+        // Two rule branches can yield the SAME anaphora mapping over the same DRS: a
+        // branching rule forks one branch per solution, and branches that differ only in
+        // facts GSWB does not read give the same mapping. (A rule that marked the good
+        // branches with a fresh `#z KEEP +` node once doubled every mapping this way.)
         //
         // Deduplicating HERE rather than where the document is written is deliberate.
         // This is upstream of the collapse/TPTP batch and of Vampire, so a duplicate
@@ -465,16 +462,14 @@ export class ReasoningPipelineService {
         const branches = (response.annotations ?? [])
           .filter(annotation => !!annotation.structureJson)
           .map(annotation => ({ structure: annotation.structureJson }));
-        // No annotations means the rules matched nothing; the caller still gets a branch
-        // so the pipeline continues, but it is the UNRULED tier-A union -- no SYNSEM, so
-        // GSWB will find no POSSIBLE-ANT facts and bind nothing. Worth knowing when a
-        // turn resolves no pronoun: an empty or wrong rule string lands exactly here.
+        // A rule that matches nothing returns its input, so no branch at all means the
+        // rules deleted every reading (`?=> 0`). That is a result, not a reason to go on
+        // with the structure before rules.
         if (!branches.length) {
-          console.warn('[Reasoning] post-processing rules produced no annotations; '
-            + 'falling back to the unlinked union, so no anaphora can be bound',
-            { ruleStringLength: ruleString?.length ?? 0 });
+          throw new Error('The post-processing rules left no reading: '
+            + (response.failureMessage ?? 'LiGER returned no branch'));
         }
-        return branches.length ? branches : [{ structure }];
+        return branches;
       })
     );
   }

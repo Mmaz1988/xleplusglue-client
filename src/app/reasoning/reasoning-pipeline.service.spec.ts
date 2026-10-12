@@ -271,11 +271,8 @@ describe('ReasoningPipelineService', () => {
   });
 
   it('drops a duplicate anaphora mapping before any check is built for it', done => {
-    // LiGER forks a rule branch per rule solution, and the anaphora rule's disjointness
-    // conjunct ends in `?=> #z KEEP +` with `#z` unbound -- so it mints a fresh introduced
-    // node per solution and the branches come back identical apart from which anonymous
-    // node carries that marker. Measured live on "a man saw a man"/"he saw him": 12
-    // branches, 12 distinct structures, 6 distinct POSSIBLE-ANT sets, each twice.
+    // LiGER forks a rule branch per rule solution; branches that differ only in facts GSWB
+    // does not read come back with the same mapping.
     dataService.ligerApplyRulesToStructure.and.returnValue(of({
       annotations: [
         { structureJson: { ...structure, id: 'branch-1' }, graph },
@@ -298,6 +295,25 @@ describe('ReasoningPipelineService', () => {
       // Vampire runs. Filtering at the document layer would have hidden that, not saved it.
       expect(dataService.gswbCollapseAndTptpBatch).toHaveBeenCalledTimes(1);
       done();
+    });
+  });
+
+  it('fails with the rules\' reason when they delete every reading', done => {
+    // `?=> 0` can delete every branch; going on with the structure before rules would bring
+    // the deleted reading back.
+    dataService.ligerApplyRulesToStructure.and.returnValue(of({
+      annotations: [],
+      failureMessage: 'every branch was deleted by the rule(s) at line(s) 50',
+    }) as any);
+
+    service.prepareReasoningChecks(request()).subscribe({
+      next: () => fail('expected the pair to fail'),
+      error: (error: Error) => {
+        expect(error.message).toContain('left no reading');
+        expect(error.message).toContain('line(s) 50');
+        expect(dataService.gswbGeneratePcdrs).not.toHaveBeenCalled();
+        done();
+      },
     });
   });
 
