@@ -41,9 +41,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     if (this.liger?.changeDetector && this.glue?.editor1) {
-      this.liger.changeDetector.subscribe(newValue => {
+      this.liger.changeDetector.subscribe(({ text, structureJson }) => {
         // Update glue's variable here
-        this.glue.editor1.updateContent(newValue);
+        this.glue.receiveMeaningConstructors(text, structureJson);
       });
     }
 

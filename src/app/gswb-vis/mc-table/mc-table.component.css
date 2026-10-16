@@ -1,0 +1,117 @@
+.mc-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.mc-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  margin-bottom: 12px;
+  font-size: 0.9em;
+}
+
+.mc-table th:nth-child(1), .mc-table td:nth-child(1) {
+  width: 4%;
+}
+
+.mc-table th:nth-child(2), .mc-table td:nth-child(2) {
+  width: 15%;
+}
+
+.mc-table th:nth-child(3), .mc-table td:nth-child(3) {
+  width: 50%;
+}
+
+.mc-table caption {
+  text-align: left;
+  font-weight: bold;
+  padding: 4px 0;
+}
+
+.mc-table th, .mc-table td {
+  border: 1px solid #cfd8dc;
+  padding: 4px 8px;
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.mc-table th {
+  background-color: #eceff1;
+}
+
+.mc-index {
+  white-space: nowrap;
+  color: #c62828;
+  font-weight: bold;
+}
+
+.mc-params {
+  display: block;
+  color: #7b1fa2;
+  font-style: italic;
+  font-size: 0.85em;
+}
+
+.mc-resources {
+  min-width: 160px;
+}
+
+.mc-badge {
+  display: inline-block;
+  background-color: lightblue;
+  border: 1px solid rgb(190, 190, 255);
+  border-radius: 2px;
+  padding: 3px 8px;
+  margin: 2px 4px 2px 0;
+  font-family: monospace;
+  font-size: 1.05em;
+  white-space: nowrap;
+}
+
+.mc-empty {
+  color: #607d8b;
+  font-style: italic;
+}
+
+.mc-formula-latex {
+  display: inline-block;
+  padding: 4px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 1.5em;
+}
+
+.mc-formula-latex:hover {
+  background-color: #eceff1;
+}
+
+.mc-meaning-text {
+  display: inline-block;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.mc-meaning-text:hover {
+  background-color: #eceff1;
+}
+
+.mc-meaning-input {
+  font-family: monospace;
+  font-size: 0.9em;
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid #cfd8dc;
+  box-sizing: border-box;
+}
+
+.mc-formula-input {
+  font-family: monospace;
+  font-size: 0.9em;
+  width: 100%;
+  min-width: 220px;
+  padding: 2px 4px;
+  border: 1px solid #cfd8dc;
+  box-sizing: border-box;
+}

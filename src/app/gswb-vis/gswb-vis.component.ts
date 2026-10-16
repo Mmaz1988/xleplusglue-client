@@ -6,7 +6,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbRequest,GswbPreferences} from "../models/models";
+import {GswbRequest,GswbPreferences, LigerStructure} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -35,6 +35,11 @@ export class GswbVisComponent implements AfterViewInit {
   @ViewChild('errorhandle') errorhandle: ElementRef;
   meaningConstructors = '';
   postProcessingMode: 'inline' | 'standalone' = 'inline';
+
+  // Structured ("resources") view of the meaning-constructors panel
+  structuredView = true;
+  mcText = '';
+  mcStructureJson: LigerStructure | null = null;
 
   private pendingState: GswbWorkspaceState | null = null;
 
@@ -170,6 +175,12 @@ export class GswbVisComponent implements AfterViewInit {
 
   updateMeaningConstructors() {
     this.meaningConstructors = this.editor1?.getContent() ?? '';
+  }
+
+  receiveMeaningConstructors(text: string, structureJson: LigerStructure | null): void {
+    this.editor1?.updateContent(text);
+    this.mcText = text;
+    this.mcStructureJson = structureJson;
   }
 
   captureState(): GswbWorkspaceState | null {

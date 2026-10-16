@@ -1,10 +1,14 @@
 <h3>
   Meaning constructors:
+  <button type="button" (click)="structuredView = !structuredView">
+    {{ structuredView ? 'Show raw text' : 'Show structured view' }}
+  </button>
 </h3>
-<div class="editor-restr">
+<div class="editor-restr" [hidden]="structuredView">
 <app-editor #edit1 [mode]="'glue'" >
 </app-editor>
 </div>
+<app-mc-table *ngIf="structuredView" [content]="mcText" [structureJson]="mcStructureJson"></app-mc-table>
 
 <app-gswb-settings #gswbPrefs></app-gswb-settings>
 <div class="analysis-actions">

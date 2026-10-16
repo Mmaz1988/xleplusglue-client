@@ -227,7 +227,9 @@ export class LigerVisComponent implements AfterViewInit {
       .join('\n');
 
     this.meaningConstructors = allMeaningConstructors;
-    this.changeDetector.emit(allMeaningConstructors);
+    // Combines MCs across solutions, each with its own structureJson, so source-span
+    // hover lookup (which needs a single structure) is not supported for this combined view.
+    this.changeDetector.emit({ text: allMeaningConstructors, structureJson: null });
   }
 
   private renderSelectedSolution(index: number): void {
@@ -240,7 +242,13 @@ export class LigerVisComponent implements AfterViewInit {
     this.graphElements = graphElements;
     this.structureJson = solution.structureJson ?? null;
 
-    this.cy1.renderGraph(graphElements);
+    try {
+      this.cy1.renderGraph(graphElements);
+    } catch (error) {
+      // A malformed graph (e.g. an edge referencing a filtered-out node) shouldn't
+      // block the rest of the panel (meaning constructors, applied rules) from rendering.
+      console.error('Failed to render graph for solution', index, error);
+    }
 
     this.rulelist1.clearList();
     for (let i = 0; i < (solution.appliedRules?.length ?? 0); i++) {
@@ -248,7 +256,7 @@ export class LigerVisComponent implements AfterViewInit {
     }
 
     this.meaningConstructors = solution.meaningConstructors ?? '';
-    this.changeDetector.emit(this.meaningConstructors);
+    this.changeDetector.emit({ text: this.meaningConstructors, structureJson: this.structureJson });
   }
 
   displayMessage(message: string, color: string) {

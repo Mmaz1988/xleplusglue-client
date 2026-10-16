@@ -260,7 +260,6 @@ export class EditorComponent implements AfterViewInit, OnChanges {
 
   filename: string; // to hold the input filename
 
-
   ngAfterViewInit() {
     this.codeMirror = CodeMirror.fromTextArea(this.host.nativeElement, {
       mode: this.resolveMode(this.mode),
@@ -291,7 +290,6 @@ export class EditorComponent implements AfterViewInit, OnChanges {
     }
   }
 
-
   updateContent(value: string): void {
     if (this.codeMirror) {
       this.codeMirror.setValue("");        // optional: clear first
@@ -300,7 +298,6 @@ export class EditorComponent implements AfterViewInit, OnChanges {
       this.codeMirror.refresh();
     }
   }
-
 
   public getContent(): string {
     return this.codeMirror.getValue();

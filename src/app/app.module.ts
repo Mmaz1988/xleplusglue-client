@@ -6,6 +6,7 @@ import { GswbVisComponent } from './gswb-vis/gswb-vis.component';
 import { SemComponent } from './gswb-vis/sem/sem.component';
 import { EditorComponent } from './editor/editor.component';
 import { LogComponent } from './gswb-vis/log/log.component';
+import { McTableComponent } from './gswb-vis/mc-table/mc-table.component';
 import { ReactiveFormsModule } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
 import { LigerVisComponent } from './liger-vis/liger-vis.component';
@@ -64,6 +65,7 @@ import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.c
     SemComponent,
     EditorComponent,
     LogComponent,
+    McTableComponent,
     LigerVisComponent,
     GraphInspectorComponent,
     GlueInterfaceComponent,
