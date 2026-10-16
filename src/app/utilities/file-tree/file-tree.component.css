@@ -1,0 +1,61 @@
+/* Define the blue color used for highlighting */
+:root {
+  --highlight-color: #00a9e0;
+}
+
+/* General styling for tree nodes */
+.mat-tree-node {
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Hover effect */
+.mat-tree-node:hover {
+  background-color: rgba(0, 169, 224, 0.25); /* Hover effect with 25% opacity */
+}
+
+
+/* Ensure proper spacing and full width for node wrappers */
+.tree-node-wrapper {
+  display: block;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.folder-node {
+  margin-bottom: 10px;
+}
+
+.folder-contents {
+  padding-left: 10px;
+  margin-top: 5px;
+  border: 2px solid var(--highlight-color);
+  border-radius: 5px;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.file-node {
+  /* Additional file node styling, if needed */
+}
+
+li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+div.filetreecontainer {
+  width: 760px;
+  border: 2px solid var(--highlight-color);
+  border-radius: 5px;
+  padding: 10px;
+  box-sizing: border-box;
+  overflow: hidden;
+}

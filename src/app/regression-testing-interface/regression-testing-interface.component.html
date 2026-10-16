@@ -1,19 +1,131 @@
 <div class="frame">
+  <div *ngIf="isAutosavingInProgress" class="autosave-indicator" aria-live="polite" aria-label="Autosaving session changes">
+    <span class="autosave-spinner" aria-hidden="true"></span>
+    <span>Autosaving</span>
+  </div>
 
-<h3>
-  Grammar:
-</h3>
+  <div class="container">
 
-  <app-grammar-loader></app-grammar-loader>
+    <div class="session-controls">
+      <h1> Session controls</h1>
+      <label for="sessionSelect">Session:</label>
+      <select id="sessionSelect" [(ngModel)]="selectedSessionKey" [disabled]="isSessionActionLocked">
+        <option [value]="redisSessionKey">Current: {{ session.id }}</option>
+        <ng-container *ngFor="let session of recentSessions">
+          <option *ngIf="session.sessionKey !== redisSessionKey" [value]="session.sessionKey">
+            {{ session.displayLabel }} | parses: {{ session.parseCount }} | inference: {{ session.inferenceCount }}
+          </option>
+        </ng-container>
+      </select>
+      <button (click)="loadSessionFromRecent(selectedSessionKey)" [disabled]="isSessionActionLocked">
+        <span *ngIf="sessionLoadState !== 'loading' && !isSaveCurrentInProgress && !isSaveAsInProgress">Load session</span>
+        <span *ngIf="sessionLoadState === 'loading'">Loading...</span>
+        <span *ngIf="isSaveCurrentInProgress || isSaveAsInProgress">Saving...</span>
+      </button>
+      <button (click)="createNewSession()" [disabled]="isSessionActionLocked">New session</button>
+    </div>
+    <div *ngIf="sessionLoadMessage" class="processing-timing session-load-timing" [ngClass]="sessionLoadState">
+      <div class="processing-timing-summary">{{ sessionLoadMessage }}</div>
+    </div>
+    <div class="session-save-as-row testsuite-mode-row">
+      <label for="saveAsSessionName">Save session as:</label>
+      <input id="saveAsSessionName" type="text" [(ngModel)]="saveAsSessionName" placeholder="Session name" [disabled]="isSessionActionLocked" />
+      <button (click)="saveCurrentSession()" [disabled]="isSessionActionLocked">
+        <span *ngIf="!isSaveCurrentInProgress">Save current session</span>
+        <span *ngIf="isSaveCurrentInProgress">Saving...</span>
+      </button>
+      <button (click)="saveSessionAs()" [disabled]="isSessionActionLocked">
+        <span *ngIf="!isSaveAsInProgress">Save as</span>
+        <span *ngIf="isSaveAsInProgress">Saving...</span>
+      </button>
+    </div>
 
-<h3>
+    <h1>Files</h1>
+    <app-toggle-display #toggleDisplayComponent type="fileTree" showText="Show file selection"
+                        hideText="Hide file selection">
+      <div class="grammar-loader-container">
+        <div>
+          <h2>Grammar selection:</h2>
+          <app-grammar-loader [loadedPath]="session.grammarPath"
+                              (grammarLoaded)="updateGrammar($event)"></app-grammar-loader>
+        </div>
+        <div>
+        <h2>Test suite selection:</h2>
+        <app-file-loader displayName="testsuite" [currentContent]="session.testsuiteText"
+                         [loadedPath]="session.testsuiteFilename"
+                         [loadedContent]="session.testsuiteLoadedText"
+                         (stateChange)="onTestsuiteStateChange($event)"
+                         (fileLoaded)="updateTestsuite($event)"
+                         defaultFilePath="./testsuites/inference/inference-basic.lfg" filesDirectory="./testsuites/"> </app-file-loader>
+      </div>
+        <div>
+          <h2>Rule file selection:</h2>
+          <app-rule-loader displayName="rules" [currentContent]="session.rulesText"
+                           [loadedPath]="session.rulesFilename"
+                           [loadedContent]="session.rulesLoadedText"
+                           (stateChange)="onRulesStateChange($event)"
+                           (ruleLoaded)="updateRules($event)"></app-rule-loader>
+        </div>
+        <div>
+        <h2>Default axioms selection:</h2>
+        <app-file-loader displayName="axioms" [currentContent]="session.axiomsText"
+                         [loadedPath]="session.axiomsFilename"
+                         [loadedContent]="session.axiomsLoadedText"
+                         (stateChange)="onAxiomsStateChange($event)"
+                         (fileLoaded)="updateAxioms($event)"
+                         filesDirectory="./axioms/"></app-file-loader>
+      </div>
+      </div>
+    </app-toggle-display>
+  </div>
+  <h3>
   Testsuite:
-</h3>
+  </h3>
+
+  <div class="session-save-as-row testsuite-mode-row">
+    <span>Testsuite format:</span>
+    <label>
+      <input type="radio" name="testsuiteEditorMode" [checked]="testsuiteEditorMode === 'nli'" (change)="setTestsuiteEditorMode('nli')" />
+      NLI
+    </label>
+    <label>
+      <input type="radio" name="testsuiteEditorMode" [checked]="testsuiteEditorMode === 'json'" (change)="setTestsuiteEditorMode('json')" />
+      JSON
+    </label>
+  </div>
 
   <div class="editor-restr">
-<app-editor #testsuite [mode]="'text'"> </app-editor>
+<app-editor #testfile [mode]="testsuiteEditorMode" (contentChange)="onEditorContentChange('testsuiteText', $event)"> </app-editor>
   </div>
   <br>
+
+  <div class="session-save-as-row">
+    <span>Testsuite mode:</span>
+    <label>
+      <input type="radio" name="testsuiteUpdateMode" [checked]="testsuiteUpdateMode === 'write'" (change)="setTestsuiteUpdateMode('write')" />
+      Write
+    </label>
+    <label>
+      <input type="radio" name="testsuiteUpdateMode" [checked]="testsuiteUpdateMode === 'append'" (change)="setTestsuiteUpdateMode('append')" />
+      Append
+    </label>
+    <button (click)="updateTestsuiteFromProcessedItems()" [disabled]="regressionTestItems.length === 0">
+      Update testsuite JSON
+    </button>
+  </div>
+  <br>
+
+
+  <!--
+  <div>
+    <div class="result-container" *ngFor="let element of regressionTestItems; let i = index">
+      <app-test-item [data]="element" [sentenceMap]="this.sentenceMap" >
+      </app-test-item>
+    </div>
+  </div>
+  <br>
+  <button (click)="parse_testfile(testsuite.getContent())">parse testfile</button>
+-->
 
   <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
 <h3>
@@ -22,7 +134,7 @@
     <div class="gradient-container">
     <div class="editor-restr">
 
-  <app-editor #ligerRules [mode]="'liger'"> </app-editor>
+  <app-editor #ligerRules [mode]="'liger'" (contentChange)="onEditorContentChange('rulesText', $event)"> </app-editor>
 </div>
       <div class="bar-container">
         <div class="gradient-bar"></div>
@@ -32,25 +144,178 @@
 
 </app-toggle-display>
 
+  <br>
 
-<app-gswb-settings #gswbSettings></app-gswb-settings>
+  <app-toggle-display type="liger" showText="Show default axioms" hideText="Hide default axioms">
+    Axioms:
+    <div class="editor-restr">
+      <app-editor #axiomEdit [mode]="'vampire'" (contentChange)="onEditorContentChange('axiomsText', $event)">
+      </app-editor>
+    </div>
+
+  </app-toggle-display>
+
+  <br>
+
+  <app-toggle-display type="liger" showText="Show settings" hideText="Hide settings">
+  <h1>Settings</h1>
+  <app-gswb-settings #gswbSettings></app-gswb-settings>
+  <app-inference-settings  #vampirePrefs></app-inference-settings>
 
 
-<button (click)="batchParse(testsuite.getContent(), ligerRules.getContent())">Parse all</button>
-  <button class="button beta" (click)="batchMultistage(testsuite.getContent())">Multi stage</button>
+    <h3>Ambiguity management:</h3>
+  <div class="pruning-container">
+    <input type="checkbox" #contextPruning id="contextPruning" />
+    <label for="contextPruning">Pruning</label> <br>
+    <label>
+      <input type="checkbox" [(ngModel)]="enableDisambiguation">
+      Disambiguate before Vampire
+    </label>
+  </div> <br>
+
+  </app-toggle-display>
+
+<br>
+
+  <h1>Run:</h1>
 
 
-<h3>
-  Report:
-</h3>
+<button (click)="batchParse(testfile.getContent(), ligerRules.getContent())" [disabled]="runLocked">
+  <span *ngIf="!loading">Parse all</span>
+  <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+  <span *ngIf="loading">Loading...</span>
+</button>
+  <button class="button beta" (click)="batchMultistage(testfile.getContent())" [disabled]="runLocked">
+    <span *ngIf="!loading">Multistage</span>
+    <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    <span *ngIf="loading">Loading...</span>
+  </button>
+  <button *ngIf="loading || isVampireProgressVisible" (click)="abortCurrentRun()" [disabled]="!canAbortRun">
+    <span *ngIf="!isAbortInProgress">Abort and save</span>
+    <span *ngIf="isAbortInProgress">Aborting...</span>
+  </button>
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="continueAfterDisambiguation()" [disabled]="runLocked">
+  Continue
+</button>
+  <button *ngIf="enableDisambiguation && disambiguationMode" (click)="skipDisambiguation()" [disabled]="runLocked">
+    Skip
+  </button>
 
-<textarea class="log" #ligerreport>
-</textarea>
-  <textarea class="log" #gswbreport>
+  <div *ngIf="hasParsedExamples" class="vampire-rerun-panel">
+    <button (click)="resendVampire()" [disabled]="!canResendVampire">
+      Resend to Vampire
+    </button> <br>
+    <span class="vampire-rerun-status">{{ vampireDiscriminantStatus }}</span>
+  </div>
 
-  </textarea>
+
+
+  <div class="runtime-status-panel">
+    <div class="errorhandling" #errorhandle></div>
+    <div *ngIf="isVampireProgressVisible" class="vampire-progress-panel" [class.loading]="isVampireProgressAnimating">
+      <div class="vampire-progress-header">
+        <span>{{ vampireProgressLabel }}</span>
+        <span class="vampire-progress-percent">{{ vampireProgressPercent }}%</span>
+      </div>
+      <div class="vampire-progress-track" role="progressbar"
+           aria-label="Vampire backend progress"
+           [attr.aria-valuenow]="vampireProgressPercent"
+           aria-valuemin="0"
+           aria-valuemax="100">
+        <div class="vampire-progress-fill" [style.width.%]="vampireProgressPercent"></div>
+      </div>
+      <div class="vampire-progress-meta">
+        <span>Items: {{ vampireProgressItemCount ?? 0 }} / {{ vampireProgressTotalCount ?? 0 }}</span>
+        <span>Proofs: {{ vampireProgressProofCount ?? 0 }}</span>
+      </div>
+    </div>
+    <div *ngIf="hasTimingInfo" class="processing-timing">
+      <div class="processing-timing-summary">{{ processingTimingSummary }}</div>
+      <app-pill
+        badge="i"
+        variant="text"
+        [text]="processingTimingDetails"
+        minimizedColor="#1565c0">
+      </app-pill>
+    </div>
+  </div>
+
+  <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
+  <div class="results-grid">
+    <div class="results-panel">
+      <h3>Parsing report ({{ parseResultCount }} of {{ expectedParseCount }}):</h3>
+      <app-toggle-display type="liger" showText="Show parsing results" hideText="Hide parsing results">
+        <div>
+          <div class="results-list">
+             <div class="result-container"
+                 *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId">
+              <app-test-result
+                [data]="element"
+                [displayIndex]="i + 1"
+                [disambiguationActive]="enableDisambiguation && disambiguationMode"
+                [selectedSolutionIds]="getSelectedSolutionIds(element)"
+                (openSemVis)="openSemVisDialog($event)"
+                (selectionChange)="onSelectionChange($event)">
+              </app-test-result>
+            </div>
+          </div>
+        </div>
+      </app-toggle-display>
+    </div>
+
+    <div class="results-panel">
+      <h3>Inference report ({{ inferenceResultCount }} of {{ expectedInferenceCount }}):</h3>
+      <app-toggle-display type="liger" showText="Show inference results" hideText="Hide inference results">
+        <div>
+          <div class="results-list">
+            <div class="result-container"
+                 *ngFor="let element of inferenceResults; let i = index; trackBy: trackByInferenceId"
+                 [class.highlight]="selectedIds.has(element.id)">
+              <app-inference-result [data]="element" [displayIndex]="i + 1"></app-inference-result>
+            </div>
+          </div>
+        </div>
+      </app-toggle-display>
+    </div>
+  </div>
   <br>
   <br>
+  <pre>
+{{this.parsingSummary}}</pre>
+<pre>
+{{this.inferenceSummary}}</pre>
+  <table class="cm-table">
+    <thead>
+    <tr>
+      <th>Gold \ Pred</th>
+      <th *ngFor="let p of labels">
+        {{ labelName[p] }}<br /><small>{{ p }}</small>
+      </th>
+    </tr>
+    </thead>
+
+    <tbody>
+    <tr *ngFor="let r of cmView; let i = index">
+      <th>
+        {{ labelName[r.gold] }}<br /><small>{{ r.gold }}</small>
+      </th>
+
+      <td
+        *ngFor="let c of r.rows; let j = index"
+        (click)="selectCell(i, j)"
+        [class.selected]="i === selectedGoldIdx && j === selectedPredIdx"
+        class="hm-cell"
+        [style.backgroundColor]="'rgba(33, 150, 243, ' + (0.05 + 0.75 * c.intensity) + ')'"
+        [style.color]="(0.05 + 0.75 * c.intensity) > 0.45 ? 'white' : 'black'"
+      >
+
+        <div class="count">{{ c.v }}</div>
+        <div class="pct">{{ c.pct }}%</div>
+      </td>
+    </tr>
+    </tbody>
+  </table>
+
   <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
 <h3>
   Applied rules:

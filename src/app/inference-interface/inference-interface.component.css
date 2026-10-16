@@ -1,0 +1,35 @@
+/* Ensures the tabs take up the full page */
+mat-tab-group {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-content {
+  flex: 1;
+  padding: 16px;
+  overflow: auto;
+  background: #f5f5f5;
+  height: calc(85vh - 48px); /* Adjust height, considering tab header */
+}
+
+.page-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* Full page height */
+}
+
+/* Ensures chat component takes remaining space */
+app-chat {
+  flex: 1; /* Allows chat to expand to fill remaining space */
+  min-height: 0; /* Prevents flexbox issues with scrolling */
+}
+
+/* Add padding around the grammar loader */
+.grammar-loader-container {
+  padding: 5px; /* Adjust as needed */
+  display: flex; /* Enables horizontal layout */
+  gap: 16px; /* Adds space between the elements */
+}
+
+.container { padding: 15px; }

@@ -1,4 +1,4 @@
-<h3>Settings:</h3>
+<h3>GSWB settings:</h3>
 
 <form [formGroup]="gswbPreferencesForm" (ngSubmit)="onSubmit()" novalidate>
   <div>
@@ -6,8 +6,7 @@
     <select formControlName="prover" id="prover" name="prover">
       <option value="0">Hepple</option>
       <option value="1">Lev</option>
-      <option value="2">Lev optimized </option>
-      <option value="3">Multi stage proving</option>
+      <option value="2">Multistage </option>
     </select>
   </div>
 
@@ -18,6 +17,7 @@
       <option value="1">Prolog</option>
       <option value="3">NLTK</option>
       <option value="4">Prolog DRT</option>
+      <option value="5">LFGxDRT</option>
     </select>
   </div>
 
@@ -27,6 +27,21 @@
       Parse Semantics
     </label>
   </div>
+
+  <div>
+    <label for="betaReduce">
+      <input type="checkbox" formControlName="betaReduce" id="betaReduce" name="betaReduce">
+      Beta Reduce
+    </label>
+  </div>
+
+  <div *ngIf="showResolveDrs">
+    <label for="resolveDrs">
+      <input type="checkbox" formControlName="resolveDrs" id="resolveDrs" name="resolveDrs">
+      Resolve DRS
+    </label>
+  </div>
+
 
   <div>
     <label for="explain">

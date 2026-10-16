@@ -1,0 +1,130 @@
+<h3>Graph inspector</h3>
+
+<div class="inspector-controls">
+  <input type="file" accept=".json,.pl,.prolog,.txt" (change)="onUploadFile($event)">
+  <select [(ngModel)]="uploadedFormat">
+    <option value="json">JSON</option>
+    <option value="prolog">Prolog</option>
+  </select>
+  <button type="button" (click)="downloadCurrentStructure()" [disabled]="!currentStructureJson.trim()">
+    Download current structure
+  </button>
+</div>
+
+<div class="inspector-editors">
+  <div class="editor-section">
+    <div class="editor-label">LiGER rules</div>
+    <div class="editor-restr">
+      <app-editor #rulesEditor [mode]="'liger'" [showControls]="false" [initialContent]="rulesText" (contentChange)="rulesText = $event"></app-editor>
+    </div>
+    <button type="button" (click)="applyRules()" [disabled]="loading || !uploadedContent.trim()">
+      <span *ngIf="!loading">Apply rules</span>
+      <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      <span *ngIf="loading">Loading...</span>
+    </button>
+  </div>
+
+  <div class="editor-section">
+    <div class="editor-label">Graph query</div>
+    <div class="editor-restr">
+      <app-editor #queryEditor [mode]="'liger'" [showControls]="false" [initialContent]="queryText" (contentChange)="queryText = $event"></app-editor>
+    </div>
+    <button type="button" (click)="runQuery()" [disabled]="queryLoading">
+      <span *ngIf="!queryLoading">Run query</span>
+      <span *ngIf="queryLoading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      <span *ngIf="queryLoading">Loading...</span>
+    </button>
+  </div>
+</div>
+
+<div class="errorhandling" #errorhandle></div>
+
+<div class="query-result" *ngIf="queryResult">
+  {{ queryResult }}
+</div>
+
+<div #graphResults class="graph-results-layout" tabindex="-1">
+  <div class="graph-shell">
+    <app-graph-vis #cy1 [graphID]="'graph-inspector-cy'" [graphStyle]="'liger'"></app-graph-vis>
+  </div>
+
+  <aside class="solutions-panel" *ngIf="activeResultKind === 'query' && querySolutions.length">
+    <div class="solutions-header">
+      <h4>Solutions</h4>
+      <span>{{ querySolutions.length }}</span>
+    </div>
+
+    <details #solutionCard class="solution-card" *ngFor="let solution of querySolutions; let i = index" [open]="isSolutionActive(i)" (toggle)="onSolutionToggle(i, solutionCard.open)">
+      <summary>
+        Solution {{ i + 1 }}
+        <span class="solution-signature">{{ solution.signature }}</span>
+      </summary>
+
+      <div class="solution-variable" *ngFor="let variable of solutionEntries(solution)">
+        <div class="solution-variable-name">{{ variable.variable }}</div>
+
+        <div class="solution-node" *ngFor="let node of variable.nodes">
+          <div class="solution-node-id">Node {{ node.node }}</div>
+          <ul class="solution-constraints">
+            <li *ngFor="let constraint of node.constraints">{{ constraint }}</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </aside>
+
+  <aside class="solutions-panel" *ngIf="activeResultKind === 'rules' && ruleAnnotations.length">
+    <div class="solutions-header">
+      <h4>Applied rules</h4>
+      <span>{{ ruleAnnotations.length }}</span>
+    </div>
+
+    <div class="solution-nav" *ngIf="ruleAnnotations.length">
+      <button type="button" (click)="previousRuleVariant()" [disabled]="ruleAnnotations.length < 2">◀ Prev result</button>
+      <span>
+        Result {{ (activeRuleAnnotationIndex ?? 0) + 1 }} / {{ ruleAnnotations.length }}
+        <span *ngIf="ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.sentence"> ({{ ruleAnnotations[activeRuleAnnotationIndex ?? 0]?.sentence }})</span>
+      </span>
+      <button type="button" (click)="nextRuleVariant()" [disabled]="ruleAnnotations.length < 2">Next result ▶</button>
+    </div>
+
+    <div class="solution-variable" *ngIf="ruleAnnotations[activeRuleAnnotationIndex ?? 0] as selectedAnnotation">
+      <div class="solution-variable-name">Selected result</div>
+      <div class="solution-node">
+        <div class="solution-node-id">Sentence</div>
+        <pre class="solution-constraints">{{ selectedAnnotation.sentence || 'n/a' }}</pre>
+      </div>
+      <div class="solution-variable-name">MC sets: {{ appliedNumberOfMCsets }}</div>
+      <div class="solution-node" *ngIf="appliedMeaningConstructors.trim().length">
+        <div class="solution-node-id">Meaning constructors</div>
+        <pre class="solution-constraints">{{ appliedMeaningConstructors }}</pre>
+      </div>
+    </div>
+
+    <details #ruleCard class="solution-card" *ngFor="let rule of appliedRules; let i = index" [open]="isRuleActive(i)" (toggle)="onRuleToggle(i, ruleCard.open)">
+      <summary>
+        Rule {{ rule.index + 1 }}
+        <span class="solution-signature" *ngIf="rule.lineNumber !== undefined">Line {{ rule.lineNumber }}</span>
+      </summary>
+
+      <div class="solution-variable">
+        <div class="solution-node">
+          <div class="solution-node-id">Rule text</div>
+          <ul class="solution-constraints">
+            <li>{{ rule.rule }}</li>
+          </ul>
+        </div>
+
+        <div class="solution-node">
+          <div class="solution-node-id">Added facts</div>
+          <ul class="solution-constraints" *ngIf="ruleFacts(rule).length; else noRuleFacts">
+            <li *ngFor="let fact of ruleFacts(rule)">{{ ruleFactText(fact) }}</li>
+          </ul>
+          <ng-template #noRuleFacts>
+            <div class="inspector-help">No added facts.</div>
+          </ng-template>
+        </div>
+      </div>
+    </details>
+  </aside>
+</div>

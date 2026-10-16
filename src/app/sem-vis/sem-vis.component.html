@@ -1,0 +1,142 @@
+<div class="editor-restr">
+  <div class="sem-vis">
+    <button
+      *ngIf="solutionActionLabel"
+      type="button"
+      class="solution-action-tag"
+      [disabled]="solutionActionDisabled"
+      (click)="solutionAction.emit()">
+      {{ solutionActionLabel }}
+    </button>
+    <button
+      *ngIf="solutionToggleLabel"
+      type="button"
+      class="solution-action-tag solution-toggle-tag"
+      [disabled]="solutionToggleDisabled"
+      (click)="solutionToggle.emit()">
+      {{ solutionToggleLabel }}
+    </button>
+
+    <!-- Your existing controls -->
+    <div class="controls" *ngIf="items?.length; else noItems">
+      <button type="button" (click)="prev()">◀ Prev</button>
+
+      <span class="status">
+        {{ index + 1 }} / {{ items.length }} out of {{allItems.length}}
+      </span>
+
+      <button type="button" (click)="next()">Next ▶</button>
+    </div>
+
+    <ng-template #noItems>
+      <div class="controls">
+        <span>No items.</span>
+      </div>
+    </ng-template>
+
+    <app-editor *ngIf="!svgSolutions" #sem [mode]="'glue'"></app-editor>
+    <div *ngIf="svgSolutions" class="sem-svg" [innerHTML]="currentSvg"></div>
+  </div>
+
+  <div class="highlight-toggle">
+    <label>
+      <input type="checkbox" [(ngModel)]="highlightCurrent">
+      Highlight discriminants that choose currently selected solution
+    </label>
+  </div>
+
+  <!-- Discriminant selectors -->
+  <div class="discriminants">
+
+    <!-- Scope -->
+    <div class="disc-block">
+      <div class="disc-header">
+        <h4>Scope discriminants <br> ({{ activeDiscriminantCount(scope_discriminants) }}/{{ scope_discriminants.length }} active, {{ activeBucketCount(scope_rows) }}/{{ bucketCount(scope_rows) }} buckets)</h4>
+        <button type="button" (click)="clearScope()" [disabled]="!selectedScopeIds.length">
+          Clear
+        </button>
+      </div>
+
+      <!-- Scope discriminants -->
+      <div class="disc-list" *ngIf="scope_discriminants?.length; else noScope">
+        <ng-container *ngFor="let row of scope_rows">
+          <div class="disc-separator" *ngIf="row.kind === 'separator'" aria-hidden="true"></div>
+
+          <div class="disc-item" *ngIf="row.kind === 'item'">
+            <button
+              type="button"
+              class="chip"
+              [class.selected]="isScopeSelected(row.disc)"
+              [class.inactive]="!wouldFurtherFilter(row.disc)"
+              [class.current-hit]="highlightCurrent && isCurrentSolutionIn(row.disc)"
+              [disabled]="!isScopeSelected(row.disc) && !wouldFurtherFilter(row.disc)"
+              (click)="toggleScope(row.disc)"
+              [title]="row.disc.identifier">
+              {{ row.disc.identifier }}
+            </button>
+
+            <app-pill
+              *ngIf="row.disc.instantiations?.length"
+              badge="i"
+              variant="editor"
+              [text]="row.disc.instantiations.join('\n') + '\n\n' + meaningConstructors + '\n\n' + repeat('*',10) + '\n\n'"
+              [minimizedColor]="'#424242'">
+            </app-pill>
+          </div>
+        </ng-container>
+      </div>
+
+      <ng-template #noScope>
+        <div class="disc-empty">No scope discriminants.</div>
+      </ng-template>
+
+    </div>
+
+    <!-- MC -->
+      <div class="disc-block">
+      <div class="disc-header">
+        <h4>MC discriminants <br> ({{ activeDiscriminantCount(mc_discriminants) }}/{{ mc_discriminants.length }} active, {{ activeBucketCount(mc_rows) }}/{{ bucketCount(mc_rows) }} buckets)</h4>
+        <button type="button" (click)="clearMc()" [disabled]="!selectedMcIds.length">
+          Clear
+        </button>
+      </div>
+
+      <!-- MC discriminants -->
+      <div class="disc-list" *ngIf="mc_discriminants?.length; else noMc">
+        <ng-container *ngFor="let row of mc_rows">
+          <div class="disc-separator" *ngIf="row.kind === 'separator'" aria-hidden="true"></div>
+
+          <div class="disc-item" *ngIf="row.kind === 'item'">
+            <button
+              type="button"
+              class="chip"
+              [class.selected]="isMcSelected(row.disc)"
+              [class.inactive]="!wouldFurtherFilter(row.disc)"
+              [class.current-hit]="highlightCurrent && isCurrentSolutionIn(row.disc)"
+              [disabled]="!isMcSelected(row.disc) && !wouldFurtherFilter(row.disc)"
+              (click)="toggleMc(row.disc)"
+              [title]="row.disc.identifier"
+            >
+              {{ row.disc.identifier }}
+            </button>
+
+            <app-pill
+              *ngIf="row.disc.identifier"
+              badge="i"
+              variant="editor"
+              [text]="replaceLollipop(row.disc.identifier) + '\n\n' + meaningConstructors + '\n\n' + repeat('*',10) + '\n\n'"
+              [minimizedColor]="'#424242'">
+            </app-pill>
+          </div>
+        </ng-container>
+      </div>
+
+      <ng-template #noMc>
+        <div class="disc-empty">No MC discriminants.</div>
+      </ng-template>
+
+    </div>
+
+  </div>
+
+</div>

@@ -2,7 +2,9 @@
 <textarea #host>
 </textarea>
 </div>
-<button class="resize" (click)="resizeToDefault()">Resize to Default</button>
-<button (click)="downloadFile(filename)">Download as: </button><input [(ngModel)]="filename" placeholder="Enter filename">
-<div>
-</div>
+<ng-container *ngIf="showControls">
+  <button class="resize" (click)="resizeToDefault()">Resize to Default</button>
+  <button (click)="downloadFile(filename)">Download as: </button><input [(ngModel)]="filename" placeholder="Enter filename">
+  <div>
+  </div>
+</ng-container>

@@ -1,0 +1,16 @@
+<pre [ngClass]="{
+      'highlight-block': !wellformed_inference
+    }">
+{{sentence_string}}
+</pre>
+
+<!--
+<div *ngIf="wellformed_inference">
+  <label for="outputstyle">Gold label:</label>
+  <select formControlName="label" id="label" name="gold_label">
+    <option value="0">Entailment</option>
+    <option value="1">Neutral</option>
+    <option value="3">Contradiction</option>
+  </select>
+</div>
+-->

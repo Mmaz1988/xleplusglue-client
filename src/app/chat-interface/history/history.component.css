@@ -1,0 +1,60 @@
+.history-container {
+  display: flex;
+  flex-direction: column;  /* Ensures rows are stacked vertically */
+  align-items: center;  /* Center the rows */
+  max-height: 400px;  /* Adjustable max height */
+  overflow-y: auto;  /* Enable scrolling if needed */
+  border: 1px solid #ccc;
+  padding: 10px;
+  width: 80%;
+  margin: auto;
+}
+
+.history-row {
+  display: flex;
+  justify-content: center;  /* Center the items in the row */
+  gap: 10px;  /* Space between items */
+  margin-bottom: 10px;  /* Space between rows */
+}
+
+.history-box {
+  font-family: monospace;
+  white-space: pre-wrap;  /* Preserve formatting */
+  text-align: center;
+  background-color: #f4f4f4;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+  min-width: 100px;
+  cursor: pointer; /* Make it clear that boxes are clickable */
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+/* Style for selected boxes */
+.history-box.selected {
+  background-color: lightblue;
+  border-color: blue;
+  font-weight: bold;
+}
+
+/* Hover effect for better UX */
+.history-box:hover {
+  background-color: #e0e0e0;
+}
+
+/* Button styling */
+button {
+  margin-top: 10px;
+  padding: 8px 15px;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid #007bff;
+  background-color: #007bff;
+  color: white;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+button:hover {
+  background-color: #0056b3;
+}

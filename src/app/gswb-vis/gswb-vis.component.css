@@ -4,3 +4,7 @@
   border-width: 0.2em;
 }
 
+div.errorhandling {
+  color: red;
+  padding-bottom: 10px;
+}

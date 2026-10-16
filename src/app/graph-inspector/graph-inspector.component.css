@@ -1,0 +1,182 @@
+:host {
+  display: block;
+  padding-left: 1rem;
+}
+
+.inspector-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.editor-section {
+  margin-bottom: 0.9rem;
+}
+
+.inspector-editors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.inspector-editors .editor-section {
+  min-width: 0;
+}
+
+.editor-label {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+}
+
+.editor-restr {
+  width: 800px;
+  max-width: 100%;
+  justify-content: center;
+  align-items: center;
+}
+
+:host ::ng-deep app-editor {
+  display: block;
+  max-width: 100%;
+}
+
+:host ::ng-deep app-editor .editor-container {
+  min-width: 0;
+}
+
+:host ::ng-deep app-editor .CodeMirror {
+  width: 100%;
+}
+
+:host ::ng-deep app-editor .CodeMirror-scroll {
+  min-height: 220px;
+}
+
+.inspector-help {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.errorhandling {
+  margin: 0.5rem 0 1rem;
+  font-weight: 600;
+}
+
+.query-result {
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.graph-shell {
+  min-width: 0;
+}
+
+.graph-results-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 800px) minmax(320px, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.solutions-panel {
+  min-width: 0;
+  width: min(100%, 28rem);
+  justify-self: start;
+  margin-left: 0.75rem;
+  box-sizing: border-box;
+  max-height: calc(100vh - 14rem);
+  overflow: auto;
+  border: 1px solid #d9d9d9;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: #fff;
+}
+
+.solutions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.solutions-header h4 {
+  margin: 0;
+}
+
+.solution-card {
+  border: 1px solid #ececec;
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.65rem;
+  background: #fafafa;
+}
+
+.solution-card > summary {
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.solution-signature {
+  font-weight: 400;
+  color: #666;
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.solution-variable {
+  margin-top: 0.75rem;
+}
+
+.solution-variable-name {
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.solution-node {
+  margin-left: 0.6rem;
+  margin-bottom: 0.6rem;
+  padding-left: 0.6rem;
+  border-left: 3px solid #d0d0d0;
+}
+
+.solution-node-id {
+  font-size: 0.9rem;
+  color: #444;
+  margin-bottom: 0.25rem;
+}
+
+.solution-constraints {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 1100px) {
+  .inspector-editors {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-results-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .solutions-panel {
+    width: 100%;
+    margin-left: 0;
+    max-height: none;
+  }
+}
+
+.spinner-border {
+  width: 1rem;
+  height: 1rem;
+  border-width: 0.2em;
+}

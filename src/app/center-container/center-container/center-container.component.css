@@ -1,0 +1,9 @@
+.center-container {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+  background: #f5f5f5;
+  width: 100%;
+  flex-shrink: 0;
+}
