@@ -71,7 +71,7 @@ export const APP_DEFAULTS = {
     chat: {
       logic_type: 1,
       model_building: false,
-      max_duration: 10,
+      max_duration: 3,
       layered: false,
       anaphora_selection: 'all' as const,
       anaphora_top_k: 1,
@@ -79,9 +79,9 @@ export const APP_DEFAULTS = {
       anaphora_averager: 'borda',
     },
     regression: {
-      logic_type: 0,
-      model_building: true,
-      max_duration: 10,
+      logic_type: 1,
+      model_building: false,
+      max_duration: 3,
       layered: false,
       anaphora_selection: 'all' as const,
       anaphora_top_k: 1,
