@@ -193,7 +193,8 @@ export class ReasoningPipelineService {
         this.dataService.gswbGeneratePcdrs({
           semantic: merged.semantic,
           parentSolutionId: `${scopeId}-rule-${index + 1}`,
-          mergedStructure: branch.structure as any
+          mergedStructure: branch.structure as any,
+          rulesApplied: true,
         }).pipe(map(result => ({ result, ruleBranchIndex: index + 1 })))
       ))),
       map(pcdrsResults => {

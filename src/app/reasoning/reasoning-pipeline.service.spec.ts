@@ -102,6 +102,14 @@ describe('ReasoningPipelineService', () => {
     });
   });
 
+  it('asks GSWB for the readings the rules propose', done => {
+    service.prepareReasoningChecks(request()).subscribe(() => {
+      expect(dataService.gswbGeneratePcdrs.calls.allArgs().map(args => args[0].rulesApplied))
+        .toEqual([true]);
+      done();
+    });
+  });
+
   it('fetches the check ASTs once per pair, not once per mapping', done => {
     dataService.gswbGeneratePcdrs.and.returnValue(of({
       solutions: [{ id: 'm1', semantic: 'a', anaphoraRelations: [] },

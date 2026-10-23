@@ -714,6 +714,9 @@ export interface GswbPcdrsRequest {
   semantic: string;
   parentSolutionId?: string;
   mergedStructure: LigerStructure;
+  // Whether the post-processing rules ran over mergedStructure: with rules, GSWB returns the
+  // readings the rules propose; without, the one default reading (p-boxes in situ, pronouns unbound).
+  rulesApplied: boolean;
 }
 
 export interface GswbPcdrsOutput {

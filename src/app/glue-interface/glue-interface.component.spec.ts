@@ -267,7 +267,9 @@ describe('GlueInterfaceComponent', () => {
     expect(dataServiceMock.gswbGeneratePcdrs).toHaveBeenCalledWith({
       semantic: '([x1],[dog(x1)])',
       parentSolutionId: 's1',
-      mergedStructure: { constraints: [], annotations: [], choiceSpace: {} }
+      mergedStructure: { constraints: [], annotations: [], choiceSpace: {} },
+      // No rules ran: GSWB gives the default reading.
+      rulesApplied: false,
     });
     expect(component.pcdrsSolutions.length).toBe(1);
   });
@@ -509,6 +511,10 @@ describe('GlueInterfaceComponent', () => {
     expect(dataServiceMock.gswbGeneratePcdrs.calls.allArgs()
       .map(args => args[0].parentSolutionId))
       .toEqual(['s1-graph-1-rule-1', 's1-graph-1-rule-2', 's2-graph-2-rule-1']);
+    // Every branch is the rules': GSWB returns only the readings they propose.
+    expect(dataServiceMock.gswbGeneratePcdrs.calls.allArgs()
+      .map(args => args[0].rulesApplied))
+      .toEqual([true, true, true]);
   });
 
   it('creates PCDRS only for the selected merged graph', () => {

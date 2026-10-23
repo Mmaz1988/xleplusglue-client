@@ -704,6 +704,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         ? `${candidate.result.semanticSolution.id}-graph-${candidate.graphIndex + 1}-rule-${candidate.annotationIndex + 1}`
         : candidate.result.semanticSolution.id,
       mergedStructure: candidate.annotation.structureJson as LigerStructure,
+      rulesApplied: candidate.result.rulesApplied,
     }))).subscribe(responses => {
       this.pcdrsLoading = false;
       console.info('[Analysis] PCDRS generation completed', {
