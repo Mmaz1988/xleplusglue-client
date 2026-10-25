@@ -3726,6 +3726,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       hypothesisAsts: branch.hypothesisAsts,
       typed,
       prune: pruning,
+      // Regression stores no SVG: an item's readings are rendered when it is opened
+      // (/render_pcdrs).
+      includeSvg: false,
       ruleString: this.session.pragmaticsRulesText ?? '',
     }).pipe(
       catchError(error => {

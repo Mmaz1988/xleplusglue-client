@@ -38,6 +38,7 @@ describe('ReasoningPipelineService', () => {
     hypothesisAsts: [structure],
     typed: false,
     ruleString: "#a PRED %p ==> #a MARKED 'yes'.",
+    includeSvg: false,
   });
 
   beforeEach(() => {
@@ -99,6 +100,16 @@ describe('ReasoningPipelineService', () => {
       // No prior means no axiom -- never the merged sequence standing in for one.
       expect(pair.assignments[0].contextTptp).toBe('');
       done();
+    });
+  });
+
+  it('asks GSWB to render the readings only when the caller shows them', done => {
+    service.prepareReasoningChecks(request()).subscribe(() => {
+      service.prepareReasoningChecks({ ...request(), includeSvg: true }).subscribe(() => {
+        expect(dataService.gswbGeneratePcdrs.calls.allArgs().map(args => args[0].includeSvg))
+          .toEqual([false, true]);
+        done();
+      });
     });
   });
 
@@ -398,6 +409,7 @@ describe('ReasoningPipelineService', () => {
   it('generates the discourse mappings without rules too', done => {
     service.generateDiscourseMappings({
       scopeId: 's', merged: request().merged, sequenceStructure: structure, ruleString: '',
+      includeSvg: true,
     }).subscribe(mappings => {
       expect(mappings.length).toBe(1);
       expect(dataService.ligerApplyRulesToStructure).not.toHaveBeenCalled();

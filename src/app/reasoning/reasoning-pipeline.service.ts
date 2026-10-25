@@ -59,6 +59,9 @@ export interface ReasoningPairRequest {
   typed: boolean;
   /** Reason over the first candidate only. */
   prune?: boolean;
+  /** Whether GSWB renders each reading to SVG: true where the view shows the readings,
+   *  false where it stores none (they can be rendered later through /render_pcdrs). */
+  includeSvg: boolean;
   /** The post-processing (pragmatics) rules of the loaded LiGER rule set. Without valid
    *  rules post-processing is skipped: the checks are still built over the merged DRS, and
    *  every pronoun is read as a new referent (reported per branch in `degradations`). */
@@ -172,6 +175,7 @@ export class ReasoningPipelineService {
     sequenceStructure: LigerStructure,
     ruleString: string,
     prune: boolean,
+    includeSvg: boolean,
   ): Observable<MappingWithStructure[]> {
     // /merge_uploaded_structures only UNIONS the merged syntax with the merged
     // semantics -- both sides end up in one graph with no edges between them. The
@@ -195,6 +199,7 @@ export class ReasoningPipelineService {
           parentSolutionId: `${scopeId}-rule-${index + 1}`,
           mergedStructure: branch.structure as any,
           rulesApplied: true,
+          includeSvg,
         }).pipe(map(result => ({ result, ruleBranchIndex: index + 1 })))
       ))),
       map(pcdrsResults => {
@@ -273,6 +278,8 @@ export class ReasoningPipelineService {
     /** The post-processing (pragmatics) rules of the loaded LiGER rule set. */
     ruleString: string;
     prune?: boolean;
+    /** See ReasoningPairRequest.includeSvg. */
+    includeSvg: boolean;
   }): Observable<MappingWithStructure[]> {
     if (!request.sequenceStructure) {
       throw new Error('Discourse mappings require the sequence provenance structure.');
@@ -286,6 +293,7 @@ export class ReasoningPipelineService {
       request.sequenceStructure,
       request.ruleString ?? '',
       !!request.prune,
+      request.includeSvg,
     );
   }
 
@@ -316,7 +324,7 @@ export class ReasoningPipelineService {
     });
 
     const mappingsWithStructure$ = this.buildDiscourseMappings(
-      scopeId, merged, sequenceStructure, ruleString, !!request.prune);
+      scopeId, merged, sequenceStructure, ruleString, !!request.prune, request.includeSvg);
 
     return forkJoin({
       reasoningChecksResponse: reasoningChecks$,

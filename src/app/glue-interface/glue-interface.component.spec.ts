@@ -270,6 +270,8 @@ describe('GlueInterfaceComponent', () => {
       mergedStructure: { constraints: [], annotations: [], choiceSpace: {} },
       // No rules ran: GSWB gives the default reading.
       rulesApplied: false,
+      // The analysis view shows its readings.
+      includeSvg: true,
     });
     expect(component.pcdrsSolutions.length).toBe(1);
   });

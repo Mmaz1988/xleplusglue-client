@@ -688,6 +688,8 @@ export class ChatComponent {
             hypothesisAsts: [pair.currentSemantic?.graph],
             typed,
             prune: pruneContext,
+            // Chat shows each reading's DRS in its discourse branches.
+            includeSvg: true,
             ruleString: this.pragmaticsRules(),
           }).pipe(map(preparedPair => ({
             priorElementId,
@@ -1024,6 +1026,7 @@ export class ChatComponent {
           // GSWB to branch on -- one empty mapping, no pronoun bound. Every turn uses this
           // same source, so all turns' pragmatic layers come from one rule set.
           ruleString: this.pragmaticsRules(),
+          includeSvg: true,
         }).pipe(
           map(mappings => ({ semId, scopeId, mappings })),
           catchError(error => {

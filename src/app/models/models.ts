@@ -717,6 +717,9 @@ export interface GswbPcdrsRequest {
   // Whether the post-processing rules ran over mergedStructure: with rules, GSWB returns the
   // readings the rules propose; without, the one default reading (p-boxes in situ, pronouns unbound).
   rulesApplied: boolean;
+  // Whether GSWB renders each reading to SVG (`solution`): true where the readings are shown,
+  // false where they are only combined further (GSWB /render_pcdrs renders one later).
+  includeSvg: boolean;
 }
 
 export interface GswbPcdrsOutput {
