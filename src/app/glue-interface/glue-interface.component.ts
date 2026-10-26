@@ -4,7 +4,7 @@ import { forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRankerSelection, AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SemDiscourseMapping, SentenceAnalysis, SequenceAnalysis, VampirePreferences, XlePlusGlueDocument } from '../models/models';
+import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRankerSelection, AnaphoraRanking, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SentenceAnalysis, SequenceAnalysis, VampirePreferences, XlePlusGlueDocument } from '../models/models';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
@@ -12,6 +12,7 @@ import { APP_DEFAULTS } from '../app-defaults';
 import { AnaphoraRankingTable, anaphoraRankerSelection, anaphoraRankingCaption, anaphoraRankingTable, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
 import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
+import { discourseUpdateOf } from '../document-builder/pcdrs-readings';
 
 interface PostProcessingResult {
   semanticSolution: GswbSolution;
@@ -698,71 +699,52 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
         annotations: candidate.annotation.structureJson?.annotations?.length ?? 0,
       })),
     });
-    forkJoin(candidates.map(candidate => this.dataService.gswbGeneratePcdrs({
-      semantic: candidate.result.semanticSolution.semanticAnalysis?.semString ?? '',
-      parentSolutionId: this.postProcessingResults.length
-        ? `${candidate.result.semanticSolution.id}-graph-${candidate.graphIndex + 1}-rule-${candidate.annotationIndex + 1}`
-        : candidate.result.semanticSolution.id,
-      mergedStructure: candidate.annotation.structureJson as LigerStructure,
-      rulesApplied: candidate.result.rulesApplied,
+    this.documentBuilder.generatePcdrsReadings({
+      scopeId: 'analysis-pcdrs',
+      branches: candidates.map(candidate => ({
+        semantic: candidate.result.semanticSolution.semanticAnalysis?.semString ?? '',
+        semanticOrigin: candidate.result.semanticSolution.id,
+        structure: candidate.annotation.structureJson as LigerStructure,
+        parentSolutionId: this.postProcessingResults.length
+          ? `${candidate.result.semanticSolution.id}-graph-${candidate.graphIndex + 1}-rule-${candidate.annotationIndex + 1}`
+          : candidate.result.semanticSolution.id,
+        // 1-based, matching the parentSolutionId. The no-rules fallback builds exactly one
+        // candidate, so it is branch 1 -- chat and regression number their branches the
+        // same way, which is what keeps the three documents comparable.
+        ruleBranchIndex: candidate.annotationIndex + 1,
+        rulesApplied: candidate.result.rulesApplied,
+      })),
       // The analysis view shows every reading.
       includeSvg: true,
-    }))).subscribe(responses => {
+    }).subscribe(readings => {
       this.pcdrsLoading = false;
-      console.info('[Analysis] PCDRS generation completed', {
-        responseCount: responses.length,
-        solutionCounts: responses.map(response => response?.solutions?.length ?? 0),
-        solutionIds: responses.flatMap(response => (response?.solutions ?? []).map(solution => solution.id)),
-      });
-      this.pcdrsSolutions = responses.flatMap(response => response?.solutions ?? []);
+      this.pcdrsSolutions = readings.map(({ mapping }) => mapping as GswbSolution);
       this.pcdrsUpdateId = null;
 
       const sourceElement = candidates
         .map(candidate => candidate.result.semanticSolution.sequenceAnalysis ?? candidate.result.semanticSolution.sentenceAnalysis)
         .find((analysis): analysis is SentenceAnalysis | SequenceAnalysis => !!analysis);
       if (sourceElement) {
-        const existingUpdate = this.discourseUpdateFor(sourceElement.id);
-        const semDiscourseMapping: SemDiscourseMapping = {};
-        const discourse: DiscourseAnalysis[] = [];
-        candidates.forEach((candidate, candidateIndex) => {
-          const semanticSolutionId = candidate.result.semanticSolution.id;
-          // 1-based, matching the parentSolutionId sent to GSWB above. The no-rules fallback
-          // builds exactly one candidate, so it is branch 1 -- chat and regression number
-          // their branches the same way, which is what keeps the three documents comparable.
-          const ruleBranch = candidate.annotationIndex + 1;
-          (responses[candidateIndex]?.solutions ?? []).forEach(solution => {
-            discourse.push({
-              id: solution.id,
-              semanticOrigin: semanticSolutionId,
-              drsString: solution.semantic ?? solution.solution,
-              drsGraph: solution.graph,
-              ruleBranch,
-              svg: solution.solution,
-              anaphoraMapping: { relations: solution.anaphoraRelations ?? [] },
-              collapsed: false,
-            });
-            semDiscourseMapping[semanticSolutionId] = [
-              ...(semDiscourseMapping[semanticSolutionId] ?? []),
-              solution.id,
-            ];
-          });
-        });
-        this.pcdrsUpdateId = `du-${sourceElement.id}`;
-        this.upsertDiscourseUpdate({
-          id: `du-${sourceElement.id}`,
-          sourceElementId: sourceElement.id,
-          sourceElementKind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence',
-          ruleString: existingUpdate?.ruleString,
-          discourse,
-          semDiscourseMapping,
-        });
+        const update = discourseUpdateOf(
+          { id: sourceElement.id, kind: 'sentenceIds' in sourceElement ? 'sequence' : 'sentence' },
+          readings,
+          this.discourseUpdateFor(sourceElement.id)?.ruleString);
+        this.pcdrsUpdateId = update.id;
+        this.upsertDiscourseUpdate(update);
       }
 
       this.refreshPcdrsDisplay();
       this.focusPcdrsResults();
-    }, () => {
+    }, error => {
+      // Every reading the rules allow may be rejected by the collapse: the error says why.
+      console.warn('[Analysis] PCDRS generation failed', { error });
       this.pcdrsLoading = false;
       this.pcdrsSolutions = [];
+      this.pcdrsUpdateId = null;
+      this.refreshPcdrsDisplay();
+      if (typeof this.inlineGraphInspector?.displayMessage === 'function') {
+        this.inlineGraphInspector.displayMessage(error?.message ?? String(error), 'red');
+      }
     });
   }
 

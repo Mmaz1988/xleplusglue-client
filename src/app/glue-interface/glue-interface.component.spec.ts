@@ -513,6 +513,10 @@ describe('GlueInterfaceComponent', () => {
       ruleAnnotations: [{ structureJson: { id: 'd2a' } } as any],
       rulesApplied: true
     }];
+    // A distinct reading per branch: identical ones are one reading (see below).
+    dataServiceMock.gswbGeneratePcdrs.and.callFake((request: any) => of({
+      solutions: [{ id: `${request.parentSolutionId}-pcdrs-1`, solution: '<svg></svg>', semantic: request.parentSolutionId }],
+    }));
 
     component.generatePcdrs();
 
@@ -617,7 +621,7 @@ describe('GlueInterfaceComponent', () => {
       rulesApplied: true,
     }] as any;
     dataServiceMock.gswbGeneratePcdrs.and.callFake((request: any) => of({
-      solutions: [{ id: `${request.parentSolutionId}-m1`, solution: '<svg></svg>', semantic: 'drs' }],
+      solutions: [{ id: `${request.parentSolutionId}-m1`, solution: '<svg></svg>', semantic: `drs-${request.parentSolutionId}` }],
     }));
 
     component.generatePcdrs();
@@ -631,6 +635,34 @@ describe('GlueInterfaceComponent', () => {
     expect(update.discourse.map((entry: any) => entry.ruleBranch)).toEqual([1, 2]);
     expect(update.structures).toBeUndefined();
     expect(update.mergedGraphs).toBeUndefined();
+  });
+
+  it('records two rule branches with the same binding over the same DRS as one reading', () => {
+    const sentence: SentenceAnalysis = {
+      id: 'sentence-1', text: 'a man saw himself', syntax: [], semantics: [], synSemMapping: {},
+    } as any;
+    (component as any).analysisDocument.sentences = [sentence];
+    (component as any).analysisDocument.elements = [{ kind: 'sentence', id: 'sentence-1' }];
+    component.showInlinePostProcessing = true;
+    component.mergedStructureContent = JSON.stringify({ constraints: [], annotations: [] });
+    component.postProcessingResults = [{
+      semanticSolution: derived({ id: 'sol-1', semantic: '([x],[])', sentenceAnalysis: sentence }),
+      structureContent: '{"constraints":[],"annotations":[]}',
+      graphElements: [],
+      ruleAnnotations: [{ structureJson: { id: 'branch-1' } }, { structureJson: { id: 'branch-2' } }],
+      rulesApplied: true,
+    }] as any;
+    const relation = { pronounReferentId: 'x2', antecedent: 'x1', stateLabel: 's1' };
+    dataServiceMock.gswbGeneratePcdrs.and.callFake((request: any) => of({
+      solutions: [{ id: `${request.parentSolutionId}-m1`, solution: '<svg></svg>', semantic: 'drs', anaphoraRelations: [relation] }],
+    }));
+
+    component.generatePcdrs();
+
+    const update = (component as any).analysisDocument.discourseUpdates[0];
+    expect(update.discourse.map((entry: any) => entry.id)).toEqual(['sol-1-graph-1-rule-1-m1']);
+    expect(update.discourse[0].collapsed).toBeTrue();
+    expect(component.pcdrsSolutions.map(solution => solution.id)).toEqual(['sol-1-graph-1-rule-1-m1']);
   });
 
   describe('canonical document assembly', () => {

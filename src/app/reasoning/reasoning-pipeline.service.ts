@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, forkJoin, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { reasoningAssignmentId } from '../analysis-model';
+import { DocumentBuilderService } from '../document-builder/document-builder.service';
+import { MappingWithStructure } from '../document-builder/pcdrs-readings';
 import {
   LigerStructure,
   LigerWebGraph,
@@ -11,6 +13,8 @@ import {
   SemanticAnalysis,
   hasPostProcessingRules,
 } from '../models/models';
+
+export { MappingWithStructure } from '../document-builder/pcdrs-readings';
 
 /** One post-processing rule branch: the tier-B interconnected structure the rules
  *  produced. LiGER also renders a graph for it, which this path does not take -- nothing
@@ -118,18 +122,6 @@ export interface PreparedReasoningPair {
   degradations: string[];
 }
 
-/** One PCDRS/anaphora mapping together with the number of the rule branch it came from --
- *  the output of the post-processing half of the pipeline, before any reasoning checks are
- *  built on top. The tier-A union and the tier-B branch themselves stay inside the pipeline:
- *  they are consumed to produce this mapping and then dropped, since no consumer persists
- *  them any more and holding them would keep the whole cross product in memory. */
-export interface MappingWithStructure {
-  /** GSWB's PCDRS solution: `.id`, `.semantic`, `.graph`, `.anaphoraRelations`. */
-  mapping: any;
-  /** 1-based, matching the parentSolutionId sent to GSWB. */
-  ruleBranchIndex: number;
-}
-
 /**
  * Builds the four discourse-reasoning checks for a premise/conclusion pair.
  *
@@ -140,7 +132,7 @@ export interface MappingWithStructure {
  */
 @Injectable({ providedIn: 'root' })
 export class ReasoningPipelineService {
-  constructor(private dataService: DataService) {}
+  constructor(private dataService: DataService, private documentBuilder: DocumentBuilderService) {}
 
   /**
    * Runs several pairs strictly one after another.
@@ -194,79 +186,22 @@ export class ReasoningPipelineService {
       switchMap(base => this.applyNliRules(base.structureJson, ruleString).pipe(
         map(branches => ({ base, branches }))
       )),
-      switchMap(({ branches }) => forkJoin(branches.map((branch, index) =>
-        this.dataService.gswbGeneratePcdrs({
+      switchMap(({ branches }) => this.documentBuilder.generatePcdrsReadings({
+        scopeId,
+        branches: branches.map((branch, index) => ({
           semantic: merged.semString,
+          semanticOrigin: merged.semId,
+          structure: branch.structure,
           parentSolutionId: `${scopeId}-rule-${index + 1}`,
-          mergedStructure: branch.structure as any,
-          // Whether applyNliRules ran the rules: without them GSWB gives its default reading
-          // (every p-box in situ, every pronoun unbound) instead of the rules' proposals.
+          ruleBranchIndex: index + 1,
+          // Whether applyNliRules ran the rules.
           rulesApplied: hasPostProcessingRules(ruleString),
-          includeSvg,
-        }).pipe(map(result => ({ result, ruleBranchIndex: index + 1 })))
-      ))),
-      map(pcdrsResults => {
-        let mappingsWithStructure = pcdrsResults.flatMap(({ result, ruleBranchIndex }) =>
-          (result?.solutions ?? []).map(mapping => ({ mapping, ruleBranchIndex }))
-        );
-        if (!mappingsWithStructure.length) {
-          // Every reading the rules allow may be rejected by the collapse: say why.
-          const rejected = pcdrsResults.flatMap(({ result }) => result?.rejected ?? [])
-            .map(reading => `${reading.id}: ${reading.rejection}`);
-          throw new Error('No post-processed sequence interpretations were generated.'
-            + (rejected.length ? ` Rejected: ${rejected.join('; ')}` : ''));
-        }
-
-        // Two rule branches can yield the SAME anaphora mapping over the same DRS: a
-        // branching rule forks one branch per solution, and branches that differ only in
-        // facts GSWB does not read give the same mapping. (A rule that marked the good
-        // branches with a fresh `#z KEEP +` node once doubled every mapping this way.)
-        //
-        // Deduplicating HERE rather than where the document is written is deliberate.
-        // This is upstream of the collapse/TPTP batch and of Vampire, so a duplicate
-        // costs nothing further: dropping it at the document layer would have left the
-        // whole check-building and proving cost in place and merely hidden it.
-        //
-        // The key is what makes two branches the same *discourse analysis*: the binding
-        // it asserts, over the DRS it asserts it about. Rule-branch index is deliberately
-        // NOT part of it -- being reached via a different branch is exactly the
-        // distinction that carries no meaning here.
-        const seen = new Map<string, number>();
-        const deduplicated = mappingsWithStructure.filter(({ mapping }) => {
-          const relations = (mapping.anaphoraRelations ?? [])
-            .map((relation: any) => `${relation?.pronounReferentId}>${relation?.antecedent}@${relation?.stateLabel ?? ''}`)
-            .sort()
-            .join('|');
-          const key = `${relations}::${mapping.semantic ?? ''}`;
-          const hits = seen.get(key) ?? 0;
-          seen.set(key, hits + 1);
-          return hits === 0;
-        });
-        const duplicateCount = mappingsWithStructure.length - deduplicated.length;
-        if (duplicateCount) {
-          console.info('[Reasoning] dropped duplicate anaphora mappings', {
-            scopeId,
-            generated: mappingsWithStructure.length,
-            distinct: deduplicated.length,
-            dropped: duplicateCount,
-          });
-        }
-        mappingsWithStructure = deduplicated;
-
-        console.info('[Reasoning] PCDRS candidates generated', {
-          scopeId,
-          ruleBranchCount: pcdrsResults.length,
-          mappingCount: mappingsWithStructure.length,
-          anaphoraResolvedCount: mappingsWithStructure.filter(({ mapping }) =>
-            (mapping.anaphoraRelations ?? []).length > 0).length,
-        });
-        // Pruning reasons over the first candidate alone; the reduction happens here,
-        // before the expensive collapse/TPTP/Vampire steps below.
-        if (prune) {
-          mappingsWithStructure = mappingsWithStructure.slice(0, 1);
-        }
-        return mappingsWithStructure;
-      })
+        })),
+        includeSvg,
+      })),
+      // Pruning reasons over the first candidate alone; the reduction happens here,
+      // before the expensive collapse/TPTP/Vampire steps below.
+      map(mappings => prune ? mappings.slice(0, 1) : mappings)
     );
   }
 

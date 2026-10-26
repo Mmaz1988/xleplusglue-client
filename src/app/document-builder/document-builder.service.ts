@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
-import { Observable, catchError, concatMap, defer, from, map, of, toArray } from 'rxjs';
+import { Observable, catchError, concatMap, defer, forkJoin, from, map, of, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { compositeAnalysisId, readingOf } from '../analysis-model';
 import { proofInputsFrom } from './proof-inputs';
+import { MappingWithStructure, PcdrsRuleBranch, distinctPcdrsMappings } from './pcdrs-readings';
 import {
   GswbDiscriminant,
   GswbPreferences,
@@ -110,6 +111,56 @@ interface ResolvedContext {
 @Injectable({ providedIn: 'root' })
 export class DocumentBuilderService {
   constructor(private dataService: DataService) {}
+
+  /** The PCDRS readings of post-processing rule branches: GSWB /generate_pcdrs per branch,
+   *  duplicates dropped (`distinctPcdrsMappings`). The one procedure analysis, chat and
+   *  regression build their PCDRS readings with. Fails with GSWB's rejections when no
+   *  branch yields a reading: every reading the rules allow may be rejected by the collapse. */
+  generatePcdrsReadings(request: {
+    scopeId: string;
+    branches: PcdrsRuleBranch[];
+    /** Whether GSWB renders each reading to SVG. */
+    includeSvg: boolean;
+  }): Observable<MappingWithStructure[]> {
+    const { scopeId, branches } = request;
+    return forkJoin(branches.map(branch => this.dataService.gswbGeneratePcdrs({
+      semantic: branch.semantic,
+      parentSolutionId: branch.parentSolutionId,
+      mergedStructure: branch.structure,
+      rulesApplied: branch.rulesApplied,
+      includeSvg: request.includeSvg,
+    }))).pipe(map(results => {
+      const generated = results.flatMap((result, index) =>
+        (result?.solutions ?? []).map(mapping => ({
+          mapping,
+          ruleBranchIndex: branches[index].ruleBranchIndex,
+          semanticOrigin: branches[index].semanticOrigin,
+        })));
+      if (!generated.length) {
+        const rejected = results.flatMap(result => result?.rejected ?? [])
+          .map(reading => `${reading.id}: ${reading.rejection}`);
+        throw new Error('No post-processed sequence interpretations were generated.'
+          + (rejected.length ? ` Rejected: ${rejected.join('; ')}` : ''));
+      }
+      const distinct = distinctPcdrsMappings(generated);
+      if (distinct.length < generated.length) {
+        console.info('[DocumentBuilder] dropped duplicate anaphora mappings', {
+          scopeId,
+          generated: generated.length,
+          distinct: distinct.length,
+          dropped: generated.length - distinct.length,
+        });
+      }
+      console.info('[DocumentBuilder] PCDRS candidates generated', {
+        scopeId,
+        ruleBranchCount: branches.length,
+        mappingCount: distinct.length,
+        anaphoraResolvedCount: distinct.filter(({ mapping }) =>
+          (mapping.anaphoraRelations ?? []).length > 0).length,
+      });
+      return distinct;
+    }));
+  }
 
   newDocument(sessionKey: string, semanticType: string): XlePlusGlueDocument {
     return {

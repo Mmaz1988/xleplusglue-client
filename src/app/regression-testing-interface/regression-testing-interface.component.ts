@@ -1,6 +1,7 @@
 import { Component, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { DataService } from "../data.service";
 import { proofInputsFrom } from '../document-builder/proof-inputs';
+import { discourseUpdateOf } from '../document-builder/pcdrs-readings';
 import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
 import { ActivatedRoute } from '@angular/router';
 import {
@@ -15,8 +16,6 @@ import {
   ReasoningCheckSet,
   ReasoningUpdate,
   SemanticAnalysis,
-  AnaphoraMappingModel,
-  DiscourseAnalysis,
   DiscourseUpdate,
   GswbProofInput,
   GswbRequest,
@@ -3315,49 +3314,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
-    const discourse: DiscourseAnalysis[] = [];
-    const semDiscourseMapping: Record<string, string[]> = {};
-
     // `prepared` is built by concatMap over `branches`, so index i belongs to branch i.
-    prepared.forEach((pair, index) => {
+    const readings = prepared.flatMap((pair, index) => {
       const semId = branches[index]?.merged?.semanticAnalysis?.semId;
-      if (!semId) return;
-
-      (pair.assignments ?? []).forEach(assignment => {
-        const discourseId = assignment.mappingId
-          ?? `${semId}-pcdrs-${assignment.ruleBranchIndex}`;
-        if (discourse.some(entry => entry.id === discourseId)) return;
-
-        const mapped = semDiscourseMapping[semId] ?? [];
-        if (!mapped.includes(discourseId)) mapped.push(discourseId);
-        semDiscourseMapping[semId] = mapped;
-
-        discourse.push({
-          id: discourseId,
-          semanticOrigin: semId,
-          drsString: assignment.mapping?.semantic ?? '',
-          drsGraph: assignment.mapping?.graph,
-          ruleBranch: assignment.ruleBranchIndex,
-          anaphoraMapping: {
-            relations: assignment.mapping?.anaphoraRelations ?? [],
-          } as AnaphoraMappingModel,
-          collapsed: (assignment.mapping?.anaphoraRelations?.length ?? 0) > 0,
-        });
-      });
+      return semId
+        ? (pair.assignments ?? []).map(({ mapping, ruleBranchIndex }) =>
+          ({ mapping, ruleBranchIndex, semanticOrigin: semId }))
+        : [];
     });
-
-    if (!discourse.length) return;
+    if (!readings.length) return;
 
     const rankers = this.anaphoraRankers();
     const update = carryAnaphoraRanking(
       document.discourseUpdates?.find(existing => existing.id === `du-${sequenceId}`),
-      {
-        id: `du-${sequenceId}`,
-        sourceElementId: sequenceId,
-        sourceElementKind: 'sequence',
-        discourse,
-        semDiscourseMapping,
-      },
+      discourseUpdateOf({ id: sequenceId, kind: 'sequence' }, readings),
       rankers);
     document.discourseUpdates = [
       ...(document.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
@@ -3367,8 +3337,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.rankDiscourseUpdate(build.itemId, update);
     }
     console.info('[Regression] discourse update registered', {
-      itemId: build.itemId, sequenceId, branches: discourse.length,
-      anaphoraResolved: discourse.filter(entry => entry.collapsed).length,
+      itemId: build.itemId, sequenceId, branches: update.discourse.length,
+      anaphoraResolved: update.discourse.filter(entry => entry.collapsed).length,
     });
   }
 

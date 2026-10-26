@@ -2,10 +2,8 @@ import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, 
 import { DataService } from '../../data.service';
 import {
   AnaphoraRankerSelection,
-  AnaphoraMappingModel,
   ChatMessage,
   context,
-  DiscourseAnalysis,
   DiscourseUpdate,
   GswbRequest,
   GswbSolution,
@@ -45,6 +43,7 @@ import {
   validateReasoningUpdate
 } from '../../analysis-model';
 import { MappingWithStructure, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
+import { PcdrsReading, discourseUpdateOf } from '../../document-builder/pcdrs-readings';
 import { AnaphoraRankingService } from '../../reasoning/anaphora-ranking.service';
 import {
   DerivedSentence,
@@ -863,8 +862,6 @@ export class ChatComponent {
       return;
     }
 
-    const discourse: DiscourseAnalysis[] = [];
-    const semDiscourseMapping: Record<string, string[]> = {};
     // The rendered DRS for each branch, for turn 1's message pill. Same shape branchDetail
     // builds for every later turn: index-aligned solutions and captions.
     const branchSolutions: GswbSolution[] = [];
@@ -899,36 +896,21 @@ export class ChatComponent {
       toArray()
     ).subscribe({
       next: results => {
-        results.forEach(({ semId, scopeId, mappings }) => {
-          mappings.forEach(({ mapping, ruleBranchIndex }) => {
-            const discourseId = mapping?.id ?? `${semId}-pcdrs-${ruleBranchIndex}`;
-            if (mapping?.solution) {
-              branchSolutions.push(mapping as GswbSolution);
-              // No verdict to report on turn 1 -- nothing has been reasoned about yet --
-              // so the caption states what the branch bound, which is the whole point of
-              // showing turn 1's branches at all.
-              const bound = mapping.anaphoraRelations?.length
-                ? `${mapping.anaphoraRelations.length} binding(s)`
-                : 'no binding';
-              branchLabels.push(`${discourseId} — ${bound}`);
-            }
-            const mapped = semDiscourseMapping[semId] ?? [];
-            if (!mapped.includes(discourseId)) mapped.push(discourseId);
-            semDiscourseMapping[semId] = mapped;
-            discourse.push({
-              id: discourseId,
-              semanticOrigin: semId,
-              drsString: mapping?.semantic ?? '',
-              drsGraph: mapping?.graph,
-              ruleBranch: ruleBranchIndex,
-              // GSWB renders every PCDRS branch to SVG and returns it as `solution`.
-              // Chat never read it, so its discourse branches were text-only while the
-              // analysis view showed the rendered DRS for the same data.
-              svg: mapping?.solution,
-              anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
-              collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
-            });
-          });
+        const readings = results.flatMap(({ semId, mappings }) =>
+          mappings.map(mapping => ({ ...mapping, semanticOrigin: semId })));
+        // Now that the joins are not stored, the rule string is what makes them recomputable.
+        const update = discourseUpdateOf(
+          { id: sentenceId, kind: 'sentence' }, readings, this.pragmaticsRules());
+        readings.forEach(({ mapping }) => {
+          if (!mapping?.solution) return;
+          branchSolutions.push(mapping as GswbSolution);
+          // No verdict to report on turn 1 -- nothing has been reasoned about yet -- so the
+          // caption states what the branch bound, which is the whole point of showing turn
+          // 1's branches at all.
+          const bound = mapping.anaphoraRelations?.length
+            ? `${mapping.anaphoraRelations.length} binding(s)`
+            : 'no binding';
+          branchLabels.push(`${mapping.id} — ${bound}`);
         });
 
         // Swap the placeholder text pill for the rendered branches, exactly as every later
@@ -941,23 +923,15 @@ export class ChatComponent {
           message.semanticText = '';
         }
 
-        if (discourse.length) {
+        if (update.discourse.length) {
           console.info('[Chat] turn 1 post-processing complete', {
             sentenceId,
             readings: results.length,
-            discourseBranches: discourse.length,
-            anaphoraResolvedCount: discourse.filter(item => item.collapsed).length,
+            discourseBranches: update.discourse.length,
+            anaphoraResolvedCount: update.discourse.filter(item => item.collapsed).length,
             renderedBranches: branchSolutions.length,
           });
-          this.upsertDiscourseUpdate({
-            id: `du-${sentenceId}`,
-            sourceElementId: sentenceId,
-            sourceElementKind: 'sentence',
-            // Now that the joins are not stored, this is what makes them recomputable.
-            ruleString: this.pragmaticsRules(),
-            discourse,
-            semDiscourseMapping,
-          });
+          this.upsertDiscourseUpdate(update);
         }
         this.changeDetector.detectChanges();
         this.loading = false;
@@ -1111,15 +1085,9 @@ export class ChatComponent {
     const readingKeys = new Map<string, context>();
     const acceptedReadingKeys = new Set<string>();
     let acceptedAssignments = 0;
-    interface DiscourseGroup {
-      /** semanticOrigin -> discourseId. Accumulated per branch rather than assumed to
-       *  be a single semantic: one sequence's contexts routinely span several merged
-       *  semantic ids, and keying the whole map off the first one silently hid the
-       *  branches belonging to the others. */
-      semDiscourseMapping: Record<string, string[]>;
-      discourse: DiscourseAnalysis[];
-    }
-    const groups = new Map<string, DiscourseGroup>();
+    // The PCDRS readings of each sequence. One sequence's contexts routinely span several
+    // merged semantic ids; each reading keeps its own as `semanticOrigin`.
+    const groups = new Map<string, PcdrsReading[]>();
 
     prepared.forEach((item, index) => {
       const check = verdictFor(item, index);
@@ -1198,34 +1166,18 @@ export class ChatComponent {
         }
       }
 
-      if (!groups.has(sequenceId)) {
-        groups.set(sequenceId, { semDiscourseMapping: {}, discourse: [] });
-      }
-      const group = groups.get(sequenceId)!;
-
-      const mapping = item.checks?.mapping;
-      const discourseId = mapping?.id ?? `${semId}-pcdrs-${index}`;
-      const mappedDiscourseIds = group.semDiscourseMapping[semId] ?? [];
-      if (!mappedDiscourseIds.includes(discourseId)) {
-        mappedDiscourseIds.push(discourseId);
-      }
-      group.semDiscourseMapping[semId] = mappedDiscourseIds;
-      group.discourse.push({
-        // GSWB's PCDRS solution id, matching the analysis view. It identifies the anaphora
-        // branch, which is exactly what a reasoning assignment needs to point at -- and
-        // unlike the structure id it is unique per mapping.
-        id: discourseId,
+      // GSWB's PCDRS solution, whose id identifies the anaphora branch -- exactly what a
+      // reasoning assignment needs to point at. Two pairs that share a semantic id but come
+      // from different premise contexts stay distinct entries even when both are rule
+      // branch 1.
+      const readings = groups.get(sequenceId) ?? [];
+      readings.push({
+        mapping: item.checks?.mapping,
+        ruleBranchIndex: item.checks?.ruleBranchIndex ?? 1,
         semanticOrigin: semId,
-        drsString: mapping?.semantic ?? reading.semString,
-        drsGraph: mapping?.graph,
-        svg: mapping?.solution,
-        // 1-based, as minted by the pipeline. Provenance only: a branch is identified by
-        // its PCDRS mapping id above, so two pairs that share a semantic id but come from
-        // different premise contexts stay distinct entries even when both are branch 1.
-        ruleBranch: item.checks?.ruleBranchIndex ?? 1,
-        anaphoraMapping: { relations: mapping?.anaphoraRelations ?? [] } as AnaphoraMappingModel,
-        collapsed: (mapping?.anaphoraRelations?.length ?? 0) > 0,
+        semString: reading.semString,
       });
+      groups.set(sequenceId, readings);
     });
 
     // Said out loud: the fold is what keeps the next turn's work proportional to its own
@@ -1234,7 +1186,7 @@ export class ChatComponent {
     console.info('[Chat] Discourse readings carried forward', {
       acceptedAssignments,
       readingsKept: next.length,
-      discourseBranches: [...groups.values()].reduce((sum, group) => sum + group.discourse.length, 0),
+      discourseBranches: [...groups.values()].reduce((sum, readings) => sum + readings.length, 0),
     });
 
     const bySequence = new Map<string, context[]>();
@@ -1244,16 +1196,10 @@ export class ChatComponent {
       bySequence.set(entry.elementId!, list);
     });
     bySequence.forEach((entries, sequenceId) => this.upsertSequenceFromContexts(sequenceId, entries));
-    groups.forEach((group, sequenceId) => {
-      if (!group.discourse.length) return;
-      this.upsertDiscourseUpdate({
-        id: `du-${sequenceId}`,
-        sourceElementId: sequenceId,
-        sourceElementKind: 'sequence',
-        ruleString: this.pragmaticsRules(),
-        discourse: group.discourse,
-        semDiscourseMapping: group.semDiscourseMapping,
-      });
+    groups.forEach((readings, sequenceId) => {
+      if (!readings.length) return;
+      this.upsertDiscourseUpdate(discourseUpdateOf(
+        { id: sequenceId, kind: 'sequence' }, readings, this.pragmaticsRules()));
     });
 
     return pruneContext ? next.slice(0, 1) : next;
