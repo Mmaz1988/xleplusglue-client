@@ -47,9 +47,9 @@ import {
 import { MappingWithStructure, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 import { AnaphoraRankingService } from '../../reasoning/anaphora-ranking.service';
 import {
+  DerivedSentence,
   DocumentBuilderService,
   SequenceMergePreviousContext,
-  suppliableStructures,
 } from '../../document-builder/document-builder.service';
 
 
@@ -278,8 +278,8 @@ export class ChatComponent {
 
         this.addDerivedAxioms(selectedSolution.axioms);
 
-        // LFGxDRT derives every reading inside the discourse's sequence (turn 1 as a sequence
-        // of one), so a standalone deduction here would only be thrown away.
+        // LFGxDRT derives the sentence on its own and appends it to the discourse; see
+        // prepareLfgxdrtSolutions.
         if (isLfgxdrtPreferences(this.gswbPreferences.gswbPreferences)) {
           this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
             this.contextPruning.nativeElement.checked);
@@ -417,69 +417,46 @@ export class ChatComponent {
     return trueCount > values.length - trueCount;
   }
 
+  /** Every turn's sentence is derived on its own, once per parse (one `/deduce`), and
+   *  registered with those readings; appending it to the discourse derives nothing
+   *  (`DocumentBuilderService.appendSentence`). The first sentence has no PxQ yet, so no NLI
+   *  rules, PCDRS generation or anaphora collapse. */
   private prepareLfgxdrtSolutions(
     userMessage: string,
     ligerSolution: any,
     ligerSolutions: any[],
     pruneContext: boolean
   ): void {
-
-    // The first sentence follows the analysis workflow. There is no PxQ yet,
-    // so do not run NLI rules, PCDRS generation, or anaphora collapse.
-    if (this.context.length === 0) {
-      // Turn 1's syntax/semantics come from ligerSequence (a one-sentence sequence), like
-      // every later turn and like the analysis view's analyzeSentence(). The sentence is not
-      // parsed again for it: the structures of the /apply_rules_xle parse above are
-      // supplied, which gives the same output as parsing (keys and SYN-IDs included, since
-      // liger 4ec828b/614b9bd; see DocumentBuilderService.SequenceMergeRebase).
-      // Same shared derivation every later turn uses, with no previous sentences --
-      // so turn 1 gets the full syntactic cross product by construction rather than by
-      // a second implementation that has to remember to. This is what used to be chat's
-      // own `calculateSequencePartSemantics`, whose `solutions[0]` discarded every parse
-      // but the first (docs/bug_reports/chat_single_syntax_variant_collapse.md).
-      this.documentBuilder.deriveSentenceInSequence([], {
-        newSentence: { id: 'sentence-1', text: userMessage, structures: suppliableStructures(ligerSolutions) },
-        ruleString: this.ruleString,
-        gswbPreferences: this.gswbPreferences.gswbPreferences,
-      }).subscribe({
-        next: readings => {
-          console.info('[Chat] Turn 1 sequence-sourced semantics ready', {
-            sentence: userMessage,
-            solutionCount: readings.length,
-            syntaxVariants: new Set(readings.map(reading => reading.currentSyntax?.synId)).size,
-            solutionKeys: readings.map(reading => reading.solution.solutionKey),
-          });
-          this.acceptInitialLfgxdrtContext(
-            userMessage,
-            // Each reading keeps ITS OWN variant's merged structure, instead of every
-            // reading being stamped with solutions[0]'s. Still the SEQUENCE structure,
-            // not the per-sentence one: `context.syntax` is what turn 2 supplies back as
-            // this element's `parsedSentences` entry, and that has always been the
-            // one-sentence sequence's assembled structure.
-            readings.map(reading => ({
-              ...reading.solution,
-              semanticAnalysis: reading.semantic,
-              syntax: reading.sequenceStructure,
-              sequenceSyntax: reading.sequenceStructure,
-            })),
-            ligerSolutions);
-        },
-        error: error => {
-          console.warn('[Chat] Turn 1 sequence-sourced semantics failed', { sentence: userMessage, error });
-          this.pushChatMessage({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
-          this.loading = false;
+    const sentenceId = `sentence-${this.chatDocument.sentences.length + 1}`;
+    this.documentBuilder.deriveSentence(
+      { id: sentenceId, text: userMessage }, ligerSolutions, this.gswbPreferences.gswbPreferences,
+    ).subscribe({
+      next: derived => {
+        console.info('[Chat] sentence derived on its own', {
+          sentenceId,
+          readings: derived.analysis.semantics.length,
+          parses: derived.analysis.syntax.length,
+        });
+        this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [derived.analysis]);
+        this.emitChatDocument();
+        if (this.context.length === 0) {
+          this.acceptInitialLfgxdrtContext(userMessage, derived);
+        } else {
+          this.finishLfgxdrtPreparation(userMessage, pruneContext, derived.analysis);
         }
-      });
-      return;
-    }
-
-    this.finishLfgxdrtPreparation(userMessage, pruneContext, ligerSolutions);
+      },
+      error: error => {
+        console.warn('[Chat] deriving the sentence failed', { sentence: userMessage, error });
+        this.pushChatMessage({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
+        this.loading = false;
+      }
+    });
   }
 
   private finishLfgxdrtPreparation(
     userMessage: string,
     pruneContext: boolean,
-    ligerSolutions: any[] = []
+    sentence: SentenceAnalysis,
   ): void {
     const typed = this.turnPreferences().logic_type !== 0;
 
@@ -487,15 +464,10 @@ export class ChatComponent {
       ? this.activeIndices.filter(index => index >= 0 && index < this.context.length)
       : this.context.map((_, index) => index);
 
-    // No pruning here (2026-08-20): the full cross product always runs through the merge
-    // below, exactly like glue-vis's own merge never discards an alternative. Discarding
-    // down to one candidate happens exactly once, downstream, inside
-    // ReasoningPipelineService.prepareReasoningChecks (`prune: pruneContext` below) --
-    // less efficient when pruning, but keeps this method's own shape independent of
-    // whether the turn happens to be pruned.
-    // Registered once its readings are derived inside the sequence (below), like every
-    // other view: a reading derived on its own is never the one reasoned over.
-    const newSentenceId = `sentence-${this.chatDocument.sentences.length + 1}`;
+    // No pruning here (2026-08-20): every reading is appended. Discarding down to one
+    // candidate happens exactly once, downstream, inside
+    // ReasoningPipelineService.prepareReasoningChecks (`prune: pruneContext` below).
+    const newSentenceId = sentence.id;
     console.info('[Chat] Preparing NLI reasoning', {
       sentence: userMessage,
       newSentenceId,
@@ -503,150 +475,45 @@ export class ChatComponent {
       pruneContext,
     });
 
-    // One wrapper element per accepted prior reading, carrying just enough
-    // (id/text/syntax/semantics) for mergeSequence's syntax grouping and semantic-merge
-    // parts. Keyed by the wrapper element OBJECT, not by elementId: an ambiguous premise
-    // contributes several context entries that all share one elementId (they are
-    // several READINGS of the same prior element), so a string-keyed map would collapse
-    // them and silently pair the wrong premise semantics with a pair built from a
-    // different reading -- exactly the class of bug this whole rewrite exists to fix.
-    // Each contextIndex gets its own wrapper object instance below (never reused, even
-    // when it clones an already-registered Sequence -- see the `registeredSequence`
-    // branch), and mergeSequence threads that same reference back as
-    // `pair.previousElement`, so identity is a safe, exact key here.
+    // One element per accepted prior reading: a clone of the registered Sentence (turn 2) or
+    // Sequence (turn 3+) it extends, so appendSentence resolves its sentences and parses
+    // against the registry. Keyed by the element OBJECT, not by elementId: an ambiguous
+    // premise contributes several context entries that share one elementId (several READINGS
+    // of the same prior element), so a string-keyed map would collapse them and pair the
+    // wrong premise semantics with a pair built from a different reading. appendSentence
+    // threads the same reference back as `pair.previousElement`.
     const previousContextByElement = new Map<SentenceAnalysis | SequenceAnalysis, { premiseContext: context; semanticAnalysis: SemanticAnalysis }>();
     const previousContexts: SequenceMergePreviousContext[] = contextIndices.map(contextIndex => {
       const premiseContext = this.context[contextIndex];
-      if (!premiseContext?.syntax || !premiseContext?.elementId) {
-        throw new Error('Accepted context syntax and document element id are required for sequence merging.');
+      const semanticAnalysis = premiseContext?.semanticAnalysis;
+      if (!premiseContext?.elementId || !semanticAnalysis) {
+        throw new Error('Accepted context reading and document element id are required for appending a sentence.');
       }
-      // contextFromLfgxdrtChecks sets this from the merge response's own
-      // semanticAnalysis with no fallback (chat.component.ts, turn 2+ path) -- GSWB's
-      // real merge endpoint always sets it, but degrade rather than throw on the
-      // off-chance it doesn't, same tolerance acceptInitialLfgxdrtContext already has
-      // for turn 1.
-      const semanticAnalysis: SemanticAnalysis = premiseContext.semanticAnalysis ?? {
-        syntacticOrigin: premiseContext.elementId,
-        semId: `${premiseContext.elementId}-sem`,
-        semString: premiseContext.semantic || '',
-        graph: premiseContext.semanticGraph,
-        semType: 'lfgxdrt',
-      };
-      // Turn 3+: the prior context is a multi-sentence discourse already registered as a
-      // real Sequence (upsertSequenceFromContexts registers it under exactly this id, with
-      // correct per-sentence sentenceIds -- see chat.component.ts's own upsertSequenceFromContexts).
-      // Use (a clone of) that registered element, NOT a synthetic single-sentence wrapper
-      // built from the concatenated discourse text, so mergeSequence/mergeSequenceDerived's
-      // `'sentenceIds' in previousElement` branch decomposes it into its real constituent
-      // sentences before calling ligerSequence -- exactly like glue-vis's addSentence()
-      // always sends genuine per-sentence texts. Feeding the concatenated text as if it
-      // were one sentence made LiGER parse an ungrammatical blob, breaking the SRC/SYN-ID
-      // link earlier pronouns need in order to re-resolve each turn (confirmed live via
-      // misc/current/chat-document-pronoun-bug3.json: turn 3's PCDRS mapping only ever
-      // bound the newest sentence's own pronoun, never the prior turn's -- GSWB's collapse
-      // then threw "Pronoun requires an anaphora mapping" for every check still containing
-      // the older pronoun). Cloned (not the registry object itself) so two ambiguous
-      // readings sharing one elementId still get distinct object identities for the Map
-      // key above -- reusing the registry object verbatim would silently collapse them,
-      // the exact bug the object-identity keying exists to prevent.
-      const registeredSequence = this.chatDocument.sequences.find(sequence => sequence.id === premiseContext.elementId);
-      const element: SentenceAnalysis | SequenceAnalysis = registeredSequence
-        ? { ...registeredSequence }
-        : {
-          id: premiseContext.elementId,
-          text: premiseContext.original,
-          // .graph is display-only elsewhere and unused by mergeSequence's syntax merge
-          // (only .structure feeds it) -- an empty placeholder, not a cast of the wrong
-          // type into this slot.
-          syntax: [{
-            synId: `${premiseContext.elementId}-syn`,
-            structure: premiseContext.syntax,
-            graph: { graphElements: [] },
-          }],
-          semantics: [semanticAnalysis],
-          synSemMapping: {},
-        };
+      const registered: SentenceAnalysis | SequenceAnalysis | undefined =
+        this.chatDocument.sequences.find(sequence => sequence.id === premiseContext.elementId)
+        ?? this.chatDocument.sentences.find(registeredSentence => registeredSentence.id === premiseContext.elementId);
+      if (!registered) {
+        throw new Error(`Accepted context element ${premiseContext.elementId} is not registered in the chat document.`);
+      }
+      const element = { ...registered };
       previousContextByElement.set(element, { premiseContext, semanticAnalysis });
       return { semantic: semanticAnalysis, element };
     });
 
-    // Every (contextIndex, syntax-variant) pairing used to be processed as an
-    // independently subscribed, fully concurrent "bundle" (pushed into an array and
-    // joined with forkJoin(bundles)). With more than one accepted context reading (e.g.
-    // an ambiguous premise like "a man saw a man"), that ran two /apply_rules_xle_sequence
-    // calls (and everything downstream) at the same time. In testing, one of the two
-    // concurrent sequence$ HTTP calls would reliably get a real 200 response at the
-    // network level (confirmed via the Performance API) but its Angular HttpClient
-    // Observable would never emit next/error/complete to its subscriber -- forkJoin
-    // (bundles) then waits forever on that pair, the loading spinner never clears, and
-    // Vampire is never called. This reproduced with a live-verified, isolated case and is
-    // not specific to request volume. mergeSequence's own concatMap-based grouping avoids
-    // ever having two of these chains in flight at once, sidestepping the issue entirely.
-    //
-    // `rebase` makes mergeSequence derive the new sentence's own reading the same way
-    // glue-vis's LigerVisComponent.addSentence() does -- ligerSequence over [this
-    // context's own structure + the new sentence, deliberately unsupplied so LiGER
-    // parses and rule-applies it fresh], then a scoped /deduce on its rebased
-    // sequenceParts[] entry -- once per distinct previous syntax, not once per
-    // (context x reading) pairing. A context-free deduction of the sentence is not made
-    // at all in this mode: it was never rebased against any prior discourse, and using it
-    // as merge input is what silently broke anaphora resolution
-    // (confirmed live via misc/current/chat-document-pronoun-new.json: zero
-    // anaphoraRelations across every assignment) after mergeSequence briefly routed
-    // through the non-rebase, already-computed-reading path glue-vis's OWN merge step
-    // uses -- that step is safe for glue-vis only because ITS own reading is already
-    // sequence-rebased before merging, via the same addSentence() mechanism `rebase`
-    // reproduces here. See docs/plans/DOCUMENT_BUILDER_UNIFICATION_PLAN.md for the full
-    // trace.
-    // A context that produced no pairs at all reports why (a LiGER 500, an unresolvable
-    // prior sentence, a reading GSWB stamped with an unknown origin) instead of just
-    // thinning the result silently. Collected here and surfaced alongside the per-branch
-    // failures below, so "fewer branches than expected" is never invisible.
+    // A context that produced no pairs reports why instead of thinning the result silently;
+    // surfaced alongside the per-branch failures below.
     let mergeFailures: string[] = [];
 
-    this.documentBuilder.mergeSequence({
-      current: [],
+    this.documentBuilder.appendSentence({
       previousContexts,
+      sentence,
+      readings: sentence.semantics,
       knownSentences: this.chatDocument.sentences,
       resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
-      rebase: {
-        // The structures of this turn's /apply_rules_xle parse: not parsed again per context.
-        newSentence: { id: newSentenceId, text: userMessage, structures: suppliableStructures(ligerSolutions) },
-        ruleString: this.ruleString,
-        gswbPreferences: this.gswbPreferences.gswbPreferences,
-      },
+      ruleString: this.ruleString,
     }).pipe(
       switchMap(result => {
         mergeFailures = result.failures;
-        // The rebase path derives the new sentence's own reading(s) fresh, scoped to
-        // each previous context -- register them under the sentence's OWN document
-        // entry now, or validateReasoningUpdate/validateSentenceAnalysis reject every
-        // assignment below as referencing an unregistered semantic (confirmed live via
-        // misc/current/chat-document-pronoun-bug.json and -bug2.json: reasoningUpdates
-        // came back completely empty, "rejected by document invariants", every turn).
-        const syntaxById = new Map<string, SyntacticAnalysis>();
-        const semanticById = new Map<string, SemanticAnalysis>();
-        const synSemMapping: Record<string, string[]> = {};
-        result.pairs.forEach(pair => {
-          if (!pair.currentSyntax || !pair.currentSemantic) return;
-          syntaxById.set(pair.currentSyntax.synId, pair.currentSyntax);
-          semanticById.set(pair.currentSemantic.semId, pair.currentSemantic);
-          const mapped = synSemMapping[pair.currentSyntax.synId] ?? [];
-          if (!mapped.includes(pair.currentSemantic.semId)) {
-            mapped.push(pair.currentSemantic.semId);
-          }
-          synSemMapping[pair.currentSyntax.synId] = mapped;
-        });
-        if (syntaxById.size) {
-          this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [{
-            id: newSentenceId,
-            text: userMessage,
-            syntax: Array.from(syntaxById.values()),
-            semantics: Array.from(semanticById.values()),
-            synSemMapping,
-          }]);
-          this.emitChatDocument();
-        }
         return from(result.pairs).pipe(
         concatMap(pair => {
           const priorElementId = pair.previousElement.id;
@@ -923,23 +790,26 @@ export class ChatComponent {
     });
   }
 
-  private acceptInitialLfgxdrtContext(userMessage: string, solutions: any[], ligerSolutions: any[] = []): void {
-    const contexts = solutions
-      .map(solution => {
-        const reading = readingOf(solution);
-        return {
-          original: userMessage,
-          prolog_drs: reading.semString,
-          prolog_fol: '',
-          tptp: '',
-          box: reading.svg ?? '',
-          semantic: reading.semString,
-          semanticGraph: reading.graph,
-          syntax: solution.syntax,
-          semanticAnalysis: reading,
-          synSemMapping: solution.synSemMapping,
-        } as context;
-      })
+  private acceptInitialLfgxdrtContext(userMessage: string, derived: DerivedSentence): void {
+    const sentence = derived.analysis;
+    const structureOf = (semantic: SemanticAnalysis) =>
+      sentence.syntax.find(syntax => syntax.synId === semantic.syntacticOrigin)?.structure;
+    const solutions = derived.solutions;
+    const contexts = sentence.semantics
+      .map(reading => ({
+        original: userMessage,
+        prolog_drs: reading.semString,
+        prolog_fol: '',
+        tptp: '',
+        box: reading.svg ?? '',
+        semantic: reading.semString,
+        semanticGraph: reading.graph,
+        // The reading's own parse: turn 1's post-processing joins its SRC ids against it.
+        syntax: structureOf(reading),
+        semanticAnalysis: reading,
+        synSemMapping: { [reading.syntacticOrigin]: [reading.semId] },
+        elementId: sentence.id,
+      } as context))
       .filter(item => item.semantic?.trim());
 
     if (!contexts.length) {
@@ -947,9 +817,7 @@ export class ChatComponent {
       this.loading = false;
       return;
     }
-
-    const { id: sentenceId } = this.registerSentence(userMessage, solutions, ligerSolutions);
-    contexts.forEach(entry => entry.elementId = sentenceId);
+    const sentenceId = sentence.id;
 
     this.context = contexts;
     this.history.push(contexts);
@@ -1389,56 +1257,6 @@ export class ChatComponent {
     });
 
     return pruneContext ? next.slice(0, 1) : next;
-  }
-
-  /** Registers the just-parsed message as a new Sentence in the chat's document (box Q's
-   *  source), independent of whether any downstream NLI check accepts it -- a Sentence
-   *  exists as soon as it's parsed, regardless of the eventual reasoning verdict. This is
-   *  document bookkeeping only: the sentence's own reading, as used for sequence merging,
-   *  is derived fresh per previous context (see `finishLfgxdrtPreparation`'s `rebase`
-   *  call), not read back from this registration. */
-  private registerSentence(
-    userMessage: string, solutions: any[], ligerSolutions: any[]
-  ): { id: string } {
-    const id = `sentence-${this.chatDocument.sentences.length + 1}`;
-    const syntaxByKey = new Map<string, SyntacticAnalysis>();
-    const semantics: SemanticAnalysis[] = [];
-    const synSemMapping: Record<string, string[]> = {};
-
-    solutions.forEach(solution => {
-      // The reading's own recorded origin wins. A sequence-derived reading carries
-      // `semanticAnalysis.syntacticOrigin` = the SENTENCE's syntax id (its structure's
-      // local_id), while `solution.solutionKey` is the SEQUENCE variant key that
-      // produced it -- keying the syntax entry off the latter while the semantic points
-      // at the former orphans every reading against validateSentenceAnalysis.
-      const semanticAnalysis = readingOf(solution);
-      const synId = semanticAnalysis.syntacticOrigin
-        || solution.solutionKey || solution.proofId || `${id}-syn`;
-      let syntax = syntaxByKey.get(synId);
-      if (!syntax) {
-        const ligerMatch = ligerSolutions.find(item => item.solutionKey === synId);
-        syntax = {
-          synId,
-          structure: solution.syntax ?? ligerMatch?.structureJson,
-          graph: ligerMatch?.graph ?? solution.syntax,
-          meaningConstructors: ligerMatch?.meaningConstructors,
-        };
-        syntaxByKey.set(synId, syntax);
-      }
-      semantics.push(semanticAnalysis);
-      synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semanticAnalysis.semId]));
-    });
-
-    this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [{
-      id,
-      text: userMessage,
-      syntax: Array.from(syntaxByKey.values()),
-      semantics,
-      synSemMapping,
-    }]);
-    this.emitChatDocument();
-
-    return { id };
   }
 
   /** Builds the Sequence from *every* surviving context, not just the first.

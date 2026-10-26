@@ -154,10 +154,11 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
              // A fresh parse always starts a new sentence/sequence; only an
              // add-sentence continuation (previous context present) merges.
              // Mirrors the same gate onSemanticSelectionChange() already uses.
+             // The sentence's own readings are registered either way; an add-sentence
+             // continuation then appends them to the previous context.
+             this.updateSentenceAnalyses(data.solutions);
              if (this.previousSentenceAnalyses.length || this.previousSequenceAnalyses.length) {
                this.mergeCurrentSolutions(data.solutions);
-             } else {
-               this.updateSentenceAnalyses(data.solutions);
              }
           } else {
             //create error message with request time stamp
@@ -338,6 +339,10 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
     }
   }
 
+  /** Appends the current sentence's selected readings, each derived on its own, to the
+   *  previous discourse readings (`DocumentBuilderService.appendSentence`): each is merged only
+   *  with the readings of its own sequence variant. Expects `updateSentenceAnalyses` to have
+   *  registered them, so the sentence's registry entry holds every parse. */
   private mergeCurrentSolutions(solutions: GswbSolution[]): void {
     const previousElements: Array<SentenceAnalysis | SequenceAnalysis> = this.previousSequenceAnalyses.length
       ? this.previousSequenceAnalyses
@@ -345,47 +350,36 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
     const previousContexts = previousElements.flatMap(element =>
       ('sentenceIds' in element ? element.semantics : selectedSentenceSemantics(element))
         .map(semantic => ({ semantic, element }))
-    );
-    const canonicalPreviousContexts = previousContexts.filter(context => !!context.semantic.graph);
-    if (!canonicalPreviousContexts.length) {
-      this.updateSentenceAnalyses(solutions);
+    ).filter(context => !!context.semantic.graph);
+    if (!previousContexts.length) {
       console.info('[Analysis] no previous semantic context; skipping sequence merge', {
-        currentSentences: solutions.map(solution => this.sentenceAnalysisFor(solution)?.text),
         currentSolutionCount: solutions.length,
       });
       return;
     }
 
-    const current = solutions.filter(solution => !!readingOf(solution).graph);
-    if (!current.length) {
+    const current = solutions.filter(solution => !!readingOf(solution).graph && !!solution.sentenceAnalysis);
+    const registered = current[0]?.sentenceAnalysis;
+    const sentence = registered && (this.knownSentences.find(known => known.id === registered.id) ?? registered);
+    if (!sentence) {
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
       return;
     }
+    // The sentence's own reading as registered: `syntacticOrigin` names its parse.
+    const readings = current.map(solution => solution.sentenceAnalysis!.semantics[0]);
 
-    console.info('[Analysis] preparing GSWB sequence semantic merges', {
-      previousSentences: previousElements.map(element => element.text),
-      currentSentences: current.map(solution => this.sentenceAnalysisFor(solution)?.text),
-      previousSemanticCount: canonicalPreviousContexts.length,
-      currentSolutionCount: current.length,
-      currentSolutions: current.map(solution => ({
-        id: solution.id,
-        solutionKey: solution.solutionKey,
-        semanticLength: readingOf(solution).semString?.length ?? 0,
-        graphConstraints: readingOf(solution).graph?.constraints?.length ?? 0,
-        graphAnnotations: readingOf(solution).graph?.annotations?.length ?? 0,
-      })),
+    console.info('[Analysis] appending the sentence\'s readings to the previous context', {
+      previousElements: previousElements.map(element => element.id),
+      sentenceId: sentence.id,
+      previousSemanticCount: previousContexts.length,
+      readingCount: readings.length,
     });
 
-    const currentEntries = current.map(solution => ({
-      solution,
-      semantic: readingOf(solution),
-      sentenceAnalysis: this.sentenceAnalysisFor(solution),
-    }));
-
-    this.documentBuilder.mergeSequence({
-      current: currentEntries,
-      previousContexts: canonicalPreviousContexts,
+    this.documentBuilder.appendSentence({
+      previousContexts,
+      sentence,
+      readings,
       knownSentences: this.knownSentences,
       resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
     }).subscribe(result => {
@@ -394,15 +388,13 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
       console.info('[Analysis] GSWB sequence semantic merges completed', {
         mergeCount: mergedSolutions.length,
         sequenceCount: result.sequenceAnalyses.length,
-        mergedSolutions: mergedSolutions.map(solution => ({
-          id: solution.id,
-          solutionKey: solution.solutionKey,
-          sentences: solution.sequenceAnalysis?.text,
-          semanticLength: readingOf(solution).semString?.length ?? 0,
-          graphConstraints: readingOf(solution).graph?.constraints?.length ?? 0,
-          graphAnnotations: readingOf(solution).graph?.annotations?.length ?? 0,
-        })),
+        offsets: result.pairs.map(pair => pair.sourceIndexOffset),
+        failures: result.failures,
       });
+      if (result.failures.length) {
+        console.warn('[Analysis] some previous readings could not be extended', result.failures);
+        this.displayMessage(`Not every previous reading could be extended: ${result.failures.join(' ')}`, "red");
+      }
       this.updatingMergedSolutions = true;
       try {
         this.semvis.setItems(mergedSolutions);
@@ -412,7 +404,9 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
       }
       this.hasSemanticSolutions = mergedSolutions.length > 0;
       this.semanticSolutionReady = this.hasSemanticSolutions;
-    }, () => {
+    }, error => {
+      console.error('[Analysis] appending the sentence failed', error);
+      this.displayMessage(`Appending the sentence failed: ${error?.message ?? error}`, "red");
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
     });

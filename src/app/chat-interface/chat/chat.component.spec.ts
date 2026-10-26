@@ -104,7 +104,7 @@ describe('ChatComponent', () => {
     });
   });
 
-  it('makes no standalone /deduce in LFGxDRT mode: the readings are derived in the sequence', () => {
+  it('derives an LFGxDRT sentence once on its own, through the shared deriveSentence', () => {
     component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
     component.gswbPreferences = { gswbPreferences: { outputstyle: 5 } } as any;
     component.ruleString = 'rules';
@@ -114,12 +114,16 @@ describe('ChatComponent', () => {
     dataServiceSpy.ligerAnnotate.and.returnValue(of({ solutions: [
       { solutionKey: 'S0', structureJson: structure, graph: { graphElements: [{}] }, meaningConstructors: 'mc' },
     ] }));
-    const derive = spyOn((component as any).documentBuilder, 'deriveSentenceInSequence').and.returnValue(new Subject());
+    const derive = spyOn((component as any).documentBuilder, 'deriveSentence').and.returnValue(new Subject());
 
     component.sendMessage();
 
-    expect(derive).toHaveBeenCalled();
+    expect(derive).toHaveBeenCalledTimes(1);
+    const [sentence, parses] = derive.calls.mostRecent().args as any[];
+    expect(sentence.text).toBe('Kim arrived');
+    expect(parses.map((parse: any) => parse.solutionKey)).toEqual(['S0']);
     expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
+    expect(dataServiceSpy.ligerSequence).not.toHaveBeenCalled();
   });
 
   it('runs a turn without post-processing rules and says so in the side panel, not the chat', () => {
@@ -310,46 +314,39 @@ describe('ChatComponent', () => {
     });
   });
 
-  describe('finishLfgxdrtPreparation (Stage B: chat on DocumentBuilderService, rebase)', () => {
+  describe('finishLfgxdrtPreparation (appending the sentence derived on its own)', () => {
     const structure = { constraints: [], annotations: [], choiceSpace: {} };
+    const variantStructure = { id: 'variant-structure' };
 
-    /** LiGER's merged-sequence response, carrying the rebased current-part meaning
-     *  constructors -- mirrors LigerVisComponent.addSentence()'s sequenceParts[]
-     *  handling. `sequenceParts` has one entry per sentence in the call; the LAST is
-     *  always the new sentence (never supplied via parsedSentences, so LiGER parses and
-     *  rule-applies it fresh -- see the assertion on `parsedSentences.length` below).
-     *  `sequenceAnalysis.sentences[last]` is the new sentence's own per-sentence syntax
-     *  fragment -- required so the derived reading can be registered under the new
-     *  sentence's own document entry (see `currentSyntax` assertions below). */
-    const ligerRebaseResponse = (mcSuffix = '') => ({
+    /** LiGER over the supplied sentences: sentence-1's one parse (S0 in the call) and the new
+     *  sentence's one parse (S1), the new part offset by sentence-1's constructors. */
+    const ligerResponse = () => ({
       solutions: [{
-        // The sequence VARIANT key. GSWB stamps it onto every reading derived from this
-        // variant's proof, which is how a reading is mapped back to its syntax.
         solutionKey: 'sequence-1-S0+S1',
-        structureJson: structure,
+        structureJson: variantStructure,
         sequenceParts: [
-          { sourceIndex: 0, solutionKey: 'part-0', meaningConstructors: 'mc-previous' },
-          { sourceIndex: 1, solutionKey: 'part-1', meaningConstructors: `mc-current${mcSuffix}` },
+          { sourceIndex: 0, syntaxVariantId: 'S0', sourceIndexOffset: 0 },
+          { sourceIndex: 1, syntaxVariantId: 'S1', sourceIndexOffset: 7 },
         ],
-        sequenceAnalysis: {
-          sentences: [
-            { id: 'sentence-1', syntax: [{ synId: 'S0', structure, graph: { graphElements: [] } }] },
-            { id: 'sentence-new', syntax: [{ synId: 'S1', structure, graph: { graphElements: [] } }] },
-          ],
-        },
+        sequenceAnalysis: { id: 'x', text: 'x', sentences: [], syntax: [{ synId: 'x', structure: variantStructure, graph: { graphElements: [] } }] },
       }],
     });
 
-    /** Models GSWB's aggregate-/deduce behaviour: each returned solution carries the
-     *  ORIGINATING PROOF's solutionKey (the sequence variant key), not an id of its own. */
-    const derivedSolution = (
-      id: string, semantic: string, variantKey = 'sequence-1-S0+S1'
-    ): any => ({
-      id, solutionKey: variantKey,
-      semanticAnalysis: {
-        syntacticOrigin: variantKey, semId: id, semString: semantic, graph: structure,
-        semType: 'lfgxdrt', svg: semantic,
-      },
+    /** The new sentence as deriveSentence registers it: one parse, `readings` readings. */
+    const newSentence = (readings: number) => ({
+      id: 'sentence-3', text: 'he saw him',
+      syntax: [{ synId: 'S0', structure, graph: { graphElements: [] } }],
+      semantics: Array.from({ length: readings }, (_, r) => ({
+        syntacticOrigin: 'S0', semId: `sentence-3-S0-s${r}`, semString: `Q${r}`, graph: structure, semType: 'lfgxdrt',
+      })),
+      synSemMapping: { S0: Array.from({ length: readings }, (_, r) => `sentence-3-S0-s${r}`) },
+    });
+
+    const priorReading = (semId: string, semantic: string) => ({
+      original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
+      semantic, semanticGraph: structure, syntax: structure,
+      semanticAnalysis: { syntacticOrigin: 'sentence-1-syn', semId, semString: semantic, semType: 'lfgxdrt', graph: structure },
+      elementId: 'sentence-1',
     });
 
     beforeEach(() => {
@@ -358,134 +355,61 @@ describe('ChatComponent', () => {
       component.ruleString = 'rules';
       component.pragmaticsRuleString = 'pragmatics rules';
       component.activeIndices = [];
+      dataServiceSpy.ligerSequence.and.returnValue(of(ligerResponse()));
+      dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => {
+        const id = request.parts.map((part: any) => part.id).join('+');
+        return of({ id, solutionKey: request.solutionKey, semanticAnalysis: {
+          syntacticOrigin: request.solutionKey, semId: id, semString: 'merged', graph: structure, semType: 'lfgxdrt', svg: 'merged',
+        } });
+      });
+      reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) =>
+        of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] }));
     });
 
-    it('derives the new sentence once per distinct previous syntax and merges it onto every context, mirroring glue-vis\'s addSentence()', () => {
-      // Two accepted READINGS of the SAME prior element (an ambiguous premise) -- two
-      // distinct discourse states, but one parse: the derivation depends only on the
-      // structures supplied, so it runs once, and each reading gets its own merge.
-      component.context = [
-        {
-          original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
-          semantic: 'P1', semanticGraph: { constraints: [], annotations: [], choiceSpace: {} },
-          syntax: structure,
-          semanticAnalysis: { syntacticOrigin: 'syn-1a', semId: 'sem-1a', semString: 'P1', semType: 'lfgxdrt' },
-          elementId: 'sentence-1',
-        },
-        {
-          original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
-          semantic: 'P2', semanticGraph: { constraints: [], annotations: [], choiceSpace: {} },
-          syntax: structure,
-          semanticAnalysis: { syntacticOrigin: 'syn-1b', semId: 'sem-1b', semString: 'P2', semType: 'lfgxdrt' },
-          elementId: 'sentence-1',
-        },
-      ] as any;
+    it('merges the new reading onto every accepted reading, moved by its offset, deriving nothing', () => {
+      // Two accepted READINGS of the SAME prior element (an ambiguous premise): two
+      // discourse states over one parse, so one LiGER call and one merge each.
+      component.context = [priorReading('sem-1a', 'P1'), priorReading('sem-1b', 'P2')] as any;
+      const sentence = newSentence(1);
+      component.chatDocument.sentences.push(sentence as any);
 
-      dataServiceSpy.ligerSequence.and.returnValue(of(ligerRebaseResponse()));
-      dataServiceSpy.gswbDeduce.and.returnValue(of({
-        solutions: [derivedSolution('derived-1', 'Q')],
-      }));
-      dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
-        id: request.parentSolutionId, solutionKey: request.parentSolutionId,
-        semanticAnalysis: {
-          syntacticOrigin: request.parentSolutionId, semId: request.parentSolutionId,
-          semString: 'merged', graph: structure, semType: 'lfgxdrt', svg: 'merged',
-        },
-      }));
-      let preparedCallCount = 0;
-      reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) => {
-        preparedCallCount++;
-        return of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] });
-      });
+      (component as any).finishLfgxdrtPreparation('he saw him', false, sentence);
 
-      (component as any).finishLfgxdrtPreparation('he saw him', false, []);
-
-      // One ligerSequence + one scoped /deduce for the one previous syntax.
+      expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
       expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce.calls.allArgs().map(([request]: any[]) => request.premises))
-        .toEqual(['mc-current']);
-      // The new sentence must never be supplied as an already-parsed structure -- only
-      // the previous sentence is, so LiGER parses (and rule-applies) the new one fresh.
-      dataServiceSpy.ligerSequence.calls.allArgs().forEach(([request]: any[]) => {
-        expect(request.parsedSentences.length).toBe(1);
+      const request = dataServiceSpy.ligerSequence.calls.mostRecent().args[0];
+      expect(request.sentenceIds).toEqual(['sentence-1', 'sentence-3']);
+      expect(request.parsedSentences.length).toBe(2);
+      const merges = dataServiceSpy.gswbMergeSequenceSemantics.calls.allArgs().map(([merge]: any[]) => merge);
+      expect(merges.map((merge: any) => merge.parts.map((part: any) => part.id))).toEqual([
+        ['sem-1a', 'sentence-3-S0-s0'], ['sem-1b', 'sentence-3-S0-s0'],
+      ]);
+      expect(merges.map((merge: any) => merge.parts[1].sourceIndexOffset)).toEqual([7, 7]);
+
+      // The scope id names the PRIOR'S READING, not just its element id: GSWB derives
+      // every PCDRS id from it, and two pairs differing only in the prior's reading
+      // produced identical pragmatic ids when it did not (chat-document-pronoun-bug3.json).
+      const prepared = reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs().map(([r]: any[]) => r);
+      expect(new Set(prepared.map((r: any) => r.scopeId)).size).toBe(2);
+      expect(prepared.map((r: any) => r.premiseSemantic).sort()).toEqual(['P1', 'P2']);
+      prepared.forEach((r: any) => {
+        expect(r.prune).toBeFalse();
+        expect(r.sequenceStructure).toEqual(variantStructure);
+        expect(r.scope.hypothesisSemanticIds).toEqual(['sentence-3-S0-s0']);
       });
-      // Each derived reading still gets its own semantic merge and reasoning-check
-      // preparation.
-      expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
-      expect(preparedCallCount).toBe(2);
-
-      // The scope id names the PRIOR'S READING, not just its element id. GSWB derives
-      // every PCDRS id from this scope, so when it omitted the prior's reading, two pairs
-      // differing only in which reading of an ambiguous premise they used produced
-      // IDENTICAL pragmatic ids -- measured in chat-document-pronoun-bug3.json as 24
-      // discourse branches sharing 12 ids. That broke the (syn, sem, prag) joint id:
-      // a reasoning assignment could not say which semantics produced its mapping.
-      const scopeIds = reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs()
-        .map(([request]: any[]) => request.scopeId);
-      expect(new Set(scopeIds).size).toBe(2);
-      expect(scopeIds.some((id: string) => id.includes('sem-1a'))).toBeTrue();
-      expect(scopeIds.some((id: string) => id.includes('sem-1b'))).toBeTrue();
-
-      const premiseSemantics = reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs()
-        .map(([request]: any[]) => request.premiseSemantic).sort();
-      expect(premiseSemantics).toEqual(['P1', 'P2']);
-      reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs().forEach(([request]: any[]) => {
-        expect(request.prune).toBeFalse();
-        expect(request.sequenceStructure).toEqual(structure);
-      });
-
-      // The derived reading must be registered under the new sentence's OWN document
-      // entry, with a syntacticOrigin that resolves to a synId registered there too --
-      // otherwise validateReasoningUpdate/validateSentenceAnalysis reject every
-      // assignment as referencing an unknown reading (confirmed live via
-      // misc/current/chat-document-pronoun-bug.json and -bug2.json: reasoningUpdates
-      // came back completely empty, "rejected by document invariants", every turn).
-      const registered = component.chatDocument.sentences.find(s => s.id === 'sentence-3');
-      expect(registered?.semantics.some(sem => sem.semId === 'derived-1' && sem.syntacticOrigin === 'S1'))
-        .toBeTrue();
-      expect(registered?.syntax.some(syn => syn.synId === 'S1')).toBeTrue();
     });
 
-    it('one previous context whose /deduce derives two readings produces exactly one pair per reading, from a single ligerSequence/deduce call', () => {
-      // The confirmed regression (misc/current/chat-document-plan-b-test.json): turn 2
-      // had 8 solutions instead of 4, because the old rebase path cross-produced a
-      // redundant "group" of pairSpecs against freshly re-derived readings. With
-      // grouping keyed only by distinct previous context (never by chat's own readings
-      // of the new sentence), one context whose /deduce naturally derives two readings
-      // (e.g. "Every Swede is a Scandinavian") must yield exactly two pairs from one
-      // ligerSequence + one /deduce call, not four and not eight.
-      component.context = [{
-        original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
-        semantic: 'P1', semanticGraph: { constraints: [], annotations: [], choiceSpace: {} },
-        syntax: structure,
-        semanticAnalysis: { syntacticOrigin: 'syn-1a', semId: 'sem-1a', semString: 'P1', semType: 'lfgxdrt' },
-        elementId: 'sentence-1',
-      }] as any;
+    it('gives exactly one pair per reading of the new sentence for one accepted reading', () => {
+      component.context = [priorReading('sem-1a', 'P1')] as any;
+      const sentence = newSentence(2);
+      component.chatDocument.sentences.push(sentence as any);
 
-      dataServiceSpy.ligerSequence.and.returnValue(of(ligerRebaseResponse()));
-      dataServiceSpy.gswbDeduce.and.returnValue(of({
-        solutions: [derivedSolution('derived-1', 'Q1'), derivedSolution('derived-2', 'Q2')],
-      }));
-      dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
-        id: request.parentSolutionId, solutionKey: request.parentSolutionId,
-        semanticAnalysis: {
-          syntacticOrigin: request.parentSolutionId, semId: request.parentSolutionId,
-          semString: 'merged', graph: structure, semType: 'lfgxdrt', svg: 'merged',
-        },
-      }));
-      let preparedCallCount = 0;
-      reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) => {
-        preparedCallCount++;
-        return of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] });
-      });
-
-      (component as any).finishLfgxdrtPreparation('every swede is a scandinavian', false, []);
+      (component as any).finishLfgxdrtPreparation('every swede is a scandinavian', false, sentence);
 
       expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
       expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
-      expect(preparedCallCount).toBe(2);
+      expect(reasoningPipelineSpy.prepareReasoningChecks).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -568,6 +492,19 @@ describe('ChatComponent', () => {
   describe('turn 1 post-processing (PCDRS on the first sentence)', () => {
     const structure = { constraints: [], annotations: [], choiceSpace: {} } as any;
 
+    /** Turn 1 after its sentence was derived on its own and registered (what
+     *  prepareLfgxdrtSolutions does): every reading of parse S0, whose structure is `structure`. */
+    const acceptFirst = (message: string, solutions: any[]) => {
+      const analysis = {
+        id: 'sentence-1', text: message,
+        syntax: [{ synId: 'S0', structure, graph: { graphElements: [] } }],
+        semantics: solutions.map(solution => solution.semanticAnalysis),
+        synSemMapping: { S0: solutions.map(solution => solution.semanticAnalysis.semId) },
+      };
+      (component as any).documentBuilder.upsertSentenceAnalyses(component.chatDocument, [analysis]);
+      (component as any).acceptInitialLfgxdrtContext(message, { analysis, solutions, discriminants: [] });
+    };
+
     beforeEach(() => {
       component.gswbPreferences = { gswbPreferences: { resolveDrs: true } } as any;
       component.vampirePreferences = { vampirePreferences: { logic_type: 0 } } as any;
@@ -578,18 +515,28 @@ describe('ChatComponent', () => {
       } as any;
     });
 
-    it('supplies the structures of its own /apply_rules_xle parse instead of parsing again', () => {
-      const derive = spyOn((component as any).documentBuilder, 'deriveSentenceInSequence').and.returnValue(of([]));
+    it('derives the first sentence from its own /apply_rules_xle parses, without parsing again', () => {
+      reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(of([]));
+      dataServiceSpy.gswbDeduce.and.returnValue(of({ solutions: [
+        { id: 'sentence-1-S1-s0', solutionKey: 'S1', semanticAnalysis: {
+          syntacticOrigin: 'S1', semId: 'sentence-1-S1-s0', semString: 'P', graph: structure, semType: 'lfgxdrt' } },
+      ] }));
       const ligerSolutions = [
-        { solutionKey: 'S0', structureJson: { id: 'standalone-S0' }, graph: structure },
-        { solutionKey: 'S1', structureJson: { id: 'standalone-S1' }, graph: structure },
+        { solutionKey: 'S0', structureJson: { id: 'standalone-S0' }, graph: structure, meaningConstructors: '[1] a' },
+        { solutionKey: 'S1', structureJson: { id: 'standalone-S1' }, graph: structure, meaningConstructors: '[1] b' },
       ];
 
       (component as any).prepareLfgxdrtSolutions('a man appeared', ligerSolutions[0], ligerSolutions, false);
 
-      const [previous, rebase] = derive.calls.mostRecent().args as any[];
-      expect(previous).toEqual([]);
-      expect(rebase.newSentence.structures.map((st: any) => st.id)).toEqual(['standalone-S0', 'standalone-S1']);
+      expect(dataServiceSpy.ligerSequence).not.toHaveBeenCalled();
+      expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
+      expect(dataServiceSpy.gswbDeduce.calls.mostRecent().args[0].proofs.map((proof: any) => proof.proofId)).toEqual(['S0', 'S1']);
+      const registered = component.chatDocument.sentences[0];
+      expect(registered.syntax.map(syntax => (syntax.structure as any).id)).toEqual(['standalone-S0', 'standalone-S1']);
+      expect(registered.semantics.map(semantic => semantic.syntacticOrigin)).toEqual(['S1']);
+      // Turn 1 post-processes each reading over its own parse.
+      expect(reasoningPipelineSpy.generateDiscourseMappings.calls.mostRecent().args[0].sequenceStructure)
+        .toEqual({ id: 'standalone-S1' });
     });
 
     /** A first sentence has no premise/hypothesis pair, so nothing is reasoned about --
@@ -607,14 +554,14 @@ describe('ChatComponent', () => {
         ruleBranchIndex: 1,
       }] as any));
 
-      (component as any).acceptInitialLfgxdrtContext('a man saw himself', [{
+      acceptFirst('a man saw himself', [{
         id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
           graph: structure, semType: 'lfgxdrt',
         },
-      }], []);
+      }]);
 
       expect(reasoningPipelineSpy.generateDiscourseMappings).toHaveBeenCalledTimes(1);
       const [request] = reasoningPipelineSpy.generateDiscourseMappings.calls.mostRecent().args;
@@ -660,14 +607,14 @@ describe('ChatComponent', () => {
         },
       ] as any));
 
-      (component as any).acceptInitialLfgxdrtContext('a man saw himself', [{
+      acceptFirst('a man saw himself', [{
         id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
           graph: structure, semType: 'lfgxdrt',
         },
-      }], []);
+      }]);
 
       // The template picks the DRS pill over the text pill on `branchSolutions`, so turn 1
       // showed a bare string purely because nothing ever filled this in: the reply is
@@ -700,14 +647,14 @@ describe('ChatComponent', () => {
             ruleBranchIndex: 2,
           },
         ] as any));
-        (component as any).acceptInitialLfgxdrtContext('the cat saw the dog it barked', [{
+        acceptFirst('the cat saw the dog it barked', [{
           id: 'sol-1',
           syntax: structure, solutionKey: 'S0',
           semanticAnalysis: {
             syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
             graph: structure, semType: 'lfgxdrt',
           },
-        }], []);
+        }]);
       };
       const reply = () => component.chatHistory.find(m => m.sender === 'Bot')!;
       const ranking = {
@@ -756,14 +703,14 @@ describe('ChatComponent', () => {
         { mapping: { id: 'pcdrs-1', semantic: 'drs-1', anaphoraRelations: [] }, ruleBranchIndex: 1 },
       ] as any));
 
-      (component as any).acceptInitialLfgxdrtContext('a man appeared', [{
+      acceptFirst('a man appeared', [{
         id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
           graph: structure, semType: 'lfgxdrt',
         },
-      }], []);
+      }]);
 
       // GSWB returned no rendering for this branch, so the text pill is all there is --
       // clearing it would leave the turn showing nothing at all.
@@ -776,14 +723,14 @@ describe('ChatComponent', () => {
       reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(
         throwError(() => new Error('rules blew up')));
 
-      (component as any).acceptInitialLfgxdrtContext('a man appeared', [{
+      acceptFirst('a man appeared', [{
         id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
           graph: structure, semType: 'lfgxdrt',
         },
-      }], []);
+      }]);
 
       // The reply is already on screen; a post-processing failure costs the anaphora
       // view for this turn, not the turn.

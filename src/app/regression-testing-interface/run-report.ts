@@ -24,8 +24,7 @@ export interface TimingStats {
 }
 
 /** One phase of a step: when it first started and how long it ran, adding up every call it
- *  made -- LiGER's batch parse and each discourse item's sequence call are one phase, as are
- *  GSWB's batch proof and each in-sequence `/deduce` (null while it runs). */
+ *  made (null while it runs). */
 export interface RunPhase {
   name: string;
   startedAt: string;
@@ -45,9 +44,10 @@ export interface ParseReport {
   composition: TimingStats | null;
   /** A sentence parses successfully when GSWB composes at least one semantic reading. */
   sentences: { total: number; successful: number; failedIds: string[] };
-  /** `discourse`: items derived in sequence; `stopped`: those that stopped at a sentence
-   *  without semantics, as "item: sentence -- reason". */
-  items: { total: number; discourse: number; stopped: string[] };
+  /** `discourse`: items of more than one sentence. `stopped`: only in reports of parses that
+   *  derived discourse items in sequence (before docs/plans/DERIVE_ONCE_REBASE_PLAN.md): the
+   *  items that stopped at a sentence without semantics, as "item: sentence -- reason". */
+  items: { total: number; discourse: number; stopped?: string[] };
 }
 
 export interface InferenceReport {
@@ -219,8 +219,8 @@ export function reportTables(
     outcomes.push(['Sentences with a semantics', `${parse.sentences.successful} / ${parse.sentences.total}`]);
     if (parse.sentences.failedIds.length) outcomes.push(['Without a semantics', parse.sentences.failedIds.join(', ')]);
     outcomes.push(['Items', String(parse.items.total)]);
-    if (parse.items.discourse) outcomes.push(['Discourse items derived in sequence', String(parse.items.discourse)]);
-    parse.items.stopped.forEach(stopped => outcomes.push(['Stopped', stopped]));
+    if (parse.items.discourse) outcomes.push(['Discourse items', String(parse.items.discourse)]);
+    (parse.items.stopped ?? []).forEach(stopped => outcomes.push(['Stopped', stopped]));
     if (parse.failure) outcomes.push(['Parse failed', parse.failure]);
   }
 

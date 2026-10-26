@@ -146,11 +146,43 @@ describe('LigerVisComponent', () => {
     });
   });
 
+  describe('addSentence (a sentence is derived on its own)', () => {
+    const ownParse = (k: number) => ({
+      solutionKey: `sequence-${k + 1}-S${k}`, meaningConstructors: `[1] own mc ${k}`, appliedRules: [],
+      structureJson: { id: `s${k}` }, graph: { graphElements: [{ data: { id: 'n' } }] },
+      sequenceAnalysis: {
+        id: 'x', text: 'He smiled.', syntax: [], semantics: [], synSemMapping: {},
+        sentences: [{ id: 'sentence-2', text: 'He smiled.', syntax: [{ synId: `S${k}`, structure: { id: `s${k}` }, graph: { graphElements: [] } }] }],
+      },
+    });
+
+    it('parses only the new sentence and emits its own meaning constructors, one proof per parse', () => {
+      const ligerSequence = jasmine.createSpy('ligerSequence').and.returnValue(of({ solutions: [ownParse(0), ownParse(1)] }));
+      (component as any).dataService = { ligerSequence };
+      component.cy1 = { renderGraph: jasmine.createSpy('renderGraph') } as any;
+      component.rulelist1 = { clearList: jasmine.createSpy('clearList'), addElement: jasmine.createSpy('addElement') } as any;
+      component.sequenceSentences = ['Kim saw a man with a telescope.'];
+      component.sequenceSentenceIds = ['sentence-1'];
+      component.solutions = [{ meaningConstructors: 'a', appliedRules: [] } as any];
+      component.semanticSolutionReady = true;
+      const proofs: any[] = [];
+      component.proofInputChange.subscribe(value => proofs.push(value));
+
+      component.addSentence('He smiled.', 'RULES');
+
+      expect(ligerSequence).toHaveBeenCalledOnceWith({ sentences: ['He smiled.'], sentenceIds: ['sentence-2'], ruleString: 'RULES' });
+      expect(component.sequenceSentenceIds).toEqual(['sentence-1', 'sentence-2']);
+      const last = proofs[proofs.length - 1];
+      expect(last.map((proof: any) => [proof.proofId, proof.sentenceId, proof.meaningConstructors])).toEqual([
+        ['S0', 'sentence-2', '[1] own mc 0'], ['S1', 'sentence-2', '[1] own mc 1'],
+      ]);
+    });
+  });
+
   describe('resetForNewDiscourse', () => {
     it('clears accumulated sequence/parse state and notifies downstream consumers', () => {
       component.sequenceSentences = ['First.', 'Second.'];
       component.sequenceSentenceIds = ['sentence-1', 'sentence-2'];
-      component.parsedSentenceStructures = [[{ id: 'a' } as any]];
       component.structureJson = { id: 'x' } as any;
       component.graphElements = [{ data: { id: 'g1' } }];
       component.solutions = [{ solutionKey: 'syntax-a' } as any];
@@ -168,7 +200,6 @@ describe('LigerVisComponent', () => {
 
       expect(component.sequenceSentences).toEqual([]);
       expect(component.sequenceSentenceIds).toEqual([]);
-      expect(component.parsedSentenceStructures).toEqual([]);
       expect(component.structureJson).toBeNull();
       expect(component.graphElements).toEqual([]);
       expect(component.solutions).toEqual([]);

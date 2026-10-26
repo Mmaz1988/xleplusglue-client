@@ -797,6 +797,11 @@ export interface GswbSemanticMergePart {
   mcSetId?: string;
   semantic: string;
   graph?: LigerStructure;
+  /** Moves every `SRC iN` of `graph` by this much before the merge (GSWB): a sentence's
+   *  reading derived on its own, appended to a discourse, gets its part's
+   *  `LigerSequencePart.sourceIndexOffset`. Absent/0 for a part already numbered in the
+   *  sequence, such as the discourse it is appended to. */
+  sourceIndexOffset?: number;
   provenance?: Record<string, any>;
 }
 
@@ -836,9 +841,10 @@ export interface GswbOutput {
   log: string;
   derivation: any;
   discriminants: GswbDiscriminant[];
-  /** Set when the sentence was derived inside its discourse item's sequence at parse time
-   *  (regression, LFGxDRT), not on its own: its readings are that item's part, numbered into
-   *  the sequence, and are folded as they are rather than derived again. */
+  /** Only in sessions parsed before docs/plans/DERIVE_ONCE_REBASE_PLAN.md (xleplusglue): the
+   *  sentence was derived inside its discourse item's sequence, so its readings are numbered
+   *  into that sequence. Such a sentence is derived again on its own before inference
+   *  (regression `rederiveInSequenceOutputs`); a parse no longer sets it. */
   derivedInSequence?: { itemId: string; sentenceIndex: number };
   /** Milliseconds GSWB took for this deduction. */
   elapsedMs?: number;
@@ -1157,7 +1163,7 @@ function persistedReasoningCheck(check: ReasoningCheck): ReasoningCheck {
  *
  *  `graph` joins them (0.82 MB of `first-test-ambig`). It is a LigerWebGraph rendering
  *  companion, derivable from the `structureJson` stored beside it, and its one reader --
- *  seedSentenceSyntax, which copies it onto a SyntacticAnalysis -- feeds a field that no
+ *  regression's batchSyntaxFor, which copies it onto a SyntacticAnalysis -- feeds a field that no
  *  persisted document is ever read back for. See persistedAnalysisDocument.
  *
  *  They stay on the in-memory session -- this narrows the persisted copy only, so live
