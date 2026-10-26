@@ -682,8 +682,12 @@ export interface GswbDiscriminant {
   surfaceAligned?: boolean | null;
 }
 
+/** One GSWB reading on the wire. A derived or merged reading (/deduce, /gswb_batch_proof,
+ *  /merge_sequence_semantics) is sent once, as `semanticAnalysis` (read it with `readingOf`);
+ *  `solution`, `semantic` and `graph` are a PCDRS reading's. */
 export interface GswbSolution {
-  solution: string;
+  /** A PCDRS reading's SVG, or its text when not rendered. */
+  solution?: string;
   id: string;
   sourceIndex?: number;
   /** For a solution of a proof: insitu modifiers outscoped by something to their left. */
@@ -691,7 +695,9 @@ export interface GswbSolution {
   /** For a solution of a proof: scope pairs whose outer element comes later in the sentence.
    *  GSWB orders a proof's solutions by these two counts. */
   surfaceOrderViolations?: number | null;
+  /** A PCDRS reading's graph. */
   graph?: LigerStructure;
+  /** A PCDRS reading as text. */
   semantic?: string;
   anaphoraMapping?: string;
   anaphoraRelations?: AnaphoraRelation[];
@@ -826,7 +832,6 @@ export interface GswbReasoningCheckAstsRequest {
 
 export interface GswbOutput {
   solutions: GswbSolution[];
-  semanticAnalyses?: SemanticAnalysis[];
   synSemMapping?: SynSemMapping;
   log: string;
   derivation: any;

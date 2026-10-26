@@ -422,7 +422,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     });
     forkJoin(semanticSolutions.map(semanticSolution => this.dataService.ligerMergeStructure({
       syntax: this.syntaxForSolution(semanticSolution),
-      drs: semanticSolution.graph as LigerStructure,
+      drs: semanticSolution.semanticAnalysis?.graph as LigerStructure,
     }))).subscribe(responses => {
       console.info('[Analysis] LiGER merged semantic solutions with syntax', {
         responseCount: responses.length,
@@ -661,7 +661,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       : (() => {
         const selected = this.selectedSemanticSolution();
         const structure = this.parseStructureContent(structureContent);
-        return selected?.semantic && structure
+        return selected?.semanticAnalysis?.semString && structure
           ? [{ semanticSolution: selected, structureContent, graphElements: [], ruleAnnotations: [], rulesApplied: false }]
           : [];
       })();
@@ -699,7 +699,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       })),
     });
     forkJoin(candidates.map(candidate => this.dataService.gswbGeneratePcdrs({
-      semantic: candidate.result.semanticSolution.semantic ?? '',
+      semantic: candidate.result.semanticSolution.semanticAnalysis?.semString ?? '',
       parentSolutionId: this.postProcessingResults.length
         ? `${candidate.result.semanticSolution.id}-graph-${candidate.graphIndex + 1}-rule-${candidate.annotationIndex + 1}`
         : candidate.result.semanticSolution.id,
@@ -770,7 +770,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     return this.showInlinePostProcessing
       && !!this.currentPostProcessedStructureContent()
       && !this.rulesApplicationLoading
-      && (this.postProcessingResults.length > 0 || !!this.selectedSemanticSolution()?.semantic);
+      && (this.postProcessingResults.length > 0 || !!this.selectedSemanticSolution()?.semanticAnalysis?.semString);
   }
 
   canGenerateSelectedPcdrs(): boolean {
@@ -806,8 +806,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       return false;
     }
     const solutions = this.glue.semvis?.items;
-    return Array.isArray(solutions) && solutions.some(solution =>
-      typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0);
+    return Array.isArray(solutions) && solutions.some(solution => !!solution?.semanticAnalysis?.semString?.trim());
   }
 
   private semanticSolutionsForPostProcessing(): GswbSolution[] {
@@ -819,7 +818,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     const hasDiscriminantSelection = (semvis.selectedScopeIds?.length ?? 0) > 0
       || (semvis.selectedMcIds?.length ?? 0) > 0;
     const solutions = hasDiscriminantSelection ? semvis.items : (semvis.allItems ?? semvis.items);
-    return (Array.isArray(solutions) ? solutions : []).filter(solution => !!solution?.graph);
+    // Derived or merged readings only (the list can also hold gswb-vis's "no solutions" note).
+    return (Array.isArray(solutions) ? solutions : []).filter(solution => !!solution?.semanticAnalysis?.graph);
   }
 
   private parseStructureContent(content: string): LigerStructure | null {

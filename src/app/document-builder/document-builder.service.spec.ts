@@ -160,8 +160,13 @@ describe('DocumentBuilderService', () => {
     const previousSentence = sentence('sentence-1', 'A man appeared.');
     const previousContext = { semantic: previousSentence.semantics[0], element: previousSentence };
 
+    /** GSWB's /merge_sequence_semantics response: the reading once, as semanticAnalysis. */
     const mergedSolution = (id: string): GswbSolution => ({
-      id, solution: 'merged', solutionKey: id, graph: structure, semantic: 'merged semantic',
+      id, solutionKey: id,
+      semanticAnalysis: {
+        syntacticOrigin: id, semId: id, semString: 'merged semantic', graph: structure,
+        semType: 'lfgxdrt', svg: 'merged',
+      },
     });
 
     it('merges one current reading against one previous context and registers one sequence', () => {
@@ -513,7 +518,11 @@ describe('DocumentBuilderService', () => {
       const derivedSolution = (
         id: string, semantic: string, variantKey = 'sequence-1-S0'
       ): GswbSolution => ({
-        id, solution: semantic, semantic, graph: structure, solutionKey: variantKey,
+        id, solutionKey: variantKey,
+        semanticAnalysis: {
+          syntacticOrigin: variantKey, semId: id, semString: semantic, graph: structure,
+          semType: 'lfgxdrt', svg: semantic,
+        },
       });
 
       /** A LiGER sequence response carrying the rebased current-part meaning
@@ -1063,7 +1072,10 @@ describe('DocumentBuilderService', () => {
     });
     const inputs = ['A', 'B', 'C'].map((text, index) => ({ id: `S${10 + index}`, text, structures: [structure as any] }));
     const reading = (id: string, key: string): GswbSolution =>
-      ({ id, solutionKey: key, proofId: key, semantic: `sem(${id})`, graph: structure } as any);
+      ({
+        id, solutionKey: key, proofId: key,
+        semanticAnalysis: { syntacticOrigin: key, semId: id, semString: `sem(${id})`, graph: structure, semType: 'lfgxdrt' },
+      } as GswbSolution);
 
     it('asks LiGER once and proves each part once, however many variants share it', done => {
       // S10 has two analyses, S11 and S12 one each: two variants, but S11/S12's parts are

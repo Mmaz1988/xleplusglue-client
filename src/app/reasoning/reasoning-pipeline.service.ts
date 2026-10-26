@@ -8,6 +8,7 @@ import {
   REASONING_CHECK_NAMES,
   ReasoningCheck,
   ReasoningCheckName,
+  SemanticAnalysis,
   hasPostProcessingRules,
 } from '../models/models';
 
@@ -37,9 +38,9 @@ export interface ReasoningPairRequest {
   /** When set, every prepared assignment carries a `reasoningAssignmentId` so it can be
    *  written into the document and paired with its Vampire verdict by id. */
   scope?: ReasoningScope;
-  /** Output of GSWB /merge_sequence_semantics over premises AND conclusion -- carries
-   *  `semantic` and `graph`. This is the whole sequence, not the context. */
-  merged: any;
+  /** The reading GSWB /merge_sequence_semantics made of premises AND conclusion (its
+   *  `semanticAnalysis`). This is the whole sequence, not the context. */
+  merged: SemanticAnalysis;
   /** The PRIOR's semantics: everything the update builds on, without the conclusion.
    *  For A + B that is A's semantic; for (A + B) + C it is the merged A + B. This, not
    *  `merged`, is the `Q` reattached as the `fof(context, axiom, ...)` conjunct --
@@ -171,7 +172,7 @@ export class ReasoningPipelineService {
    */
   private buildDiscourseMappings(
     scopeId: string,
-    merged: any,
+    merged: SemanticAnalysis,
     sequenceStructure: LigerStructure,
     ruleString: string,
     prune: boolean,
@@ -195,7 +196,7 @@ export class ReasoningPipelineService {
       )),
       switchMap(({ branches }) => forkJoin(branches.map((branch, index) =>
         this.dataService.gswbGeneratePcdrs({
-          semantic: merged.semantic,
+          semantic: merged.semString,
           parentSolutionId: `${scopeId}-rule-${index + 1}`,
           mergedStructure: branch.structure as any,
           rulesApplied: true,
@@ -273,7 +274,8 @@ export class ReasoningPipelineService {
    *  to be shown as bound (or not) for that turn. */
   generateDiscourseMappings(request: {
     scopeId: string;
-    merged: any;
+    /** The reading to post-process: its `semString` and `graph`. */
+    merged: SemanticAnalysis;
     sequenceStructure: LigerStructure;
     /** The post-processing (pragmatics) rules of the loaded LiGER rule set. */
     ruleString: string;

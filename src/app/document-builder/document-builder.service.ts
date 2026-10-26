@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, defer, from, map, of, switchMap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
-import { compositeAnalysisId, selectedSentenceSyntax } from '../analysis-model';
+import { compositeAnalysisId, readingOf, selectedSentenceSyntax } from '../analysis-model';
 import { proofInputsFrom } from './proof-inputs';
 import {
   GswbDiscriminant,
@@ -38,7 +38,7 @@ export function suppliableStructures(
 /** One of the new sentence's own candidate readings -- already independently parsed and
  *  proven by the caller (a sentence's own reading is never derived inline by this
  *  service; see class doc), and already resolved to which sentence/syntax variant it
- *  belongs to (`semanticAnalysisFor`/`sentenceAnalysisFor` stay caller-local). */
+ *  belongs to (`sentenceAnalysisFor` stays caller-local). */
 export interface SequenceMergeCurrentSolution {
   /** For `parentSolutionId`/`solutionKey`/`mcSetId` on the merge request only -- its
    *  semantic content is NOT re-read from here, `semantic` below is authoritative. */
@@ -655,7 +655,7 @@ export class DocumentBuilderService {
             + `variant(s) it was asked to derive from (${[...variants.keys()].join(', ')}). `
             + `Refusing to guess which syntactic variant it belongs to.`);
         }
-        const semantic = this.toSemanticAnalysis(candidate, rebase.newSentence.id);
+        const semantic = readingOf(candidate);
         // The reading's syntacticOrigin must resolve to a synId registered under the
         // new sentence's OWN document entry (see SequenceMergePair.currentSyntax) --
         // override whatever /deduce's response happened to carry (its own solutionKey/
@@ -758,7 +758,7 @@ export class DocumentBuilderService {
               proofs,
             }).pipe(
               map((output: any): DerivedSequencePart => timed((output?.solutions ?? []).some((solution: GswbSolution) =>
-                typeof solution?.semantic === 'string' && solution.semantic.trim().length > 0)
+                !!readingOf(solution).semString?.trim())
                 ? { sentenceId: sentence.id, output, meaningConstructors }
                 : { sentenceId: sentence.id, output, meaningConstructors, failure: 'no semantics derived' })),
               catchError(error => of<DerivedSequencePart>(timed({
@@ -797,7 +797,7 @@ export class DocumentBuilderService {
       const matching = consistent.filter(variant => variant.partKeys[sentenceIndex] === key);
       if (!matching.length) return [];
       const currentSyntax = matching[0].syntax[sentenceIndex];
-      const semantic = { ...this.toSemanticAnalysis(solution, key ?? sentenceId) };
+      const semantic = { ...readingOf(solution) };
       if (currentSyntax) semantic.syntacticOrigin = currentSyntax.synId;
       return [{
         solution,
@@ -986,28 +986,12 @@ export class DocumentBuilderService {
       proofs,
     }).pipe(map((result: { solutions?: GswbSolution[]; discriminants?: GswbDiscriminant[] }) => {
       const derived: GswbSolution[] = (result?.solutions ?? []).filter(candidate =>
-        typeof candidate?.semantic === 'string' && candidate.semantic.trim().length > 0 && !!candidate.graph);
+        !!readingOf(candidate).semString?.trim() && !!readingOf(candidate).graph);
       if (!derived.length) {
         throw new Error('No source-indexed semantic analyses found for the current sentence.');
       }
       return { variants, derived, discriminants: result?.discriminants ?? [] };
     }));
-  }
-
-  /** Wraps one of GSWB /deduce's raw derived solutions as a SemanticAnalysis, for the
-   *  rebase path -- this is a freshly-derived reading, not a merge result, so it has no
-   *  `.semanticAnalysis` of its own to prefer the way `semanticAnalysisFromMerged` does. */
-  private toSemanticAnalysis(candidate: GswbSolution, fallbackSyntacticOrigin: string): SemanticAnalysis {
-    if (candidate.semanticAnalysis) {
-      return candidate.semanticAnalysis;
-    }
-    return {
-      syntacticOrigin: candidate.solutionKey || candidate.proofId || fallbackSyntacticOrigin,
-      semId: candidate.id,
-      semString: candidate.semantic || candidate.solution || '',
-      graph: candidate.graph,
-      semType: 'lfgxdrt',
-    };
   }
 
   /** One `ligerSequence` call per distinct syntax pairing -- the previous reading's own
@@ -1073,7 +1057,7 @@ export class DocumentBuilderService {
           const syntaxEntry: SyntacticAnalysis = { ...mergedSyntax, synId: group.syntaxId };
           group.pairs.forEach(pair => {
             const semantic: SemanticAnalysis = {
-              ...this.semanticAnalysisFromMerged(pair.merged),
+              ...readingOf(pair.merged),
               syntacticOrigin: group.syntaxId,
             };
             pair.merged.sequenceAnalysis = {
@@ -1219,24 +1203,6 @@ export class DocumentBuilderService {
       pair.merged.sequenceAnalysis = analysis;
     });
     return Array.from(bySentencePair.values());
-  }
-
-  /** Mirrors GswbVisComponent's own `semanticAnalysisFor` fallback shape, but scoped to
-   *  a just-merged GswbSolution specifically (which almost always already carries
-   *  `.semanticAnalysis` set server-side by `/merge_sequence_semantics`) -- this is
-   *  internal merge bookkeeping, not the caller-facing "which sentence does this belong
-   *  to" identity policy that stays local to each caller (see class doc). */
-  private semanticAnalysisFromMerged(solution: GswbSolution): SemanticAnalysis {
-    if (solution.semanticAnalysis) {
-      return solution.semanticAnalysis;
-    }
-    return {
-      syntacticOrigin: solution.solutionKey || solution.proofId || 'syntax',
-      semId: solution.id,
-      semString: solution.semantic || solution.solution || '',
-      graph: solution.graph,
-      semType: 'lfgxdrt',
-    };
   }
 
   private semanticPart(semantic: SemanticAnalysis, sentenceId?: string): GswbSemanticMergePart {

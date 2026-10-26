@@ -16,6 +16,16 @@ import { LigerFileSource } from '../liger-workspace/liger-file-source.service';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { FILES, RULE_SET, TREE, fileSourceSpy } from '../liger-workspace/liger-workspace.testing';
 
+/** A derived reading as GSWB sends it: everything about the reading in semanticAnalysis.
+ *  `solution` is its SVG in LFGxDRT mode, its text in prolog-drt mode. */
+const derived = ({ solution, semantic, graph, ...rest }: any, semType: 'lfgxdrt' | 'prolog-drt' = 'lfgxdrt'): any => ({
+  ...rest,
+  semanticAnalysis: {
+    syntacticOrigin: rest.solutionKey ?? 'syn', semId: rest.id, semString: semantic, graph, semType,
+    ...(semType === 'lfgxdrt' ? { svg: solution } : { prologRender: solution }),
+  },
+});
+
 describe('RegressionTestingInterfaceComponent', () => {
   let component: RegressionTestingInterfaceComponent;
   let fixture: ComponentFixture<RegressionTestingInterfaceComponent>;
@@ -88,13 +98,13 @@ describe('RegressionTestingInterfaceComponent', () => {
     let deduceCall = 0;
     dataServiceSpy.gswbDeduce.and.callFake(() => {
       const index = deduceCall++;
-      return of({ solutions: [{
+      return of({ solutions: [derived({
         id: `seq-${index + 1}`, sourceIndex: (index + 1) * 10,
         semantic: ['A', 'B', 'C'][index] ?? 'X', graph: { constraints: [] },
-      }] } as any);
+      })] } as any);
     });
     dataServiceSpy.gswbMergeSequenceSemantics.and.returnValue(
-      of({ id: 'sem-1+sem-2', semantic: 'P + Q', graph: { constraints: [] } } as any));
+      of(derived({ id: 'sem-1+sem-2', semantic: 'P + Q', graph: { constraints: [] } })));
 
     reasoningPipeline = jasmine.createSpyObj<ReasoningPipelineService>(
       'ReasoningPipelineService', ['prepareReasoningChecks', 'prepareReasoningChecksSequentially']);
@@ -147,8 +157,8 @@ describe('RegressionTestingInterfaceComponent', () => {
     component.session.selectedSolutionIdsBySentence = { S1: ['sol-2'] };
 
     const result = selectedTexts(outputsFor([
-      { id: 'sol-1', solution: 'first' },
-      { id: 'sol-2', solution: 'second' },
+      derived({ id: 'sol-1', solution: 'first' }, 'prolog-drt'),
+      derived({ id: 'sol-2', solution: 'second' }, 'prolog-drt'),
     ]), true);
 
     expect(result).toEqual(['second']);
@@ -157,12 +167,12 @@ describe('RegressionTestingInterfaceComponent', () => {
   it('uses the LFGxDRT semantic field when preparing reasoning input', () => {
     component.session.gswbPreferences.outputstyle = 5;
 
-    const result = selectedTexts(outputsFor([{
+    const result = selectedTexts(outputsFor([derived({
       id: 'sol-1',
       solution: '<svg>rendered</svg>',
       semantic: '([x],[dog(x)])',
       graph: { constraints: [] },
-    }]), false);
+    })]), false);
 
     expect(result).toEqual(['([x],[dog(x)])']);
   });
@@ -171,8 +181,8 @@ describe('RegressionTestingInterfaceComponent', () => {
     component.session.selectedSolutionIdsBySentence = {};
 
     const result = selectedTexts(outputsFor([
-      { id: 'sol-1', solution: 'first' },
-      { id: 'sol-2', solution: 'second' },
+      derived({ id: 'sol-1', solution: 'first' }, 'prolog-drt'),
+      derived({ id: 'sol-2', solution: 'second' }, 'prolog-drt'),
     ]), true);
 
     expect(result).toEqual([]);
@@ -185,19 +195,19 @@ describe('RegressionTestingInterfaceComponent', () => {
     component.session.gswbPreferences.outputstyle = 5;
 
     const selected = (component as any).selectedSolutions('S1', outputsFor([
-      { id: 'sol-1', solution: 'a', semantic: '([x],[dog(x)])' },
-      { id: 'sol-2', solution: 'b', semantic: '([y],[cat(y)])', graph: { constraints: [] } },
+      derived({ id: 'sol-1', solution: 'a', semantic: '([x],[dog(x)])' }),
+      derived({ id: 'sol-2', solution: 'b', semantic: '([y],[cat(y)])', graph: { constraints: [] } }),
     ]), false);
 
     expect(selected.map((solution: any) => solution.id)).toEqual(['sol-2']);
-    expect(selected.every((solution: any) => !!solution.graph)).toBeTrue();
+    expect(selected.every((solution: any) => !!solution.semanticAnalysis.graph)).toBeTrue();
   });
 
   it('keeps graphless readings when the run is not an LFGxDRT one', () => {
     component.session.gswbPreferences.outputstyle = 1;
 
     const selected = (component as any).selectedSolutions('S1', outputsFor([
-      { id: 'sol-1', solution: 'a' },
+      derived({ id: 'sol-1', solution: 'a' }, 'prolog-drt'),
     ]), false);
 
     expect(selected.map((solution: any) => solution.id)).toEqual(['sol-1']);
@@ -227,7 +237,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       S1: batchAnnotation('S1', 'B1'), S2: batchAnnotation('S2', 'B2'), S3: batchAnnotation('S3', 'B3'),
     } as any;
     component.session.lastGswbOutputs = {
-      S1: { solutions: [{ id: 'S1-sol-1', solutionKey: 'B1', solution: 'x', semantic: 'A', graph: { id: 'S1-graph' } }], log: '', derivation: null, discriminants: [] },
+      S1: { solutions: [derived({ id: 'S1-sol-1', solutionKey: 'B1', solution: 'x', semantic: 'A', graph: { id: 'S1-graph' } })], log: '', derivation: null, discriminants: [] },
     } as any;
 
     dataServiceSpy.ligerSequence.and.callFake((request: any) => {
@@ -257,20 +267,20 @@ describe('RegressionTestingInterfaceComponent', () => {
       return of({
         solutions: (request.proofs ?? []).map((proof: any) => {
           const sentenceId = (proof.meaningConstructors as string).replace('mc-', '');
-          return {
+          return derived({
             id: `${sentenceId}-derived-1`,
             sourceIndex: 1,
             solutionKey: proof.solutionKey,
             semantic: sentenceId,
             graph: { id: `${sentenceId}-graph` },
-          };
+          });
         }),
       } as any);
     });
     dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => {
       const combined = request.parts.map((part: any) => part.semantic).join(' + ');
       return of({
-        id: `merged-${combined}`, semantic: combined, graph: { id: 'merged-graph' },
+        id: `merged-${combined}`,
         semanticAnalysis: {
           syntacticOrigin: `syn-${combined}`, semId: `sem-${combined}`,
           semString: combined, graph: { id: 'merged-graph' }, semType: 'lfgxdrt',
@@ -308,7 +318,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         syntax: ['S1', 'S2', 'S3'].map(synId => ({ synId, structure: { id: synId } })) },
     ];
     const output = (sentenceIndex: number, readings: Array<[string, string]>) => ({
-      solutions: readings.map(([id, key]) => ({ id, solutionKey: key, semantic: id, graph: { id: `${id}-graph` } })),
+      solutions: readings.map(([id, key]) => derived({ id, solutionKey: key, semantic: id, graph: { id: `${id}-graph` } })),
       log: '', derivation: null, discriminants: [],
       derivedInSequence: { itemId: 'n1', sentenceIndex },
     });
@@ -394,7 +404,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         // The prior is the merged premises alone -- the conclusion must not appear in the
         // axiom the four checks are tested against.
         expect(request.premiseSemantic).toBe('A + S2');
-        expect(request.merged.semantic).toBe('A + S2 + S3');
+        expect(request.merged.semString).toBe('A + S2 + S3');
         expect(request.scope!.updateId).toBe('ru-n1');
         // The loaded rule set's post-processing rules, not a client-side default.
         expect(request.ruleString).toBe('pragmatics rules');
@@ -504,8 +514,8 @@ describe('RegressionTestingInterfaceComponent', () => {
 
   it('counts disambiguated sentences when selected solutions differ from all solutions', () => {
     component.session.lastGswbOutputs = {
-      S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
-      S2: { solutions: [{ id: 'c', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+      S1: { solutions: [derived({ id: 'a', solution: 'a' }, 'prolog-drt'), derived({ id: 'b', solution: 'b' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
+      S2: { solutions: [derived({ id: 'c', solution: 'c' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
     } as any;
     component.session.selectedSolutionIdsBySentence = {
       S1: ['a'],
@@ -549,8 +559,8 @@ describe('RegressionTestingInterfaceComponent', () => {
   it('names the slowest and fastest sentence by id, and adds the disambiguation state', () => {
     component.sentenceMap = { S1: 'One', S2: 'Two' };
     component.session.lastGswbOutputs = {
-      S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
-      S2: { solutions: [{ id: 'c', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+      S1: { solutions: [derived({ id: 'a', solution: 'a' }, 'prolog-drt'), derived({ id: 'b', solution: 'b' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
+      S2: { solutions: [derived({ id: 'c', solution: 'c' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
     } as any;
     component.session.selectedSolutionIdsBySentence = { S1: ['a'], S2: ['c'] };
     component.session.report = {
@@ -631,7 +641,7 @@ describe('RegressionTestingInterfaceComponent', () => {
   it('shows timing info for hydrated sessions with cached Vampire state', () => {
     const snapshot = createRegressionTestingSession();
     snapshot.lastGswbOutputs = {
-      S1: { solutions: [{ id: 'a', solution: 'a' }, { id: 'b', solution: 'b' }], log: '', derivation: null, discriminants: [] },
+      S1: { solutions: [derived({ id: 'a', solution: 'a' }, 'prolog-drt'), derived({ id: 'b', solution: 'b' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
     } as any;
     snapshot.selectedSolutionIdsBySentence = { S1: ['a'] };
     snapshot.lastVampireResults = {
@@ -870,7 +880,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         of({ scopeId: 'pxq-n1-1', assignments: [], failures: [], degradations: [] }) as any);
       (component as any).prepareBranchChecks(
         { itemId: 'n1', updateId: 'u1' },
-        { sequenceStructure: { constraints: [] }, merged: { graph: {} } },
+        { sequenceStructure: { constraints: [] }, merged: derived({ id: 'm', graph: {} }) },
         0, false, false,
       ).subscribe((pair: any) => {
         expect(pair.failures).toEqual([]);
@@ -2237,8 +2247,8 @@ describe('RegressionTestingInterfaceComponent', () => {
       ];
       component['session'].lastAnnotations = {} as any;
       component['session'].lastGswbOutputs = {
-        S1: { solutions: [{ id: 'a', solution: 'p' }], log: '', derivation: null, discriminants: [] },
-        S2: { solutions: [{ id: 'b', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+        S1: { solutions: [derived({ id: 'a', solution: 'p' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
+        S2: { solutions: [derived({ id: 'b', solution: 'c' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
       } as any;
     });
 
@@ -2302,9 +2312,9 @@ describe('RegressionTestingInterfaceComponent', () => {
       component['session'].regressionTestResults = [{ sentence_id: 'S1' } as any];
       component['session'].lastAnnotations = {} as any;
       component['session'].lastGswbOutputs = {
-        S1: { solutions: [{ id: 'a', solution: 'p', graph: { nodes: [], edges: [] } }],
+        S1: { solutions: [derived({ id: 'a', semantic: 'p', graph: { nodes: [], edges: [] } })],
           log: '', derivation: null, discriminants: [] },
-        S2: { solutions: [{ id: 'b', solution: 'c', graph: { nodes: [], edges: [] } }],
+        S2: { solutions: [derived({ id: 'b', semantic: 'c', graph: { nodes: [], edges: [] } })],
           log: '', derivation: null, discriminants: [] },
       } as any;
       // Run inference reasons over the selected (disambiguated) readings.
@@ -2419,8 +2429,8 @@ describe('RegressionTestingInterfaceComponent', () => {
         S2: { solutions: [{ axioms: { prolog: ['all(X,p(X))'], tptp: [] } }] },
       } as any;
       component['session'].lastGswbOutputs = {
-        S1: { solutions: [{ id: 'a', solution: 'p' }], log: '', derivation: null, discriminants: [] },
-        S2: { solutions: [{ id: 'b', solution: 'c' }], log: '', derivation: null, discriminants: [] },
+        S1: { solutions: [derived({ id: 'a', solution: 'p' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
+        S2: { solutions: [derived({ id: 'b', solution: 'c' }, 'prolog-drt')], log: '', derivation: null, discriminants: [] },
       } as any;
       // Parsed while fof was selected; tff selected since.
       component['session'].lastLogicType = 'fof';
@@ -2438,7 +2448,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       component['session'].gswbPreferences.outputstyle = 5;
       // LFGxDRT reasons only over readings with a semantic graph.
       for (const output of Object.values(component['session'].lastGswbOutputs!)) {
-        output.solutions.forEach((solution: any) => solution.graph = { nodes: [], edges: [] });
+        output.solutions.forEach((solution: any) => solution.semanticAnalysis.graph = { nodes: [], edges: [] });
       }
       const prepare = spyOn<any>(component, 'prepareNliItem').and.returnValue(EMPTY);
 

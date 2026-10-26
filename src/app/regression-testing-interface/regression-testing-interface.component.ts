@@ -68,6 +68,7 @@ import {
   majorityVerdict,
   needsAnaphoraRanking,
   parseReasoningAssignmentId,
+  readingOf,
   reasoningUpdateId,
   validateReasoningUpdate,
 } from '../analysis-model';
@@ -3272,16 +3273,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         const entries = solutions.map(solution => {
           const syntax = syntaxOf(solution);
           const semantic: SemanticAnalysis = {
-            ...(solution.semanticAnalysis ?? {
-              syntacticOrigin: syntax.synId,
-              semId: solution.id,
-              semString: solution.semantic || solution.solution || '',
-              graph: solution.graph,
-              semType: 'lfgxdrt',
-            }),
+            ...readingOf(solution),
             // Must resolve to a synId registered under this SAME sentence entry -- see
-            // SequenceMergePair.currentSyntax's doc on why the fallback above is not trusted
-            // as-is even when a server-provided semanticAnalysis is present.
+            // SequenceMergePair.currentSyntax's doc on why the server's own origin is not
+            // trusted as-is.
             syntacticOrigin: syntax.synId,
           };
           return { syntax, semantic };
@@ -3497,7 +3492,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         merged: pair.merged,
         // Kept exactly as it was once the hypothesis starts folding in -- the prior
         // (`Q`) is the merged premises alone, never premises + conclusion.
-        premiseSemantic: isPremise ? pair.merged.semantic : branch.premiseSemantic,
+        premiseSemantic: isPremise ? pair.merged.semanticAnalysis.semString : branch.premiseSemantic,
         premiseSemanticIds: isPremise
           ? [...branch.premiseSemanticIds, pair.currentSemantic.semId]
           : branch.premiseSemanticIds,
@@ -3719,7 +3714,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         premiseSemanticIds: branch.premiseSemanticIds,
         hypothesisSemanticIds: branch.hypothesisSemanticIds,
       },
-      merged: branch.merged,
+      merged: readingOf(branch.merged),
       premiseSemantic: branch.premiseSemantic,
       sequenceStructure: branch.sequenceStructure,
       premiseAsts: branch.premiseAsts,
@@ -3997,12 +3992,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     if (!this.usesLfgxDrt()) return selected;
 
-    const withGraph = selected.filter(solution => !!solution.graph);
+    const withGraph = selected.filter(solution => !!readingOf(solution).graph);
     if (withGraph.length !== selected.length) {
       console.warn('[Regression] some readings have no semantic graph and cannot be '
         + 'reasoned over in lfgxdrt mode', {
         sentenceId,
-        dropped: selected.filter(solution => !solution.graph).map(solution => solution.id),
+        dropped: selected.filter(solution => !readingOf(solution).graph).map(solution => solution.id),
       });
     }
     return withGraph;
@@ -4013,7 +4008,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   private solutionText(solution: GswbSolution): string {
-    return this.usesLfgxDrt() ? (solution.semantic || solution.solution) : solution.solution;
+    const reading = readingOf(solution);
+    return (this.usesLfgxDrt() ? reading.semString : reading.prologRender) ?? '';
   }
 
   /** How many check bundles this request actually submits -- the denominator the

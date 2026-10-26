@@ -8,6 +8,14 @@ import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.servic
 
 import { GlueInterfaceComponent } from './glue-interface.component';
 
+/** A derived reading as GSWB sends it: its text and graph only in semanticAnalysis. */
+const derived = ({ semantic, graph, ...rest }: any): any => ({
+  ...rest,
+  semanticAnalysis: {
+    syntacticOrigin: 'syn', semId: rest.id ?? 'sem', semString: semantic, graph, semType: 'lfgxdrt',
+  },
+});
+
 describe('GlueInterfaceComponent', () => {
   let component: GlueInterfaceComponent;
   /** Stands in for LigerWorkspaceService: post-processing runs its pragmatics. */
@@ -71,7 +79,7 @@ describe('GlueInterfaceComponent', () => {
   it('blocks post-processing, and says why, while the rule set has no pragmatics rules', () => {
     component.liger = { structureJson: { id: 'syntax-graph' } } as any;
     component.glue = {
-      semvis: { index: 0, items: [{ graph: { id: 'drs-1' } }] },
+      semvis: { index: 0, items: [derived({ graph: { id: 'drs-1' } })] },
       gswbPreferences: { gswbPreferences: { betaReduce: true } },
     } as any;
     ligerWorkspace.pragmatics = null;
@@ -93,11 +101,11 @@ describe('GlueInterfaceComponent', () => {
     component.glue = {
       semvis: {
         index: 0,
-        items: [{
+        items: [derived({
           id: 'drs-1',
-          solution: 'drs example',
+          semantic: 'drs example',
           graph: { id: 'drs-1', text: 'drs example', constraints: [], annotations: [], choiceSpace: {} }
-        }]
+        })]
       },
       gswbPreferences: {
         gswbPreferences: { betaReduce: true }
@@ -124,7 +132,7 @@ describe('GlueInterfaceComponent', () => {
     component.glue = {
       semvis: {
         index: 0,
-        items: [{ graph: { id: 'drs-1' } }]
+        items: [derived({ graph: { id: 'drs-1' } })]
       },
       gswbPreferences: {
         gswbPreferences: { betaReduce: true }
@@ -146,7 +154,7 @@ describe('GlueInterfaceComponent', () => {
     component.glue = {
       semvis: {
         index: 0,
-        items: [{ graph: { id: 'drs-1' } }]
+        items: [derived({ graph: { id: 'drs-1' } })]
       },
       gswbPreferences: {
         gswbPreferences: { betaReduce: false }
@@ -163,7 +171,7 @@ describe('GlueInterfaceComponent', () => {
     component.glue = {
       semvis: {
         index: 0,
-        items: [{ graph: { id: 'drs-1' } }]
+        items: [derived({ graph: { id: 'drs-1' } })]
       },
       gswbPreferences: {
         gswbPreferences: { betaReduce: true, resolveDrs: false }
@@ -177,8 +185,8 @@ describe('GlueInterfaceComponent', () => {
     component.liger = {
       structureJson: { id: 'syntax-graph' }
     } as any;
-    const first = { id: 'drs-1', semantic: 'first', graph: { id: 'drs-1' } };
-    const second = { id: 'drs-2', semantic: 'second', graph: { id: 'drs-2' } };
+    const first = derived({ id: 'drs-1', semantic: 'first', graph: { id: 'drs-1' } });
+    const second = derived({ id: 'drs-2', semantic: 'second', graph: { id: 'drs-2' } });
     component.glue = {
       semvis: {
         index: 0,
@@ -215,7 +223,7 @@ describe('GlueInterfaceComponent', () => {
       ],
       synSemMapping: { 'S0+S1': ['sem-expletive'], 'S0+S2': ['sem-pronoun'] },
     };
-    const pronoun = { id: 'sem-pronoun', semantic: 'P', graph: { id: 'drs-pronoun' }, sequenceAnalysis: sequence };
+    const pronoun = derived({ id: 'sem-pronoun', semantic: 'P', graph: { id: 'drs-pronoun' }, sequenceAnalysis: sequence });
     component.glue = {
       semvis: { index: 0, items: [pronoun], allItems: [pronoun], selectedScopeIds: [], selectedMcIds: [] },
       gswbPreferences: { gswbPreferences: { betaReduce: true } },
@@ -230,8 +238,8 @@ describe('GlueInterfaceComponent', () => {
     component.liger = {
       structureJson: { id: 'syntax-graph' }
     } as any;
-    const first = { id: 'drs-1', graph: { id: 'drs-1' } };
-    const second = { id: 'drs-2', graph: { id: 'drs-2' } };
+    const first = derived({ id: 'drs-1', graph: { id: 'drs-1' } });
+    const second = derived({ id: 'drs-2', graph: { id: 'drs-2' } });
     component.glue = {
       semvis: {
         items: [second],
@@ -258,7 +266,7 @@ describe('GlueInterfaceComponent', () => {
     component.glue = {
       semvis: {
         index: 0,
-        items: [{ id: 's1', semantic: '([x1],[dog(x1)])', graph: { id: 'drs-1' } }]
+        items: [derived({ id: 's1', semantic: '([x1],[dog(x1)])', graph: { id: 'drs-1' } })]
       }
     } as any;
 
@@ -281,13 +289,13 @@ describe('GlueInterfaceComponent', () => {
       annotations: [{ graph: { graphElements: [] }, appliedRules: [], structureJson: { id: 'annotated' } }]
     } as any;
     component.postProcessingResults = [{
-      semanticSolution: { id: 's1', graph: { id: 'd1' } } as any,
+      semanticSolution: derived({ id: 's1', graph: { id: 'd1' } }),
       structureContent: '{"id":"d1"}',
       graphElements: [],
       ruleAnnotations: [],
       rulesApplied: false
     }, {
-      semanticSolution: { id: 's2', graph: { id: 'd2' } } as any,
+      semanticSolution: derived({ id: 's2', graph: { id: 'd2' } }),
       structureContent: '{"id":"d2"}',
       graphElements: [],
       ruleAnnotations: [],
@@ -397,7 +405,7 @@ describe('GlueInterfaceComponent', () => {
       component.showInlinePostProcessing = true;
       component.mergedStructureContent = '{"constraints":[],"annotations":[]}';
       component.postProcessingResults = [{
-        semanticSolution: { id: 's1', semantic: 'P', sentenceAnalysis: sentence } as any,
+        semanticSolution: derived({ id: 's1', semantic: 'P', sentenceAnalysis: sentence }),
         structureContent: '{"id":"d1"}',
         graphElements: [],
         ruleAnnotations: [{ structureJson: { id: 'd1a' } } as any],
@@ -490,7 +498,7 @@ describe('GlueInterfaceComponent', () => {
     component.showInlinePostProcessing = true;
     component.mergedStructureContent = '{"constraints":[],"annotations":[]}';
     component.postProcessingResults = [{
-      semanticSolution: { id: 's1', semantic: 'first' } as any,
+      semanticSolution: derived({ id: 's1', semantic: 'first' }),
       structureContent: '{"id":"d1"}',
       graphElements: [],
       ruleAnnotations: [
@@ -499,7 +507,7 @@ describe('GlueInterfaceComponent', () => {
       ],
       rulesApplied: true
     }, {
-      semanticSolution: { id: 's2', semantic: 'second' } as any,
+      semanticSolution: derived({ id: 's2', semantic: 'second' }),
       structureContent: '{"id":"d2"}',
       graphElements: [],
       ruleAnnotations: [{ structureJson: { id: 'd2a' } } as any],
@@ -524,13 +532,13 @@ describe('GlueInterfaceComponent', () => {
     component.mergedStructureContent = '{"graph":2}';
     component.selectedPostProcessingIndex = 1;
     component.postProcessingResults = [{
-      semanticSolution: { id: 's1', semantic: 'sem-1' } as any,
+      semanticSolution: derived({ id: 's1', semantic: 'sem-1' }),
       structureContent: '{"graph":1}',
       graphElements: [],
       ruleAnnotations: [{ structureJson: { graph: 1 } } as any],
       rulesApplied: true,
     }, {
-      semanticSolution: { id: 's2', semantic: 'sem-2' } as any,
+      semanticSolution: derived({ id: 's2', semantic: 'sem-2' }),
       structureContent: '{"graph":2}',
       graphElements: [],
       ruleAnnotations: [{ structureJson: { graph: 2 } } as any],
@@ -551,7 +559,7 @@ describe('GlueInterfaceComponent', () => {
     component.glue = {
       semvis: {
         index: 0,
-        items: [{ id: 's1', graph: { id: 'drs-1' } }]
+        items: [derived({ id: 's1', graph: { id: 'drs-1' } })]
       },
       gswbPreferences: { gswbPreferences: { betaReduce: true } }
     } as any;
@@ -577,7 +585,7 @@ describe('GlueInterfaceComponent', () => {
     component.glue = {
       semvis: {
         index: 0,
-        items: [{ id: 's1', semantic: '([d8,d6],[ant(d8)])', graph: { id: 'drs-1' } }]
+        items: [derived({ id: 's1', semantic: '([d8,d6],[ant(d8)])', graph: { id: 'drs-1' } })]
       }
     } as any;
 
@@ -599,7 +607,7 @@ describe('GlueInterfaceComponent', () => {
     // Two rule branches off one reading: the case where storing tier B once per branch
     // used to multiply the update by the rule fan-out.
     component.postProcessingResults = [{
-      semanticSolution: { id: 'sol-1', semantic: '([x],[])', sentenceAnalysis: sentence },
+      semanticSolution: derived({ id: 'sol-1', semantic: '([x],[])', sentenceAnalysis: sentence }),
       structureContent: '{"constraints":[],"annotations":[]}',
       graphElements: [],
       ruleAnnotations: [

@@ -31,7 +31,7 @@ describe('ReasoningPipelineService', () => {
 
   const request = (scopeId = 'pxq-1-1'): ReasoningPairRequest => ({
     scopeId,
-    merged: { semantic: 'P & Q', graph, id: 'sem-1+sem-2' },
+    merged: { syntacticOrigin: 'syn-1+syn-2', semId: 'sem-1+sem-2', semString: 'P & Q', graph, semType: 'lfgxdrt' },
     premiseSemantic: 'Q',
     sequenceStructure: structure,
     premiseAsts: [structure],

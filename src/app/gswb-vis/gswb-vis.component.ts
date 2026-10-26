@@ -5,12 +5,12 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbDiscriminant, GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure, SemanticAnalysis, SentenceAnalysis, SequenceAnalysis} from "../models/models";
+import {GswbDiscriminant, GswbProofInput, GswbRequest,GswbPreferences, GswbSolution, LigerStructure, SentenceAnalysis, SequenceAnalysis} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
 import { APP_DEFAULTS } from "../app-defaults";
-import { selectedSentenceSemantics } from '../analysis-model';
+import { readingDisplay, readingOf, selectedSentenceSemantics } from '../analysis-model';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 
 
@@ -133,8 +133,7 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
 
 
           //Check if data.solutions is not null and not empty
-           if (data.solutions.some(solution =>
-             typeof solution?.solution === 'string' && solution.solution.trim().length > 0)) {
+           if (data.solutions.some(solution => readingDisplay(readingOf(solution)).trim().length > 0)) {
               this.allSemanticSolutions = [...data.solutions];
               this.semanticDiscriminants = [...(data.discriminants ?? [])];
               this.selectedSemanticIds = this.allSemanticSolutions.map(solution => solution.id);
@@ -331,8 +330,7 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
     this.selectedMcIds = [...(selection.selectedMcIds ?? [])];
     this.semanticSolutionReady = this.hasSemanticSolutions
       && Array.isArray(selection?.items)
-      && selection.items.some(solution =>
-        typeof solution?.solution === 'string' && solution.solution.trim().length > 0);
+      && selection.items.some(solution => readingDisplay(readingOf(solution)).trim().length > 0);
 
     this.updateSentenceAnalyses(this.allSemanticSolutions);
     if (this.previousSentenceAnalyses.length || this.previousSequenceAnalyses.length) {
@@ -358,7 +356,7 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
       return;
     }
 
-    const current = solutions.filter(solution => !!solution?.graph);
+    const current = solutions.filter(solution => !!readingOf(solution).graph);
     if (!current.length) {
       this.hasSemanticSolutions = false;
       this.semanticSolutionReady = false;
@@ -373,15 +371,15 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
       currentSolutions: current.map(solution => ({
         id: solution.id,
         solutionKey: solution.solutionKey,
-        semanticLength: solution.semantic?.length ?? 0,
-        graphConstraints: solution.graph?.constraints?.length ?? 0,
-        graphAnnotations: solution.graph?.annotations?.length ?? 0,
+        semanticLength: readingOf(solution).semString?.length ?? 0,
+        graphConstraints: readingOf(solution).graph?.constraints?.length ?? 0,
+        graphAnnotations: readingOf(solution).graph?.annotations?.length ?? 0,
       })),
     });
 
     const currentEntries = current.map(solution => ({
       solution,
-      semantic: this.semanticAnalysisFor(solution),
+      semantic: readingOf(solution),
       sentenceAnalysis: this.sentenceAnalysisFor(solution),
     }));
 
@@ -400,9 +398,9 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
           id: solution.id,
           solutionKey: solution.solutionKey,
           sentences: solution.sequenceAnalysis?.text,
-          semanticLength: solution.semantic?.length ?? 0,
-          graphConstraints: solution.graph?.constraints?.length ?? 0,
-          graphAnnotations: solution.graph?.annotations?.length ?? 0,
+          semanticLength: readingOf(solution).semString?.length ?? 0,
+          graphConstraints: readingOf(solution).graph?.constraints?.length ?? 0,
+          graphAnnotations: readingOf(solution).graph?.annotations?.length ?? 0,
         })),
       });
       this.updatingMergedSolutions = true;
@@ -448,7 +446,7 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
       .map(solution => {
         const template = this.sentenceAnalysisFor(solution) ?? fallbackTemplate;
         if (!template) return null;
-        const semantic = this.semanticAnalysisFor(solution);
+        const semantic = readingOf(solution);
         const syntacticOrigin = template.syntax.find(syntax => syntax.synId === semantic.syntacticOrigin)?.synId
           ?? template.syntax[0]?.synId
           ?? semantic.syntacticOrigin;
@@ -473,19 +471,6 @@ export class GswbVisComponent implements OnInit, AfterViewInit {
       })
       .filter((analysis): analysis is SentenceAnalysis => !!analysis);
     this.sentenceAnalysisChange.emit(analyses);
-  }
-
-  private semanticAnalysisFor(solution: GswbSolution): SemanticAnalysis {
-    if (solution.semanticAnalysis) {
-      return solution.semanticAnalysis;
-    }
-    return {
-      syntacticOrigin: solution.solutionKey || solution.proofId || 'syntax',
-      semId: solution.id,
-      semString: solution.semantic || solution.solution || '',
-      graph: solution.graph,
-      semType: 'lfgxdrt',
-    };
   }
 
   captureState(): GswbWorkspaceState | null {

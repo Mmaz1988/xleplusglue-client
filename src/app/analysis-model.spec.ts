@@ -6,11 +6,13 @@ import {
   majorityVote,
   nliLabelFromVerdicts,
   parseReasoningAssignmentId,
+  readingOf,
   reasoningAssignmentId,
   reasoningUpdateId,
   resolveElement,
   selectedSentenceSemantics,
   selectedSentenceSyntax,
+  semVisDisplay,
   validateAnalysisDocument,
   validateSentenceAnalysis,
   validateSequenceAnalysis,
@@ -603,6 +605,25 @@ describe('analysis model helpers', () => {
       // Better to over-supply than to hand LiGER an empty parsedSentences entry.
       expect(selectedSentenceSyntax(sentence(['nonexistent'])).map(s => s.synId))
         .toEqual(['S0', 'S1', 'S2']);
+    });
+  });
+
+  describe('derived readings on the wire', () => {
+    const reading = { syntacticOrigin: 'S0', semId: 's1', semString: '([x1],[dog(x1)])', semType: 'lfgxdrt' };
+
+    it('are read from semanticAnalysis, and a solution without one is refused', () => {
+      expect(readingOf({ id: 's1', semanticAnalysis: reading })).toBe(reading);
+      expect(() => readingOf({ id: 'pcdrs-1', solution: '<svg></svg>', semantic: 'drs' }))
+        .toThrowError(/pcdrs-1 carries no semanticAnalysis/);
+    });
+
+    it('show their SVG, or their text where GSWB renders none; a PCDRS reading shows its own fields', () => {
+      expect(semVisDisplay({ id: 's1', semanticAnalysis: { ...reading, svg: '<svg>s1</svg>' } }))
+        .toEqual({ solution: '<svg>s1</svg>', semantic: '([x1],[dog(x1)])' });
+      expect(semVisDisplay({ id: 's1', semanticAnalysis: { ...reading, semString: '', semType: 'prolog-drt', prologRender: 'drs' } }))
+        .toEqual({ solution: 'drs', semantic: undefined });
+      expect(semVisDisplay({ id: 'pcdrs-1', solution: '<svg>p</svg>', semantic: 'A:[]' }))
+        .toEqual({ solution: '<svg>p</svg>', semantic: 'A:[]' });
     });
   });
 });

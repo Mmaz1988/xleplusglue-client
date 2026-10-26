@@ -4,7 +4,7 @@ import {catchError, concatMap, from, of, toArray} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
-import { AnaphoraRankingTable } from '../analysis-model';
+import { AnaphoraRankingTable, semVisDisplay } from '../analysis-model';
 
 /** What /collapse_anaphora can resolve: an LFGxDRT expression with a presupposition box, an
  *  anaphor marker or an A:/P: mapping. Anything else has nothing to collapse. */
@@ -115,14 +115,20 @@ export class SemVisComponent implements AfterViewInit {
   constructor(private sanitizer: DomSanitizer, private changeDetector: ChangeDetectorRef,
               private injector?: Injector) {}
 
+  /** An item's text: what the collapse is keyed on and sent. */
+  private semanticOf(item: GswbSolution | undefined): string | undefined {
+    return item ? semVisDisplay(item).semantic : undefined;
+  }
+
   private isCollapsibleItem(item: GswbSolution | undefined): boolean {
-    return typeof item?.semantic === 'string' && COLLAPSIBLE_DRS.test(item.semantic);
+    const semantic = this.semanticOf(item);
+    return typeof semantic === 'string' && COLLAPSIBLE_DRS.test(semantic);
   }
 
   /** The button: shown while some item could be collapsed and is not yet. */
   get canCollapse(): boolean {
     return this.collapsible && this.allItems.some(item =>
-      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(item.semantic!));
+      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(this.semanticOf(item)!));
   }
 
   /** The toggle: shown once some item has a collapsed DRS. */
@@ -131,7 +137,8 @@ export class SemVisComponent implements AfterViewInit {
   }
 
   private collapsedFor(item: GswbSolution | undefined): GswbSolution | undefined {
-    return item?.semantic ? this.collapsedBySemantic.get(item.semantic) : undefined;
+    const semantic = this.semanticOf(item);
+    return semantic ? this.collapsedBySemantic.get(semantic) : undefined;
   }
 
   /** While the collapsed view is on: what the collapse did to the shown item, or why it is
@@ -143,7 +150,8 @@ export class SemVisComponent implements AfterViewInit {
     const collapsed = this.collapsedFor(current);
     if (collapsed) return collapsed.collapseReport ?? '';
     if (!this.isCollapsibleItem(current)) return 'nothing to collapse';
-    const error = current.semantic ? this.collapseErrors.get(current.semantic) : undefined;
+    const semantic = this.semanticOf(current);
+    const error = semantic ? this.collapseErrors.get(semantic) : undefined;
     return error ? `not collapsed: ${error}` : 'not collapsed';
   }
 
@@ -151,16 +159,16 @@ export class SemVisComponent implements AfterViewInit {
    *  another, then shows the collapsed view. */
   collapseAll(): void {
     const pending = this.allItems.filter(item =>
-      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(item.semantic!));
+      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(this.semanticOf(item)!));
     if (!pending.length || this.collapseLoading || !this.injector) return;
     const dataService = this.injector.get(DataService);
     const items = this.allItems;
     this.collapseLoading = true;
     from(pending).pipe(
       concatMap(item => dataService.gswbCollapseAnaphora({
-        semantic: item.semantic!, parentSolutionId: item.id,
+        semantic: this.semanticOf(item)!, parentSolutionId: item.id,
       }).pipe(catchError(error => {
-        this.collapseErrors.set(item.semantic!, error?.error?.message ?? error?.message ?? 'GSWB error');
+        this.collapseErrors.set(this.semanticOf(item)!, error?.error?.message ?? error?.message ?? 'GSWB error');
         return of(null);
       }))),
       toArray(),
@@ -170,9 +178,9 @@ export class SemVisComponent implements AfterViewInit {
       if (items !== this.allItems) return;
       responses.forEach((response, index) => {
         if (response?.rejection) {
-          this.collapseErrors.set(pending[index].semantic!, `the reading is rejected: ${response.rejection}`);
+          this.collapseErrors.set(this.semanticOf(pending[index])!, `the reading is rejected: ${response.rejection}`);
         } else if (response) {
-          this.collapsedBySemantic.set(pending[index].semantic!, response);
+          this.collapsedBySemantic.set(this.semanticOf(pending[index])!, response);
         }
       });
       this.showCollapsed = true;
@@ -191,7 +199,7 @@ export class SemVisComponent implements AfterViewInit {
     const next = Array.isArray(items) ? items : [];
     // The same items again (reordered, say) keep their collapsed view; others start over,
     // so a collapsed view is only ever shown after "Collapse" was asked for on these items.
-    const semantics = (list: GswbSolution[]) => new Set(list.map(item => item.semantic ?? item.id));
+    const semantics = (list: GswbSolution[]) => new Set(list.map(item => this.semanticOf(item) ?? item.id));
     const before = semantics(this.allItems);
     const after = semantics(next);
     if (before.size !== after.size || [...after].some(key => !before.has(key))) {
@@ -255,7 +263,7 @@ export class SemVisComponent implements AfterViewInit {
     const current = this.items[this.index];
     const collapsed = this.showCollapsed ? this.collapsedFor(current) : undefined;
     // GSWB returns a collapsed DRS as SVG (`solution`) and as text (`semantic`).
-    const value = (collapsed ? (this.svgSolutions ? collapsed.solution : collapsed.semantic) : current.solution) ?? '';
+    const value = (collapsed ? (this.svgSolutions ? collapsed.solution : collapsed.semantic) : semVisDisplay(current).solution) ?? '';
 
     if (this.svgSolutions) {
       this.currentSvg = this.sanitizer.bypassSecurityTrustHtml(value);

@@ -164,6 +164,30 @@ export function majorityVerdict(assignments: ReasoningAssignment[]): ReasoningIt
   };
 }
 
+/** A derived or merged reading's `SemanticAnalysis`. GSWB sends such a reading (/deduce,
+ *  /gswb_batch_proof, /merge_sequence_semantics) once, as `semanticAnalysis`, and nothing
+ *  flat: a solution without one is not a derived reading. */
+export function readingOf(solution: GswbSolution): SemanticAnalysis {
+  if (!solution.semanticAnalysis) {
+    throw new Error(`GSWB solution ${solution.id} carries no semanticAnalysis: not a derived or merged reading.`);
+  }
+  return solution.semanticAnalysis;
+}
+
+/** What a reading shows: its SVG in LFGxDRT display mode, its text in the other modes. */
+export function readingDisplay(reading: SemanticAnalysis): string {
+  return reading.svg ?? reading.prologRender ?? '';
+}
+
+/** What `sem-vis` shows of an item, and the text its collapse is keyed on. `sem-vis` takes
+ *  both kinds of reading: a derived or merged one carries `semanticAnalysis` and nothing flat,
+ *  a PCDRS one carries `solution` (SVG or text) and `semantic`. */
+export function semVisDisplay(item: GswbSolution): { solution: string; semantic?: string } {
+  return item.semanticAnalysis
+    ? { solution: readingDisplay(item.semanticAnalysis), semantic: item.semanticAnalysis.semString || undefined }
+    : { solution: item.solution ?? '', semantic: item.semantic };
+}
+
 /** Returns all sentence alternatives when no explicit selection has been stored. */
 export function selectedSentenceSemantics(sentence: SentenceAnalysis): SemanticAnalysis[] {
   if (!sentence.selectedSemanticIds) {

@@ -38,6 +38,8 @@ import {
   carryAnaphoraRanking,
   needsAnaphoraRanking,
   orderByAnaphoraRanking,
+  readingDisplay,
+  readingOf,
   reasoningUpdateId,
   validateAnalysisDocument,
   validateReasoningUpdate
@@ -305,7 +307,7 @@ export class ChatComponent {
               solutionCount: gswbData.solutions.length,
               turn: this.currentTurnIndex(),
             });
-            const userSem = gswbData.solutions.map(x => x.solution).join('\n');
+            const userSem = gswbData.solutions.map(x => readingDisplay(readingOf(x))).join('\n');
             const pruneContext = this.contextPruning.nativeElement.checked;
 
             const vampRequest: vampireRequest = {
@@ -678,7 +680,7 @@ export class ChatComponent {
           return this.reasoningPipeline.prepareReasoningChecks({
             scopeId: pairId,
             scope: { updateId, premiseSemanticIds, hypothesisSemanticIds },
-            merged: pair.merged,
+            merged: readingOf(pair.merged),
             // The prior: this turn's accepted context entry, which for turn n>1 is
             // already the merged semantics of every earlier turn. That is exactly the
             // "A for A+B, A+B for A+B+C" reading of the context axiom.
@@ -924,27 +926,17 @@ export class ChatComponent {
   private acceptInitialLfgxdrtContext(userMessage: string, solutions: any[], ligerSolutions: any[] = []): void {
     const contexts = solutions
       .map(solution => {
-        const semantic = solution.semantic || solution.solution;
+        const reading = readingOf(solution);
         return {
           original: userMessage,
-          prolog_drs: semantic,
+          prolog_drs: reading.semString,
           prolog_fol: '',
           tptp: '',
-          box: solution.solution || '',
-          semantic,
-          semanticGraph: solution.graph,
+          box: reading.svg ?? '',
+          semantic: reading.semString,
+          semanticGraph: reading.graph,
           syntax: solution.syntax,
-          // Same fallback registerSentence() and gswb-vis.component.ts's
-          // semanticAnalysisFor() use: don't trust the backend to always populate
-          // .semanticAnalysis, since semanticPart() silently drops the DRS graph when it's
-          // absent, and this is the one context every later turn's merge builds on.
-          semanticAnalysis: solution.semanticAnalysis ?? {
-            syntacticOrigin: solution.solutionKey || solution.proofId || 'syntax',
-            semId: solution.id,
-            semString: semantic,
-            graph: solution.graph,
-            semType: 'lfgxdrt',
-          },
+          semanticAnalysis: reading,
           synSemMapping: solution.synSemMapping,
         } as context;
       })
@@ -1017,7 +1009,7 @@ export class ChatComponent {
         const scopeId = `turn1-${sentenceId}-${semId}`;
         return this.reasoningPipeline.generateDiscourseMappings({
           scopeId,
-          merged: { semantic: entry.semantic, graph: entry.semanticGraph, ...(solution ?? {}) },
+          merged: readingOf(solution),
           sequenceStructure: entry.syntax as LigerStructure,
           // The post-processing rules, NOT `this.ruleString`. That input is the LiGER
           // *parse* rule set (it feeds /parse and the sequence syntax merge). Applying it
@@ -1263,7 +1255,8 @@ export class ChatComponent {
 
     prepared.forEach((item, index) => {
       const check = verdictFor(item, index);
-      if (!item.merged?.semantic) return;
+      if (!item.merged || !readingOf(item.merged).semString) return;
+      const reading = readingOf(item.merged);
 
       const priorElementId = item.priorElementId;
       if (!priorElementId || !item.newSentenceId) return;
@@ -1280,8 +1273,8 @@ export class ChatComponent {
       // different parses are two distinct discourse states, and the history shows both.
       const readingKey = [
         sequenceId,
-        item.merged.semanticAnalysis?.syntacticOrigin ?? '',
-        item.merged.semanticAnalysis?.semId ?? semId,
+        reading.syntacticOrigin ?? '',
+        reading.semId ?? semId,
       ].join('::');
       const isAccepted = !!(check?.consistent && check?.informative);
       const existingEntry = readingKeys.get(readingKey);
@@ -1294,18 +1287,18 @@ export class ChatComponent {
       if (!existingEntry || (isAccepted && !acceptedReadingKeys.has(readingKey))) {
         const entry = {
           original: `${item.previousOriginal ?? ''} ${userMessage}`.trim(),
-          prolog_drs: item.merged.semantic,
+          prolog_drs: reading.semString,
           prolog_fol: '',
           // The whole merged sequence, not the branch's context axiom: this entry becomes
           // the NEXT turn's prior, and `contextTptp` is now the prior of *this* turn.
           // Display-only on this path -- the next turn's context axiom is built from
           // `semantic` below, via prepareReasoningChecks' premiseSemantic.
           tptp: item.checks?.sequenceTptp ?? '',
-          box: item.merged.solution ?? '',
-          semantic: item.merged.semantic,
-          semanticGraph: item.merged.graph,
+          box: reading.svg ?? '',
+          semantic: reading.semString,
+          semanticGraph: reading.graph,
           syntax: item.syntax,
-          semanticAnalysis: item.merged.semanticAnalysis,
+          semanticAnalysis: reading,
           synSemMapping: item.merged.synSemMapping,
           elementId: sequenceId,
         } as context;
@@ -1355,7 +1348,7 @@ export class ChatComponent {
         // unlike the structure id it is unique per mapping.
         id: discourseId,
         semanticOrigin: semId,
-        drsString: mapping?.semantic ?? item.merged.semantic,
+        drsString: mapping?.semantic ?? reading.semString,
         drsGraph: mapping?.graph,
         svg: mapping?.solution,
         // 1-based, as minted by the pipeline. Provenance only: a branch is identified by
@@ -1418,7 +1411,8 @@ export class ChatComponent {
       // local_id), while `solution.solutionKey` is the SEQUENCE variant key that
       // produced it -- keying the syntax entry off the latter while the semantic points
       // at the former orphans every reading against validateSentenceAnalysis.
-      const synId = solution.semanticAnalysis?.syntacticOrigin
+      const semanticAnalysis = readingOf(solution);
+      const synId = semanticAnalysis.syntacticOrigin
         || solution.solutionKey || solution.proofId || `${id}-syn`;
       let syntax = syntaxByKey.get(synId);
       if (!syntax) {
@@ -1431,13 +1425,6 @@ export class ChatComponent {
         };
         syntaxByKey.set(synId, syntax);
       }
-      const semanticAnalysis: SemanticAnalysis = solution.semanticAnalysis ?? {
-        syntacticOrigin: synId,
-        semId: solution.id || `${id}-sem`,
-        semString: solution.semantic || solution.solution || '',
-        graph: solution.graph,
-        semType: 'lfgxdrt',
-      };
       semantics.push(semanticAnalysis);
       synSemMapping[synId] = Array.from(new Set([...(synSemMapping[synId] ?? []), semanticAnalysis.semId]));
     });

@@ -124,6 +124,35 @@ describe('SemVisComponent', () => {
       expect(dataService.gswbCollapseAnaphora).not.toHaveBeenCalled();
     });
 
+    it('shows and collapses a derived reading, which GSWB sends only as its semanticAnalysis', () => {
+      component.items = [{
+        id: 'd1',
+        semanticAnalysis: {
+          syntacticOrigin: 'S0', semId: 'd1', semType: 'lfgxdrt', svg: '<svg>d1</svg>',
+          semString: "([],[p(([x1],[bind(x1),x1='peter']))])",
+        },
+      }];
+      expect(shown()).toBe('<svg>d1</svg>');
+      expect(component.canCollapse).toBeTrue();
+
+      component.collapseAll();
+
+      expect(dataService.gswbCollapseAnaphora).toHaveBeenCalledOnceWith(
+        { semantic: "([],[p(([x1],[bind(x1),x1='peter']))])", parentSolutionId: 'd1' });
+      expect(shown()).toBe('<svg>c-d1</svg>');
+    });
+
+    it('shows a prolog-drt reading as its text', () => {
+      const editor = { updateContent: jasmine.createSpy('updateContent') };
+      component.sem = editor as any;
+      component.svgSolutions = false;
+      component.items = [{
+        id: 'p1',
+        semanticAnalysis: { syntacticOrigin: 'S0', semId: 'p1', semType: 'prolog-drt', semString: '', prologRender: 'drs([],[])' },
+      }];
+      expect(editor.updateContent).toHaveBeenCalledWith('drs([],[])');
+    });
+
     it('collapses every collapsible item on request, then toggles between the two views', () => {
       component.items = [
         pcdrs('b1', "([],[p(([x1],[bind(x1),x1='peter']))])"),

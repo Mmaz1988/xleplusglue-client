@@ -175,11 +175,11 @@ describe('ChatComponent', () => {
     newSentenceId: 'sentence-2',
     merged: {
       id: semId,
-      semantic: `drs([x${ruleBranch}],[])`,
-      graph: { nodes: [] },
       semanticAnalysis: {
         semId,
         syntacticOrigin: overrides.syntacticOrigin ?? 'syn-1',
+        semString: `drs([x${ruleBranch}],[])`,
+        graph: { nodes: [] },
         semType: 'lfgxdrt',
       },
     },
@@ -345,7 +345,11 @@ describe('ChatComponent', () => {
     const derivedSolution = (
       id: string, semantic: string, variantKey = 'sequence-1-S0+S1'
     ): any => ({
-      id, solution: semantic, semantic, graph: structure, solutionKey: variantKey,
+      id, solutionKey: variantKey,
+      semanticAnalysis: {
+        syntacticOrigin: variantKey, semId: id, semString: semantic, graph: structure,
+        semType: 'lfgxdrt', svg: semantic,
+      },
     });
 
     beforeEach(() => {
@@ -382,8 +386,11 @@ describe('ChatComponent', () => {
         solutions: [derivedSolution('derived-1', 'Q')],
       }));
       dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
-        id: request.parentSolutionId, solution: 'merged', solutionKey: request.parentSolutionId,
-        graph: structure, semantic: 'merged',
+        id: request.parentSolutionId, solutionKey: request.parentSolutionId,
+        semanticAnalysis: {
+          syntacticOrigin: request.parentSolutionId, semId: request.parentSolutionId,
+          semString: 'merged', graph: structure, semType: 'lfgxdrt', svg: 'merged',
+        },
       }));
       let preparedCallCount = 0;
       reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) => {
@@ -461,8 +468,11 @@ describe('ChatComponent', () => {
         solutions: [derivedSolution('derived-1', 'Q1'), derivedSolution('derived-2', 'Q2')],
       }));
       dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => of({
-        id: request.parentSolutionId, solution: 'merged', solutionKey: request.parentSolutionId,
-        graph: structure, semantic: 'merged',
+        id: request.parentSolutionId, solutionKey: request.parentSolutionId,
+        semanticAnalysis: {
+          syntacticOrigin: request.parentSolutionId, semId: request.parentSolutionId,
+          semString: 'merged', graph: structure, semType: 'lfgxdrt', svg: 'merged',
+        },
       }));
       let preparedCallCount = 0;
       reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) => {
@@ -598,7 +608,7 @@ describe('ChatComponent', () => {
       }] as any));
 
       (component as any).acceptInitialLfgxdrtContext('a man saw himself', [{
-        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
@@ -651,7 +661,7 @@ describe('ChatComponent', () => {
       ] as any));
 
       (component as any).acceptInitialLfgxdrtContext('a man saw himself', [{
-        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
@@ -691,7 +701,7 @@ describe('ChatComponent', () => {
           },
         ] as any));
         (component as any).acceptInitialLfgxdrtContext('the cat saw the dog it barked', [{
-          id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+          id: 'sol-1',
           syntax: structure, solutionKey: 'S0',
           semanticAnalysis: {
             syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
@@ -747,7 +757,7 @@ describe('ChatComponent', () => {
       ] as any));
 
       (component as any).acceptInitialLfgxdrtContext('a man appeared', [{
-        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',
@@ -767,7 +777,7 @@ describe('ChatComponent', () => {
         throwError(() => new Error('rules blew up')));
 
       (component as any).acceptInitialLfgxdrtContext('a man appeared', [{
-        id: 'sol-1', semantic: 'P(x)', solution: 'P(x)', graph: structure,
+        id: 'sol-1',
         syntax: structure, solutionKey: 'S0',
         semanticAnalysis: {
           syntacticOrigin: 'S0', semId: 'sem-1', semString: 'P(x)',

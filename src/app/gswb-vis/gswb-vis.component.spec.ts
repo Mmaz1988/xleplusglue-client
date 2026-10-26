@@ -24,7 +24,10 @@ describe('GswbVisComponent', () => {
   beforeEach(() => {
     dataServiceMock = {
       gswbMergeSequenceSemantics: jasmine.createSpy('gswbMergeSequenceSemantics')
-        .and.returnValue(of({ id: 'merged-1', solution: 'merged', solutionKey: 'sk-1', graph: structure, semantic: 'merged semantic' } as GswbSolution)),
+        .and.returnValue(of({
+          id: 'merged-1', solutionKey: 'sk-1',
+          semanticAnalysis: { syntacticOrigin: 'sk-1', semId: 'merged-1', semString: 'merged semantic', graph: structure, semType: 'lfgxdrt', svg: 'merged' },
+        } as GswbSolution)),
       ligerSequence: jasmine.createSpy('ligerSequence').and.returnValue(of({ solutions: [] })),
     };
 
@@ -94,9 +97,7 @@ describe('GswbVisComponent', () => {
 
       const solution: GswbSolution = {
         id: 'cur-1',
-        solution: 'current',
         solutionKey: 'cur-key',
-        graph: structure,
         semanticAnalysis: { syntacticOrigin: 'syn-cur', semId: 'sem-cur', semString: 'Q', semType: 'lfgxdrt', graph: structure },
         sentenceAnalysis: sentence('s3', 'Current sentence.'),
       };
@@ -140,9 +141,7 @@ describe('GswbVisComponent', () => {
 
       const solution: GswbSolution = {
         id: 'cur-1',
-        solution: 'current',
         solutionKey: 'cur-key',
-        graph: structure,
         semanticAnalysis: { syntacticOrigin: 'syn-cur', semId: 'sem-cur', semString: 'R', semType: 'lfgxdrt', graph: structure },
         sentenceAnalysis: sentence('sC', 'Current sentence.'),
       };
