@@ -199,7 +199,9 @@ export class ReasoningPipelineService {
           semantic: merged.semString,
           parentSolutionId: `${scopeId}-rule-${index + 1}`,
           mergedStructure: branch.structure as any,
-          rulesApplied: true,
+          // Whether applyNliRules ran the rules: without them GSWB gives its default reading
+          // (every p-box in situ, every pronoun unbound) instead of the rules' proposals.
+          rulesApplied: hasPostProcessingRules(ruleString),
           includeSvg,
         }).pipe(map(result => ({ result, ruleBranchIndex: index + 1 })))
       ))),

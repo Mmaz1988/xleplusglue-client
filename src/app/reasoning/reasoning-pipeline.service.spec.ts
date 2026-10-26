@@ -398,6 +398,9 @@ describe('ReasoningPipelineService', () => {
         expect(dataService.ligerApplyRulesToStructure).not.toHaveBeenCalled();
         expect((dataService.gswbGeneratePcdrs.calls.mostRecent().args[0] as any).mergedStructure)
           .toBe(structure);
+        // GSWB returns its default reading only when told the rules did not run; told they
+        // did, it finds no proposed site for a p-box and rejects every reading.
+        expect(dataService.gswbGeneratePcdrs.calls.mostRecent().args[0].rulesApplied).toBe(false);
         expect(pair.assignments.length).toBe(1);
         expect(pair.assignments[0].ruleBranchIndex).toBe(1);
         expect(pair.failures).toEqual([]);
@@ -413,6 +416,7 @@ describe('ReasoningPipelineService', () => {
     }).subscribe(mappings => {
       expect(mappings.length).toBe(1);
       expect(dataService.ligerApplyRulesToStructure).not.toHaveBeenCalled();
+      expect(dataService.gswbGeneratePcdrs.calls.mostRecent().args[0].rulesApplied).toBe(false);
       done();
     });
   });
