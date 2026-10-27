@@ -941,8 +941,9 @@ export class ChatComponent {
 
   /** Names the contexts that could not be merged and the branches that were dropped, in the
    *  chat itself; the reasons come from ReasoningPipelineService and name the mapping and the
-   *  item that failed. Unresolved pronouns are counted for the side panel only: the reply
-   *  names them in a pill, with each reading's outcome. */
+   *  item that failed. Unresolved pronouns are counted for the side panel only: since N3 a
+   *  reading's A: names every pronoun (`a(x,/)` when unbound), so one without an entry is a
+   *  broken mapping, logged here. */
   private reportUnresolvedBranches(
     userMessage: string, prepared: any[], mergeFailures: string[] = []
   ): void {
@@ -1261,15 +1262,6 @@ export class ChatComponent {
       this.lastTurn.branches = turn.assignments.length;
       this.lastTurn.survivingReadings = this.context.length;
     }
-    // A pronoun a reading says nothing about is read as a new referent: named on the reply,
-    // with what the reading came to.
-    const unresolvedPronouns = turn.assignments.flatMap((item, index) => {
-      const check = verdictFor(item, index);
-      const outcome = !check ? 'no verdict'
-        : !check.consistent ? 'inconsistent' : check.informative ? 'neutral' : 'entailed';
-      return (item.assignment.unresolvedPronouns ?? []).map(pronoun =>
-        ({ reading: item.assignment.mappingId, pronoun, outcome }));
-    });
     const message = this.pushChatMessage({
       text: this.turnVerdictMessage(neutral, entailed, inconsistent, !!relevant),
       sender: 'Bot',
@@ -1280,7 +1272,6 @@ export class ChatComponent {
       detailText: branches.tptp,
       branchSolutions: branches.solutions,
       branchLabels: branches.labels,
-      ...(unresolvedPronouns.length ? { unresolvedPronouns } : {}),
     });
     if (turn.updates.length) {
       const record: ChatTurn = {

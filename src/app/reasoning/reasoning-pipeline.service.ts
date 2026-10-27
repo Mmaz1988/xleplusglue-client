@@ -124,9 +124,6 @@ export interface ReadingAssignment {
    *  human-readable notes. Non-empty means the bundle below is usable but NOT fully
    *  resolved. Must be shown to the user rather than treated as a clean result. */
   degradations: string[];
-  /** The same pronouns as data, named as in the collapsed sequence: those the reading says
-   *  nothing about (a pronoun it leaves unbound, `a(x,/)`, is its choice and not listed). */
-  unresolvedPronouns: string[];
 }
 
 /** A reading assignment of a freshly generated PCDRS reading, which still carries GSWB's
@@ -439,7 +436,6 @@ export class ReasoningPipelineService {
               contextTptp,
               sequenceTptp,
               degradations,
-              unresolvedPronouns: unresolved,
             }
           };
         }),

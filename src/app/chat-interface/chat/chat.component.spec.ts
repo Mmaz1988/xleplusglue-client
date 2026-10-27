@@ -243,7 +243,6 @@ describe('ChatComponent', () => {
     /** Which readings Vampire finds informative, and which consistent. */
     let accepts: (readingId: string) => boolean;
     let consistent: (readingId: string) => boolean;
-    let unresolved: (readingId: string) => string[];
 
     const startTurn = (sentence: any, selection: any = { criteria: [], filters: [], k: null }) => {
       component.chatDocument.sentences.push(JSON.parse(JSON.stringify(sentence)));
@@ -263,7 +262,6 @@ describe('ChatComponent', () => {
       component.context = [priorReading('sem-1a', 'P1'), priorReading('sem-1b', 'P2')] as any;
       accepts = () => true;
       consistent = () => true;
-      unresolved = () => [];
       dataServiceSpy.lmRankAnaphora.and.returnValue(throwError(() => ({ status: 0 })));
       // One parse per sentence supplied, S<n> positionally, each part offset by 7 constructors.
       dataServiceSpy.ligerSequence.and.callFake((request: any) => {
@@ -291,7 +289,6 @@ describe('ChatComponent', () => {
           checks: Object.fromEntries(['info_pos_check', 'info_neg_check', 'cons_pos_check', 'cons_neg_check']
             .map(name => [name, { name, semantic: 's', tptp: 't' }])),
           contextTptp: 'ctx', sequenceTptp: `fof(${reading.id}).`, degradations: [],
-          unresolvedPronouns: unresolved(reading.id),
         })),
         failures: [], degradations: [],
       }));
@@ -568,17 +565,24 @@ describe('ChatComponent', () => {
       expect(update?.discourse.every(reading => reading.drsString.includes('a(s3:x9,x1)'))).toBeTrue();
     });
 
-    it('names pronouns a reading said nothing about in a pill on the reply, not in a message', () => {
-      unresolved = id => id.endsWith('-pcdrs-2') ? ['x9'] : [];
-      consistent = id => !id.includes('sem-1b');
+    it('does not report unresolved pronouns in the chat: A: shows every choice', () => {
+      reasoningPipelineSpy.prepareStoredReadingChecks.and.callFake((request: any) => of({
+        scopeId: request.scopeId, assignments: request.readings.map((reading: any) => ({
+          pairId: request.scopeId, assignmentId: reasoningAssignmentId({ ...request.scope, ruleBranchIndex: reading.ruleBranch, anaphoraBranchId: reading.id }),
+          mappingId: reading.id, ruleBranchIndex: reading.ruleBranch,
+          checks: Object.fromEntries(['info_pos_check', 'info_neg_check', 'cons_pos_check', 'cons_neg_check']
+            .map(name => [name, { name, semantic: 's', tptp: 't' }])),
+          contextTptp: 'ctx', sequenceTptp: `fof(${reading.id}).`,
+          degradations: [`${reading.id}: unresolved pronoun(s) x9 read as new referent(s)`],
+        })),
+        failures: [], degradations: ['x9'],
+      }));
       const before = component.chatHistory.length;
 
       startTurn(newSentence('sentence-3', 1));
 
       // The reply is the only bot message of the turn.
       expect(component.chatHistory.slice(before).filter(message => message.sender === 'Bot').length).toBe(1);
-      expect(lastMessage().unresolvedPronouns?.map(row => [row.reading.endsWith('-pcdrs-2'), row.pronoun, row.outcome]))
-        .toEqual([[true, 'x9', 'neutral'], [true, 'x9', 'inconsistent']]);
     });
 
     it('hands the pills one TPTP block and one DRS per reading sent, labelled with its verdict', () => {

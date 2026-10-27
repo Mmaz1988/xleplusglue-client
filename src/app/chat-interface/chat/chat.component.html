@@ -52,18 +52,6 @@
             [closeOnly]="true">
           </app-pill>
 
-          <app-pill *ngIf="message.unresolvedPronouns?.length" badge="unresolved" variant="content"
-                    [minimizedColor]="'#8a5a00'">
-            <table class="unresolved-table">
-              <thead><tr><th>reading</th><th>pronoun</th><th>outcome</th></tr></thead>
-              <tbody>
-                <tr *ngFor="let row of message.unresolvedPronouns">
-                  <td>{{ row.reading }}</td><td>{{ row.pronoun }}</td><td>{{ row.outcome }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </app-pill>
-
           <app-pill
             *ngIf="message.detailText"
             badge="TPTP"

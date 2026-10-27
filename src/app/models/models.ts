@@ -1757,8 +1757,5 @@ export interface ChatMessage {
    branchLabels?: string[];
    /** Per-branch ranking table, index-aligned with branchSolutions; derived, not stored. */
    branchRankings?: (AnaphoraRankingTable | null)[];
-   /** Pronouns a reading sent said nothing about (read as new referents), with the reading's
-    *  outcome; shown in a pill on the reply. */
-   unresolvedPronouns?: { reading: string; pronoun: string; outcome: string }[];
 
  }
