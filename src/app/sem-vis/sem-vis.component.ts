@@ -126,6 +126,49 @@ export class SemVisComponent implements AfterViewInit {
   /** What the current selection keeps (discriminants, filters, top k), whatever is shown. */
   private keptBySelection: Set<string> | null = null;
 
+  /** The readings the selection may keep (chat: those Vampire accepted); the others are
+   *  shown only beside the top k and marked. Null: every reading. */
+  @Input()
+  set selectableIds(value: string[] | null) {
+    const next = value ? new Set(value) : null;
+    const same = (next === null) === (this.selectable === null)
+      && (!next || (next.size === this.selectable!.size && [...next].every(id => this.selectable!.has(id))));
+    if (same) return;
+    this.selectable = next;
+    this.applyFiltersAndResetIndex(0, true, false);
+  }
+  private selectable: Set<string> | null = null;
+
+  /** For the current reading, false when the selection may not keep it; null when every
+   *  reading may be kept. */
+  get currentSelectable(): boolean | null {
+    const current = this.items[this.index];
+    if (!this.selectable || !current) return null;
+    return this.selectable.has(current.id);
+  }
+
+  /** Order only (an older chat message): no filters, no top k, no discriminants. */
+  @Input() orderOnly = false;
+
+  /** The owner's discriminants, as an input (see `setDiscriminants`); set again only when
+   *  they change, so the selection made over them stays. */
+  @Input()
+  set discriminants(value: GswbDiscriminant[] | null) {
+    const ids = (list: GswbDiscriminant[]) => list.map(d => `${d.id}:${(d.associatedSolutions ?? []).join(',')}`).join('|');
+    if (ids(value ?? []) === ids([...this.scope_discriminants, ...this.mc_discriminants])) return;
+    this.setDiscriminants(value ?? []);
+  }
+
+  /** The owner's stored discriminant selection, as an input (see `setSelectedDiscriminants`);
+   *  applied only when it differs from the view's. */
+  @Input()
+  set selectedDiscriminants(value: { scopeIds: string[]; mcIds: string[] } | null) {
+    if (!value) return;
+    const same = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id));
+    if (same(value.scopeIds, this.selectedScopeIds) && same(value.mcIds, this.selectedMcIds)) return;
+    this.setSelectedDiscriminants(value.scopeIds, value.mcIds);
+  }
+
   /** For the current reading, whether the last run sent it; null when the selection keeps
    *  what that run sent, or there was no run. */
   get currentSentByLastRun(): boolean | null {
@@ -584,7 +627,8 @@ export class SemVisComponent implements AfterViewInit {
     // (`readingsForReasoning`): filters, then the top k places.
     const context = this.readingOrderContext;
     if (this.readingSelectionEditable && context) {
-      const narrowed = new Set(items.map(item => item.id));
+      const selectable = this.selectable;
+      const narrowed = new Set(items.map(item => item.id).filter(id => !selectable || selectable.has(id)));
       const kept = new Set(selectedReadingIds({
         ...context,
         updates: context.updates.map(update => ({ ...update, discourse: update.discourse.filter(reading => narrowed.has(reading.id)) })),
@@ -596,6 +640,7 @@ export class SemVisComponent implements AfterViewInit {
         : kept.has(item.id)));
     }
     // The reading filters hide; they never change what the owner reasons over.
+    if (this.orderOnly) return items;
     const filters = this.readingFilters.filter(filter => this.orderOptions.filters.includes(filter));
     if (!filters.length) return items;
     return items.filter(item => {

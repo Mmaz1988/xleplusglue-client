@@ -53,6 +53,10 @@
             title="The selection keeps other readings than the last run sent to Vampire.">
         {{ currentSentByLastRun ? 'sent by the last run' : 'not sent by the last run' }}
       </span>
+      <span class="last-run-badge not-sent" *ngIf="currentSelectable === false"
+            title="Vampire rejected this reading: the selection cannot keep it.">
+        rejected, not selectable
+      </span>
       <span class="status-label" *ngIf="currentLabel">{{ currentLabel }}</span>
 
       <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
@@ -85,7 +89,7 @@
         {{ criterionLabel(criterion) }}
       </label>
     </div>
-    <div class="reading-order-group" *ngIf="orderOptions.filters.length">
+    <div class="reading-order-group" *ngIf="orderOptions.filters.length && !orderOnly">
       <span class="reading-order-title">Hide</span>
       <label *ngFor="let filter of orderOptions.filters" [title]="filterHint(filter)">
         <input type="checkbox" [checked]="isFilterChecked(filter)" (change)="toggleFilter(filter)">
@@ -113,7 +117,7 @@
   </div>
 
   <!-- Discriminant selectors -->
-  <div class="discriminants">
+  <div class="discriminants" *ngIf="!orderOnly">
 
     <!-- Scope -->
     <div class="disc-block">

@@ -7,6 +7,7 @@ import { ChatComponent } from './chat.component';
 import { DataService } from '../../data.service';
 import { POST_PROCESSING_SKIPPED_NOTICE } from '../../models/models';
 import { ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
+import { reasoningAssignmentId } from '../../analysis-model';
 
 describe('ChatComponent', () => {
   let component: ChatComponent;
@@ -16,8 +17,7 @@ describe('ChatComponent', () => {
     callVampire: any; lmRankAnaphora: any;
   }>;
   let reasoningPipelineSpy: jasmine.SpyObj<{
-    prepareReasoningChecks: any; prepareReasoningChecksSequentially: any;
-    generateDiscourseMappings: any;
+    generateDiscourseMappings: any; prepareStoredReadingChecks: any;
   }>;
 
   beforeEach(() => {
@@ -30,9 +30,8 @@ describe('ChatComponent', () => {
       'lmRankAnaphora'
     ]);
     reasoningPipelineSpy = jasmine.createSpyObj('ReasoningPipelineService', [
-      'prepareReasoningChecks',
-      'prepareReasoningChecksSequentially',
-      'generateDiscourseMappings'
+      'generateDiscourseMappings',
+      'prepareStoredReadingChecks',
     ]);
 
     TestBed.configureTestingModule({
@@ -159,167 +158,33 @@ describe('ChatComponent', () => {
     expect(component.nextTurnSettings[0]).toEqual(['Logic', 'tff']);
   });
 
-  it('keeps the pruning checkbox readable while the side panel is hidden', () => {
-    component.sidePanelOpen = false;
-    fixture.detectChanges();
-    expect(component.contextPruning.nativeElement.checked).toBeFalse();
-  });
-
-  /** One reasoning assignment: a rule branch x PCDRS mapping of `merged`. Every assignment
-   *  of one pair carries the identical `merged` -- chat builds them as `{ ...item, checks }`
-   *  -- which is exactly why they must not each become a prior. */
-  const assignment = (
-    semId: string,
-    ruleBranch: number,
-    mappingIndex: number,
-    overrides: { syntacticOrigin?: string; sequenceTptp?: string; solution?: string } = {}
-  ) => ({
-    contextIndex: 0,
-    priorElementId: 'sentence-1',
-    newSentenceId: 'sentence-2',
-    merged: {
-      id: semId,
-      semanticAnalysis: {
-        semId,
-        syntacticOrigin: overrides.syntacticOrigin ?? 'syn-1',
-        semString: `drs([x${ruleBranch}],[])`,
-        graph: { nodes: [] },
-        semType: 'lfgxdrt',
-      },
-    },
-    syntax: { id: overrides.syntacticOrigin ?? 'syn-1' },
-    checks: {
-      assignmentId: `${semId}/r${ruleBranch}/pcdrs-${mappingIndex}`,
-      ruleBranchIndex: ruleBranch,
-      sequenceTptp: overrides.sequenceTptp !== undefined
-        ? overrides.sequenceTptp
-        : `fof(seq_${ruleBranch}_${mappingIndex}, axiom, $true).`,
-      mappingId: `${semId}-rule-${ruleBranch}-pcdrs-${mappingIndex}`,
-      mapping: {
-        id: `${semId}-rule-${ruleBranch}-pcdrs-${mappingIndex}`,
-        solution: overrides.solution !== undefined ? overrides.solution : '<svg></svg>',
-        semantic: `drs([x${ruleBranch}],[collapsed(${mappingIndex})])`,
-        anaphoraRelations: [{ pronoun: 'x5', antecedent: 'x2' }],
-      },
-    },
-  });
-
-  const accepted = { consistent: true, informative: true, relevant: true };
-
-  /** Two readings of the accumulated discourse, each with 12 rule branches -- the shape
-   *  turn 2 of `a man saw a man` / `he saw him` actually produced. */
-  const twoReadingsTwelveBranches = () => {
-    const items: any[] = [];
-    ['sem-1+sem-3', 'sem-2+sem-3'].forEach(semId => {
-      for (let rule = 1; rule <= 12; rule++) {
-        items.push(assignment(semId, rule, 1));
-      }
-    });
-    return items;
-  };
-
-  /** The two sentences the merged sequence is built from. Registered so the document stays
-   *  valid through the upserts -- validateAnalysisDocument rejects a sequence whose
-   *  sentenceIds are unknown, and it runs on every emit. */
+  /** The sentence the first turn registered. Registered so the document stays valid through
+   *  the upserts -- validateAnalysisDocument rejects a sequence whose sentenceIds are
+   *  unknown, and it runs on every emit. */
   beforeEach(() => {
-    const sentence = (id: string, text: string) => ({
-      id,
-      text,
-      syntax: [{ synId: `${id}-syn`, structure: {}, graph: {} }],
+    component.chatDocument.sentences = [{
+      id: 'sentence-1',
+      text: 'a man saw a man',
+      syntax: [{ synId: 'sentence-1-syn', structure: {}, graph: {} }],
       semantics: [{
-        syntacticOrigin: `${id}-syn`,
-        semId: `${id}-sem`,
-        semString: 'drs([],[])',
-        semType: 'lfgxdrt',
+        syntacticOrigin: 'sentence-1-syn', semId: 'sem-1a', semString: 'P1', semType: 'lfgxdrt',
+      }, {
+        syntacticOrigin: 'sentence-1-syn', semId: 'sem-1b', semString: 'P2', semType: 'lfgxdrt',
       }],
-      synSemMapping: { [`${id}-syn`]: [`${id}-sem`] },
-    });
-    component.chatDocument.sentences = [
-      sentence('sentence-1', 'a man saw a man'),
-      sentence('sentence-2', 'he saw him'),
-    ] as any;
+      synSemMapping: { 'sentence-1-syn': ['sem-1a', 'sem-1b'] },
+    }] as any;
   });
 
-  describe('contextFromLfgxdrtChecks', () => {
-    it('carries one context per distinct reading, not one per reasoning assignment', () => {
-      const prepared = twoReadingsTwelveBranches();
-      const checks = prepared.map(() => accepted);
-
-      const result = (component as any).contextFromLfgxdrtChecks(
-        prepared, checks, 'he saw him', false);
-
-      // 24 accepted assignments, 2 readings. The next turn multiplies its own branch
-      // count by this list, so 24 here is what turned 72 bundles into 864.
-      expect(result.length).toBe(2);
-      expect(result.map((entry: any) => entry.semanticAnalysis.semId))
-        .toEqual(['sem-1+sem-3', 'sem-2+sem-3']);
-      expect(new Set(result.map((entry: any) => entry.elementId)).size).toBe(1);
-    });
-
-    it('keeps two readings that share semantics but differ syntactically', () => {
-      const prepared = [
-        assignment('sem-1+sem-3', 1, 1, { syntacticOrigin: 'syn-1' }),
-        assignment('sem-1+sem-3', 2, 1, { syntacticOrigin: 'syn-2' }),
-      ];
-      const checks = prepared.map(() => accepted);
-
-      const result = (component as any).contextFromLfgxdrtChecks(
-        prepared, checks, 'he saw him', false);
-
-      expect(result.length).toBe(2);
-    });
-
-    it('keeps every anaphora branch in the turn\'s DiscourseUpdate', () => {
-      const prepared = twoReadingsTwelveBranches();
-      const checks = prepared.map(() => accepted);
-
-      (component as any).contextFromLfgxdrtChecks(prepared, checks, 'he saw him', false);
-
-      const updates = component.chatDocument.discourseUpdates ?? [];
-      expect(updates.length).toBe(1);
-      // The fold reduces work, not analysis: all 24 branches stay recorded.
-      expect(updates[0].discourse.length).toBe(24);
-      expect(Object.keys(updates[0].semDiscourseMapping).sort())
-        .toEqual(['sem-1+sem-3', 'sem-2+sem-3']);
-      // 24 branches used to mean 24 stored tier-B joins plus their tier-A unions, on the
-      // surface with the highest tier-B ratio of the three. The analyses stay; the joins
-      // behind them are recomputable from the sequence's own syntax and semantics.
-      expect((updates[0] as any).structures).toBeUndefined();
-      expect((updates[0] as any).mergedGraphs).toBeUndefined();
-      expect(updates[0].discourse.every(entry => entry.ruleBranch >= 1)).toBeTrue();
-    });
-
-    it('drops a reading whose assignments were all rejected', () => {
-      const prepared = twoReadingsTwelveBranches();
-      const checks = prepared.map((item: any) =>
-        item.merged.id === 'sem-1+sem-3' ? { consistent: false, informative: true } : accepted);
-
-      const result = (component as any).contextFromLfgxdrtChecks(
-        prepared, checks, 'he saw him', false);
-
-      expect(result.length).toBe(1);
-      expect(result[0].semanticAnalysis.semId).toBe('sem-2+sem-3');
-    });
-
-    it('keeps a reading when only one of its branches was accepted', () => {
-      const prepared = twoReadingsTwelveBranches();
-      const checks = prepared.map((_item: any, index: number) =>
-        index === 5 ? accepted : { consistent: false, informative: false });
-
-      const result = (component as any).contextFromLfgxdrtChecks(
-        prepared, checks, 'he saw him', false);
-
-      expect(result.length).toBe(1);
-      expect(result[0].tptp).toBe('fof(seq_6_1, axiom, $true).');
-    });
-  });
-
-  describe('finishLfgxdrtPreparation (appending the sentence derived on its own)', () => {
+  /** A later turn (N4 6d): step 1 stores every reading, step 2 reasons over the selected
+   *  ones, the latest message narrows what the next turn builds on. */
+  describe('a later turn', () => {
     const structure = { constraints: [], annotations: [], choiceSpace: {} };
     const variantStructure = { id: 'variant-structure' };
+    const unbound = { pronouns: [0, 0, 1], binding: [0, 0, 0], accommodation: [0, 0, 0] };
+    const bound = { pronouns: [1, 0, 0], binding: [0, 0, 0], accommodation: [0, 0, 0] };
 
-    /** LiGER over the supplied sentences: sentence-1's one parse (S0 in the call) and the new
-     *  sentence's one parse (S1), the new part offset by sentence-1's constructors. */
+    /** LiGER over the supplied sentences: the prior's one parse (S0 in the call) and the new
+     *  sentence's one parse (S1), the new part offset by the prior's constructors. */
     const ligerResponse = () => ({
       solutions: [{
         solutionKey: 'sequence-1-S0+S1',
@@ -332,22 +197,46 @@ describe('ChatComponent', () => {
       }],
     });
 
-    /** The new sentence as deriveSentence registers it: one parse, `readings` readings. */
-    const newSentence = (readings: number) => ({
-      id: 'sentence-3', text: 'he saw him',
+    /** A new sentence as deriveSentence registers it: one parse, `readings` readings. */
+    const newSentence = (id: string, readings: number, discriminants: any[] = []) => ({
+      id, text: 'he saw him',
       syntax: [{ synId: 'S0', structure, graph: { graphElements: [] } }],
       semantics: Array.from({ length: readings }, (_, r) => ({
-        syntacticOrigin: 'S0', semId: `sentence-3-S0-s${r}`, semString: `Q${r}`, graph: structure, semType: 'lfgxdrt',
+        syntacticOrigin: 'S0', semId: `${id}-S0-s${r}`, semString: `Q${r}`, graph: structure, semType: 'lfgxdrt',
       })),
-      synSemMapping: { S0: Array.from({ length: readings }, (_, r) => `sentence-3-S0-s${r}`) },
+      synSemMapping: { S0: Array.from({ length: readings }, (_, r) => `${id}-S0-s${r}`) },
+      discriminants,
     });
 
-    const priorReading = (semId: string, semantic: string) => ({
+    const priorReading = (semId: string, semantic: string, elementId = 'sentence-1') => ({
       original: 'a man saw a man', prolog_drs: '', prolog_fol: '', tptp: '', box: '',
       semantic, semanticGraph: structure, syntax: structure,
       semanticAnalysis: { syntacticOrigin: 'sentence-1-syn', semId, semString: semantic, semType: 'lfgxdrt', graph: structure },
-      elementId: 'sentence-1',
+      elementId,
     });
+
+    /** Each pair yields two readings: `-pcdrs-1` binds its pronoun, `-pcdrs-2` leaves it unbound. */
+    const readingsOf = (scopeId: string, semanticOrigin: string) => [1, 2].map(n => ({
+      mapping: {
+        id: `${scopeId}-pcdrs-${n}`, semantic: `drs-${n}`, solution: `<svg>${scopeId}-${n}</svg>`,
+        anaphoraRelations: n === 1 ? [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }] : [],
+        pragmaticProfile: n === 1 ? bound : unbound,
+      },
+      ruleBranchIndex: 1,
+      semanticOrigin,
+    }));
+
+    /** Which readings Vampire accepts; every other is consistent but uninformative. */
+    let accepts: (readingId: string) => boolean;
+
+    const startTurn = (sentence: any, selection: any = { criteria: [], filters: [], k: null }) => {
+      component.chatDocument.sentences.push(JSON.parse(JSON.stringify(sentence)));
+      (component as any).turnSelection = selection;
+      (component as any).finishLfgxdrtPreparation('he saw him', sentence);
+    };
+    const sentReadings = () => (dataServiceSpy.callVampire.calls.mostRecent().args[0].tptp_checks ?? [])
+      .map((bundle: any) => bundle.mappingId);
+    const lastMessage = () => component.chatHistory[component.chatHistory.length - 1];
 
     beforeEach(() => {
       component.gswbPreferences = { gswbPreferences: { resolveDrs: true } } as any;
@@ -355,137 +244,204 @@ describe('ChatComponent', () => {
       component.ruleString = 'rules';
       component.pragmaticsRuleString = 'pragmatics rules';
       component.activeIndices = [];
+      component.context = [priorReading('sem-1a', 'P1'), priorReading('sem-1b', 'P2')] as any;
+      accepts = () => true;
+      dataServiceSpy.lmRankAnaphora.and.returnValue(throwError(() => ({ status: 0 })));
       dataServiceSpy.ligerSequence.and.returnValue(of(ligerResponse()));
       dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => {
         const id = request.parts.map((part: any) => part.id).join('+');
         return of({ id, solutionKey: request.solutionKey, semanticAnalysis: {
-          syntacticOrigin: request.solutionKey, semId: id, semString: 'merged', graph: structure, semType: 'lfgxdrt', svg: 'merged',
+          syntacticOrigin: request.solutionKey, semId: id, semString: `merged ${id}`, graph: structure, semType: 'lfgxdrt', svg: 'merged',
         } });
       });
-      reasoningPipelineSpy.prepareReasoningChecks.and.callFake((request: any) =>
-        of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] }));
+      reasoningPipelineSpy.generateDiscourseMappings.and.callFake((request: any) =>
+        of(readingsOf(request.scopeId, request.merged.semId)));
+      reasoningPipelineSpy.prepareStoredReadingChecks.and.callFake((request: any) => of({
+        scopeId: request.scopeId,
+        assignments: request.readings.map((reading: any) => ({
+          pairId: request.scopeId, assignmentId: reasoningAssignmentId({ ...request.scope, ruleBranchIndex: reading.ruleBranch, anaphoraBranchId: reading.id }), mappingId: reading.id,
+          ruleBranchIndex: reading.ruleBranch,
+          checks: Object.fromEntries(['info_pos_check', 'info_neg_check', 'cons_pos_check', 'cons_neg_check']
+            .map(name => [name, { name, semantic: 's', tptp: 't' }])),
+          contextTptp: 'ctx', sequenceTptp: `fof(${reading.id}).`, degradations: [],
+        })),
+        failures: [], degradations: [],
+      }));
+      dataServiceSpy.callVampire.and.callFake((request: any) => of({
+        context_checks_mapping: Object.fromEntries((request.tptp_checks ?? []).map((bundle: any, index: number) => [index, {
+          assignment_id: bundle.assignmentId, consistent: true, informative: accepts(bundle.mappingId), relevant: false, glyph: '<svg/>',
+        }])),
+      }));
     });
 
-    it('merges the new reading onto every accepted reading, moved by its offset, deriving nothing', () => {
-      // Two accepted READINGS of the SAME prior element (an ambiguous premise): two
-      // discourse states over one parse, so one LiGER call and one merge each.
-      component.context = [priorReading('sem-1a', 'P1'), priorReading('sem-1b', 'P2')] as any;
-      const sentence = newSentence(1);
-      component.chatDocument.sentences.push(sentence as any);
+    it('stores the turn\'s sequence and every reading before Vampire', () => {
+      dataServiceSpy.callVampire.and.returnValue(new Subject());
 
-      (component as any).finishLfgxdrtPreparation('he saw him', false, sentence);
+      startTurn(newSentence('sentence-3', 1));
 
       expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
-      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
-      const request = dataServiceSpy.ligerSequence.calls.mostRecent().args[0];
-      expect(request.sentenceIds).toEqual(['sentence-1', 'sentence-3']);
-      expect(request.parsedSentences.length).toBe(2);
-      const merges = dataServiceSpy.gswbMergeSequenceSemantics.calls.allArgs().map(([merge]: any[]) => merge);
-      expect(merges.map((merge: any) => merge.parts.map((part: any) => part.id))).toEqual([
-        ['sem-1a', 'sentence-3-S0-s0'], ['sem-1b', 'sentence-3-S0-s0'],
-      ]);
-      expect(merges.map((merge: any) => merge.parts[1].sourceIndexOffset)).toEqual([7, 7]);
-
-      // The scope id names the PRIOR'S READING, not just its element id: GSWB derives
-      // every PCDRS id from it, and two pairs differing only in the prior's reading
-      // produced identical pragmatic ids when it did not (chat-document-pronoun-bug3.json).
-      const prepared = reasoningPipelineSpy.prepareReasoningChecks.calls.allArgs().map(([r]: any[]) => r);
-      expect(new Set(prepared.map((r: any) => r.scopeId)).size).toBe(2);
-      expect(prepared.map((r: any) => r.premiseSemantic).sort()).toEqual(['P1', 'P2']);
-      prepared.forEach((r: any) => {
-        expect(r.prune).toBeFalse();
-        expect(r.sequenceStructure).toEqual(variantStructure);
-        expect(r.scope.hypothesisSemanticIds).toEqual(['sentence-3-S0-s0']);
-      });
+      expect(dataServiceSpy.callVampire).toHaveBeenCalledTimes(1);
+      const update = component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3');
+      expect(update?.discourse.length).toBe(4);
+      expect(Object.keys(update!.semDiscourseMapping).sort())
+        .toEqual(['sem-1a+sentence-3-S0-s0', 'sem-1b+sentence-3-S0-s0']);
+      const sequence = component.chatDocument.sequences.find(candidate => candidate.id === 'sentence-1+sentence-3');
+      expect(sequence?.semantics.map(semantic => semantic.semId).sort())
+        .toEqual(['sem-1a+sentence-3-S0-s0', 'sem-1b+sentence-3-S0-s0']);
+      // The reasoning half reads the stored readings: no rules, no PCDRS again.
+      const requests = reasoningPipelineSpy.prepareStoredReadingChecks.calls.allArgs().map(([request]: any[]) => request);
+      expect(requests.map((request: any) => request.premiseSemantic).sort()).toEqual(['P1', 'P2']);
+      // The scope id names the PRIOR'S READING, not just its element id: GSWB derives every
+      // PCDRS id from it (misc/current/chat-document-pronoun-bug3.json).
+      expect(new Set(requests.map((request: any) => request.scopeId)).size).toBe(2);
+      requests.forEach((request: any) => expect(request.scope.hypothesisSemanticIds).toEqual(['sentence-3-S0-s0']));
     });
 
-    it('gives exactly one pair per reading of the new sentence for one accepted reading', () => {
+    it('reasons over every reading when the default keeps all of them: nothing is pruned', () => {
+      startTurn(newSentence('sentence-3', 1));
+
+      expect(sentReadings().length).toBe(4);
+      expect(lastMessage().branchSolutions?.length).toBe(4);
+    });
+
+    it('sends only the readings the default the turn started with keeps, and records it', () => {
+      startTurn(newSentence('sentence-3', 1), { criteria: [], filters: ['unbound'], k: null });
+
+      expect(sentReadings().every((id: string) => id.endsWith('-pcdrs-1'))).toBeTrue();
+      expect(sentReadings().length).toBe(2);
+      // Every reading is stored all the same; the message shows only the ones sent.
+      expect(component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.discourse.length).toBe(4);
+      expect(lastMessage().branchSolutions?.length).toBe(2);
+      const reasoning = component.chatDocument.reasoningUpdates?.[0];
+      expect(reasoning?.readingSelection).toEqual({ criteria: [], filters: ['unbound'], k: null, applied: true });
+      expect(reasoning?.assignments.every(assignment => assignment.discourseUpdateId === 'du-sentence-1+sentence-3'
+        && !!assignment.discourseId)).toBeTrue();
+    });
+
+    it('says so when the selection keeps no reading, and asks Vampire nothing', () => {
+      reasoningPipelineSpy.generateDiscourseMappings.and.callFake((request: any) =>
+        of(readingsOf(request.scopeId, request.merged.semId).slice(1)));
+
+      startTurn(newSentence('sentence-3', 1), { criteria: [], filters: ['unbound'], k: null });
+
+      expect(dataServiceSpy.callVampire).not.toHaveBeenCalled();
+      expect(lastMessage().text).toContain('No reading was selected');
+      expect(component.loading).toBeFalse();
+    });
+
+    it('carries one context entry per merged reading with an accepted reading', () => {
+      accepts = id => id.includes('sem-1a') && id.endsWith('-pcdrs-2');
+
+      startTurn(newSentence('sentence-3', 1));
+
+      expect(component.context.map(entry => entry.semanticAnalysis?.semId)).toEqual(['sem-1a+sentence-3-S0-s0']);
+      expect(component.context[0].elementId).toBe('sentence-1+sentence-3');
+      expect(component.context[0].tptp).toContain('-pcdrs-2');
+    });
+
+    it('lets the latest message pick among the accepted readings only', () => {
+      accepts = id => id.endsWith('-pcdrs-2');
+
+      startTurn(newSentence('sentence-3', 1));
+
+      const view = component.messageViews.get(lastMessage())!;
+      expect(view.orderOnly).toBeFalse();
+      expect(view.readingSelection).toEqual({ selection: { criteria: [], filters: [], k: null }, own: false });
+      expect([...view.selectableIds!].sort()).toEqual(sentReadings().filter((id: string) => id.endsWith('-pcdrs-2')).sort());
+    });
+
+    it('builds the next turn on what survives the latest message', () => {
+      startTurn(newSentence('sentence-3', 1));
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+
+      // Without unbound pronouns, top 1: both merged readings keep their bound reading, tied.
+      component.onReadingSelectionChange(lastMessage(), { criteria: ['pronouns'], filters: ['unbound'], k: 1 });
+      expect(component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection)
+        .toEqual({ criteria: ['pronouns'], filters: ['unbound'], k: 1 });
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+
+      // The history's selection narrows on top of it.
+      component.activeIndices = [1];
+      expect(component.priorContextIndices()).toEqual([1]);
+      expect(component.priorSummary).toBe('1 of 2 readings');
+    });
+
+    it('keeps a merged reading out of the prior when none of its accepted readings survives', () => {
+      accepts = id => id.includes('sem-1a') || id.endsWith('-pcdrs-2');
+
+      startTurn(newSentence('sentence-3', 1));
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+
+      // sem-1b's only accepted reading leaves its pronoun unbound.
+      component.onReadingSelectionChange(lastMessage(), { criteria: [], filters: ['unbound'], k: null });
+      expect(component.priorContextIndices()).toEqual([0]);
+    });
+
+    it('narrows only the latest sentence by its discriminants', () => {
       component.context = [priorReading('sem-1a', 'P1')] as any;
-      const sentence = newSentence(2);
-      component.chatDocument.sentences.push(sentence as any);
+      const discriminant = { id: 'd1', type: 'scope', identifier: 'd1', associatedSolutions: ['sentence-3-S0-s1'] };
 
-      (component as any).finishLfgxdrtPreparation('every swede is a scandinavian', false, sentence);
+      startTurn(newSentence('sentence-3', 2, [discriminant]));
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+      const view = component.messageViews.get(lastMessage())!;
+      // The view narrows the discourse readings built from the sentence readings it names.
+      expect(view.discriminants?.[0].associatedSolutions?.length).toBe(2);
+      expect(view.discriminants?.[0].associatedSolutions?.every(id => id.includes('sentence-3-S0-s1'))).toBeTrue();
 
-      expect(dataServiceSpy.ligerSequence).toHaveBeenCalledTimes(1);
-      expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
-      expect(dataServiceSpy.gswbMergeSequenceSemantics).toHaveBeenCalledTimes(2);
-      expect(reasoningPipelineSpy.prepareReasoningChecks).toHaveBeenCalledTimes(2);
-    });
-  });
+      component.onDiscriminantSelectionChange(lastMessage(), { scopeIds: ['d1'], mcIds: [] });
 
-  describe('the pills on a reasoning turn', () => {
-    /** Vampire's response: one verdict per bundle, echoing the assignment id back. */
-    const vampireResponse = (prepared: any[], verdicts: any[]) => ({
-      context_checks_mapping: Object.fromEntries(prepared.map((item, index) => [
-        index,
-        { ...verdicts[index], assignment_id: item.checks.assignmentId, glyph: '<svg/>' },
-      ])),
+      expect(component.chatDocument.sentences.find(sentence => sentence.id === 'sentence-3')?.selectedScopeIds).toEqual(['d1']);
+      expect(component.context[component.priorContextIndices()[0]].semanticAnalysis?.semId).toBe('sem-1a+sentence-3-S0-s1');
+      expect(component.priorContextIndices().length).toBe(1);
     });
 
-    const lastMessage = () => component.chatHistory[component.chatHistory.length - 1];
+    it('fixes the message\'s selection when the next turn starts; it cannot change during a turn', () => {
+      startTurn(newSentence('sentence-3', 1));
+      const first = lastMessage();
+      dataServiceSpy.ligerSequence.and.returnValue(new Subject());
 
-    it('shows one TPTP block per branch, rejected branches included', () => {
-      const prepared = twoReadingsTwelveBranches();
-      const verdicts = prepared.map((_item, index) =>
-        index % 2 === 0 ? accepted : { consistent: false, informative: true, relevant: false });
+      component.loading = true;
+      expect(component.messageViews.get(first)?.orderOnly).toBeTrue();
+      startTurn(newSentence('sentence-4', 1));
 
-      (component as any).handleVampireResponse(
-        vampireResponse(prepared, verdicts), 'he saw him', prepared, false);
-
-      const blocks = (lastMessage().detailText ?? '').split('\n\n').filter(Boolean);
-      // The pill's entry count must match the number of checks run -- a pill that silently
-      // shows fewer is how a fan-out bug stays invisible.
-      expect(blocks.length).toBe(24);
-      expect(blocks[0]).toContain('consistent, informative, relevant');
-      expect(blocks[1]).toContain('inconsistent, informative, irrelevant');
-      expect(blocks[0]).toContain('fof(seq_1_1, axiom, $true).');
+      const stored = () => component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection;
+      expect(stored()).toEqual({ criteria: [], filters: [], k: null });
+      component.onReadingSelectionChange(first, { criteria: [], filters: ['unbound'], k: null });
+      expect(stored()).toEqual({ criteria: [], filters: [], k: null });
+      // The new turn appends to the turn's sequence.
+      expect(dataServiceSpy.ligerSequence.calls.mostRecent().args[0].sentenceIds).toEqual(['sentence-1', 'sentence-3', 'sentence-4']);
     });
 
-    it('reports a branch that produced no TPTP instead of dropping it', () => {
-      const prepared = [
-        assignment('sem-1+sem-3', 1, 1),
-        assignment('sem-1+sem-3', 2, 1, { sequenceTptp: '' }),
-      ];
-      const verdicts = prepared.map(() => accepted);
+    it('makes an older message order only', () => {
+      startTurn(newSentence('sentence-3', 1));
+      const first = lastMessage();
+      const second = (component as any).pushChatMessage({ text: 'next', sender: 'Bot', branchSolutions: first.branchSolutions });
 
-      (component as any).handleVampireResponse(
-        vampireResponse(prepared, verdicts), 'he saw him', prepared, false);
+      (component as any).setLatestTurn(second, {
+        updateId: 'du-sentence-1+sentence-3', sentenceId: 'sentence-3', defaultSelection: { criteria: [], filters: [], k: null },
+        sent: null, accepted: null,
+      });
 
-      const blocks = (lastMessage().detailText ?? '').split('\n\n').filter(Boolean);
-      expect(blocks.length).toBe(2);
-      expect(blocks[1]).toContain('(no TPTP produced for this branch)');
+      expect(component.messageViews.get(first)).toEqual(jasmine.objectContaining({
+        orderOnly: true, readingSelection: null, selectableIds: null, discriminants: null,
+      }));
+      expect(component.messageViews.get(second)?.orderOnly).toBeFalse();
+      component.onReadingSelectionChange(first, { criteria: [], filters: ['unbound'], k: null });
+      expect(component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection).toBeUndefined();
     });
 
-    it('hands the DRS pill one PCDRS per branch, labelled with id and verdict', () => {
-      const prepared = twoReadingsTwelveBranches();
-      const verdicts = prepared.map(() => accepted);
+    it('hands the pills one TPTP block and one DRS per reading sent, labelled with its verdict', () => {
+      accepts = id => id.endsWith('-pcdrs-1');
 
-      (component as any).handleVampireResponse(
-        vampireResponse(prepared, verdicts), 'he saw him', prepared, false);
+      startTurn(newSentence('sentence-3', 1));
 
       const message = lastMessage();
-      expect(message.branchSolutions?.length).toBe(24);
-      expect(message.branchLabels?.length).toBe(24);
-      expect(message.branchLabels?.[0])
-        .toBe('sem-1+sem-3-rule-1-pcdrs-1 — consistent, informative, relevant');
+      const blocks = (message.detailText ?? '').split('\n\n').filter(Boolean);
+      expect(blocks.length).toBe(4);
+      expect(message.branchLabels?.[0]).toContain('consistent, informative, irrelevant');
+      expect(message.branchLabels?.[1]).toContain('consistent, uninformative, irrelevant');
       // The paged viewer replaces the concatenated-text pill on this path.
       expect(message.semanticText).toBe('');
-    });
-
-    it('skips branches with no rendered PCDRS rather than paging past blanks', () => {
-      const prepared = [
-        assignment('sem-1+sem-3', 1, 1),
-        assignment('sem-1+sem-3', 2, 1, { solution: '' }),
-      ];
-      const verdicts = prepared.map(() => accepted);
-
-      (component as any).handleVampireResponse(
-        vampireResponse(prepared, verdicts), 'he saw him', prepared, false);
-
-      const message = lastMessage();
-      expect(message.branchSolutions?.length).toBe(1);
-      // ... but the branch still has its TPTP block, so nothing disappears silently.
-      expect((message.detailText ?? '').split('\n\n').filter(Boolean).length).toBe(2);
     });
   });
 
@@ -526,7 +482,7 @@ describe('ChatComponent', () => {
         { solutionKey: 'S1', structureJson: { id: 'standalone-S1' }, graph: structure, meaningConstructors: '[1] b' },
       ];
 
-      (component as any).prepareLfgxdrtSolutions('a man appeared', ligerSolutions[0], ligerSolutions, false);
+      (component as any).prepareLfgxdrtSolutions('a man appeared', ligerSolutions[0], ligerSolutions);
 
       expect(dataServiceSpy.ligerSequence).not.toHaveBeenCalled();
       expect(dataServiceSpy.gswbDeduce).toHaveBeenCalledTimes(1);
@@ -629,6 +585,33 @@ describe('ChatComponent', () => {
       expect(reply.semanticText).toBe('');
     });
 
+    it('makes turn 1\'s message the latest: every reading selectable, its narrowing the next prior', () => {
+      const profile = (pronouns: number[]) => ({ pronouns, binding: [0, 0, 0], accommodation: [0, 0, 0] });
+      reasoningPipelineSpy.generateDiscourseMappings.and.callFake((request: any) => of([{
+        mapping: {
+          id: `${request.scopeId}-pcdrs-1`, semantic: 'drs', solution: '<svg/>', anaphoraRelations: [],
+          pragmaticProfile: profile(request.merged.semId === 'sem-2' ? [0, 0, 1] : [1, 0, 0]),
+        },
+        ruleBranchIndex: 1,
+      }]));
+      const solution = (semId: string) => ({
+        id: semId, syntax: structure, solutionKey: 'S0',
+        semanticAnalysis: { syntacticOrigin: 'S0', semId, semString: `P-${semId}`, graph: structure, semType: 'lfgxdrt' },
+      });
+
+      acceptFirst('a man saw him', [solution('sem-1'), solution('sem-2')]);
+
+      const reply = component.chatHistory.find(m => m.sender === 'Bot')!;
+      const view = component.messageViews.get(reply)!;
+      expect(view.orderOnly).toBeFalse();
+      expect(view.selectableIds).toBeNull();
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+
+      component.onReadingSelectionChange(reply, { criteria: [], filters: ['unbound'], k: null });
+
+      expect(component.priorContextIndices()).toEqual([0]);
+    });
+
     describe('anaphora ranking', () => {
       const acceptTwoBindings = () => {
         reasoningPipelineSpy.generateDiscourseMappings.and.returnValue(of([
@@ -684,7 +667,7 @@ describe('ChatComponent', () => {
         expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>dog</svg>', '<svg>cat</svg>']);
         expect(reply().branchLabels?.[1]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean score 0.950');
         expect(reply().branchRankings?.[1]?.rows).toEqual([['it', 'the cat', '0.950', 'cos 0.90', '', '2']]);
-        expect(component.readingOrders.get(reply())?.updates[0].anaphoraRanking).toEqual(ranking as any);
+        expect(component.messageViews.get(reply())?.readingOrder.updates[0].anaphoraRanking).toEqual(ranking as any);
         expect(dataServiceSpy.lmRankAnaphora).toHaveBeenCalledTimes(1);
       });
 

@@ -29,7 +29,14 @@
             [items]="message.branchSolutions"
             [itemLabels]="message.branchLabels"
             [itemRankings]="message.branchRankings ?? []"
-            [readingOrder]="readingOrders.get(message) ?? null"
+            [readingOrder]="messageViews.get(message)?.readingOrder ?? null"
+            [readingSelection]="messageViews.get(message)?.readingSelection ?? null"
+            [selectableIds]="messageViews.get(message)?.selectableIds ?? null"
+            [discriminants]="messageViews.get(message)?.discriminants ?? null"
+            [selectedDiscriminants]="messageViews.get(message)?.selectedDiscriminants ?? null"
+            [orderOnly]="messageViews.get(message)?.orderOnly ?? false"
+            (readingSelectionChange)="onReadingSelectionChange(message, $event)"
+            (discriminantSelectionChange)="onDiscriminantSelectionChange(message, $event)"
             [collapsible]="true"
             [minimizedColor]="'#6a1b9a'"
             [closeOnly]="true">
@@ -79,7 +86,6 @@
     {{ sidePanelOpen ? 'Hide' : 'Turn context' }}
   </button>
 
-  <!-- [hidden], not *ngIf: the pruning checkbox is read through a ViewChild. -->
   <div [hidden]="!sidePanelOpen">
     <h4>Rule set</h4>
     <dl>
@@ -99,10 +105,10 @@
         <dd>{{ row[1] }}</dd>
       </ng-container>
     </dl>
-    <label class="pruning-toggle">
-      <input type="checkbox" #contextPruning id="contextPruning" />
-      Pruning
-    </label>
+    <dl *ngIf="priorSummary">
+      <dt>Builds on</dt>
+      <dd title="The readings of the conversation so far that survive the latest message's selection (and the history's, when one is made).">{{ priorSummary }}</dd>
+    </dl>
 
     <h4>Last turn</h4>
     <p *ngIf="!lastTurn" class="turn-panel-empty">None yet.</p>

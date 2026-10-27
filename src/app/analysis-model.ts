@@ -9,6 +9,7 @@ import {
   AnaphoraRanking,
   DiscourseAnalysis,
   DiscourseUpdate,
+  GswbDiscriminant,
   GswbRenderPcdrsRequest,
   GswbSolution,
   LmRankAnaphoraRequest,
@@ -133,8 +134,8 @@ export function parseReasoningAssignmentId(id: string): ParsedReasoningAssignmen
   };
 }
 
-/** Strict-majority vote; ties resolve false. With a single value (the pruned,
- *  reason-over-one-candidate case) this reduces to just that value. Equivalent to the
+/** Strict-majority vote; ties resolve false. With a single value (one reading reasoned
+ *  over) this reduces to just that value. Equivalent to the
  *  `count > n/2` form regression used and the `trueCount > n - trueCount` form chat
  *  used -- both call sites now delegate here. */
 export function majorityVote(values: boolean[]): boolean {
@@ -671,6 +672,61 @@ export function readingsForReasoning(
   const byId = new Map(narrowed.discourse.map(reading => [reading.id, reading]));
   const ids = selectedReadingIds(discourseOrderContext(document, [narrowed], averager), selection);
   return { readings: ids.map(id => byId.get(id)!), selection, applied: true };
+}
+
+/** The readings of a sentence its discriminant selection keeps: those in every selected scope
+ *  and MC discriminant. Undefined when none is selected. */
+export function sentenceReadingsAllowedBy(sentence: SentenceAnalysis | undefined): Set<string> | undefined {
+  const selected = new Set([...(sentence?.selectedScopeIds ?? []), ...(sentence?.selectedMcIds ?? [])]);
+  const discriminants = (sentence?.discriminants ?? []).filter(discriminant => selected.has(discriminant.id));
+  if (!discriminants.length) return undefined;
+  return discriminants.slice(1).reduce(
+    (allowed, discriminant) => new Set([...allowed].filter(id => (discriminant.associatedSolutions ?? []).includes(id))),
+    new Set(discriminants[0].associatedSolutions ?? []));
+}
+
+/** The latest sentence of a discourse reading: the last part of its semanticOrigin. */
+export function latestSentenceReadingOf(reading: Pick<DiscourseAnalysis, 'semanticOrigin'>): string {
+  const parts = sentenceReadingIdsOf(reading);
+  return parts[parts.length - 1];
+}
+
+/** The latest sentence's discriminants over the readings of a discourse: each names the
+ *  discourse readings built from the sentence readings it names, so a discourse view narrows
+ *  by them as a sentence's view does (chat, N4 6d). */
+export function discourseDiscriminantsOf(
+  discriminants: GswbDiscriminant[], update: DiscourseUpdate,
+): GswbDiscriminant[] {
+  return discriminants.map(discriminant => {
+    const named = new Set(discriminant.associatedSolutions ?? []);
+    return {
+      ...discriminant,
+      associatedSolutions: update.discourse
+        .filter(reading => named.has(latestSentenceReadingOf(reading)))
+        .map(reading => reading.id),
+    };
+  });
+}
+
+/** What survives a chat turn's message (N4 6d), best first: of the `selectable` readings
+ *  (sent and accepted; null: all, a first turn), those whose latest sentence reading is in
+ *  `allowedLatest` (the latest sentence's discriminant selection; absent: all), then the
+ *  discourse's selection or `fallback` (the default the turn started with). Only the latest
+ *  sentence is narrowed: the earlier ones were fixed by the turns before. */
+export function turnSurvivors(
+  document: XlePlusGlueDocument,
+  update: DiscourseUpdate,
+  fallback: ReadingSelection,
+  averager: AnaphoraAverager,
+  selectable: Set<string> | null,
+  allowedLatest?: Set<string>,
+): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
+  const narrowed: DiscourseUpdate = {
+    ...update,
+    discourse: update.discourse.filter(reading => (!selectable || selectable.has(reading.id))
+      && (!allowedLatest || allowedLatest.has(latestSentenceReadingOf(reading)))),
+  };
+  return readingsForReasoning(document, narrowed, fallback, averager);
 }
 
 /** The assignments of `update` that survive `selection` -- for comparing stored results under

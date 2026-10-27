@@ -63,8 +63,6 @@ export interface ReasoningPairRequest {
   premiseAsts: LigerStructure[];
   hypothesisAsts: LigerStructure[];
   typed: boolean;
-  /** Reason over the first candidate only. */
-  prune?: boolean;
   /** Whether GSWB renders each reading to SVG: true where the view shows the readings,
    *  false where it stores none (they can be rendered later through /render_pcdrs). */
   includeSvg: boolean;
@@ -197,7 +195,6 @@ export class ReasoningPipelineService {
     merged: SemanticAnalysis,
     sequenceStructure: LigerStructure,
     ruleString: string,
-    prune: boolean,
     includeSvg: boolean,
   ): Observable<MappingWithStructure[]> {
     // /merge_uploaded_structures only UNIONS the merged syntax with the merged
@@ -229,9 +226,6 @@ export class ReasoningPipelineService {
         })),
         includeSvg,
       })),
-      // Pruning reasons over the first candidate alone; the reduction happens here,
-      // before the expensive collapse/TPTP/Vampire steps below.
-      map(mappings => prune ? mappings.slice(0, 1) : mappings)
     );
   }
 
@@ -246,7 +240,6 @@ export class ReasoningPipelineService {
     sequenceStructure: LigerStructure;
     /** The post-processing (pragmatics) rules of the loaded LiGER rule set. */
     ruleString: string;
-    prune?: boolean;
     /** See ReasoningPairRequest.includeSvg. */
     includeSvg: boolean;
   }): Observable<MappingWithStructure[]> {
@@ -261,7 +254,6 @@ export class ReasoningPipelineService {
       request.merged,
       request.sequenceStructure,
       request.ruleString ?? '',
-      !!request.prune,
       request.includeSvg,
     );
   }
@@ -293,7 +285,7 @@ export class ReasoningPipelineService {
     });
 
     const mappingsWithStructure$ = this.buildDiscourseMappings(
-      scopeId, merged, sequenceStructure, ruleString, !!request.prune, request.includeSvg);
+      scopeId, merged, sequenceStructure, ruleString, request.includeSvg);
 
     return forkJoin({
       reasoningChecksResponse: reasoningChecks$,

@@ -425,6 +425,46 @@ describe('SemVisComponent', () => {
         expect(fixture.nativeElement.querySelector('.last-run-badge')?.textContent).toContain('not sent by the last run');
       });
 
+      it('keeps only selectable readings, and marks the others where they show', () => {
+        component.readingSelection = { selection: { criteria: ['pronouns'], filters: [], k: 1 }, own: false };
+        expect(visible()).toEqual(['p2']);
+        // p2 was rejected: the top 1 is the best of the rest.
+        component.selectableIds = ['p1', 'p3'];
+        expect(visible()).toEqual(['p3']);
+        expect(component.currentSelectable).toBeTrue();
+
+        component.toggleBeyondTopK(true);
+        expect(visible()).toEqual(['p2', 'p3', 'p1']);
+        // The reading shown stays shown.
+        expect(component.currentSelectable).toBeTrue();
+        component.prev();
+        expect(component.currentSelectable).toBeFalse();
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('.last-run-badge')?.textContent).toContain('rejected, not selectable');
+      });
+
+      it('narrows by the owner\'s discriminants and restores their selection', () => {
+        component.readingSelection = { selection: { criteria: ['pronouns'], filters: [], k: null }, own: false };
+        const discriminant = { id: 'd2', type: 'scope', identifier: 'd2', associatedSolutions: ['p1', 'p3'] } as any;
+        component.discriminants = [discriminant];
+        component.selectedDiscriminants = { scopeIds: ['d2'], mcIds: [] };
+        expect(visible()).toEqual(['p3', 'p1']);
+        // The same discriminants again keep the selection made over them.
+        component.discriminants = [{ ...discriminant }];
+        expect(component.selectedScopeIds).toEqual(['d2']);
+      });
+
+      it('offers neither filters nor discriminants when order only', () => {
+        component.readingSelection = null;
+        component.orderOnly = true;
+        component.toggleFilter('unbound');
+        expect(component.allItems.length).toBe(3);
+        expect(visible().length).toBe(3);
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('.discriminants')).toBeNull();
+        expect(fixture.nativeElement.textContent).not.toContain('Hide');
+      });
+
       it('shows the k control only for a discourse\'s selection', () => {
         fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('.reading-top-k')).toBeNull();

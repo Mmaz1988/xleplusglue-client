@@ -3,9 +3,9 @@ import { SafeHtml } from '@angular/platform-browser';
 import { OverlayModule } from '@angular/cdk/overlay';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 import {EditorComponent} from "../../editor/editor.component";
-import {GswbSolution} from "../../models/models";
+import {GswbDiscriminant, GswbSolution} from "../../models/models";
 import { AnaphoraRankingTable } from '../../analysis-model';
-import { ReadingOrderContext } from '../../reading-order';
+import { ReadingOrderContext, ReadingSelection } from '../../reading-order';
 
 
 
@@ -43,6 +43,15 @@ export class PillComponent {
   @Input() collapsible = false;
   /** sem-vis variant: the discourse the items are PCDRS readings of (see app-sem-vis). */
   @Input() readingOrder: ReadingOrderContext | null = null;
+  /** sem-vis variant: a discourse's reading selection and what it may keep, its
+   *  discriminants and their selection, or order only (see app-sem-vis). */
+  @Input() readingSelection: { selection: ReadingSelection; own: boolean } | null = null;
+  @Input() selectableIds: string[] | null = null;
+  @Input() discriminants: GswbDiscriminant[] | null = null;
+  @Input() selectedDiscriminants: { scopeIds: string[]; mcIds: string[] } | null = null;
+  @Input() orderOnly = false;
+  @Output() readingSelectionChange = new EventEmitter<ReadingSelection | null>();
+  @Output() discriminantSelectionChange = new EventEmitter<{ scopeIds: string[]; mcIds: string[] }>();
 
   @Input() minimizedColor = '#2e7d32';
 

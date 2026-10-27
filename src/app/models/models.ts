@@ -482,7 +482,6 @@ export interface ReasoningUpdate {
   itemId?: string;                   // regression's n<k>; absent in chat
   logicType: 'fof' | 'tff';
   ruleString?: string;               // NLI post-processing rules applied, for reproducibility
-  pruned?: boolean;                  // true when only the first candidate was reasoned over
   /** Which readings this run sent to Vampire, as set when the run started (see
    *  VampirePreferences.reading_selection). Absent: every reading. `assignments` holds only
    *  the selected readings; `applied` is false when the selection needed the LM ranking and
@@ -1592,7 +1591,6 @@ export interface vampireRequest {
   /** The rules' axioms, untranslated; encoded by Vampire for the request's logic type. */
   grammar_axioms?: GrammarAxioms;
   hypothesis?: string;
-  pruning?: boolean;
   active_indices?: number[];
   vampire_preferences?: VampirePreferences;
   tptp_checks?: GswbReasoningChecksOutput[];
@@ -1607,12 +1605,10 @@ export interface vampireRequest {
 class VampireMultipleRequest(BaseModel):
 nli_items: dict  # A dictionary mapping ids to VampireNLI objects
 axioms: str
-pruning: bool
 vampire_preferences: dict
 */
 export interface vampireMultipleRequest {
   nli_items: { [key: string]: nliItem };
-  pruning: boolean;
   vampire_preferences?: VampirePreferences;
   session_key?: string;
   /** Names the run on its progress record and in cancel requests. */

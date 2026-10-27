@@ -1183,7 +1183,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         ...createRegressionAnalysisDocument('n8'),
         reasoningUpdates: [{
           id: 'ru-n8', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], itemId: 'n8',
-          logicType: 'fof', ruleString: '', pruned: false,
+          logicType: 'fof', ruleString: '',
           assignments: [{ id: 'current-a1', premiseSemanticIds: [], hypothesisSemanticIds: [], checks: {} as any }],
         } as any],
       },
@@ -1211,7 +1211,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         ...createRegressionAnalysisDocument('n0'),
         reasoningUpdates: [{
           id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], itemId: 'n0',
-          logicType: 'fof', ruleString: '', pruned: false, assignments: [{
+          logicType: 'fof', ruleString: '', assignments: [{
             id: 'a1', premiseSemanticIds: [], hypothesisSemanticIds: [], checks: {} as any,
             verdict: { consistent: true, informative: false, relevant: false, glyph: '', computedAt: '' },
           }],
@@ -1221,7 +1221,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         ...createRegressionAnalysisDocument('n1'),
         reasoningUpdates: [{
           id: 'ru-n1', premiseElementIds: ['S2'], hypothesisElementIds: ['S3'], itemId: 'n1',
-          logicType: 'fof', ruleString: '', pruned: false, assignments: [],
+          logicType: 'fof', ruleString: '', assignments: [],
           failure: 'pxq-n1-1-1: Http failure response for http://localhost:8081/merge_sequence_semantics: 500 OK',
         } as any],
       },

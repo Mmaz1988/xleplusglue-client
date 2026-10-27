@@ -3562,8 +3562,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const vampireRequest: vampireMultipleRequest = {
       nli_items: tptpItems,
       vampire_preferences: this.runVampirePreferences ?? this.vampirePreferences.vampirePreferences,
-      // Required by the service; the reading selection decides what is reasoned over.
-      pruning: false,
       session_key: this.redisSessionKey,
       run_id: newRunId(),
     };

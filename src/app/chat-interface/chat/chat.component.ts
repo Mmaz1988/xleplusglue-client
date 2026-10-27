@@ -1,12 +1,15 @@
-import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, Input, Output } from '@angular/core';
 import { DataService } from '../../data.service';
 import {
   AnaphoraRankerSelection,
   ChatMessage,
   context,
+  DiscourseAnalysis,
   DiscourseUpdate,
+  GswbDiscriminant,
   GswbRequest,
   GswbSolution,
+  ReasoningCheckSet,
   ReasoningUpdate,
   LigerStructure,
   SemanticAnalysis,
@@ -25,7 +28,7 @@ import {
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
 import { InferenceSettingsComponent } from '../../inference-interface/inference-settings/inference-settings.component';
-import { catchError, concatMap, from, map, of, switchMap, toArray } from 'rxjs';
+import { Observable, ReplaySubject, catchError, concatMap, defer, from, map, of, switchMap, toArray } from 'rxjs';
 import { isLfgxdrtPreferences } from '../../app-defaults';
 import {
   compositeAnalysisId,
@@ -34,23 +37,79 @@ import {
   anaphoraRankingCaption,
   anaphoraRankingTable,
   carryAnaphoraRanking,
+  discourseDiscriminantsOf,
   needsAnaphoraRanking,
   readingDisplay,
   readingOf,
   readingSelectionOf,
   reasoningUpdateId,
+  readingsForReasoning,
+  sentenceReadingsAllowedBy,
+  turnSurvivors,
   validateAnalysisDocument,
   validateReasoningUpdate
 } from '../../analysis-model';
-import { MappingWithStructure, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
+import { MappingWithStructure, ReadingAssignment, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 import { PcdrsReading, discourseUpdateOf } from '../../document-builder/pcdrs-readings';
-import { ReadingOrderContext, describeReadingSelection } from '../../reading-order';
+import {
+  ReadingOrderContext,
+  ReadingSelection,
+  describeReadingSelection,
+  normalizedReadingSelection,
+  sameReadingSelection,
+  selectionNeedsRanking,
+} from '../../reading-order';
 import { AnaphoraRankingService } from '../../reasoning/anaphora-ranking.service';
 import {
   DerivedSentence,
   DocumentBuilderService,
+  SequenceMergePair,
   SequenceMergePreviousContext,
 } from '../../document-builder/document-builder.service';
+
+/** One turn's discourse as its message shows it (N4 6d). */
+interface ChatTurn {
+  /** The turn's DiscourseUpdate. */
+  updateId: string;
+  /** The sentence the turn added: only its discriminants narrow the message. */
+  sentenceId: string;
+  /** The default selection the turn started with. */
+  defaultSelection: ReadingSelection;
+  /** The readings sent to Vampire, the only ones the message shows; null on a first turn,
+   *  which sends nothing and shows every reading. */
+  sent: string[] | null;
+  /** The sent readings Vampire accepted, the only ones the selection may keep; null on a
+   *  first turn. */
+  accepted: string[] | null;
+}
+
+/** What a message's DRS pill shows its readings with (see app-sem-vis). */
+export interface ChatMessageView {
+  readingOrder: ReadingOrderContext;
+  /** The latest message's selection; null on older messages, which are order only. */
+  readingSelection: { selection: ReadingSelection; own: boolean } | null;
+  selectableIds: string[] | null;
+  discriminants: GswbDiscriminant[] | null;
+  selectedDiscriminants: { scopeIds: string[]; mcIds: string[] } | null;
+  orderOnly: boolean;
+}
+
+/** One (prior reading, new sentence reading) pair of a turn. */
+interface TurnPair {
+  pair: SequenceMergePair;
+  /** Scopes every id GSWB mints for the pair's readings and checks. */
+  pairId: string;
+  premiseContext: context;
+  /** The merged reading's semId: its discourse readings' semanticOrigin. */
+  semanticOrigin: string;
+  sequenceId: string;
+}
+
+/** One selected reading's checks, ready for Vampire. */
+interface TurnAssignment {
+  turnPair: TurnPair;
+  assignment: ReadingAssignment;
+}
 
 
 /** The side panel's account of one turn. */
@@ -90,8 +149,6 @@ export class ChatComponent {
    *  off the message itself so the chat history does not store every branch twice. */
   private readonly branchesInGenerationOrder = new WeakMap<ChatMessage, { solutions: GswbSolution[]; labels: string[] }>();
 
-  @ViewChild('contextPruning') contextPruning!: ElementRef;
-
   @Input() ruleString: string = '';
   /** The loaded rule set's post-processing rules (pronouns, presuppositions), applied to
    *  each sentence's and sequence's merged syntax + DRS. Null until rules are loaded. */
@@ -109,6 +166,8 @@ export class ChatComponent {
    *  config file. Both are sent; Vampire encodes these for the request's logic type. */
   derivedGrammarAxioms: GrammarAxioms = { prolog: [], tptp: [], tffTypes: [] };
   private turnVampirePreferences: VampirePreferences | null = null;
+  /** The default reading selection this turn started with (see sendMessage). */
+  private turnSelection: ReadingSelection = normalizedReadingSelection(null);
   /** derivedGrammarAxioms as shown in the chat's axiom tab. */
   derivedAxioms = '';
   @Output() derivedAxiomsChange = new EventEmitter<string>();
@@ -140,6 +199,8 @@ export class ChatComponent {
     if (!value && this.lastTurn && this.lastTurn.durationMs === null) {
       this.lastTurn.durationMs = Date.now() - this.lastTurn.startedAt;
     }
+    // The latest message can be narrowed only between turns.
+    if (this.latestTurnMessage) this.refreshBranchRanking(this.latestTurnMessage);
   }
 
   /** What the side panel says about the most recent turn. Null before the first one. */
@@ -189,7 +250,10 @@ export class ChatComponent {
   resetConversationState(): void {
     this.context = [];
     this.chatHistory = [];
-    this.readingOrders.clear();
+    this.messageViews.clear();
+    this.turns.clear();
+    this.latestTurnMessage = null;
+    this.pendingRankings.clear();
     this.userInput = '';
     this.derivedGrammarAxioms = { prolog: [], tptp: [], tffTypes: [] };
     this.derivedAxioms = '';
@@ -246,6 +310,7 @@ export class ChatComponent {
     // This turn's Vampire settings, read once: the check formulas are typed for the logic
     // the request names even if the settings change while the turn prepares.
     this.turnVampirePreferences = { ...this.vampirePreferences.vampirePreferences };
+    this.turnSelection = readingSelectionOf(this.turnVampirePreferences);
 
     const ligerRequest = { sentence: userMessage, ruleString: this.ruleString };
 
@@ -283,8 +348,7 @@ export class ChatComponent {
         // LFGxDRT derives the sentence on its own and appends it to the discourse; see
         // prepareLfgxdrtSolutions.
         if (isLfgxdrtPreferences(this.gswbPreferences.gswbPreferences)) {
-          this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions,
-            this.contextPruning.nativeElement.checked);
+          this.prepareLfgxdrtSolutions(userMessage, selectedSolution, data.solutions);
           return;
         }
 
@@ -310,7 +374,6 @@ export class ChatComponent {
               turn: this.currentTurnIndex(),
             });
             const userSem = gswbData.solutions.map(x => readingDisplay(readingOf(x))).join('\n');
-            const pruneContext = this.contextPruning.nativeElement.checked;
 
             const vampRequest: vampireRequest = {
               text: userMessage,
@@ -318,7 +381,6 @@ export class ChatComponent {
               axioms: this.axioms,
               grammar_axioms: this.derivedGrammarAxioms,
               hypothesis: userSem,
-              pruning: pruneContext,
               active_indices: this.activeIndices,
               vampire_preferences: this.turnPreferences(),
               session_key: this.sessionKey,
@@ -412,8 +474,8 @@ export class ChatComponent {
     return 'Your input is informative and consistent.';
   }
 
-  /** Strict-majority vote, ties resolve false. With a single value (the pruned,
-   *  reason-over-one-candidate case) this reduces to just that value. */
+  /** Strict-majority vote, ties resolve false. With a single value (one reading reasoned
+   *  over) this reduces to just that value. */
   private majorityVote(values: boolean[]): boolean {
     const trueCount = values.reduce((acc, v) => acc + (v ? 1 : 0), 0);
     return trueCount > values.length - trueCount;
@@ -427,7 +489,6 @@ export class ChatComponent {
     userMessage: string,
     ligerSolution: any,
     ligerSolutions: any[],
-    pruneContext: boolean
   ): void {
     const sentenceId = `sentence-${this.chatDocument.sentences.length + 1}`;
     this.documentBuilder.deriveSentence(
@@ -439,12 +500,15 @@ export class ChatComponent {
           readings: derived.analysis.semantics.length,
           parses: derived.analysis.syntax.length,
         });
+        // With its discriminants: the surface order reads them, and the latest message
+        // narrows by them.
+        derived.analysis.discriminants = derived.discriminants;
         this.documentBuilder.upsertSentenceAnalyses(this.chatDocument, [derived.analysis]);
         this.emitChatDocument();
         if (this.context.length === 0) {
           this.acceptInitialLfgxdrtContext(userMessage, derived);
         } else {
-          this.finishLfgxdrtPreparation(userMessage, pruneContext, derived.analysis);
+          this.finishLfgxdrtPreparation(userMessage, derived.analysis);
         }
       },
       error: error => {
@@ -455,150 +519,127 @@ export class ChatComponent {
     });
   }
 
-  private finishLfgxdrtPreparation(
-    userMessage: string,
-    pruneContext: boolean,
-    sentence: SentenceAnalysis,
-  ): void {
+  /** A later turn (N4 6d), one procedure with regression's: the prior is what survives the
+   *  latest message's selection; step 1 appends the new sentence to it, stores the turn's
+   *  sequence and its DiscourseUpdate with every reading and ranks it; step 2 reasons over
+   *  the readings the default selection the turn started with keeps, then Vampire. */
+  private finishLfgxdrtPreparation(userMessage: string, sentence: SentenceAnalysis): void {
     const typed = this.turnPreferences().logic_type !== 0;
-
-    const contextIndices = this.activeIndices.length
-      ? this.activeIndices.filter(index => index >= 0 && index < this.context.length)
-      : this.context.map((_, index) => index);
-
-    // No pruning here (2026-08-20): every reading is appended. Discarding down to one
-    // candidate happens exactly once, downstream, inside
-    // ReasoningPipelineService.prepareReasoningChecks (`prune: pruneContext` below).
     const newSentenceId = sentence.id;
-    console.info('[Chat] Preparing NLI reasoning', {
-      sentence: userMessage,
-      newSentenceId,
-      contextIndices,
-      pruneContext,
-    });
-
-    // One element per accepted prior reading: a clone of the registered Sentence (turn 2) or
-    // Sequence (turn 3+) it extends, so appendSentence resolves its sentences and parses
-    // against the registry. Keyed by the element OBJECT, not by elementId: an ambiguous
-    // premise contributes several context entries that share one elementId (several READINGS
-    // of the same prior element), so a string-keyed map would collapse them and pair the
-    // wrong premise semantics with a pair built from a different reading. appendSentence
-    // threads the same reference back as `pair.previousElement`.
-    const previousContextByElement = new Map<SentenceAnalysis | SequenceAnalysis, { premiseContext: context; semanticAnalysis: SemanticAnalysis }>();
-    const previousContexts: SequenceMergePreviousContext[] = contextIndices.map(contextIndex => {
-      const premiseContext = this.context[contextIndex];
-      const semanticAnalysis = premiseContext?.semanticAnalysis;
-      if (!premiseContext?.elementId || !semanticAnalysis) {
-        throw new Error('Accepted context reading and document element id are required for appending a sentence.');
-      }
-      const registered: SentenceAnalysis | SequenceAnalysis | undefined =
-        this.chatDocument.sequences.find(sequence => sequence.id === premiseContext.elementId)
-        ?? this.chatDocument.sentences.find(registeredSentence => registeredSentence.id === premiseContext.elementId);
-      if (!registered) {
-        throw new Error(`Accepted context element ${premiseContext.elementId} is not registered in the chat document.`);
-      }
-      const element = { ...registered };
-      previousContextByElement.set(element, { premiseContext, semanticAnalysis });
-      return { semantic: semanticAnalysis, element };
-    });
-
+    const previous = this.latestTurnUpdate();
+    const previousNeedsRanking = !!previous && selectionNeedsRanking(
+      normalizedReadingSelection(previous.update.readingSelection ?? previous.turn.defaultSelection));
     // A context that produced no pairs reports why instead of thinning the result silently;
     // surfaced alongside the per-branch failures below.
     let mergeFailures: string[] = [];
+    let discourseFailures: string[] = [];
 
-    this.documentBuilder.appendSentence({
-      previousContexts,
-      sentence,
-      readings: sentence.semantics,
-      knownSentences: this.chatDocument.sentences,
-      resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
-      ruleString: this.ruleString,
-    }).pipe(
-      switchMap(result => {
-        mergeFailures = result.failures;
-        return from(result.pairs).pipe(
-        concatMap(pair => {
-          const priorElementId = pair.previousElement.id;
-          const previousEntry = previousContextByElement.get(pair.previousElement);
-          if (!previousEntry) {
-            throw new Error(`Merged pair references unknown prior element ${priorElementId}.`);
+    // A selection by the LM ranking waits for it.
+    (previousNeedsRanking ? this.rankingOf(previous!.update.id) : of(undefined)).pipe(
+      switchMap(() => {
+        const contextIndices = this.priorContextIndices();
+        this.fixLatestTurnSelection();
+        console.info('[Chat] Preparing NLI reasoning', {
+          sentence: userMessage, newSentenceId, contextIndices, contexts: this.context.length,
+        });
+        if (!contextIndices.length) {
+          throw new Error('No reading of the conversation so far survives its selection.');
+        }
+
+        // One element per prior reading: a clone of the registered Sentence (turn 2) or
+        // Sequence (turn 3+) it extends, so appendSentence resolves its sentences and parses
+        // against the registry. Keyed by the element OBJECT, not by elementId: an ambiguous
+        // premise contributes several context entries that share one elementId (several
+        // READINGS of the same prior element), so a string-keyed map would collapse them and
+        // pair the wrong premise semantics with a pair built from a different reading.
+        // appendSentence threads the same reference back as `pair.previousElement`.
+        const premiseByElement = new Map<SentenceAnalysis | SequenceAnalysis, context>();
+        const previousContexts: SequenceMergePreviousContext[] = contextIndices.map(contextIndex => {
+          const premiseContext = this.context[contextIndex];
+          const semanticAnalysis = premiseContext?.semanticAnalysis;
+          if (!premiseContext?.elementId || !semanticAnalysis) {
+            throw new Error('Accepted context reading and document element id are required for appending a sentence.');
           }
-          const { premiseContext, semanticAnalysis: premiseSemanticAnalysis } = previousEntry;
-          // The PRIOR'S READING, not just its element id. GSWB derives every PCDRS id
-          // from this scope, so two pairs differing only in which reading of the prior
-          // they used produced identical pragmatic ids -- measured in
-          // misc/current/chat-document-pronoun-bug3.json: 24 discourse branches sharing
-          // only 12 ids, with `pxq-sentence-1-S1-s0-rule-1-pcdrs-1` appearing under both
-          // `S0-s0+S1-s0` and `S0-s1+S1-s0`. That breaks the (syn, sem, prag) joint id:
-          // a reasoning assignment pointing at a discourseId could not say which
-          // semantics produced it. Keying on an elementId where several readings share
-          // it is the same hazard as the Map<elementId,...> bug this method already
-          // documents above.
-          const pairId = `pxq-${priorElementId}-${premiseSemanticAnalysis.semId}`
-            + `-${pair.currentSemantic?.semId ?? newSentenceId}`;
-          // Chat is the degenerate 1+1 case of the premise/conclusion shape: one prior
-          // element, one new sentence. The semantic ids are the readings actually used
-          // for this pair, and must be readings the document already registered --
-          // validateReasoningUpdate checks that positionally.
-          const premiseSemanticIds = [premiseSemanticAnalysis.semId];
-          const hypothesisSemanticIds = [pair.currentSemantic?.semId ?? ''];
-          const updateId = reasoningUpdateId([priorElementId], [newSentenceId]);
-          if (!pair.sequenceStructure) {
-            throw new Error(`Merged pair for ${priorElementId} has no sequence structure to reason over.`);
+          const registered: SentenceAnalysis | SequenceAnalysis | undefined =
+            this.chatDocument.sequences.find(sequence => sequence.id === premiseContext.elementId)
+            ?? this.chatDocument.sentences.find(registeredSentence => registeredSentence.id === premiseContext.elementId);
+          if (!registered) {
+            throw new Error(`Accepted context element ${premiseContext.elementId} is not registered in the chat document.`);
           }
-          return this.reasoningPipeline.prepareReasoningChecks({
-            scopeId: pairId,
-            scope: { updateId, premiseSemanticIds, hypothesisSemanticIds },
-            merged: readingOf(pair.merged),
-            // The prior: this turn's accepted context entry, which for turn n>1 is
-            // already the merged semantics of every earlier turn. That is exactly the
-            // "A for A+B, A+B for A+B+C" reading of the context axiom.
-            premiseSemantic: premiseContext.semantic,
-            sequenceStructure: pair.sequenceStructure,
-            premiseAsts: [premiseContext.semanticGraph],
-            hypothesisAsts: [pair.currentSemantic?.graph],
-            typed,
-            prune: pruneContext,
-            // Chat shows each reading's DRS in its discourse branches.
-            includeSvg: true,
-            ruleString: this.pragmaticsRules(),
-          }).pipe(map(preparedPair => ({
-            priorElementId,
-            newSentenceId,
-            pairId,
-            updateId,
-            premiseSemanticIds,
-            hypothesisSemanticIds,
-            checks: preparedPair.assignments,
-            failures: preparedPair.failures,
-            degradations: preparedPair.degradations,
-            merged: pair.merged,
-            syntax: pair.sequenceStructure,
-            previousOriginal: premiseContext.original,
-          })));
-        }),
-        toArray()
+          const element = { ...registered };
+          premiseByElement.set(element, premiseContext);
+          return { semantic: semanticAnalysis, element };
+        });
+
+        return this.documentBuilder.appendSentence({
+          previousContexts,
+          sentence,
+          readings: sentence.semantics,
+          knownSentences: this.chatDocument.sentences,
+          resolveDrs: this.gswbPreferences.gswbPreferences.resolveDrs,
+          ruleString: this.ruleString,
+        }).pipe(map(result => {
+          mergeFailures = result.failures;
+          return result.pairs.map(pair => {
+            const premiseContext = premiseByElement.get(pair.previousElement);
+            if (!premiseContext) {
+              throw new Error(`Merged pair references unknown prior element ${pair.previousElement.id}.`);
+            }
+            if (!pair.sequenceStructure) {
+              throw new Error(`Merged pair for ${pair.previousElement.id} has no sequence structure to reason over.`);
+            }
+            // The PRIOR'S READING, not just its element id: GSWB derives every PCDRS id from
+            // this scope, and two pairs differing only in the prior's reading produced
+            // identical pragmatic ids when it was not part of it
+            // (misc/current/chat-document-pronoun-bug3.json).
+            const pairId = `pxq-${pair.previousElement.id}-${premiseContext.semanticAnalysis!.semId}`
+              + `-${pair.currentSemantic?.semId ?? newSentenceId}`;
+            return {
+              pair,
+              pairId,
+              premiseContext,
+              semanticOrigin: readingOf(pair.merged).semId,
+              sequenceId: compositeAnalysisId([pair.previousElement.id, newSentenceId]),
+            } as TurnPair;
+          });
+        }));
+      }),
+      switchMap(turnPairs => this.storeTurnDiscourse(userMessage, newSentenceId, turnPairs).pipe(
+        map(step1 => {
+          discourseFailures = step1.failures;
+          return { turnPairs, ...step1 };
+        }))),
+      switchMap(step1 => {
+        const update = step1.update;
+        if (!update) return of({ ...step1, selected: [] as string[], assignments: [] as TurnAssignment[], failures: [] as string[], degradations: [] as string[], selection: this.turnSelection, applied: true });
+        const wait = selectionNeedsRanking(this.turnSelection) ? this.rankingOf(update.id) : of(undefined);
+        return wait.pipe(
+          switchMap(() => this.reasonOverTurn(step1.turnPairs, this.storedDiscourseUpdate(update.id) ?? update, typed)),
+          map(step2 => ({ ...step1, ...step2 })),
         );
-      })
+      }),
     ).subscribe({
-      next: prepared => {
-        const expanded = prepared.flatMap((item: any) =>
-          (item.checks ?? []).map((checks: any) => ({ ...item, checks }))
-        );
+      next: turn => {
         console.info('[Chat] NLI reasoning bundles prepared', {
           sentence: userMessage,
-          bundleCount: prepared.length,
-          acceptedCheckCount: expanded.length,
+          pairCount: turn.turnPairs.length,
+          readings: turn.update?.discourse.length ?? 0,
+          selected: turn.selected.length,
+          assignmentCount: turn.assignments.length,
         });
         // A branch that lost its anaphora binding still produces a usable bundle, and a
-        // branch that could not be prepared at all just disappears from `expanded`. Neither
-        // is visible in the answer that follows, so both are reported here: a partially
-        // resolved discourse must never be presented as a cleanly resolved one.
-        this.reportUnresolvedBranches(userMessage, prepared, mergeFailures);
-        if (!expanded.length) {
-          const detail = mergeFailures.length ? ` ${mergeFailures.join(' ')}` : '';
+        // branch that could not be prepared at all just disappears from the assignments.
+        // Neither is visible in the answer that follows, so both are reported here: a
+        // partially resolved discourse must never be presented as a cleanly resolved one.
+        this.reportUnresolvedBranches(userMessage,
+          [{ failures: [...discourseFailures, ...turn.failures], degradations: turn.degradations }], mergeFailures);
+        if (!turn.assignments.length) {
+          const reasons = [...mergeFailures, ...discourseFailures, ...turn.failures];
+          const detail = reasons.length ? ` ${reasons.join(' ')}` : '';
           this.pushChatMessage({
-            text: `No consistent continuation could be reasoned over.${detail}`,
+            text: turn.update && !turn.selected.length
+              ? `No reading was selected to reason over (${describeReadingSelection(turn.selection)}).${detail}`
+              : `No consistent continuation could be reasoned over.${detail}`,
             sender: 'Bot',
           });
           this.loading = false;
@@ -608,19 +649,13 @@ export class ChatComponent {
           text: userMessage,
           axioms: this.axioms,
           grammar_axioms: this.derivedGrammarAxioms,
-          pruning: pruneContext,
           vampire_preferences: this.turnPreferences(),
-          tptp_checks: expanded.map((item: any) => item.checks),
+          tptp_checks: turn.assignments.map(item => item.assignment as any),
           session_key: this.sessionKey,
           turn_index: this.currentTurnIndex()
         };
         this.dataService.callVampire(request).subscribe({
-          next: data => this.handleVampireResponse(
-            data,
-            userMessage,
-            expanded,
-            pruneContext
-          ),
+          next: data => this.handleVampireResponse(data, userMessage, newSentenceId, turn),
           error: error => {
             console.warn('[Chat] Vampire request failed', { sentence: userMessage, error });
             this.pushChatMessage({ text: 'An error occurred during the inference process', sender: 'Bot' });
@@ -630,80 +665,189 @@ export class ChatComponent {
       },
       error: error => {
         console.warn('[Chat] NLI reasoning preparation failed', { sentence: userMessage, error });
-        this.pushChatMessage({ text: 'An error occurred during semantic reasoning preparation', sender: 'Bot' });
+        const reason = error?.message ? ` ${error.message}` : '';
+        this.pushChatMessage({ text: `An error occurred during semantic reasoning preparation.${reason}`, sender: 'Bot' });
         this.loading = false;
       }
     });
   }
 
-  /** Records this turn's reasoning in the document, one ReasoningUpdate per
-   *  (premise element, hypothesis element) pair.
-   *
-   *  Chat used to discard everything but the accept/reject decision: the four checks, their
-   *  TPTP and the Vampire verdicts lived as method-local rxjs values and were thrown away
-   *  once used as a filter. They are a first-class part of the analysis, so they belong in
-   *  the document next to the discourse layer -- and the reasoning layer *references* the
-   *  DiscourseUpdate whose mapping was used rather than copying the mapping, which is what
-   *  keeps a mapping from being re-derived against a duplicated premise context.
-   *
-   *  Several pairs can share one update: two premise readings x one new sentence are two
-   *  assignments of the same premise/hypothesis pair, not two pairs. */
+  /** Step 1 of a later turn: every pair's PCDRS readings (the post-processing rules over its
+   *  merged syntax and semantics, then /generate_pcdrs), stored before Vampire: the turn's
+   *  sequence with every merged reading, and its DiscourseUpdate with every reading, which is
+   *  then ranked. A pair that fails is reported, not dropped silently. `mappings`: GSWB's
+   *  solution per reading id, for the message's DRS pill. */
+  private storeTurnDiscourse(userMessage: string, newSentenceId: string, turnPairs: TurnPair[]): Observable<{
+    update: DiscourseUpdate | null; mappings: Map<string, GswbSolution>; failures: string[];
+  }> {
+    return from(turnPairs).pipe(
+      concatMap(turnPair => defer(() => this.reasoningPipeline.generateDiscourseMappings({
+        scopeId: turnPair.pairId,
+        merged: readingOf(turnPair.pair.merged),
+        sequenceStructure: turnPair.pair.sequenceStructure!,
+        ruleString: this.pragmaticsRules(),
+        // Chat shows each reading's DRS in its message.
+        includeSvg: true,
+      })).pipe(
+        map(mappings => ({ turnPair, mappings, failure: undefined as string | undefined })),
+        catchError(error => {
+          console.warn('[Chat] readings could not be generated for one pair', { pairId: turnPair.pairId, error });
+          return of({ turnPair, mappings: [] as MappingWithStructure[], failure: `${turnPair.pairId}: ${error?.message ?? String(error)}` });
+        }),
+      )),
+      toArray(),
+      map(results => {
+        const failures = results.map(result => result.failure).filter((failure): failure is string => !!failure);
+        const bySequence = new Map<string, context[]>();
+        turnPairs.forEach(turnPair => bySequence.set(turnPair.sequenceId,
+          [...(bySequence.get(turnPair.sequenceId) ?? []), this.contextEntryOf(turnPair, userMessage)]));
+        bySequence.forEach((entries, sequenceId) => this.upsertSequenceFromContexts(sequenceId, entries));
+
+        const mappings = new Map<string, GswbSolution>();
+        const readings: PcdrsReading[] = results.flatMap(({ turnPair, mappings: pairMappings }) =>
+          pairMappings.map(mapping => {
+            if (mapping.mapping?.id) mappings.set(mapping.mapping.id, mapping.mapping as GswbSolution);
+            return { ...mapping, semanticOrigin: turnPair.semanticOrigin, semString: readingOf(turnPair.pair.merged).semString };
+          }));
+        const sequenceId = turnPairs[0]?.sequenceId ?? compositeAnalysisId([newSentenceId]);
+        if (!readings.length) return { update: null, mappings, failures };
+        const update: DiscourseUpdate = {
+          ...discourseUpdateOf({ id: sequenceId, kind: 'sequence' }, readings, this.pragmaticsRules()),
+          ...(failures.length ? { failures } : {}),
+        };
+        this.upsertDiscourseUpdate(update);
+        return { update: this.storedDiscourseUpdate(update.id) ?? update, mappings, failures };
+      }),
+    );
+  }
+
+  /** Step 2 of a later turn: the four checks over the readings the turn's default selection
+   *  keeps, per pair, read from the stored discourse. Nothing is merged again. */
+  private reasonOverTurn(turnPairs: TurnPair[], update: DiscourseUpdate, typed: boolean): Observable<{
+    selected: string[]; assignments: TurnAssignment[]; failures: string[]; degradations: string[];
+    selection: ReadingSelection; applied: boolean;
+  }> {
+    const { readings, selection, applied } = readingsForReasoning(
+      this.chatDocument, update, this.turnSelection, this.anaphoraRankers().averager);
+    const selected = new Set(readings.map(reading => reading.id));
+    // In generation order, per pair. The selection is the only cut.
+    const byOrigin = new Map<string, DiscourseAnalysis[]>();
+    update.discourse.filter(reading => selected.has(reading.id)).forEach(reading =>
+      byOrigin.set(reading.semanticOrigin, [...(byOrigin.get(reading.semanticOrigin) ?? []), reading]));
+    const updateId = reasoningUpdateId([turnPairs[0]?.pair.previousElement.id ?? ''], [turnPairs[0]?.pair.currentElement.id ?? '']);
+    const work = turnPairs.filter(turnPair => byOrigin.has(turnPair.semanticOrigin));
+    return from(work).pipe(
+      concatMap(turnPair => defer(() => this.reasoningPipeline.prepareStoredReadingChecks({
+        scopeId: turnPair.pairId,
+        // Chat is the degenerate 1+1 case of the premise/conclusion shape: one prior
+        // element, one new sentence; the readings of each that made this pair.
+        scope: {
+          updateId,
+          premiseSemanticIds: [turnPair.premiseContext.semanticAnalysis!.semId],
+          hypothesisSemanticIds: [turnPair.pair.currentSemantic?.semId ?? ''],
+        },
+        readings: byOrigin.get(turnPair.semanticOrigin)!,
+        // The prior: this turn's accepted context entry, which for turn n>1 is already the
+        // merged semantics of every earlier turn -- "A for A+B, A+B for A+B+C".
+        premiseSemantic: turnPair.premiseContext.semantic,
+        premiseAsts: [turnPair.premiseContext.semanticGraph as LigerStructure],
+        hypothesisAsts: [turnPair.pair.currentSemantic?.graph as LigerStructure],
+        typed,
+      })).pipe(
+        map(pair => ({
+          assignments: pair.assignments.map(assignment => ({ turnPair, assignment })),
+          failures: pair.failures,
+          degradations: pair.degradations,
+        })),
+        catchError(error => {
+          console.warn('[Chat] reading checks could not be prepared for one pair', { pairId: turnPair.pairId, error });
+          return of({ assignments: [] as TurnAssignment[], failures: [`${turnPair.pairId}: ${error?.message ?? String(error)}`], degradations: [] as string[] });
+        }),
+      )),
+      toArray(),
+      map(pairs => ({
+        selected: [...selected],
+        assignments: pairs.flatMap(pair => pair.assignments),
+        failures: pairs.flatMap(pair => pair.failures),
+        degradations: pairs.flatMap(pair => pair.degradations),
+        selection,
+        applied,
+      })),
+    );
+  }
+
+  /** A pair's merged reading as a context entry: what the turn's sequence registers, and --
+   *  when Vampire accepts one of its readings -- the next turn's prior. */
+  private contextEntryOf(turnPair: TurnPair, userMessage: string, tptp = ''): context {
+    const reading = readingOf(turnPair.pair.merged);
+    return {
+      original: `${turnPair.premiseContext.original ?? ''} ${userMessage}`.trim(),
+      prolog_drs: reading.semString,
+      prolog_fol: '',
+      // The whole merged sequence, display only: the next turn's context axiom is built
+      // from `semantic`.
+      tptp,
+      box: reading.svg ?? '',
+      semantic: reading.semString,
+      semanticGraph: reading.graph,
+      syntax: turnPair.pair.sequenceStructure,
+      semanticAnalysis: reading,
+      synSemMapping: turnPair.pair.merged.synSemMapping,
+      elementId: turnPair.sequenceId,
+    } as context;
+  }
+
+  /** Records this turn's reasoning in the document: one ReasoningUpdate for the (prior
+   *  element, new sentence) pair, one assignment per reading sent, each pointing at its
+   *  stored discourse reading, and the selection the turn sent them by. */
   private upsertReasoningUpdates(
-    prepared: any[],
-    verdictFor: (item: any, index: number) => any,
-    pruneContext: boolean
+    assignments: TurnAssignment[],
+    verdictFor: (item: TurnAssignment, index: number) => any,
+    readingSelection: ReadingSelection & { applied: boolean },
   ): void {
     const updates = new Map<string, ReasoningUpdate>();
 
-    prepared.forEach((item, index) => {
-      const assignmentId = item?.checks?.assignmentId;
-      const updateId = item?.updateId;
-      if (!assignmentId || !updateId || !item.priorElementId || !item.newSentenceId) {
-        return;
-      }
+    assignments.forEach((item, index) => {
+      const { turnPair, assignment } = item;
+      const assignmentId = assignment.assignmentId;
+      const priorElementId = turnPair.pair.previousElement.id;
+      const newSentenceId = turnPair.pair.currentElement.id;
+      if (!assignmentId) return;
+      const updateId = reasoningUpdateId([priorElementId], [newSentenceId]);
 
       if (!updates.has(updateId)) {
         updates.set(updateId, {
           id: updateId,
-          premiseElementIds: [item.priorElementId],
-          hypothesisElementIds: [item.newSentenceId],
-          sourceElementId: compositeAnalysisId([item.priorElementId, item.newSentenceId]),
+          premiseElementIds: [priorElementId],
+          hypothesisElementIds: [newSentenceId],
+          sourceElementId: turnPair.sequenceId,
           sourceElementKind: 'sequence',
           // Same source the TPTP itself was built from, not GSWB's output style.
           logicType: this.turnPreferences().logic_type === 0 ? 'fof' : 'tff',
           ruleString: this.pragmaticsRules(),
-          pruned: pruneContext,
+          readingSelection,
           assignments: [],
           createdAt: new Date().toISOString(),
         });
       }
       const update = updates.get(updateId)!;
-      if (update.assignments.some(existing => existing.id === assignmentId)) {
-        return;
-      }
-
-      // Only link the discourse branch when it was actually stored. A branch whose context
-      // Vampire rejected never became a DiscourseAnalysis, and pointing at one that does
-      // not exist fails validation -- correctly, since the pointer would be a lie.
-      const discourseUpdateId = `du-${compositeAnalysisId([item.priorElementId, item.newSentenceId])}`;
-      const discourseId = item.checks?.mappingId;
-      const linked = (this.chatDocument.discourseUpdates ?? []).some(du =>
-        du.id === discourseUpdateId && du.discourse.some(branch => branch.id === discourseId));
+      if (update.assignments.some(existing => existing.id === assignmentId)) return;
 
       const check = verdictFor(item, index);
       update.assignments.push({
         id: assignmentId,
-        premiseSemanticIds: item.premiseSemanticIds ?? [],
-        hypothesisSemanticIds: item.hypothesisSemanticIds ?? [],
-        ruleBranchIndex: item.checks?.ruleBranchIndex ?? 1,
-        discourseUpdateId: linked ? discourseUpdateId : undefined,
-        discourseId: linked ? discourseId : undefined,
-        contextTptp: item.checks?.contextTptp ?? '',
-        contextSemanticId: item.merged?.id,
-        checks: item.checks?.checks,
+        premiseSemanticIds: [turnPair.premiseContext.semanticAnalysis?.semId ?? ''],
+        hypothesisSemanticIds: [turnPair.pair.currentSemantic?.semId ?? ''],
+        ruleBranchIndex: assignment.ruleBranchIndex ?? 1,
+        // Step 1 stored every reading before Vampire, so the link always resolves.
+        discourseUpdateId: `du-${turnPair.sequenceId}`,
+        discourseId: assignment.mappingId,
+        contextTptp: assignment.contextTptp ?? '',
+        contextSemanticId: turnPair.semanticOrigin,
+        checks: assignment.checks as ReasoningCheckSet,
         // A degraded bundle is still usable and still gets a verdict, so the only thing
         // that keeps it distinguishable from a cleanly resolved one is saying so here.
-        ...(item.checks?.degradations?.length ? { degradations: item.checks.degradations } : {}),
+        ...(assignment.degradations?.length ? { degradations: assignment.degradations } : {}),
         verdict: check ? {
           consistent: !!check.consistent,
           informative: !!check.informative,
@@ -732,23 +876,15 @@ export class ChatComponent {
           { updateId: update.id, error });
       }
     });
+    this.emitChatDocument();
 
     console.info('[Chat] reasoning updates written', {
-      updateCount: updates.size,
-      assignmentCount: [...updates.values()].reduce((sum, update) => sum + update.assignments.length, 0),
-      storedUpdateCount: (this.chatDocument.reasoningUpdates ?? []).length,
       updates: [...updates.values()].map(update => ({
         id: update.id,
         logicType: update.logicType,
         verdict: update.verdict?.label,
-        assignments: update.assignments.map(assignment => ({
-          id: assignment.id,
-          checks: Object.keys(assignment.checks ?? {}).length,
-          contextTptpLength: (assignment.contextTptp ?? '').length,
-          discourseId: assignment.discourseId,
-          verdict: assignment.verdict
-            && [assignment.verdict.consistent, assignment.verdict.informative, assignment.verdict.relevant],
-        })),
+        readingSelection: describeReadingSelection(readingSelection),
+        assignments: update.assignments.length,
       })),
     });
   }
@@ -935,7 +1071,12 @@ export class ChatComponent {
             renderedBranches: branchSolutions.length,
           });
           this.upsertDiscourseUpdate(update);
-          if (message) this.refreshBranchRanking(message);
+          // Nothing is sent on turn 1: every reading shows and can be selected.
+          if (message) {
+            this.setLatestTurn(message, {
+              updateId: update.id, sentenceId, defaultSelection: this.turnSelection, sent: null, accepted: null,
+            });
+          }
         }
         this.changeDetector.detectChanges();
         this.loading = false;
@@ -950,8 +1091,11 @@ export class ChatComponent {
   private handleVampireResponse(
     vampData: any,
     userMessage: string,
-    prepared: any[] = [],
-    pruneContext = false
+    newSentenceId: string,
+    turn: {
+      update: DiscourseUpdate | null; mappings: Map<string, GswbSolution>; selected: string[];
+      assignments: TurnAssignment[]; selection: ReadingSelection; applied: boolean;
+    },
   ): void {
     this.clearSelected();
     const mappings = Object.values(vampData.context_checks_mapping ?? {}) as any[];
@@ -962,93 +1106,105 @@ export class ChatComponent {
     const informative = mappings.length ? this.majorityVote(mappings.map(item => !!item.informative)) : null;
     const relevant = mappings.length ? this.majorityVote(mappings.map(item => !!item.relevant)) : null;
     // Vampire echoes each bundle's assignment id back on its verdict, so a verdict is
-    // paired with the branch it was computed for rather than with whatever sits at the
-    // same array index. Position still works when every bundle survives, but stops being
-    // identity the moment one is filtered out.
+    // paired with the reading it was computed for rather than with whatever sits at the
+    // same array index.
     const verdictByAssignment = new Map<string, any>();
     mappings.forEach(check => {
       const id = check?.assignment_id;
       if (id) verdictByAssignment.set(id, check);
     });
-    const verdictFor = (item: any, index: number) => {
-      const id = item?.checks?.assignmentId;
+    const verdictFor = (item: TurnAssignment, index: number) => {
+      const id = item.assignment.assignmentId;
       return (id && verdictByAssignment.get(id)) ?? mappings[index];
     };
-    const newContext = prepared.length
-      ? this.contextFromLfgxdrtChecks(prepared, mappings, userMessage, pruneContext, verdictFor)
-      : (vampData.context ?? []);
-    if (prepared.length) {
-      // After contextFromLfgxdrtChecks, so the DiscourseUpdates an assignment points at
-      // already exist -- validateReasoningUpdate requires both hops to resolve.
-      this.upsertReasoningUpdates(prepared, verdictFor, pruneContext);
-    }
+    const isAccepted = (check: any) => !!(check?.consistent && check?.informative);
+
+    this.upsertReasoningUpdates(turn.assignments, verdictFor, { ...turn.selection, applied: turn.applied });
+
+    // One context entry per merged reading with an accepted reading, not one per reading: a
+    // turn's readings annotate one merged reading, and the next turn binds again over the
+    // whole merged discourse. Which of them the next turn builds on is decided by this
+    // turn's message (priorContextIndices).
+    const accepted = turn.assignments.filter((item, index) => isAccepted(verdictFor(item, index)));
+    const newContext: context[] = [];
+    const entryOf = new Map<TurnPair, context>();
+    accepted.forEach(({ turnPair, assignment }) => {
+      if (entryOf.has(turnPair)) return;
+      const entry = this.contextEntryOf(turnPair, userMessage, assignment.sequenceTptp ?? '');
+      entryOf.set(turnPair, entry);
+      newContext.push(entry);
+    });
     console.info('[Chat] Vampire verdict (lfgxdrt)', {
       sentence: userMessage,
       consistent, informative, relevant,
-      mappingCount: mappings.length,
-      survivingContextCount: newContext.length,
+      sent: turn.assignments.length,
+      accepted: accepted.length,
+      contextReadings: newContext.length,
     });
     this.context = newContext;
     this.history.push(newContext);
     this.historyChange.emit(this.history);
     this.changeDetector.detectChanges();
-    const message = this.verdictMessage(consistent, informative, relevant);
-    const safeGlyphs = glyphs.map(glyph => this.sanitizer.bypassSecurityTrustHtml(glyph));
-    // The pills describe what THIS turn reasoned over -- every branch sent to Vampire,
-    // accepted or not -- so they are built from `prepared`, not from the carried-forward
-    // context. Those are different things: the context is one entry per surviving reading
-    // (2 here), which can never account for the 72 bundles that were actually checked.
-    const branches = prepared.length ? this.branchDetail(prepared, verdictFor) : null;
+
+    // The pill shows the readings this turn sent, accepted or not, by the selection's
+    // order; the readings not sent stay in the document but would only clutter it.
+    const branches = this.branchDetail(turn.assignments, turn.mappings, verdictFor);
     if (this.lastTurn) {
-      this.lastTurn.branches = prepared.length;
+      this.lastTurn.branches = turn.assignments.length;
       this.lastTurn.survivingReadings = newContext.length;
     }
-    const semantic = branches
-      ? ''
-      : newContext.map((item: context) => item.semantic || item.prolog_drs).filter(Boolean).join('\n');
-    this.pushChatMessage({
-      text: message,
+    const message = this.pushChatMessage({
+      text: this.verdictMessage(consistent, informative, relevant),
       sender: 'Bot',
       glyphs,
-      safeGlyphs,
+      safeGlyphs: glyphs.map(glyph => this.sanitizer.bypassSecurityTrustHtml(glyph)),
       glyphGridSize: Math.max(1, Math.ceil(Math.sqrt(glyphs.length))),
-      semanticText: semantic,
-      detailText: branches ? branches.tptp : newContext.map((item: context) => item.tptp).filter(Boolean).join('\n'),
-      branchSolutions: branches?.solutions,
-      branchLabels: branches?.labels,
+      semanticText: branches.solutions.length ? '' : newContext.map(item => item.semantic || item.prolog_drs).filter(Boolean).join('\n'),
+      detailText: branches.tptp,
+      branchSolutions: branches.solutions,
+      branchLabels: branches.labels,
     });
+    if (turn.update) {
+      this.setLatestTurn(message, {
+        updateId: turn.update.id,
+        sentenceId: newSentenceId,
+        defaultSelection: turn.selection,
+        sent: turn.assignments.map(item => item.assignment.mappingId),
+        accepted: accepted.map(item => item.assignment.mappingId),
+      });
+    }
     this.loading = false;
   }
 
-  /** The turn's branches, formatted for the TPTP and DRS pills.
+  /** The turn's readings sent to Vampire, for the TPTP and DRS pills.
    *
-   *  Every branch appears, rejected ones included: they are the ones most worth inspecting,
-   *  and a pill whose entry count no longer matches the number of checks run is how a
-   *  fan-out bug hides. A branch that produced no TPTP says so rather than being filtered
-   *  out -- an empty translation is exactly the case that must stay visible. */
+   *  Every sent reading appears, rejected ones included: they are the ones most worth
+   *  inspecting. A reading that produced no TPTP says so rather than being filtered out --
+   *  an empty translation is exactly the case that must stay visible. */
   private branchDetail(
-    prepared: any[],
-    verdictFor: (item: any, index: number) => any
+    assignments: TurnAssignment[],
+    mappings: Map<string, GswbSolution>,
+    verdictFor: (item: TurnAssignment, index: number) => any
   ): { tptp: string; solutions: GswbSolution[]; labels: string[] } {
     const solutions: GswbSolution[] = [];
     const labels: string[] = [];
     const blocks: string[] = [];
 
-    prepared.forEach((item, index) => {
+    assignments.forEach((item, index) => {
       const verdict = verdictFor(item, index);
       const marks = [
         verdict?.consistent ? 'consistent' : 'inconsistent',
         verdict?.informative ? 'informative' : 'uninformative',
         verdict?.relevant ? 'relevant' : 'irrelevant',
       ].join(', ');
-      const id = item.checks?.mappingId ?? item.checks?.assignmentId ?? `branch-${index + 1}`;
+      const id = item.assignment.mappingId ?? item.assignment.assignmentId ?? `branch-${index + 1}`;
       const label = `${id} — ${marks}`;
 
-      blocks.push(`% ${label}\n${item.checks?.sequenceTptp || '% (no TPTP produced for this branch)'}`);
+      blocks.push(`% ${label}\n${item.assignment.sequenceTptp || '% (no TPTP produced for this branch)'}`);
 
-      const mapping = item.checks?.mapping;
+      const mapping = mappings.get(item.assignment.mappingId);
       if (mapping?.solution) {
-        solutions.push(mapping as GswbSolution);
+        solutions.push(mapping);
         labels.push(label);
       }
     });
@@ -1056,157 +1212,86 @@ export class ChatComponent {
     return { tptp: blocks.join('\n\n'), solutions, labels };
   }
 
-  private contextFromLfgxdrtChecks(
-    prepared: any[],
-    checks: any[],
-    userMessage: string,
-    pruneContext: boolean,
-    verdictFor: (item: any, index: number) => any = (_item, index) => checks[index]
-  ): context[] {
-    // One entry per distinct reading, not per surviving assignment. A turn's rule
-    // branches and PCDRS mappings are a DiscourseUpdate *of that turn*: they annotate one
-    // merged reading, they are not new readings. What carries forward is syntax +
-    // semantics, and the next turn re-derives the anaphora binding over the whole merged
-    // discourse (turn 3's mappings rebind turn 2's pronouns as well as its own), so
-    // carrying each branch forward as its own prior re-runs that enumeration once per
-    // branch: turn 3 sent 24 x 36 = 864 bundles where 2 x 36 = 72 was the branch count,
-    // and turn 4 would have multiplied by 72 again.
-    const next: context[] = [];
-    // Every distinct reading that actually produced a merged result, regardless of
-    // Vampire's verdict -- this is what gets registered as a Sequence/DiscourseUpdate
-    // (see the loop below). Kept separate from `next` (which is filtered to
-    // consistent&&informative readings, for carrying the discourse forward) because a
-    // ReasoningUpdate's `sourceElementId` must resolve to a registered Sequence even when
-    // the turn concluded "consistent but not informative" -- a proven entailment, exactly
-    // what the modus-ponens benchmark's own 3rd turn tests -- or inconsistent. Before this
-    // split, such a turn's sequence was never registered (only informative readings fed
-    // `upsertSequenceFromContexts`), so `validateReasoningUpdate` rejected the update
-    // outright with "reasoning update rejected by document invariants" (confirmed live:
-    // Vampire correctly returned consistent:true/informative:false for "A Scandinavian won
-    // a Nobel prize" after its two entailing premises, but the update pointing at that
-    // reasoning was silently dropped because nothing had registered what it pointed at).
-    const registeredEntries: context[] = [];
-    const readingKeys = new Map<string, context>();
-    const acceptedReadingKeys = new Set<string>();
-    let acceptedAssignments = 0;
-    // The PCDRS readings of each sequence. One sequence's contexts routinely span several
-    // merged semantic ids; each reading keeps its own as `semanticOrigin`.
-    const groups = new Map<string, PcdrsReading[]>();
+  /** Makes `message` the latest: the one whose discourse can be narrowed, and whose
+   *  survivors are the next turn's prior. The previous latest becomes order only. */
+  private setLatestTurn(message: ChatMessage, turn: ChatTurn): void {
+    const previous = this.latestTurnMessage;
+    this.turns.set(message, turn);
+    this.latestTurnMessage = message;
+    if (previous && previous !== message) this.refreshBranchRanking(previous);
+    this.refreshBranchRanking(message);
+  }
 
-    prepared.forEach((item, index) => {
-      const check = verdictFor(item, index);
-      if (!item.merged || !readingOf(item.merged).semString) return;
-      const reading = readingOf(item.merged);
+  /** The latest turn's discourse update, as stored. */
+  private latestTurnUpdate(): { turn: ChatTurn; update: DiscourseUpdate } | null {
+    const turn = this.latestTurnMessage ? this.turns.get(this.latestTurnMessage) : undefined;
+    const update = turn ? this.storedDiscourseUpdate(turn.updateId) : undefined;
+    return turn && update ? { turn, update } : null;
+  }
 
-      const priorElementId = item.priorElementId;
-      if (!priorElementId || !item.newSentenceId) return;
+  /** The context entries the next turn builds on: those whose reading has a reading that
+   *  survives the latest message (its accepted readings, the latest sentence's discriminant
+   *  selection, then its selection or the default the turn started with), intersected with
+   *  the history's selection when there is one. Without a stored discourse: every entry. */
+  priorContextIndices(): number[] {
+    let indices = this.context.map((_, index) => index);
+    const latest = this.latestTurnUpdate();
+    if (latest) {
+      const { turn, update } = latest;
+      const sentence = this.chatDocument.sentences.find(candidate => candidate.id === turn.sentenceId);
+      const { readings } = turnSurvivors(this.chatDocument, update, turn.defaultSelection,
+        this.anaphoraRankers().averager, turn.accepted ? new Set(turn.accepted) : null,
+        sentenceReadingsAllowedBy(sentence));
+      const origins = new Set(readings.map(reading => reading.semanticOrigin));
+      indices = indices.filter(index => origins.has(this.context[index].semanticAnalysis?.semId ?? ''));
+    }
+    const chosen = this.activeIndices ?? [];
+    return chosen.length ? indices.filter(index => chosen.includes(index)) : indices;
+  }
 
-      const sequenceId = compositeAnalysisId([priorElementId, item.newSentenceId]);
-      const semId = item.merged.id || sequenceId;
+  /** The side panel's account of the next turn's prior. */
+  get priorSummary(): string {
+    if (!this.context.length) return '';
+    const kept = this.priorContextIndices().length;
+    return `${kept} of ${this.context.length} reading${this.context.length === 1 ? '' : 's'}`;
+  }
 
-      // The same identity upsertSequenceFromContexts() dedupes on with its semanticsById
-      // and syntaxById maps, so this list and the document's SequenceAnalysis agree by
-      // construction instead of by coincidence. Every assignment of one pair carries the
-      // identical `merged` (expanded is built as {...item, checks}), so the first one to
-      // pass supplies the entry and the rest only add their branch to the groups below.
-      // Syntax is part of the key: two readings that agree semantically but come from
-      // different parses are two distinct discourse states, and the history shows both.
-      const readingKey = [
-        sequenceId,
-        reading.syntacticOrigin ?? '',
-        reading.semId ?? semId,
-      ].join('::');
-      const isAccepted = !!(check?.consistent && check?.informative);
-      const existingEntry = readingKeys.get(readingKey);
-      // The first ACCEPTED branch supplies the entry when one exists for this reading;
-      // a not-yet-accepted branch registers a fallback entry only so a reading with no
-      // accepted branch at all (e.g. a proven entailment, informative:false throughout)
-      // still has something for upsertSequenceFromContexts to register below -- see
-      // `registeredEntries`. Once an accepted branch has supplied the entry, later
-      // branches (accepted or not) never overwrite it.
-      if (!existingEntry || (isAccepted && !acceptedReadingKeys.has(readingKey))) {
-        const entry = {
-          original: `${item.previousOriginal ?? ''} ${userMessage}`.trim(),
-          prolog_drs: reading.semString,
-          prolog_fol: '',
-          // The whole merged sequence, not the branch's context axiom: this entry becomes
-          // the NEXT turn's prior, and `contextTptp` is now the prior of *this* turn.
-          // Display-only on this path -- the next turn's context axiom is built from
-          // `semantic` below, via prepareReasoningChecks' premiseSemantic.
-          tptp: item.checks?.sequenceTptp ?? '',
-          box: reading.svg ?? '',
-          semantic: reading.semString,
-          semanticGraph: reading.graph,
-          syntax: item.syntax,
-          semanticAnalysis: reading,
-          synSemMapping: item.merged.synSemMapping,
-          elementId: sequenceId,
-        } as context;
-        readingKeys.set(readingKey, entry);
-        if (existingEntry) {
-          const existingIndex = registeredEntries.indexOf(existingEntry);
-          if (existingIndex !== -1) {
-            registeredEntries[existingIndex] = entry;
-          } else {
-            registeredEntries.push(entry);
-          }
-        } else {
-          registeredEntries.push(entry);
-        }
-        if (isAccepted) {
-          acceptedReadingKeys.add(readingKey);
-        }
-      }
+  /** Sending the next sentence fixes the latest message's selection: recorded with its
+   *  discourse, so the document says what the next turn was built on. */
+  private fixLatestTurnSelection(): void {
+    const latest = this.latestTurnUpdate();
+    if (!latest || latest.update.readingSelection) return;
+    this.storeDiscourseUpdate({ ...latest.update, readingSelection: normalizedReadingSelection(latest.turn.defaultSelection) });
+  }
 
-      // Carrying a reading forward as the next turn's context is still gated on the
-      // verdict -- a proven entailment or an inconsistent branch legitimately shouldn't
-      // extend the discourse -- but that decision no longer controls whether the
-      // reasoning that already ran gets registered (see `registeredEntries` above).
-      if (isAccepted) {
-        acceptedAssignments++;
-        const entry = readingKeys.get(readingKey)!;
-        if (!next.includes(entry)) {
-          next.push(entry);
-        }
-      }
+  /** A change in the latest message's sem view, stored with its discourse (null: back to the
+   *  default the turn started with). Ignored on older messages and during a turn. */
+  onReadingSelectionChange(message: ChatMessage, selection: ReadingSelection | null): void {
+    const turn = this.turns.get(message);
+    const update = turn ? this.storedDiscourseUpdate(turn.updateId) : undefined;
+    if (!turn || !update || message !== this.latestTurnMessage || this.loading) return;
+    const next: DiscourseUpdate = { ...update };
+    if (selection) {
+      next.readingSelection = normalizedReadingSelection(selection);
+    } else {
+      delete next.readingSelection;
+    }
+    this.storeDiscourseUpdate(next);
+    this.refreshBranchRanking(message);
+  }
 
-      // GSWB's PCDRS solution, whose id identifies the anaphora branch -- exactly what a
-      // reasoning assignment needs to point at. Two pairs that share a semantic id but come
-      // from different premise contexts stay distinct entries even when both are rule
-      // branch 1.
-      const readings = groups.get(sequenceId) ?? [];
-      readings.push({
-        mapping: item.checks?.mapping,
-        ruleBranchIndex: item.checks?.ruleBranchIndex ?? 1,
-        semanticOrigin: semId,
-        semString: reading.semString,
-      });
-      groups.set(sequenceId, readings);
-    });
-
-    // Said out loud: the fold is what keeps the next turn's work proportional to its own
-    // branch count, so a run where it collapses much more (or much less) than expected is
-    // the signal that the branching upstream changed shape.
-    console.info('[Chat] Discourse readings carried forward', {
-      acceptedAssignments,
-      readingsKept: next.length,
-      discourseBranches: [...groups.values()].reduce((sum, readings) => sum + readings.length, 0),
-    });
-
-    const bySequence = new Map<string, context[]>();
-    registeredEntries.forEach(entry => {
-      const list = bySequence.get(entry.elementId!) ?? [];
-      list.push(entry);
-      bySequence.set(entry.elementId!, list);
-    });
-    bySequence.forEach((entries, sequenceId) => this.upsertSequenceFromContexts(sequenceId, entries));
-    groups.forEach((readings, sequenceId) => {
-      if (!readings.length) return;
-      this.upsertDiscourseUpdate(discourseUpdateOf(
-        { id: sequenceId, kind: 'sequence' }, readings, this.pragmaticsRules()));
-    });
-
-    return pruneContext ? next.slice(0, 1) : next;
+  /** The latest message's discriminant selection, stored with its sentence: it narrows the
+   *  latest sentence only, as a sentence's own view does. */
+  onDiscriminantSelectionChange(message: ChatMessage, change: { scopeIds: string[]; mcIds: string[] }): void {
+    const turn = this.turns.get(message);
+    if (!turn || message !== this.latestTurnMessage || this.loading) return;
+    const sentence = this.chatDocument.sentences.find(candidate => candidate.id === turn.sentenceId);
+    if (!sentence) return;
+    const same = (a: string[] | undefined, b: string[]) => (a ?? []).length === b.length && b.every(id => (a ?? []).includes(id));
+    if (same(sentence.selectedScopeIds, change.scopeIds) && same(sentence.selectedMcIds, change.mcIds)) return;
+    sentence.selectedScopeIds = [...change.scopeIds];
+    sentence.selectedMcIds = [...change.mcIds];
+    this.emitChatDocument();
   }
 
   /** Builds the Sequence from *every* surviving context, not just the first.
@@ -1265,13 +1350,17 @@ export class ChatComponent {
   }
 
   private upsertDiscourseUpdate(update: DiscourseUpdate): void {
-    const previous = this.chatDocument.discourseUpdates?.find(existing => existing.id === update.id);
+    const previous = this.storedDiscourseUpdate(update.id);
     const rankers = this.anaphoraRankers();
     const stored = carryAnaphoraRanking(previous, update, rankers);
     this.storeDiscourseUpdate(stored);
     if (needsAnaphoraRanking(stored, rankers)) {
       this.rankDiscourseUpdate(stored);
     }
+  }
+
+  private storedDiscourseUpdate(id: string): DiscourseUpdate | undefined {
+    return this.chatDocument.discourseUpdates?.find(existing => existing.id === id);
   }
 
   private storeDiscourseUpdate(update: DiscourseUpdate): void {
@@ -1287,26 +1376,50 @@ export class ChatComponent {
     return anaphoraRankerSelection(this.vampirePreferences?.vampirePreferences);
   }
 
-  /** Stored first, ranked afterwards, never waited on: the turn is complete without it. */
+  /** Stored first, ranked afterwards; waited on only by a selection that needs it
+   *  (`rankingOf`). */
   private rankDiscourseUpdate(update: DiscourseUpdate): void {
-    this.anaphoraRanking.rankAndAttach(() => this.chatDocument, update, this.anaphoraRankers()).subscribe(({ update: ranked }) => {
-      if (!ranked) return;
-      // Stored as lm answered, never re-requested on its account: a ranking that does not match
-      // what was asked (an older lm) would otherwise be requested again forever.
-      this.storeDiscourseUpdate(ranked);
-      this.chatHistory.forEach(message => this.refreshBranchRanking(message));
-      this.changeDetector.detectChanges();
+    const done = new ReplaySubject<void>(1);
+    this.pendingRankings.set(update.id, done);
+    this.anaphoraRanking.rankAndAttach(() => this.chatDocument, update, this.anaphoraRankers()).subscribe({
+      next: ({ update: ranked }) => {
+        if (!ranked) return;
+        // Stored as lm answered, never re-requested on its account: a ranking that does not
+        // match what was asked (an older lm) would otherwise be requested again forever.
+        this.storeDiscourseUpdate(ranked);
+        this.chatHistory.forEach(message => this.refreshBranchRanking(message));
+        this.changeDetector.detectChanges();
+      },
+      complete: () => {
+        if (this.pendingRankings.get(update.id) === done) this.pendingRankings.delete(update.id);
+        done.next();
+        done.complete();
+      },
     });
   }
 
-  /** What each message's DRS pill orders and filters its branches with (N4): the discourse
-   *  updates its branches belong to. Kept here, not on the message, and replaced only when the
-   *  updates change, so the pill gets a new one only then. */
-  readonly readingOrders = new Map<ChatMessage, ReadingOrderContext>();
+  /** Completes once the update's ranking has been attached or found unavailable (the ranking
+   *  service times out, so this always completes); at once when none is pending. */
+  private rankingOf(updateId: string | undefined): Observable<void> {
+    return (updateId ? this.pendingRankings.get(updateId)?.asObservable() : undefined) ?? of(undefined);
+  }
+
+  /** Ranking requests still running, per discourse update. */
+  private readonly pendingRankings = new Map<string, ReplaySubject<void>>();
+
+  /** Each message's turn (N4 6d), and the latest one: the only message whose discourse can
+   *  be narrowed, and whose survivors are the next turn's prior. */
+  private readonly turns = new Map<ChatMessage, ChatTurn>();
+  private latestTurnMessage: ChatMessage | null = null;
+
+  /** What each message's DRS pill shows its readings with (N4): the discourse updates they
+   *  belong to and, on the latest message, its selection and discriminants. Kept here, not on
+   *  the message, and replaced only when they change, so the pill gets a new one only then. */
+  readonly messageViews = new Map<ChatMessage, ChatMessageView>();
 
   /** Captions a message's DRS branches with the ranking of the discourse update each belongs
-   *  to, and gives its pill the reading order. The branches keep their generation order: the
-   *  pill's sem view orders them by its options. */
+   *  to, and gives its pill its view. The branches keep their generation order: the pill's
+   *  sem view orders them by its options. */
   private refreshBranchRanking(message: ChatMessage): void {
     if (!message.branchSolutions?.length) return;
     let original = this.branchesInGenerationOrder.get(message);
@@ -1318,11 +1431,7 @@ export class ChatComponent {
     const updates = (this.chatDocument.discourseUpdates ?? [])
       .filter(update => update.discourse.some(reading => ids.has(reading.id)));
     if (!updates.length) return;
-    this.readingOrders.set(message, {
-      updates,
-      discriminants: this.chatDocument.sentences.flatMap(sentence => sentence.discriminants ?? []),
-      averager: this.anaphoraRankers().averager,
-    });
+    this.messageViews.set(message, this.messageView(message, updates));
 
     const updateOf = (id: string) => updates.find(update => update.discourse.some(reading => reading.id === id));
     message.branchLabels = original.solutions.map((solution, index) => {
@@ -1334,6 +1443,36 @@ export class ChatComponent {
       const update = updateOf(solution.id);
       return update ? anaphoraRankingTable(update, solution.id) : null;
     });
+  }
+
+  /** The latest message between turns: its selection (k, filters) over the readings Vampire
+   *  accepted, and the latest sentence's discriminants. Any other: order only. */
+  private messageView(message: ChatMessage, updates: DiscourseUpdate[]): ChatMessageView {
+    const readingOrder: ReadingOrderContext = {
+      updates,
+      discriminants: this.chatDocument.sentences.flatMap(sentence => sentence.discriminants ?? []),
+      averager: this.anaphoraRankers().averager,
+    };
+    const turn = this.turns.get(message);
+    const update = turn ? updates.find(candidate => candidate.id === turn.updateId) : undefined;
+    const sentence = turn ? this.chatDocument.sentences.find(candidate => candidate.id === turn.sentenceId) : undefined;
+    if (!turn || !update || message !== this.latestTurnMessage || this.loading) {
+      return { readingOrder, readingSelection: null, selectableIds: null, discriminants: null, selectedDiscriminants: null, orderOnly: true };
+    }
+    const previous = this.messageViews.get(message);
+    const selection = update.readingSelection
+      ? { selection: normalizedReadingSelection(update.readingSelection), own: true }
+      : { selection: turn.defaultSelection, own: false };
+    return {
+      readingOrder,
+      // The same object while unchanged, so the view keeps what is shown.
+      readingSelection: previous?.readingSelection && previous.readingSelection.own === selection.own
+        && sameReadingSelection(previous.readingSelection.selection, selection.selection) ? previous.readingSelection : selection,
+      selectableIds: turn.accepted,
+      discriminants: discourseDiscriminantsOf(sentence?.discriminants ?? [], update),
+      selectedDiscriminants: { scopeIds: [...(sentence?.selectedScopeIds ?? [])], mcIds: [...(sentence?.selectedMcIds ?? [])] },
+      orderOnly: false,
+    };
   }
 
   private emitChatDocument(): void {

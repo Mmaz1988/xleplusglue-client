@@ -442,20 +442,6 @@ describe('ReasoningPipelineService', () => {
       .toThrowError(/sequence provenance structure/);
   });
 
-  it('reasons over one candidate only when pruning', done => {
-    dataService.gswbGeneratePcdrs.and.returnValue(of({
-      solutions: [{ id: 'm1', semantic: 'a', anaphoraRelations: [] },
-                  { id: 'm2', semantic: 'b', anaphoraRelations: [] }]
-    }) as any);
-
-    service.prepareReasoningChecks({ ...request(), prune: true }).subscribe(pair => {
-      expect(pair.assignments.length).toBe(1);
-      // Pruning must happen before the expensive collapse step, not after.
-      expect(dataService.gswbCollapseAndTptpBatch).toHaveBeenCalledTimes(1);
-      done();
-    });
-  });
-
   it('runs pairs strictly sequentially, never concurrently', () => {
     // Two concurrent chains has been observed to leave an HttpClient observable that
     // never emits, so the second pair must not start until the first completes.
