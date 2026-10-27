@@ -202,8 +202,13 @@ button.chip.selected.current-hit{
 }
 
 .status-place {
+  margin-left: 0.4em;
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
+}
+
+.reading-order-title[title] {
+  cursor: help;
 }
 
 .reading-order {

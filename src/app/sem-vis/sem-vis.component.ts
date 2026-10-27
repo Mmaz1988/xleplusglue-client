@@ -22,6 +22,31 @@ const CRITERION_LABELS: Record<ReadingCriterion, string> = {
   lm: 'LM ranking',
 };
 
+const CRITERION_HINTS: Record<ReadingCriterion, string> = {
+  surface: 'Prefers readings whose scope follows the word order: counts the scopings that go '
+    + 'against the surface, fewer first.',
+  pronouns: 'Structural, from the reading\'s pragmatic profile: more pronouns bound (in one complex '
+    + 'condition with their antecedent) first, then referential ones; unbound pronouns last. The '
+    + 'words play no role.',
+  binding: 'Structural: presuppositions bound to an antecedent, the higher the site the better '
+    + '(global, then intermediate, then local).',
+  accommodation: 'Structural: accommodated presuppositions, the higher the site the better '
+    + '(global, then intermediate, then local).',
+  lm: 'Lexical: how plausible the language-model rankers (the session\'s ranker settings) find '
+    + 'the chosen antecedents, compared across all readings.',
+};
+
+const FILTER_HINTS: Record<ReadingFilter, string> = {
+  unbound: 'Hides readings that leave a pronoun unbound, a(x,/).',
+  accommodated: 'Hides readings that accommodate a presupposition. Proper names are usually '
+    + 'accommodated.',
+};
+
+/** How the checked orderings combine, for the panel's heading. */
+export const ORDER_HINT = 'Each checked ordering ranks the readings; the ranks are fused (Borda or '
+  + 'RRF, as the session\'s ranker averager), so a reading better on every checked ordering comes '
+  + 'first. Tied readings share a place.';
+
 const FILTER_LABELS: Record<ReadingFilter, string> = {
   unbound: 'readings with an unbound pronoun',
   accommodated: 'readings with an accommodated presupposition',
@@ -98,6 +123,16 @@ export class SemVisComponent implements AfterViewInit {
   filterLabel(filter: ReadingFilter): string {
     return FILTER_LABELS[filter];
   }
+
+  criterionHint(criterion: ReadingCriterion): string {
+    return CRITERION_HINTS[criterion];
+  }
+
+  filterHint(filter: ReadingFilter): string {
+    return FILTER_HINTS[filter];
+  }
+
+  readonly orderHint = ORDER_HINT;
 
   isCriterionChecked(criterion: ReadingCriterion): boolean {
     return this.orderCriteria.includes(criterion);

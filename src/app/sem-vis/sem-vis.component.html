@@ -34,7 +34,7 @@
       <button type="button" (click)="prev()">◀ Prev</button>
 
       <span class="status">{{ index + 1 }} / {{ items.length }} out of {{allItems.length}}</span>
-      <span class="status-place" *ngIf="currentPlace !== null" title="Place in the reading order; tied readings share a place">place {{ currentPlace }}</span>
+      <span class="status-place" *ngIf="currentPlace !== null" title="Place in the reading order; tied readings share a place">· place {{ currentPlace }}</span>
 
       <button type="button" (click)="next()">Next ▶</button>
 
@@ -76,15 +76,15 @@
        The pragmatic discriminants will join this panel. -->
   <div class="reading-order" *ngIf="orderOptions.criteria.length || orderOptions.filters.length">
     <div class="reading-order-group" *ngIf="orderOptions.criteria.length">
-      <span class="reading-order-title">Order by</span>
-      <label *ngFor="let criterion of orderOptions.criteria">
+      <span class="reading-order-title" [title]="orderHint">Order by ⓘ</span>
+      <label *ngFor="let criterion of orderOptions.criteria" [title]="criterionHint(criterion)">
         <input type="checkbox" [checked]="isCriterionChecked(criterion)" (change)="toggleCriterion(criterion)">
         {{ criterionLabel(criterion) }}
       </label>
     </div>
     <div class="reading-order-group" *ngIf="orderOptions.filters.length">
       <span class="reading-order-title">Hide</span>
-      <label *ngFor="let filter of orderOptions.filters">
+      <label *ngFor="let filter of orderOptions.filters" [title]="filterHint(filter)">
         <input type="checkbox" [checked]="isFilterChecked(filter)" (change)="toggleFilter(filter)">
         {{ filterLabel(filter) }}
       </label>

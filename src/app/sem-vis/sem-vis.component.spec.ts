@@ -345,6 +345,15 @@ describe('SemVisComponent', () => {
       expect(shown()).toEqual(['s1', 's0']);
     });
 
+    it('explains every offered option and shows the place apart from the counter', () => {
+      component.readingOrder = context({ method: 'm', methods: ['m'], branches: [], relations: [], warnings: [] });
+      fixture.detectChanges();
+      const labels: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.reading-order label'));
+      expect(labels.length).toBe(component.orderOptions.criteria.length + component.orderOptions.filters.length);
+      labels.forEach(label => expect(label.title.length).toBeGreaterThan(20));
+      expect(fixture.nativeElement.querySelector('.status-place')?.textContent.trim()).toBe('· place 1');
+    });
+
     it('offers nothing without a discourse or scope discriminants', () => {
       expect(component.orderOptions).toEqual({ criteria: [], filters: [] });
       expect(shown()).toEqual(['p1', 'p2', 'p3']);
