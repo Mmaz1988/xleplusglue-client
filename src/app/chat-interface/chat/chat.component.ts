@@ -939,9 +939,10 @@ export class ChatComponent {
     });
   }
 
-  /** Names the branches that were dropped or only partially resolved, in the chat itself.
-   *  The reasons come from ReasoningPipelineService and name the mapping and the item that
-   *  failed, so a degraded answer can be traced back to the referent that did not bind. */
+  /** Names the contexts that could not be merged and the branches that were dropped, in the
+   *  chat itself; the reasons come from ReasoningPipelineService and name the mapping and the
+   *  item that failed. Unresolved pronouns are counted for the side panel only: the reply
+   *  names them in a pill, with each reading's outcome. */
   private reportUnresolvedBranches(
     userMessage: string, prepared: any[], mergeFailures: string[] = []
   ): void {
@@ -952,24 +953,24 @@ export class ChatComponent {
       this.lastTurn.degraded = degraded.length;
       this.lastTurn.mergeFailures = mergeFailures.length;
     }
-    if (!dropped.length && !degraded.length && !mergeFailures.length) {
+    if (degraded.length) {
+      console.warn('[Chat] some reasoning branches have unresolved pronouns', { sentence: userMessage, degraded });
+    }
+    if (!dropped.length && !mergeFailures.length) {
       return;
     }
 
     console.warn('[Chat] some reasoning branches were not fully resolved',
-      { sentence: userMessage, dropped, degraded, mergeFailures });
+      { sentence: userMessage, dropped, mergeFailures });
 
     const parts: string[] = [];
     if (mergeFailures.length) {
       parts.push(`${mergeFailures.length} discourse context(s) could not be merged at all`);
     }
-    if (degraded.length) {
-      parts.push(`${degraded.length} branch(es) were reasoned over with unresolved pronouns`);
-    }
     if (dropped.length) {
       parts.push(`${dropped.length} branch(es) could not be prepared at all`);
     }
-    const reasons = [...mergeFailures, ...degraded, ...dropped];
+    const reasons = [...mergeFailures, ...dropped];
     const shown = reasons.slice(0, 3).join('; ');
     const remainder = reasons.length > 3 ? ` (and ${reasons.length - 3} more)` : '';
     this.pushChatMessage({
@@ -1260,6 +1261,15 @@ export class ChatComponent {
       this.lastTurn.branches = turn.assignments.length;
       this.lastTurn.survivingReadings = this.context.length;
     }
+    // A pronoun a reading says nothing about is read as a new referent: named on the reply,
+    // with what the reading came to.
+    const unresolvedPronouns = turn.assignments.flatMap((item, index) => {
+      const check = verdictFor(item, index);
+      const outcome = !check ? 'no verdict'
+        : !check.consistent ? 'inconsistent' : check.informative ? 'neutral' : 'entailed';
+      return (item.assignment.unresolvedPronouns ?? []).map(pronoun =>
+        ({ reading: item.assignment.mappingId, pronoun, outcome }));
+    });
     const message = this.pushChatMessage({
       text: this.turnVerdictMessage(neutral, entailed, inconsistent, !!relevant),
       sender: 'Bot',
@@ -1270,6 +1280,7 @@ export class ChatComponent {
       detailText: branches.tptp,
       branchSolutions: branches.solutions,
       branchLabels: branches.labels,
+      ...(unresolvedPronouns.length ? { unresolvedPronouns } : {}),
     });
     if (turn.updates.length) {
       const record: ChatTurn = {

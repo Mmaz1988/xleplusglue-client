@@ -432,6 +432,7 @@ describe('ReasoningPipelineService', () => {
     service.prepareReasoningChecks({ ...request(), ruleString: '' }).subscribe(pair => {
       // Once per branch, from the sequence: the check items number their referents apart.
       expect(pair.assignments[0].degradations).toEqual(['m1: unresolved pronoun(s) x4 read as new referent(s)']);
+      expect(pair.assignments[0].unresolvedPronouns).toEqual(['x4']);
       expect(pair.degradations.length).toBe(1);
       done();
     });
