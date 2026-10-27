@@ -45,7 +45,7 @@ const FILTER_HINTS: Record<ReadingFilter, string> = {
 /** How the checked orderings combine, for the panel's heading. */
 export const ORDER_HINT = 'Each checked ordering ranks the readings; the ranks are fused (Borda or '
   + 'RRF, as the session\'s ranker averager), so a reading better on every checked ordering comes '
-  + 'first. Tied readings share a place.';
+  + 'first.';
 
 const FILTER_LABELS: Record<ReadingFilter, string> = {
   unbound: 'readings with an unbound pronoun',
@@ -111,8 +111,6 @@ export class SemVisComponent implements AfterViewInit {
   readingFilters: ReadingFilter[] = [];
   /** What applies to the current items; the panel shows only these. */
   orderOptions: { criteria: ReadingCriterion[]; filters: ReadingFilter[] } = { criteria: [], filters: [] };
-  /** Each item's place in the order: 1 is best, tied items share a place. */
-  private placeById = new Map<string, number>();
   /** The PCDRS reading behind each item, for the filters. */
   private readingById = new Map<string, DiscourseAnalysis>();
 
@@ -156,11 +154,6 @@ export class SemVisComponent implements AfterViewInit {
     this.applyFiltersAndResetIndex(0, true);
   }
 
-  get currentPlace(): number | null {
-    const current = this.items[this.index];
-    return current ? this.placeById.get(current.id) ?? null : null;
-  }
-
   /** The context the order is computed in: the owner's, or -- for semantic readings -- one
    *  built from this view's scope discriminants, where only surface alignment applies. */
   private orderContext(): ReadingOrderContext | null {
@@ -186,13 +179,11 @@ export class SemVisComponent implements AfterViewInit {
     this.orderOptions = context ? applicableReadingOptions(context) : { criteria: [], filters: [] };
     this.readingById = new Map((context?.updates ?? []).flatMap(update => update.discourse)
       .map(reading => [reading.id, reading]));
-    this.placeById.clear();
     if (!context) return items;
     const places = globalReadingOrder({
       ...context,
       criteria: this.orderCriteria.filter(criterion => this.orderOptions.criteria.includes(criterion)),
     });
-    places.forEach(place => this.placeById.set(place.id, place.place));
     const position = new Map(places.map((place, index) => [place.id, index]));
     const unknown = Number.MAX_SAFE_INTEGER;
     return items

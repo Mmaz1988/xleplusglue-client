@@ -305,7 +305,6 @@ describe('SemVisComponent', () => {
       component.readingOrder = context();
       // Surface alone: p1 scopes against the surface; p2 and p3 tie and keep their order.
       expect(shown()).toEqual(['p2', 'p3', 'p1']);
-      expect(component.currentPlace).toBe(1);
 
       component.toggleCriterion('surface');
       component.toggleCriterion('pronouns');
@@ -318,9 +317,8 @@ describe('SemVisComponent', () => {
       expect(component.currentLabel).toBe('label p3');
 
       component.toggleCriterion('pronouns');
-      // Nothing checked: the owner's order, one place.
+      // Nothing checked: the owner's order.
       expect(shown()).toEqual(['p1', 'p2', 'p3']);
-      expect(component.currentPlace).toBe(1);
     });
 
     it('hides readings by the filters, for display only', () => {
@@ -345,13 +343,12 @@ describe('SemVisComponent', () => {
       expect(shown()).toEqual(['s1', 's0']);
     });
 
-    it('explains every offered option and shows the place apart from the counter', () => {
+    it('explains every offered option', () => {
       component.readingOrder = context({ method: 'm', methods: ['m'], branches: [], relations: [], warnings: [] });
       fixture.detectChanges();
       const labels: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.reading-order label'));
       expect(labels.length).toBe(component.orderOptions.criteria.length + component.orderOptions.filters.length);
       labels.forEach(label => expect(label.title.length).toBeGreaterThan(20));
-      expect(fixture.nativeElement.querySelector('.status-place')?.textContent.trim()).toBe('· place 1');
     });
 
     it('offers nothing without a discourse or scope discriminants', () => {

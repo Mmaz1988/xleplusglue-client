@@ -34,7 +34,6 @@
       <button type="button" (click)="prev()">◀ Prev</button>
 
       <span class="status">{{ index + 1 }} / {{ items.length }} out of {{allItems.length}}</span>
-      <span class="status-place" *ngIf="currentPlace !== null" title="Place in the reading order; tied readings share a place">· place {{ currentPlace }}</span>
 
       <button type="button" (click)="next()">Next ▶</button>
 
