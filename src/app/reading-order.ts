@@ -58,6 +58,44 @@ export function applicableReadingOptions(context: ReadingOrderContext): {
   return { criteria, filters };
 }
 
+export const CRITERION_LABELS: Record<ReadingCriterion, string> = {
+  surface: 'surface alignment',
+  pronouns: 'pronouns',
+  binding: 'presupposition binding',
+  accommodation: 'accommodation',
+  lm: 'LM ranking',
+};
+
+export const CRITERION_HINTS: Record<ReadingCriterion, string> = {
+  surface: 'Prefers readings whose scope follows the word order: counts the scopings that go '
+    + 'against the surface, fewer first.',
+  pronouns: 'Structural, from the reading\'s pragmatic profile: more pronouns bound (in one complex '
+    + 'condition with their antecedent) first, then referential ones; unbound pronouns last. The '
+    + 'words play no role.',
+  binding: 'Structural: presuppositions bound to an antecedent, the higher the site the better '
+    + '(global, then intermediate, then local).',
+  accommodation: 'Structural: accommodated presuppositions, the higher the site the better '
+    + '(global, then intermediate, then local).',
+  lm: 'Lexical: how plausible the language-model rankers (the session\'s ranker settings) find '
+    + 'the chosen antecedents, compared across all readings.',
+};
+
+export const FILTER_HINTS: Record<ReadingFilter, string> = {
+  unbound: 'Hides readings that leave a pronoun unbound, a(x,/).',
+  accommodated: 'Hides readings that accommodate a presupposition. Proper names are usually '
+    + 'accommodated.',
+};
+
+/** How the checked orderings combine, for the panel's heading. */
+export const ORDER_HINT = 'Each checked ordering ranks the readings; the ranks are fused (Borda or '
+  + 'RRF, as the session\'s ranker averager), so a reading better on every checked ordering comes '
+  + 'first.';
+
+export const FILTER_LABELS: Record<ReadingFilter, string> = {
+  unbound: 'readings with an unbound pronoun',
+  accommodated: 'readings with an accommodated presupposition',
+};
+
 /** A reading's place in the global order: 1 is best, tied readings share a place, and places
  *  are dense (1, 2, 2, 3), so k places hold every reading tied with the k-th. */
 export interface ReadingPlace {
@@ -242,6 +280,23 @@ export interface ReadingSelection {
 
 /** Surface alignment checked, no filter, every reading. */
 export const DEFAULT_READING_SELECTION: ReadingSelection = { criteria: ['surface'], filters: [], k: null };
+
+/** What a run without a recorded selection sent: every reading. */
+export const ALL_READINGS: ReadingSelection = { criteria: [], filters: [], k: null };
+
+const SHORT_CRITERIA: Record<ReadingCriterion, string> = {
+  surface: 'surface', pronouns: 'pronouns', binding: 'binding', accommodation: 'accommodation', lm: 'LM',
+};
+
+/** A selection in a few words: "all readings", "top 2 by surface + LM, without unbound". */
+export function describeReadingSelection(selection: Partial<ReadingSelection>): string {
+  const normalized = normalizedReadingSelection(selection);
+  const by = normalized.criteria.length ? ` by ${normalized.criteria.map(criterion => SHORT_CRITERIA[criterion]).join(' + ')}` : '';
+  const without = normalized.filters.length
+    ? `, without ${normalized.filters.map(filter => filter === 'unbound' ? 'unbound pronouns' : 'accommodation').join(' or ')}`
+    : '';
+  return normalized.k === null ? `all readings${without}` : `top ${normalized.k}${by}${without}`;
+}
 
 /** A selection with known criteria and filters and a positive whole k, or null; anything else
  *  in a stored selection is dropped. */

@@ -15,6 +15,7 @@ import { discourseBranchesForDisplay, reasoningAssignmentId } from '../analysis-
 import { LigerFileSource } from '../liger-workspace/liger-file-source.service';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { FILES, RULE_SET, TREE, fileSourceSpy } from '../liger-workspace/liger-workspace.testing';
+import { ALL_READINGS } from '../reading-order';
 
 /** A derived reading as GSWB sends it: everything about the reading in semanticAnalysis.
  *  `solution` is its SVG in LFGxDRT mode, its text in prolog-drt mode. */
@@ -1420,7 +1421,7 @@ describe('RegressionTestingInterfaceComponent', () => {
         // A top-1 run sent only pcdrs-2; no verdict has come back yet.
         document.reasoningUpdates = [{
           id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], logicType: 'fof',
-          anaphoraSelection: { mode: 'top_k', k: 1, applied: true },
+          readingSelection: { criteria: ['lm'], filters: [], k: 1, applied: true },
           assignments: [{
             id: 'a-pcdrs-2', premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {},
             discourseUpdateId: 'du-S0+S1', discourseId: 'pcdrs-2',
@@ -1469,27 +1470,27 @@ describe('RegressionTestingInterfaceComponent', () => {
       component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'], gold_label: '1' }];
       const results = { n0: [{ consistent: true, informative: true } as any] };
 
-      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'all' };
+      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, reading_selection: { ...ALL_READINGS } };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('0');
-      expect(component.inferenceSummary).toContain('Anaphora branches sent to Vampire: all.');
-      expect(component.inferenceSummary).toContain('Same results restricted to each selection: all 0/1 · top 1 1/1');
+      expect(component.inferenceSummary).toContain('Readings sent to Vampire: all readings.');
+      expect(component.inferenceSummary).toContain('Same results restricted to each selection: all readings 0/1 · top 1 by LM 1/1');
 
       // Changing the setting afterwards leaves the existing verdict alone.
-      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'top_k', anaphora_top_k: 1 };
+      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, reading_selection: { criteria: ['lm'], filters: [], k: 1 } };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('0');
 
       // A top-1 run sends and stores only the best branch; its verdict is that branch's.
       document.reasoningUpdates[0] = {
         ...document.reasoningUpdates[0],
-        anaphoraSelection: { mode: 'top_k', k: 1, applied: true },
+        readingSelection: { criteria: ['lm'], filters: [], k: 1, applied: true },
         assignments: [assignmentOver('p1', false)],
       };
       (component as any).renderVampireResults(results, { item_count: 1, proof_count: 0 }, false);
       expect(component.inferenceResults[0].predictedLabel).toBe('1');
-      expect(component.inferenceResults[0].anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 1, total: 3 });
-      expect(component.inferenceSummary).toContain('Anaphora branches sent to Vampire: top 1.');
+      expect(component.inferenceResults[0].readingSelection).toEqual({ criteria: ['lm'], filters: [], k: 1, applied: true, used: 1, total: 3 });
+      expect(component.inferenceSummary).toContain('Readings sent to Vampire: top 1 by LM.');
     });
 
     it('waits for the ranking before a top-k run goes on, and not otherwise', () => {
@@ -1560,15 +1561,15 @@ describe('RegressionTestingInterfaceComponent', () => {
         ],
       }];
 
-      (component as any).runAnaphoraSelection = { mode: 'top_k', k: 2 };
-      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, anaphora_selection: 'all' };
+      (component as any).runReadingSelection = { criteria: ['lm'], filters: [], k: 2 };
+      component.vampirePreferences.vampirePreferences = { ...component.vampirePreferences.vampirePreferences, reading_selection: { ...ALL_READINGS } };
 
       (component as any).upsertReasoningUpdates({
         n0: [{ assignment_id: assignmentId('pcdrs-a'), consistent: true, informative: false, relevant: true }],
       });
 
       // The selection the run started with, not whatever the setting says now.
-      expect(component.session.analysisDocuments['n0'].reasoningUpdates![0].anaphoraSelection).toEqual({ mode: 'top_k', k: 2, applied: true });
+      expect(component.session.analysisDocuments['n0'].reasoningUpdates![0].readingSelection).toEqual({ criteria: ['lm'], filters: [], k: 2, applied: true });
 
       const assignments = component.session.analysisDocuments['n0'].reasoningUpdates![0].assignments;
       expect(assignments[0].discourseUpdateId).toBe('du-S0+S1');

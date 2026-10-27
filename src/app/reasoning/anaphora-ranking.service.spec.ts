@@ -4,14 +4,14 @@ import { DataService } from '../data.service';
 import { FormBuilder } from '@angular/forms';
 import { SemVisComponent } from '../sem-vis/sem-vis.component';
 import { InferenceSettingsComponent } from '../inference-interface/inference-settings/inference-settings.component';
+import { ALL_READINGS, ReadingSelection } from '../reading-order';
 import {
   anaphoraRankerSelection,
   anaphoraRankingCaption,
   anaphoraRankingTable,
-  anaphoraSelectionPolicy,
   inferenceResultsFromDocument,
+  readingSelectionOf,
   selectForVampire,
-  selectedAnaphoraBranchIds,
   selectReasoningAssignments,
   discourseBranchesForDisplay,
   anaphoraRankingRequest,
@@ -316,89 +316,88 @@ describe('anaphora branch selection for verdicts', () => {
   };
   const item = { id: 'n0', gold_label: '1' };
 
-  it('keeps the top k per reading and leaves an unscored reading whole', () => {
-    expect([...selectedAnaphoraBranchIds(ranked(), { mode: 'top_k', k: 1 })]).toEqual(['b-event', 'b2-cat', 'b2-dog']);
-    expect([...selectedAnaphoraBranchIds(ranked(), { mode: 'top_k', k: 2 })]).toEqual(['b-cat', 'b-event', 'b2-cat', 'b2-dog']);
-    expect(selectedAnaphoraBranchIds(ranked(), { mode: 'all', k: 1 }).size).toBe(5);
-  });
+  const lmTop = (k: number): ReadingSelection => ({ criteria: ['lm'], filters: [], k });
 
-  it('keeps tied branches together and everything when the update is unranked', () => {
-    const tied = { ...update([branch('a', [['x4', 'x1']]), branch('b', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]),
-      anaphoraRanking: ranking([['a', 1, 0.9], ['b', 1, 0.9], ['c', 3, 0.1]]) };
-    expect([...selectedAnaphoraBranchIds(tied, { mode: 'top_k', k: 1 })]).toEqual(['a', 'b']);
-    // k counts mappings: the duplicate of the best one does not push the second-best one out.
-    expect([...selectedAnaphoraBranchIds(tied, { mode: 'top_k', k: 2 })]).toEqual(['a', 'b', 'c']);
-    expect(selectedAnaphoraBranchIds(update([branch('a', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]), { mode: 'top_k', k: 1 }).size).toBe(2);
-  });
-
-  it('selects before Vampire: only the top k per reading are sent, everything when unranked', () => {
+  it('selects before Vampire: the top k places of the global order, everything when unranked', () => {
     const prepared = ['b-dog', 'b-cat', 'b-event', 'b2-cat', 'b2-dog', 'unrelated'].map(mappingId => ({ mappingId }));
-    const top1 = selectForVampire(ranked(), prepared, { mode: 'top_k', k: 1 });
-    expect(top1.items.map(item => item.mappingId)).toEqual(['b-event', 'b2-cat', 'b2-dog', 'unrelated']);
+    const discourse = ranked();
+    // Global: the event is first over both readings; the unscored readings come last.
+    const top1 = selectForVampire(documentWith(discourse), discourse, prepared, lmTop(1), 'borda');
+    expect(top1.items.map(item => item.mappingId)).toEqual(['b-event', 'unrelated']);
     expect(top1.applied).toBeTrue();
+    const top2 = selectForVampire(documentWith(discourse), discourse, prepared, lmTop(2), 'borda');
+    expect(top2.items.map(item => item.mappingId)).toEqual(['b-cat', 'b-event', 'unrelated']);
 
-    const unranked = selectForVampire(update([branch('b-dog', [['x4', 'x2']])]), prepared, { mode: 'top_k', k: 1 });
+    const plain = update([branch('b-dog', [['x4', 'x2']])]);
+    const unranked = selectForVampire(documentWith(plain), plain, prepared, lmTop(1), 'borda');
     expect(unranked.items.length).toBe(6);
     expect(unranked.applied).toBeFalse();
-    expect(selectForVampire(ranked(), prepared, { mode: 'all', k: 1 }).items.length).toBe(6);
+    expect(selectForVampire(documentWith(discourse), discourse, prepared, ALL_READINGS, 'borda').items.length).toBe(6);
+  });
+
+  it('keeps tied readings together: k counts places', () => {
+    const tied = { ...update([branch('a', [['x4', 'x1']]), branch('b', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]),
+      anaphoraRanking: ranking([['a', 1, 0.9], ['b', 1, 0.9], ['c', 3, 0.1]]) };
+    const prepared = ['a', 'b', 'c'].map(mappingId => ({ mappingId }));
+    expect(selectForVampire(documentWith(tied), tied, prepared, lmTop(1), 'borda').items.map(item => item.mappingId))
+      .toEqual(['a', 'b']);
+    expect(selectForVampire(documentWith(tied), tied, prepared, lmTop(2), 'borda').items.length).toBe(3);
   });
 
   it('compares stored results restricted to a selection', () => {
-    // All five branches: 2 entailment vs 3 neutral -> neutral. Top-1: the event (entailment)
-    // plus the unscored reading's two branches (entailment, neutral) -> 2 vs 1 -> entailment.
+    // All five readings: 2 entailment vs 3 neutral -> neutral. LM top-1 over all readings: the
+    // event alone (entailment).
     const document = reasoningOver(ranked(), [
       ['b-dog', 'neutral'], ['b-cat', 'neutral'], ['b-event', 'entailment'], ['b2-cat', 'entailment'], ['b2-dog', 'neutral'],
     ]);
 
     const all = inferenceResultsFromDocument(document, [item], {})['n0'];
-    const top1 = inferenceResultsFromDocument(document, [item], {}, { mode: 'top_k', k: 1 })['n0'];
+    const top1 = inferenceResultsFromDocument(document, [item], {}, { selection: lmTop(1), averager: 'borda' })['n0'];
 
     expect(all.predictedLabel).toBe('0');
-    expect(all.anaphoraSelection).toEqual({ mode: 'all', k: 1, applied: true, used: 5, total: 5 });
+    expect(all.readingSelection).toEqual({ ...ALL_READINGS, applied: true, used: 5, total: 5 });
     expect(top1.predictedLabel).toBe('1');
     expect(top1.mismatch).toBeFalse();
-    expect(top1.anaphoraSelection).toEqual({ mode: 'top_k', k: 1, applied: true, used: 3, total: 5 });
+    expect(top1.readingSelection).toEqual({ ...lmTop(1), applied: true, used: 1, total: 5 });
 
     // Without an override the report takes every stored assignment: a top-k run only stored
-    // the selected ones, so a recorded top-k selection is not applied a second time.
-    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1, applied: true };
+    // the selected ones, so a recorded selection is not applied a second time.
+    document.reasoningUpdates![0].readingSelection = { ...lmTop(1), applied: true };
     expect(inferenceResultsFromDocument(document, [item], {})['n0'].predictedLabel).toBe('0');
-    expect(inferenceResultsFromDocument(document, [item], {})['n0'].anaphoraSelection)
-      .toEqual({ mode: 'top_k', k: 1, applied: true, used: 5, total: 5 });
+    expect(inferenceResultsFromDocument(document, [item], {})['n0'].readingSelection)
+      .toEqual({ ...lmTop(1), applied: true, used: 5, total: 5 });
   });
 
   it('counts unlinked assignments, and says when there was no ranking to apply', () => {
     const unranked = reasoningOver(update([branch('b-dog', [['x4', 'x2']]), branch('b-cat', [['x4', 'x1']])]),
       [['b-dog', 'neutral'], ['b-cat', 'neutral']], ['entailment']);
-    const { assignments, applied } = selectReasoningAssignments(unranked, unranked.reasoningUpdates![0], { mode: 'top_k', k: 1 });
+    const { assignments, applied } = selectReasoningAssignments(unranked, unranked.reasoningUpdates![0], lmTop(1), 'borda');
     expect(assignments.length).toBe(3);
     expect(applied).toBeFalse();
   });
 
-  it('reads the policy from Vampire preferences, defaulting to every branch', () => {
-    expect(anaphoraSelectionPolicy(undefined)).toEqual({ mode: 'all', k: 1 });
-    expect(anaphoraSelectionPolicy({ logic_type: 0, model_building: true, max_duration: 10, layered: false }))
-      .toEqual({ mode: 'all', k: 1 });
-    expect(anaphoraSelectionPolicy({ logic_type: 0, model_building: true, max_duration: 10, layered: false,
-      anaphora_selection: 'top_k', anaphora_top_k: 2.7 })).toEqual({ mode: 'top_k', k: 2 });
+  it('reads the selection from Vampire preferences, defaulting to every reading by surface', () => {
+    expect(readingSelectionOf(undefined)).toEqual({ criteria: ['surface'], filters: [], k: null });
+    expect(readingSelectionOf({ logic_type: 0, model_building: true, max_duration: 10, layered: false }))
+      .toEqual({ criteria: ['surface'], filters: [], k: null });
+    expect(readingSelectionOf({ logic_type: 0, model_building: true, max_duration: 10, layered: false,
+      reading_selection: { criteria: ['lm'], filters: ['unbound'], k: 2.7 } })).toEqual({ criteria: ['lm'], filters: ['unbound'], k: 2 });
   });
 
-  it('lists the branches a run sent to Vampire, verdict or not, and marks the ones it did not send', () => {
+  it('lists the readings a run sent to Vampire, verdict or not, and marks the ones it did not send', () => {
     expect(discourseBranchesForDisplay(documentWith(ranked())).counted).toBeUndefined();
 
-    // A top-1 run sent the event reading of sem-1 and both unscored sem-2 branches; b2-dog has
-    // no verdict yet and is still sent.
-    const document = reasoningOver(ranked(), [['b-event', 'entailment'], ['b2-cat', 'entailment']]);
+    const document = reasoningOver(ranked(), [['b-event', 'entailment']]);
     document.reasoningUpdates![0].assignments.push({
       id: 'pending', premiseSemanticIds: [], hypothesisSemanticIds: [], ruleBranchIndex: 1, checks: {} as any,
-      contextTptp: '', discourseUpdateId: 'du-sentence-1', discourseId: 'b2-dog',
+      contextTptp: '', discourseUpdateId: 'du-sentence-1', discourseId: 'b-cat',
     });
-    document.reasoningUpdates![0].anaphoraSelection = { mode: 'top_k', k: 1, applied: true };
+    document.reasoningUpdates![0].readingSelection = { ...lmTop(2), applied: true };
 
     const { solutions, labels, counted } = discourseBranchesForDisplay(document);
-    expect(counted).toEqual(['b-event', 'b2-cat', 'b2-dog']);
-    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('not sent to Vampire (top 1 mapping per reading)');
-    expect(labels[solutions.findIndex(solution => solution.id === 'b2-dog')]).toContain('Vampire: not run ×1');
+    expect(counted).toEqual(['b-event', 'b-cat']);
+    expect(labels[solutions.findIndex(solution => solution.id === 'b-dog')]).toContain('not sent to Vampire (top 2 by LM)');
+    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('Vampire: not run ×1');
   });
 
   it('narrows sem-vis items to an id filter like a discriminant selection, and back', () => {
@@ -414,15 +413,17 @@ describe('anaphora branch selection for verdicts', () => {
     expect(semVis.items.map(item => item.id)).toEqual(['a', 'b', 'c']);
   });
 
-  it('carries the selection through the settings form', () => {
+  it('carries the reading selection through the settings form', () => {
     const settings = new InferenceSettingsComponent(new FormBuilder());
-    settings.vampirePreferencesForm.patchValue({ anaphora_selection: 'top_k', anaphora_top_k: '3' });
-    expect(settings.vampirePreferences.anaphora_selection).toBe('top_k');
-    expect(settings.vampirePreferences.anaphora_top_k).toBe(3);
+    settings.toggleCriterion('lm');
+    settings.toggleFilter('unbound');
+    settings.setTopK('3');
+    expect(settings.vampirePreferences.reading_selection).toEqual({ criteria: ['surface', 'lm'], filters: ['unbound'], k: 3 });
+    settings.setTopK('all');
+    expect(settings.vampirePreferences.reading_selection!.k).toBeNull();
 
     settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, layered: false });
-    expect(settings.vampirePreferencesForm.value.anaphora_selection).toBe('all');
-    expect(settings.vampirePreferencesForm.value.anaphora_top_k).toBe(1);
+    expect(settings.vampirePreferencesForm.value.reading_selection).toEqual({ criteria: ['surface'], filters: [], k: null });
   });
 
   it('carries the ranker selection through the settings form and restores old sessions with defaults', () => {

@@ -1,4 +1,5 @@
 import { GswbPreferences } from './models/models';
+import { ReadingSelection } from './reading-order';
 
 /** GSWB's outputstyle flag value that selects LFGxDRT semantic rendering (vs. prolog-drt). */
 export const LFGXDRT_OUTPUT_STYLE = 5;
@@ -73,8 +74,7 @@ export const APP_DEFAULTS = {
       model_building: false,
       max_duration: 3,
       layered: false,
-      anaphora_selection: 'all' as const,
-      anaphora_top_k: 1,
+      reading_selection: { criteria: ['surface'], filters: [], k: null } as ReadingSelection,
       anaphora_rankers: ['mlm-pronoun-product'],
       anaphora_averager: 'borda',
     },
@@ -83,8 +83,7 @@ export const APP_DEFAULTS = {
       model_building: false,
       max_duration: 3,
       layered: false,
-      anaphora_selection: 'all' as const,
-      anaphora_top_k: 1,
+      reading_selection: { criteria: ['surface'], filters: [], k: null } as ReadingSelection,
       anaphora_rankers: ['mlm-pronoun-product'],
       anaphora_averager: 'borda',
     },

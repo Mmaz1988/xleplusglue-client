@@ -172,7 +172,7 @@
   <app-toggle-display type="liger" showText="Show settings" hideText="Hide settings">
   <h1>Settings</h1>
   <app-gswb-settings #gswbSettings></app-gswb-settings>
-  <app-inference-settings  #vampirePrefs [showAnaphoraSelection]="true" [showAnaphoraRankers]="true"></app-inference-settings>
+  <app-inference-settings  #vampirePrefs [showReadingSelection]="true" [showAnaphoraRankers]="true"></app-inference-settings>
 
 
     <h3>Ambiguity management:</h3>
@@ -354,12 +354,12 @@
                 No reading for: {{ row.unparsedSentences.join(' / ') }}
               </div>
               <div *ngIf="row.status === 'failed'" class="report-row-note">{{ row.reason }}</div>
-              <div *ngIf="row.data.anaphoraSelection?.mode === 'top_k'" class="report-row-note">
-                <ng-container *ngIf="row.data.anaphoraSelection!.applied; else unranked">
-                  Vampire ran on {{ row.data.anaphoraSelection!.used }} of {{ row.data.anaphoraSelection!.total }} anaphora branches
-                  (top {{ row.data.anaphoraSelection!.k }} mapping{{ row.data.anaphoraSelection!.k === 1 ? '' : 's' }} per reading)
+              <div *ngIf="row.data.readingSelection && (row.data.readingSelection.k !== null || row.data.readingSelection.filters.length)" class="report-row-note">
+                <ng-container *ngIf="row.data.readingSelection.applied; else unranked">
+                  Vampire ran on {{ row.data.readingSelection.used }} of {{ row.data.readingSelection.total }} readings
+                  ({{ describeSelection(row.data.readingSelection) }})
                 </ng-container>
-                <ng-template #unranked>No ranking in time: all {{ row.data.anaphoraSelection!.total }} anaphora branches sent to Vampire</ng-template>
+                <ng-template #unranked>No LM ranking in time: all {{ row.data.readingSelection.total }} readings sent to Vampire</ng-template>
               </div>
             </div>
           </div>

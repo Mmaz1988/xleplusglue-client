@@ -55,10 +55,7 @@ import { InferenceSettingsComponent } from "../inference-interface/inference-set
 import {SemvisDialogComponent} from "../utilities/semvis-dialog/semvis-dialog.component";
 import { APP_DEFAULTS } from '../app-defaults';
 import {
-  ALL_ANAPHORA_BRANCHES,
-  AnaphoraSelectionPolicy,
   anaphoraRankerSelection,
-  anaphoraSelectionPolicy,
   carryAnaphoraRanking,
   compositeAnalysisId,
   selectForVampire,
@@ -68,9 +65,11 @@ import {
   needsAnaphoraRanking,
   parseReasoningAssignmentId,
   readingOf,
+  readingSelectionOf,
   reasoningUpdateId,
   validateReasoningUpdate,
 } from '../analysis-model';
+import { ALL_READINGS, ReadingSelection, describeReadingSelection, normalizedReadingSelection, sameReadingSelection, selectionNeedsRanking } from '../reading-order';
 import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
 import { AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import {
@@ -1509,8 +1508,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       ['Logic type', this.session.lastLogicType || (prefs?.logic_type === 0 ? 'fof' : 'tff')],
       ['Max duration (s)', String(prefs?.max_duration ?? '')],
       ['Model building', String(prefs?.model_building ?? '')],
-      ['Anaphora selection', `${prefs?.anaphora_selection ?? 'all'}`
-        + (prefs?.anaphora_selection === 'top_k' ? ` (k = ${prefs?.anaphora_top_k ?? ''})` : '')],
+      ['Reading selection', describeReadingSelection(readingSelectionOf(prefs))],
       ['Anaphora rankers', (prefs?.anaphora_rankers ?? []).join(', ')],
     ];
     const items = this.inferenceReportRows.map(row => ({
@@ -2848,8 +2846,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     // Fixed for this run: which anaphora branches go to Vampire. The setting can change while
     // the run prepares or afterwards without touching it.
-    this.runAnaphoraSelection = { ...this.anaphoraSelection() };
-    this.runAnaphoraSelectionApplied = {};
+    this.runReadingSelection = this.readingSelection();
+    this.runReadingSelectionApplied = {};
 
     if (Number(this.session.gswbPreferences.outputstyle) !== 5) {
       this.submitVampireRequest(
@@ -2914,16 +2912,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
         const failures: string[] = [...stoppedItems];
         const degradations: string[] = [];
-        const policy = this.runAnaphoraSelection ?? ALL_ANAPHORA_BRANCHES;
+        const selection = this.runReadingSelection ?? ALL_READINGS;
+        const averager = this.anaphoraRankers().averager;
         prepared = prepared.map(pair => {
           const itemBuild = itemBuilds.find(candidate => candidate.itemId === pair.itemId);
           const sequenceId = itemBuild
             ? compositeAnalysisId([...itemBuild.premiseSentenceIds, ...itemBuild.hypothesisSentenceIds]) : '';
-          const discourseUpdate = this.session.analysisDocuments[pair.itemId]?.discourseUpdates
-            ?.find(update => update.id === `du-${sequenceId}`);
-          const selection = selectForVampire(discourseUpdate, pair.assignments, policy);
-          this.runAnaphoraSelectionApplied[pair.itemId] = selection.applied;
-          return { ...pair, assignments: selection.items };
+          const document = this.session.analysisDocuments[pair.itemId];
+          const discourseUpdate = document?.discourseUpdates?.find(update => update.id === `du-${sequenceId}`);
+          if (!document) return pair;
+          const selected = selectForVampire(document, discourseUpdate, pair.assignments, selection, averager);
+          this.runReadingSelectionApplied[pair.itemId] = selected.applied;
+          return { ...pair, assignments: selected.items };
         });
         for (const preparedPair of prepared) {
           failures.push(...preparedPair.failures);
@@ -3026,7 +3026,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           tap(prepared => this.registerDiscourseUpdate(document, build, branches, prepared)),
           // Top-k selects branches before Vampire, so it needs the ranking first. With every
           // branch sent, nothing waits on lm.
-          concatMap(prepared => this.runAnaphoraSelection?.mode === 'top_k'
+          concatMap(prepared => this.runReadingSelection && selectionNeedsRanking(this.runReadingSelection)
             ? this.rankingOf(build.itemId).pipe(map(() => prepared))
             : of(prepared)),
           map(prepared => ({
@@ -3939,10 +3939,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           logicType: this.session.lastLogicType === 'tff' ? 'tff' : 'fof',
           ruleString: this.session.pragmaticsRulesText,
           pruned: this.contextPruning?.nativeElement?.checked ?? false,
-          anaphoraSelection: this.runAnaphoraSelection
-            ? { ...this.runAnaphoraSelection, applied: this.runAnaphoraSelectionApplied[pair.itemId] ?? true }
-            : this.session.analysisDocuments[pair.itemId]?.reasoningUpdates?.find(existing => existing.id === updateId)?.anaphoraSelection
-              ?? { ...ALL_ANAPHORA_BRANCHES },
+          readingSelection: this.runReadingSelection
+            ? { ...this.runReadingSelection, applied: this.runReadingSelectionApplied[pair.itemId] ?? true }
+            : this.session.analysisDocuments[pair.itemId]?.reasoningUpdates?.find(existing => existing.id === updateId)?.readingSelection
+              ?? { ...ALL_READINGS },
           assignments: [],
         });
       }
@@ -4150,7 +4150,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         conclusionIds: testItem?.conclusion ?? [],
         mismatch: (testItem?.gold_label ?? '') !== entailment_label,
         glyphs: glyphs,
-        ...(fromDocument?.anaphoraSelection ? { anaphoraSelection: fromDocument.anaphoraSelection } : {}),
+        ...(fromDocument?.readingSelection ? { readingSelection: fromDocument.readingSelection } : {}),
       });
 
       if (idx[testItem.gold_label] !== undefined && idx[entailment_label] !== undefined) {
@@ -4183,7 +4183,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       `Successful contradiction prediction ratio: ${formatRatio(successful_contradiction_predictions, all_contradiction_predictions)} ` +
       `(${successful_contradiction_predictions} of ${all_contradiction_predictions})\n` +
       `Overall accuracy: ${totalSessionItems === 0 ? 'n/a' : String(totalCorrectItems / totalSessionItems)}\n` +
-      this.anaphoraSelectionSummary();
+      this.readingSelectionSummary();
 
     if (finalSnapshot) {
       this.commitParsedRegressionSnapshot();
@@ -4192,14 +4192,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   /** The selection the current (or last) Vampire run of this page started with, and per item
    *  whether a ranking was there to apply it. */
-  private runAnaphoraSelection: AnaphoraSelectionPolicy | null = null;
+  private runReadingSelection: ReadingSelection | null = null;
   /** The Vampire settings of the current inference run, fixed when it starts. */
   private runVampirePreferences: VampirePreferences | null = null;
-  private runAnaphoraSelectionApplied: Record<string, boolean> = {};
+  private runReadingSelectionApplied: Record<string, boolean> = {};
 
   /** The selection the settings ask for -- applied to the next run, not to existing verdicts. */
-  private anaphoraSelection(): AnaphoraSelectionPolicy {
-    return anaphoraSelectionPolicy(this.vampirePreferences?.vampirePreferences ?? this.session.vampirePreferences);
+  private readingSelection(): ReadingSelection {
+    return readingSelectionOf(this.vampirePreferences?.vampirePreferences ?? this.session.vampirePreferences);
   }
 
   /** The anaphora rankers the settings ask for -- applied to rankings computed from now on. */
@@ -4208,11 +4208,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   /** Every item's verdict as its document records it (its run's selection, or `override`). */
-  private documentInferenceResults(override?: AnaphoraSelectionPolicy): Record<string, RegressionInferenceResult> {
+  private documentInferenceResults(override?: ReadingSelection): Record<string, RegressionInferenceResult> {
     const results: Record<string, RegressionInferenceResult> = {};
+    const averager = this.anaphoraRankers().averager;
     for (const item of this.regressionTestItems) {
       const document = this.session.analysisDocuments[String(item?.id ?? '')];
-      if (document) Object.assign(results, inferenceResultsFromDocument(document, [item], this.sentenceMap, override));
+      if (document) Object.assign(results, inferenceResultsFromDocument(document, [item], this.sentenceMap,
+        override && { selection: override, averager }));
     }
     return results;
   }
@@ -4220,21 +4222,28 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   /** Which branches runs sent to Vampire, and accuracy of the stored results restricted to each
    *  selection -- a comparison only; the report keeps each run's own verdicts. After a top-k run
    *  only the selected branches have results, so the restrictions coincide. */
-  private anaphoraSelectionSummary(): string {
-    const counted = Object.values(this.documentInferenceResults());
-    const topK = counted.find(result => result.anaphoraSelection?.mode === 'top_k')?.anaphoraSelection?.k;
-    const describe = (mode?: string, k?: number) => mode === 'top_k' ? `top ${k}` : 'all';
-    const countedModes = [...new Set(counted.map(result => describe(result.anaphoraSelection?.mode, result.anaphoraSelection?.k)))];
+  /** A recorded selection in a few words, for the report rows. */
+  describeSelection(selection: Partial<ReadingSelection>): string {
+    return describeReadingSelection(selection);
+  }
 
-    const policies: [string, AnaphoraSelectionPolicy][] = [['all', ALL_ANAPHORA_BRANCHES], ['top 1', { mode: 'top_k', k: 1 }]];
-    if (topK && topK > 1) policies.push([`top ${topK}`, { mode: 'top_k', k: topK }]);
-    const parts = policies.map(([name, policy]) => {
-      const results = Object.values(this.documentInferenceResults(policy));
-      return `${name} ${results.filter(result => !result.mismatch).length}/${results.length}`;
+  private readingSelectionSummary(): string {
+    const counted = Object.values(this.documentInferenceResults());
+    const recorded = counted.map(result => normalizedReadingSelection(result.readingSelection ?? ALL_READINGS));
+    const countedModes = [...new Set(recorded.map(describeReadingSelection))];
+
+    const lmTop1: ReadingSelection = { criteria: ['lm'], filters: [], k: 1 };
+    const selections: ReadingSelection[] = [ALL_READINGS, lmTop1];
+    recorded.forEach(selection => {
+      if (!selections.some(known => sameReadingSelection(known, selection))) selections.push(selection);
     });
-    const ranked = Object.values(this.documentInferenceResults({ mode: 'top_k', k: 1 }))
-      .filter(result => result.anaphoraSelection?.applied).length;
-    return `Anaphora branches sent to Vampire: ${countedModes.join(', ') || 'n/a'}. `
+    const parts = selections.map(selection => {
+      const results = Object.values(this.documentInferenceResults(selection));
+      return `${describeReadingSelection(selection)} ${results.filter(result => !result.mismatch).length}/${results.length}`;
+    });
+    const ranked = Object.values(this.documentInferenceResults(lmTop1))
+      .filter(result => result.readingSelection?.applied).length;
+    return `Readings sent to Vampire: ${countedModes.join(', ') || 'n/a'}. `
       + `Same results restricted to each selection: ${parts.join(' · ')} (ranking available for ${ranked} item(s))`;
   }
 

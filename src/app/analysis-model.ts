@@ -7,7 +7,6 @@ import {
   AnaphoraRankerId,
   AnaphoraRankerSelection,
   AnaphoraRanking,
-  AnaphoraSelectionMode,
   DiscourseAnalysis,
   DiscourseUpdate,
   GswbRenderPcdrsRequest,
@@ -29,6 +28,15 @@ import {
   SyntacticAnalysis,
   XlePlusGlueElementRef,
 } from './models/models';
+import {
+  ALL_READINGS,
+  ReadingOrderContext,
+  ReadingSelection,
+  describeReadingSelection,
+  normalizedReadingSelection,
+  selectedReadingIds,
+  selectionNeedsRanking,
+} from './reading-order';
 
 /** Resolves a thin element ref against the document's canonical sentences/sequences
  *  registries. Both SentenceAnalysis and SequenceAnalysis share the syntax/semantics/
@@ -606,68 +614,39 @@ function validateMapping(
     });
   });
 }
-/** `inferenceResults` as a view over the document's reasoning updates.
- *
- *  The label is `majorityVerdict` + `nliLabelFromVerdicts`, which is the same majority rule
- *  and the same label mapping the component applied to Vampire's checks directly -- so
- *  this is a view, not a second opinion. Items with no reasoning update yield nothing;
- *  the caller keeps whatever it computed for those (a non-LFGxDRT run has no updates at
- *  all). Kept here rather than in the component so a stored session can be re-rendered
- *  from the document alone. */
-export interface AnaphoraSelectionPolicy {
-  mode: AnaphoraSelectionMode;
-  k: number;
+/** The selection a session's Vampire preferences ask for; absent: the default, every reading. */
+export function readingSelectionOf(preferences: VampirePreferences | undefined): ReadingSelection {
+  return normalizedReadingSelection(preferences?.reading_selection);
 }
 
-export const ALL_ANAPHORA_BRANCHES: AnaphoraSelectionPolicy = { mode: 'all', k: 1 };
-
-/** The policy a session's Vampire preferences ask for; absent fields mean every branch. */
-export function anaphoraSelectionPolicy(preferences: VampirePreferences | undefined): AnaphoraSelectionPolicy {
-  const k = Math.max(1, Math.floor(Number(preferences?.anaphora_top_k) || 1));
-  return preferences?.anaphora_selection === 'top_k' ? { mode: 'top_k', k } : { ...ALL_ANAPHORA_BRANCHES, k };
+/** What a discourse update's readings are ordered in: the update itself, the scope
+ *  discriminants of the document's sentences, the session's averager. */
+export function discourseOrderContext(
+  document: XlePlusGlueDocument,
+  updates: DiscourseUpdate[],
+  averager: AnaphoraAverager,
+): ReadingOrderContext {
+  return {
+    updates,
+    discriminants: document.sentences.flatMap(sentence => sentence.discriminants ?? []),
+    averager,
+  };
 }
 
-/** The anaphora branch ids that survive `policy`, per reading: within each semantic origin,
- *  every branch whose score is among the k best distinct scores (dense ranks, "1223"). k
- *  counts anaphora mappings, not branches: several branches binding the same way score the
- *  same, and they are kept or dropped together without using up k. Unscored branches rank
- *  after every score.
- *  A reading with no scored branch keeps all of its branches -- the ranking says nothing
- *  about it -- and so does every reading when the update has no ranking. Readings are never
- *  compared with each other: choosing between syntactic or scope readings is not the ranker's
- *  job. */
-export function selectedAnaphoraBranchIds(update: DiscourseUpdate, policy: AnaphoraSelectionPolicy): Set<string> {
-  const ids = new Set(update.discourse.map(branch => branch.id));
-  if (policy.mode === 'all' || !update.anaphoraRanking) return ids;
-
-  const scoreById = new Map(update.anaphoraRanking.branches.map(branch => [branch.discourseId, branch.score]));
-  const origins = [...new Set(update.discourse.map(branch => branch.semanticOrigin))];
-  origins.forEach(origin => {
-    const branches = update.discourse.filter(branch => branch.semanticOrigin === origin);
-    const scores = branches.map(branch => scoreById.get(branch.id) ?? null);
-    const distinct = [...new Set(scores.filter((score): score is number => score !== null))];
-    if (!distinct.length) return;
-    branches.forEach((branch, index) => {
-      const score = scores[index];
-      const rank = score === null ? distinct.length + 1 : 1 + distinct.filter(other => other > score).length;
-      if (rank > policy.k) ids.delete(branch.id);
-    });
-  });
-  return ids;
-}
-
-/** The prepared items (anything carrying the anaphora branch it was built over as `mappingId`)
- *  that a run sends to Vampire under `policy`. An item whose branch is not in `discourseUpdate`
- *  is always sent: there is nothing to rank it by. `applied` is false when top-k was asked for
- *  but the update has no ranking, in which case everything is sent. */
+/** The prepared items (anything carrying the reading it was built over as `mappingId`) that a
+ *  run sends to Vampire under `selection`. An item whose reading is not in `discourseUpdate` is
+ *  always sent: there is nothing to order it by. `applied` is false when the selection needed
+ *  the LM ranking and the update has none, in which case everything is sent. */
 export function selectForVampire<T extends { mappingId?: string }>(
+  document: XlePlusGlueDocument,
   discourseUpdate: DiscourseUpdate | undefined,
   items: T[],
-  policy: AnaphoraSelectionPolicy,
+  selection: ReadingSelection,
+  averager: AnaphoraAverager,
 ): { items: T[]; applied: boolean } {
-  if (policy.mode === 'all') return { items, applied: true };
-  if (!discourseUpdate?.anaphoraRanking) return { items, applied: false };
-  const selected = selectedAnaphoraBranchIds(discourseUpdate, policy);
+  if (!discourseUpdate) return { items, applied: true };
+  if (selectionNeedsRanking(selection) && !discourseUpdate.anaphoraRanking) return { items, applied: false };
+  const selected = new Set(selectedReadingIds(discourseOrderContext(document, [discourseUpdate], averager), selection));
   const known = new Set(discourseUpdate.discourse.map(branch => branch.id));
   return {
     items: items.filter(item => !item.mappingId || !known.has(item.mappingId) || selected.has(item.mappingId)),
@@ -675,26 +654,28 @@ export function selectForVampire<T extends { mappingId?: string }>(
   };
 }
 
-/** The assignments of `update` that survive `policy` -- for comparing stored results under
- *  another selection. An assignment not linked to a discourse branch always survives. */
+/** The assignments of `update` that survive `selection` -- for comparing stored results under
+ *  another selection. An assignment not linked to a discourse reading always survives. */
 export function selectReasoningAssignments(
   document: XlePlusGlueDocument,
   update: ReasoningUpdate,
-  policy: AnaphoraSelectionPolicy,
+  selection: ReadingSelection,
+  averager: AnaphoraAverager,
 ): { assignments: ReasoningAssignment[]; applied: boolean } {
-  if (policy.mode === 'all') return { assignments: update.assignments, applied: true };
-
   const discourseUpdates = new Map((document.discourseUpdates ?? []).map(du => [du.id, du]));
-  const selected = new Map<string, Set<string>>();
-  let applied = false;
+  const selected = new Map<string, Set<string> | null>();
+  let applied = true;
   const assignments = update.assignments.filter(assignment => {
     const discourseUpdate = assignment.discourseUpdateId ? discourseUpdates.get(assignment.discourseUpdateId) : undefined;
     if (!discourseUpdate || !assignment.discourseId) return true;
-    if (discourseUpdate.anaphoraRanking) applied = true;
     if (!selected.has(discourseUpdate.id)) {
-      selected.set(discourseUpdate.id, selectedAnaphoraBranchIds(discourseUpdate, policy));
+      const unranked = selectionNeedsRanking(selection) && !discourseUpdate.anaphoraRanking;
+      if (unranked) applied = false;
+      selected.set(discourseUpdate.id, unranked ? null : new Set(
+        selectedReadingIds(discourseOrderContext(document, [discourseUpdate], averager), selection)));
     }
-    return selected.get(discourseUpdate.id)!.has(assignment.discourseId);
+    const ids = selected.get(discourseUpdate.id);
+    return !ids || ids.has(assignment.discourseId);
   });
   return { assignments, applied };
 }
@@ -710,15 +691,23 @@ function branchCoverage(document: XlePlusGlueDocument, assignments: ReasoningAss
   return { used: new Set(linked.map(assignment => assignment.discourseId!)).size, total };
 }
 
-/** Each item's verdict as its document records it: the majority over the assignments its run
- *  reasoned over (under top-k, only the selected branches have any). `override` instead
- *  evaluates the same stored verdicts as if only `override`'s branches had been sent -- for
- *  comparisons, never for the report. */
+/** `inferenceResults` as a view over the document's reasoning updates.
+ *
+ *  The label is `majorityVerdict` + `nliLabelFromVerdicts`, which is the same majority rule
+ *  and the same label mapping the component applied to Vampire's checks directly -- so
+ *  this is a view, not a second opinion. Items with no reasoning update yield nothing;
+ *  the caller keeps whatever it computed for those (a non-LFGxDRT run has no updates at
+ *  all). Kept here rather than in the component so a stored session can be re-rendered
+ *  from the document alone.
+ *
+ *  Each item's verdict is the majority over the assignments its run reasoned over (only the
+ *  selected readings have any). `override` instead evaluates the same stored verdicts as if
+ *  only `override`'s readings had been sent -- for comparisons, never for the report. */
 export function inferenceResultsFromDocument(
   document: XlePlusGlueDocument | undefined,
   items: any[],
   sentenceMap: Record<string, string>,
-  override?: AnaphoraSelectionPolicy,
+  override?: { selection: ReadingSelection; averager: AnaphoraAverager },
 ): Record<string, RegressionInferenceResult> {
   const results: Record<string, RegressionInferenceResult> = {};
   const updatesById = new Map((document?.reasoningUpdates ?? []).map(update => [update.id, update]));
@@ -727,11 +716,11 @@ export function inferenceResultsFromDocument(
     const itemId = String(item?.id ?? '');
     const update = updatesById.get(`ru-${itemId}`);
     if (!document || !update) continue;
-    const recorded = update.anaphoraSelection ?? ALL_ANAPHORA_BRANCHES;
     const selection = override
-      ? selectReasoningAssignments(document, update, override)
-      : { assignments: update.assignments, applied: update.anaphoraSelection?.applied ?? true };
-    const policy = override ?? recorded;
+      ? selectReasoningAssignments(document, update, override.selection, override.averager)
+      : { assignments: update.assignments, applied: update.readingSelection?.applied ?? true };
+    const { applied: _recordedApplied, ...recorded } = update.readingSelection ?? { ...ALL_READINGS };
+    const used = override?.selection ?? recorded;
     const verdict = majorityVerdict(selection.assignments);
     if (!verdict) continue;
 
@@ -750,9 +739,8 @@ export function inferenceResultsFromDocument(
       conclusionIds: [...update.hypothesisElementIds],
       mismatch: goldLabel !== verdict.label,
       glyphs: [...(verdict.glyphs ?? [])],
-      anaphoraSelection: {
-        mode: policy.mode,
-        k: policy.k,
+      readingSelection: {
+        ...normalizedReadingSelection(used),
         applied: selection.applied,
         ...branchCoverage(document, selection.assignments),
       },
@@ -857,7 +845,7 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   const assignments = (document.reasoningUpdates ?? []).flatMap(update => update.assignments);
   // The branches a run sent to Vampire, verdict or not yet.
   const sentIds = new Set(assignments.filter(assignment => !!assignment.discourseId).map(assignment => assignment.discourseId!));
-  const topK = (document.reasoningUpdates ?? []).find(update => update.anaphoraSelection?.mode === 'top_k')?.anaphoraSelection;
+  const recorded = (document.reasoningUpdates ?? []).find(update => update.readingSelection?.k != null)?.readingSelection;
   const solutions: GswbSolution[] = [];
   const labels: string[] = [];
   const rankings: (AnaphoraRankingTable | null)[] = [];
@@ -885,7 +873,7 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         });
         const verdicts = own.length
           ? `Vampire: ${[...counts].map(([outcome, count]) => `${outcome} ×${count}`).join(', ')}`
-          : topK && sentIds.size ? `not sent to Vampire (top ${topK.k} mapping${topK.k === 1 ? '' : 's'} per reading)` : 'no reasoning over this branch';
+          : recorded && sentIds.size ? `not sent to Vampire (${describeReadingSelection(recorded)})` : 'no reasoning over this branch';
 
         // `semantic` is what the dialog's Collapse sends to GSWB: the PCDRS with its A:/P:.
         solutions.push({ id: branch.id, solution: branch.drsString, semantic: branch.drsString } as GswbSolution);

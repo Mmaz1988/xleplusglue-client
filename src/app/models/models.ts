@@ -1,4 +1,5 @@
 import type { AnaphoraRankingTable } from '../analysis-model';
+import type { ReadingSelection } from '../reading-order';
 import { SafeHtml } from '@angular/platform-browser';
 import { RegressionRunReport, emptyRunReport } from '../regression-testing-interface/run-report';
 
@@ -475,11 +476,11 @@ export interface ReasoningUpdate {
   logicType: 'fof' | 'tff';
   ruleString?: string;               // NLI post-processing rules applied, for reproducibility
   pruned?: boolean;                  // true when only the first candidate was reasoned over
-  /** Which anaphora branches this run sent to Vampire, as set when the run started (see
-   *  VampirePreferences.anaphora_selection). Absent: every branch. Under top-k, `assignments`
-   *  holds only the selected branches; `applied` is false when no ranking was available in
-   *  time and every branch was sent. */
-  anaphoraSelection?: { mode: AnaphoraSelectionMode; k: number; applied?: boolean };
+  /** Which readings this run sent to Vampire, as set when the run started (see
+   *  VampirePreferences.reading_selection). Absent: every reading. `assignments` holds only
+   *  the selected readings; `applied` is false when the selection needed the LM ranking and
+   *  none was available in time, so every reading was sent. */
+  readingSelection?: ReadingSelection & { applied?: boolean };
   assignments: ReasoningAssignment[];
   verdict?: ReasoningItemVerdict;    // majority vote across assignments
   failure?: string;
@@ -892,10 +893,10 @@ export interface RegressionInferenceResult {
   conclusionIds: string[];
   mismatch: boolean;
   glyphs: string[];
-  /** Which anaphora branches were reasoned over (see VampirePreferences.anaphora_selection):
-   *  `used` of the item's `total` discourse branches. `applied` is false when top-k was asked
-   *  for but there was no ranking to select by, so every branch was used. */
-  anaphoraSelection?: { mode: AnaphoraSelectionMode; k: number; applied: boolean; used: number; total: number };
+  /** Which readings were reasoned over (see VampirePreferences.reading_selection): `used` of
+   *  the item's `total` discourse readings. `applied` is false when the selection needed the LM
+   *  ranking and there was none, so every reading was used. */
+  readingSelection?: ReadingSelection & { applied: boolean; used: number; total: number };
 }
 
 /** One line of the inference report: an NLI item, and whatever is known about it so far.
@@ -1497,8 +1498,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
       model_building: true,
       max_duration: 10,
       layered: false,
-      anaphora_selection: 'all',
-      anaphora_top_k: 1,
+      reading_selection: { criteria: ['surface'], filters: [], k: null },
       anaphora_rankers: ['mlm-pronoun-product'],
       anaphora_averager: 'borda',
     },
@@ -1543,20 +1543,17 @@ export interface VampirePreferences {
   model_building: boolean;
   max_duration: number;
   layered: boolean; //Processes with and without additional axioms
-  /** Which anaphora branches the NEXT Vampire run sends to Vampire. 'all' (the default, and what a
-   *  session saved without this field means): every formally generated branch. 'top_k': per
-   *  reading, only the branches binding one of the `anaphora_top_k` best-ranked anaphora mappings
-   *  (branches binding the same way share a rank; see selectedAnaphoraBranchIds); the others are
-   *  never reasoned over. Recorded on the run's ReasoningUpdates. */
-  anaphora_selection?: AnaphoraSelectionMode;
-  anaphora_top_k?: number;
+  /** Which readings of a discourse the NEXT Vampire run sends to Vampire, unless the discourse
+   *  has its own selection (N4 6d): the global order by the checked criteria, the filtered
+   *  readings removed, the first k places (`selectedReadingIds`). Absent: the default, every
+   *  reading. Recorded on the run's ReasoningUpdates. */
+  reading_selection?: ReadingSelection;
   /** The anaphora rankers to run, selected ones only, in priority order; and the averager that
    *  fuses them. Absent (sessions saved before): APP_DEFAULTS.anaphoraRanking. */
   anaphora_rankers?: string[];
   anaphora_averager?: string;
 }
 
-export type AnaphoraSelectionMode = 'all' | 'top_k';
 
 
 export interface GrammarList {

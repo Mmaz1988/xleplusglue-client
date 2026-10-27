@@ -44,16 +44,37 @@
     </label>
   </div>
 
-  <div *ngIf="showAnaphoraSelection" class="anaphora-selection">
-    <label for="anaphora-selection">Anaphora branches:</label>
-    <select formControlName="anaphora_selection" id="anaphora-selection" name="anaphora-selection">
-      <option value="all">all</option>
-      <option value="top_k" title="Per reading: every branch binding one of the k best-ranked anaphora mappings">top k mappings</option>
-    </select>
-    <label *ngIf="vampirePreferencesForm.value.anaphora_selection === 'top_k'" for="anaphora-top-k">
-      k:
-      <input type="number" min="1" step="1" formControlName="anaphora_top_k" id="anaphora-top-k" name="anaphora-top-k">
-    </label>
+  <div *ngIf="showReadingSelection" class="reading-selection">
+    <div class="reading-selection-title"
+         title="Which readings of a discourse go to Vampire, unless the discourse has its own selection in its sem view: ordered by the checked criteria, the hidden readings removed, then the first k places (tied readings stay together).">
+      Readings sent to Vampire ⓘ
+    </div>
+    <div class="reading-selection-group">
+      <span [title]="orderHint">Order by:</span>
+      <label *ngFor="let criterion of criteria" [title]="criterionHints[criterion]">
+        <input type="checkbox" [checked]="readingSelection.criteria.includes(criterion)" (change)="toggleCriterion(criterion)">
+        {{ criterionLabels[criterion] }}
+      </label>
+    </div>
+    <div class="reading-selection-group">
+      <span>Hide:</span>
+      <label *ngFor="let filter of filters" [title]="filterHints[filter]">
+        <input type="checkbox" [checked]="readingSelection.filters.includes(filter)" (change)="toggleFilter(filter)">
+        {{ filterLabels[filter] }}
+      </label>
+    </div>
+    <div class="reading-selection-group">
+      <label for="reading-top-k" title="Places, not readings: readings tied on a place stay together.">Send:</label>
+      <select id="reading-top-k" [value]="readingSelection.k === null ? 'all' : 'top'"
+              (change)="setTopK($any($event.target).value === 'all' ? 'all' : '1')">
+        <option value="all">all readings</option>
+        <option value="top">the first k places</option>
+      </select>
+      <label *ngIf="readingSelection.k !== null">
+        k:
+        <input type="number" min="1" step="1" [value]="readingSelection.k" (change)="setTopK($any($event.target).value)">
+      </label>
+    </div>
   </div>
 
   <div *ngIf="showAnaphoraRankers" class="anaphora-rankers">

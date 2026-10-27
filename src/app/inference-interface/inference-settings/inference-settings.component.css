@@ -23,6 +23,22 @@ input[type="submit"] {
   margin-right: 5px;
 }
 
-.anaphora-selection input[type="number"] {
+.reading-selection input[type="number"] {
   width: 4rem;
+}
+
+.reading-selection-title {
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.reading-selection-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.reading-selection-group select {
+  width: auto;
 }

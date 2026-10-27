@@ -37,13 +37,14 @@ import {
   needsAnaphoraRanking,
   readingDisplay,
   readingOf,
+  readingSelectionOf,
   reasoningUpdateId,
   validateAnalysisDocument,
   validateReasoningUpdate
 } from '../../analysis-model';
 import { MappingWithStructure, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 import { PcdrsReading, discourseUpdateOf } from '../../document-builder/pcdrs-readings';
-import { ReadingOrderContext } from '../../reading-order';
+import { ReadingOrderContext, describeReadingSelection } from '../../reading-order';
 import { AnaphoraRankingService } from '../../reasoning/anaphora-ranking.service';
 import {
   DerivedSentence,
@@ -171,7 +172,7 @@ export class ChatComponent {
       ['Logic', prefs.logic_type === 0 ? 'fof' : 'tff'],
       ['Max duration', `${prefs.max_duration ?? ''}s`],
       ['Model building', prefs.model_building ? 'on' : 'off'],
-      ['Anaphora branches', prefs.anaphora_selection === 'top_k' ? `top ${prefs.anaphora_top_k ?? ''}` : 'all'],
+      ['Readings', describeReadingSelection(readingSelectionOf(prefs))],
     ];
     if (prefs.anaphora_rankers?.length) {
       rows.push(['Rankers', prefs.anaphora_rankers.join(', ')]);
