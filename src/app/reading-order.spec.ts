@@ -4,6 +4,8 @@ import {
   compareProfiles,
   globalLmScores,
   globalReadingOrder,
+  normalizedReadingSelection,
+  selectedReadingIds,
   surfaceAgainst,
   surfaceAgainstCounts,
 } from './reading-order';
@@ -192,6 +194,53 @@ describe('reading order', () => {
       const borda = order(discourse, ['surface', 'pronouns'], { discriminants, averager: 'borda' });
       expect(weighted).toEqual(borda);
       expect(weighted.map(entry => entry.place)).toEqual([1, 1]);
+    });
+  });
+
+  describe('selection', () => {
+    const select = (discourse: DiscourseAnalysis[], selection: any) => selectedReadingIds(
+      { updates: [update(discourse)], discriminants: [], averager: 'borda' },
+      normalizedReadingSelection(selection));
+
+    const discourse = [
+      reading('p1', 's0', profile([0, 1, 0])),
+      reading('p2', 's0', profile([1, 0, 0])),
+      reading('p3', 's1', profile([0, 1, 0])),
+      reading('p4', 's1', profile([0, 0, 1])),
+    ];
+
+    it('keeps every reading tied on the k-th place', () => {
+      expect(select(discourse, { criteria: ['pronouns'], filters: [], k: 1 })).toEqual(['p2']);
+      expect(select(discourse, { criteria: ['pronouns'], filters: [], k: 2 })).toEqual(['p2', 'p1', 'p3']);
+    });
+
+    it('selects every reading, best first, without k', () => {
+      expect(select(discourse, { criteria: ['pronouns'], filters: [], k: null })).toEqual(['p2', 'p1', 'p3', 'p4']);
+    });
+
+    it('never selects a filtered reading, and counts k over the rest', () => {
+      // p2 is the only reading on place 1 and has no unbound pronoun; p4 has one.
+      expect(select(discourse, { criteria: ['pronouns'], filters: ['unbound'], k: null }))
+        .toEqual(['p2', 'p1', 'p3']);
+      const accommodated = [
+        reading('a1', 's0', profile([1, 0, 0], [0, 0, 0], [1, 0, 0])),
+        reading('a2', 's0', profile([0, 1, 0])),
+        reading('a3', 's0', profile([0, 0, 1])),
+      ];
+      // a1 is best but hidden, so the first place left is a2's.
+      expect(select(accommodated, { criteria: ['pronouns'], filters: ['accommodated'], k: 1 })).toEqual(['a2']);
+    });
+
+    it('selects nothing when every reading is filtered', () => {
+      expect(select([reading('p4', 's1', profile([0, 0, 1]))], { criteria: [], filters: ['unbound'], k: 1 }))
+        .toEqual([]);
+    });
+
+    it('normalizes a stored selection', () => {
+      expect(normalizedReadingSelection(undefined)).toEqual({ criteria: ['surface'], filters: [], k: null });
+      expect(normalizedReadingSelection({ criteria: ['lm', 'bogus' as any, 'surface'], filters: ['unbound'], k: 2.7 }))
+        .toEqual({ criteria: ['surface', 'lm'], filters: ['unbound'], k: 2 });
+      expect(normalizedReadingSelection({ criteria: [], filters: [], k: 0 })).toEqual({ criteria: [], filters: [], k: 1 });
     });
   });
 });

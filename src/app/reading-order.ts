@@ -24,7 +24,8 @@ export interface ReadingOrderContext {
   averager: AnaphoraAverager;
 }
 
-/** The display filters (N4): they hide readings, never change what reaches Vampire. */
+/** The reading filters (N4): they hide readings; a hidden reading is never in the top k
+ *  (`selectedReadingIds`). */
 export const READING_FILTERS = ['unbound', 'accommodated'] as const;
 export type ReadingFilter = typeof READING_FILTERS[number];
 
@@ -227,4 +228,60 @@ export function globalReadingOrder(request: ReadingOrderContext & {
     if (position === 0 || sorted[position - 1].score - entry.score > EPSILON) place++;
     return { id: entry.id, place, score: entry.score };
   });
+}
+
+/** Which of a discourse's readings go to Vampire (N4 6d): ordered by the checked criteria, the
+ *  filtered ones removed, then the readings on the first k places. The session's default
+ *  (VampirePreferences.reading_selection); a discourse may have its own. */
+export interface ReadingSelection {
+  criteria: ReadingCriterion[];
+  filters: ReadingFilter[];
+  /** Places, not readings: tied readings stay together. Null: every reading. */
+  k: number | null;
+}
+
+/** Surface alignment checked, no filter, every reading. */
+export const DEFAULT_READING_SELECTION: ReadingSelection = { criteria: ['surface'], filters: [], k: null };
+
+/** A selection with known criteria and filters and a positive whole k, or null; anything else
+ *  in a stored selection is dropped. */
+export function normalizedReadingSelection(selection: Partial<ReadingSelection> | null | undefined): ReadingSelection {
+  if (!selection) return { ...DEFAULT_READING_SELECTION };
+  const k = Number(selection.k);
+  return {
+    criteria: READING_CRITERIA.filter(criterion => (selection.criteria ?? []).includes(criterion)),
+    filters: READING_FILTERS.filter(filter => (selection.filters ?? []).includes(filter)),
+    k: selection.k === null || selection.k === undefined || !Number.isFinite(k) ? null : Math.max(1, Math.floor(k)),
+  };
+}
+
+/** Whether two selections select the same way. */
+export function sameReadingSelection(a: ReadingSelection, b: ReadingSelection): boolean {
+  const left = normalizedReadingSelection(a);
+  const right = normalizedReadingSelection(b);
+  return left.k === right.k
+    && left.criteria.join() === right.criteria.join()
+    && left.filters.join() === right.filters.join();
+}
+
+/** Whether the selection needs the LM ranking: it orders by it and cuts at k. */
+export function selectionNeedsRanking(selection: ReadingSelection): boolean {
+  return selection.k !== null && selection.criteria.includes('lm');
+}
+
+/** The ids of the readings `selection` sends to Vampire, best first. Filtered readings are
+ *  dropped before counting, so k counts the places of the readings that remain; readings
+ *  tied on the k-th place all stay. */
+export function selectedReadingIds(context: ReadingOrderContext, selection: ReadingSelection): string[] {
+  const readings = new Map(context.updates.flatMap(update => update.discourse).map(reading => [reading.id, reading]));
+  const visible = globalReadingOrder({ ...context, criteria: selection.criteria })
+    .filter(place => !selection.filters.some(filter => hiddenByFilter(readings.get(place.id)!, filter)));
+  if (selection.k === null) return visible.map(place => place.id);
+  const kept: string[] = [];
+  let places = 0;
+  visible.forEach((place, index) => {
+    if (index === 0 || visible[index - 1].place !== place.place) places++;
+    if (places <= selection.k!) kept.push(place.id);
+  });
+  return kept;
 }
