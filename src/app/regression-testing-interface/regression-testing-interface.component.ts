@@ -66,6 +66,7 @@ import {
   parseReasoningAssignmentId,
   readingOf,
   readingSelectionOf,
+  readingsAllowedByDiscriminants,
   readingsForReasoning,
   reasoningUpdateId,
   sentenceReadingIdsOf,
@@ -3122,10 +3123,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       concatMap(() => {
         const document = this.session.analysisDocuments[build.itemId];
         const update = stored()!;
-        const allowed = useDisambiguated
-          ? new Set(sentenceIds.flatMap(sentenceId => this.selectedSolutions(sentenceId, gswbOutputs, true)
-            .map(solution => readingOf(solution).semId)))
-          : undefined;
+        const allowed = useDisambiguated ? this.selectedSentenceReadings(sentenceIds, gswbOutputs) : undefined;
         const { readings, selection, applied } = readingsForReasoning(
           document, update, fallback, this.anaphoraRankers().averager, allowed);
         this.runReadingSelectionByItem[build.itemId] = { selection, applied };
@@ -3161,6 +3159,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         } as PreparedNliPair);
       })
     );
+  }
+
+  /** The sentence readings the discriminant selection keeps, over `sentenceIds`. */
+  private selectedSentenceReadings(sentenceIds: string[], gswbOutputs: Record<string, GswbOutput>): Set<string> {
+    return new Set(sentenceIds.flatMap(sentenceId => this.selectedSolutions(sentenceId, gswbOutputs, true)
+      .map(solution => readingOf(solution).semId)));
   }
 
   /** The checks of the selected readings of one semantic reading of the item's sequence.
@@ -3292,6 +3296,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       syntax: [...syntaxById.values()],
       semantics: entries.map(entry => entry.semantic),
       synSemMapping,
+      // What the surface ordering reads, as analysis and chat store them.
+      discriminants: gswbOutputs[sentenceId]?.discriminants ?? [],
     }]);
     return entries;
   }
@@ -4884,6 +4890,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const document = this.session.analysisDocuments[itemId];
     if (!document || this.discourseDialogLoadingItemId) return;
     const { solutions, labels, rankings, render, counted } = discourseBranchesForDisplay(document);
+    const narrowTo = this.discriminantNarrowing(itemId, document);
     const open = (items: GswbSolution[], svgSolutions: boolean, itemLabels: string[]) => this.discourseDialog.open({
       sentenceId: itemId,
       title: `Discourses — ${itemId}`,
@@ -4900,6 +4907,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       },
       // Opens on what the run sent to Vampire; the checkbox shows every branch.
       ...(counted ? { filter: { ids: counted, label: 'Only branches sent to Vampire' } } : {}),
+      // Hidden as a sentence's discriminants hide its readings; the counter keeps the total.
+      ...(narrowTo ? { narrowTo } : {}),
     });
 
     this.discourseDialogLoadingItemId = itemId;
@@ -4921,6 +4930,18 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         open(solutions, false, labels);
       },
     });
+  }
+
+  /** The discourse readings of an item the session's discriminant selection keeps, or null
+   *  when it keeps all of them. */
+  private discriminantNarrowing(itemId: string, document: XlePlusGlueDocument): string[] | null {
+    const item = this.regressionTestItems.find(candidate => String(candidate?.id ?? '') === itemId);
+    const outputs = this.session.lastGswbOutputs;
+    if (!item || !outputs) return null;
+    const allowed = this.selectedSentenceReadings([...(item.premises ?? []), ...(item.conclusion ?? [])], outputs);
+    const updates = document.discourseUpdates ?? [];
+    const kept = updates.flatMap(update => readingsAllowedByDiscriminants(update, allowed).map(reading => reading.id));
+    return kept.length === updates.reduce((sum, update) => sum + update.discourse.length, 0) ? null : kept;
   }
 
   /** An item's premises and hypothesis, one per line, for a dialog header. */

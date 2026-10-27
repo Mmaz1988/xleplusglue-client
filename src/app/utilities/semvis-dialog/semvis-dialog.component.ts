@@ -27,6 +27,9 @@ export class SemvisDialogComponent {
   filterIds: string[] | null = null;
   filterLabel = '';
   filterActive = false;
+  /** Ids the items are always narrowed to (the discriminant selection); null: no narrowing.
+   *  The counter's total still counts every item, as for a sentence's discriminants. */
+  narrowIds: string[] | null = null;
 
   open(payload: {
     sentenceId: string;
@@ -45,6 +48,8 @@ export class SemvisDialogComponent {
     subtitle?: string;
     /** When given, the dialog opens showing only these items, with a checkbox to show all. */
     filter?: { ids: string[]; label: string };
+    /** When given, only these items are shown, whatever the checkbox says. */
+    narrowTo?: string[];
     /** Offers the sem-vis's Collapse for LFGxDRT items with presuppositions or anaphora. */
     collapsible?: boolean;
     /** The discourse the items are PCDRS readings of, for the reading order and filters. */
@@ -56,6 +61,7 @@ export class SemvisDialogComponent {
     this.filterIds = payload.filter ? [...payload.filter.ids] : null;
     this.filterLabel = payload.filter?.label ?? '';
     this.filterActive = !!payload.filter;
+    this.narrowIds = payload.narrowTo ? [...payload.narrowTo] : null;
     this.dialog.nativeElement.show();
 
     const items = Array.isArray(payload.items) ? payload.items : [];
@@ -94,7 +100,7 @@ export class SemvisDialogComponent {
         this.semVis.setItems(items, startIndex);
 
       // restore selection and re-filter
-      this.semVis.setItemFilter(this.filterActive ? this.filterIds : null);
+      this.semVis.setItemFilter(this.itemFilter());
       this.semVis.setSelectedDiscriminants(scopeIds, mcIds);
     }, 0);
   }
@@ -110,7 +116,16 @@ export class SemvisDialogComponent {
 
   toggleFilter(active: boolean): void {
     this.filterActive = active;
-    this.semVis?.setItemFilter(active ? this.filterIds : null);
+    this.semVis?.setItemFilter(this.itemFilter());
+  }
+
+  /** The narrowing, then the checkbox's filter within it. */
+  private itemFilter(): string[] | null {
+    const filter = this.filterActive ? this.filterIds : null;
+    if (!this.narrowIds) return filter;
+    if (!filter) return this.narrowIds;
+    const kept = new Set(filter);
+    return this.narrowIds.filter(id => kept.has(id));
   }
 
   close(): void {

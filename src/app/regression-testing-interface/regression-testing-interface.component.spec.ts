@@ -372,6 +372,19 @@ describe('RegressionTestingInterfaceComponent', () => {
     });
   });
 
+  it('stores each sentence\'s discriminants in the item document, for the surface ordering', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    mockChainEndpoints(dataServiceSpy);
+    const scoping = [{ id: 'sc0', type: 'scope', surfaceAligned: true, associatedSolutions: ['S2-sol-1'] }];
+    (component.session.lastGswbOutputs as any).S2.discriminants = scoping;
+
+    (component as any).buildItemDiscourse(itemBuild(), component.session.lastGswbOutputs).subscribe(() => {
+      const sentences = component.session.analysisDocuments['n1'].sentences;
+      expect(sentences.map(sentence => sentence.discriminants)).toEqual([[], scoping as any, []]);
+      done();
+    });
+  });
+
   it('builds the discourse first for an item that has none stored, and counts it', done => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
@@ -1489,6 +1502,32 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(payload.itemLabels[0]).toContain('rank 1');
         expect(component.discourseDialogLoadingItemId).toBeNull();
         expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
+      });
+
+      it('hides the readings the discriminant selection rules out, as for a sentence', () => {
+        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
+          solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
+        }));
+        document.discourseUpdates[0].discourse[0].semanticOrigin = 'S0-s0+S1-s0';
+        document.discourseUpdates[0].discourse[1].semanticOrigin = 'S0-s0+S1-s1';
+        component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
+        const reading = (id: string) => derived({ id, semantic: 'p', graph: {} });
+        component.session.lastGswbOutputs = {
+          S0: { solutions: [reading('S0-s0')], log: '', derivation: null, discriminants: [] },
+          S1: { solutions: [reading('S1-s0'), reading('S1-s1')], log: '', derivation: null, discriminants: [] },
+        } as any;
+        component.session.gswbPreferences.outputstyle = 5;
+
+        component.session.selectedSolutionIdsBySentence = { S0: ['S0-s0'], S1: ['S1-s0', 'S1-s1'] };
+        component.openDiscourseDialog('n0');
+        expect(open.calls.mostRecent().args[0].narrowTo).toBeUndefined();
+
+        component.session.selectedSolutionIdsBySentence = { S0: ['S0-s0'], S1: ['S1-s0'] };
+        component.openDiscourseDialog('n0');
+        const payload = open.calls.mostRecent().args[0];
+        expect(payload.narrowTo).toEqual(['pcdrs-1']);
+        // Every reading is still handed over, so the counter's total counts them all.
+        expect(payload.items.length).toBe(2);
       });
 
       it('opens on the branches the run sent to Vampire', () => {

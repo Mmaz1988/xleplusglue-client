@@ -350,6 +350,23 @@ describe('anaphora branch selection for verdicts', () => {
     expect(result.selection).toEqual(lmTop(2));
   });
 
+  it('takes the surface-aligned scoping at top 1, from the discriminants the document stores', () => {
+    // "Every Swede is a Scandinavian" after "A Swede won a Nobel prize": two scopings of S1,
+    // one PCDRS reading each, nothing else to tell them apart.
+    const discourse = update([
+      branch('r-surface', [], 'S0-s0+S1-s0'), branch('r-inverse', [], 'S0-s0+S1-s1'),
+    ]);
+    const document = documentWith(discourse);
+    const surfaceTop1: ReadingSelection = { criteria: ['surface', 'binding'], filters: [], k: 1 };
+    // Without the discriminants surface is neutral: both share place 1.
+    expect(idsOf(readingsForReasoning(document, discourse, surfaceTop1, 'borda')).length).toBe(2);
+    document.sentences[0].discriminants = [
+      { id: 'sc0', type: 'scope', surfaceAligned: true, associatedSolutions: ['S1-s0'] },
+      { id: 'sc1', type: 'scope', surfaceAligned: false, associatedSolutions: ['S1-s1'] },
+    ] as any;
+    expect(idsOf(readingsForReasoning(document, discourse, surfaceTop1, 'borda'))).toEqual(['r-surface']);
+  });
+
   it('narrows by the discriminants first: the top k is taken over what they leave', () => {
     const multi = (id: string, origin: string, antecedent: string) => branch(id, [['x4', antecedent]], origin);
     const discourse = {

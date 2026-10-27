@@ -639,6 +639,17 @@ export function sentenceReadingIdsOf(reading: Pick<DiscourseAnalysis, 'semanticO
   return reading.semanticOrigin.split('+');
 }
 
+/** The readings of `update` the discriminant selection leaves: those each of whose sentence
+ *  readings is in `allowedSentenceReadings` (absent: every reading). The discourse-level
+ *  counterpart of a sentence's discriminant narrowing, through the composite semIds. */
+export function readingsAllowedByDiscriminants(
+  update: DiscourseUpdate,
+  allowedSentenceReadings?: Set<string>,
+): DiscourseAnalysis[] {
+  return !allowedSentenceReadings ? update.discourse : update.discourse.filter(reading =>
+    sentenceReadingIdsOf(reading).every(id => allowedSentenceReadings.has(id)));
+}
+
 /** The readings of `update` a run reasons over (N4 6d step 2), best first. First the
  *  discriminant selection: a reading survives when each of its sentence readings is in
  *  `allowedSentenceReadings` (absent: no narrowing). Then the discourse's own selection, or
@@ -653,11 +664,7 @@ export function readingsForReasoning(
   allowedSentenceReadings?: Set<string>,
 ): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
   const selection = normalizedReadingSelection(update.readingSelection ?? fallback);
-  const narrowed: DiscourseUpdate = !allowedSentenceReadings ? update : {
-    ...update,
-    discourse: update.discourse.filter(reading =>
-      sentenceReadingIdsOf(reading).every(id => allowedSentenceReadings.has(id))),
-  };
+  const narrowed: DiscourseUpdate = { ...update, discourse: readingsAllowedByDiscriminants(update, allowedSentenceReadings) };
   if (selectionNeedsRanking(selection) && !update.anaphoraRanking) {
     return { readings: narrowed.discourse, selection, applied: false };
   }
