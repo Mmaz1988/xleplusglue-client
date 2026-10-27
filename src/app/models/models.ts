@@ -1025,11 +1025,12 @@ export interface RegressionSessionSaveState {
   sortedMCmap: Record<string, any>;
 }
 
-/** v4 holds one XlePlusGlueDocument per NLI item under `analysis.documents`; v3 had a
- *  single session-wide document under `analysis.document`; v2 had the three parallel
- *  result arrays alone. The store (Redis/redis_store.py) dispatches on this on read: an
- *  older session is upgraded in memory and flagged `upgradedFrom`, a newer one is refused. */
-export const REGRESSION_SESSION_SCHEMA_VERSION = 5;
+/** v6 records the reading selection (`reading_selection`, `readingSelection`) where v5 had
+ *  the anaphora selection; v5 dropped v4's derived joins from the pragmatic layer; v4 holds
+ *  one XlePlusGlueDocument per NLI item under `analysis.documents`. The store
+ *  (Redis/redis_store.py) dispatches on this: a v5 session is upgraded to v6 on read and on
+ *  write, anything else is refused. */
+export const REGRESSION_SESSION_SCHEMA_VERSION = 6;
 
 export interface RegressionSessionDocument {
   schemaVersion: typeof REGRESSION_SESSION_SCHEMA_VERSION;

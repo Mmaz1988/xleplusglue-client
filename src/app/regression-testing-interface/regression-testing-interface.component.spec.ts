@@ -1872,7 +1872,7 @@ describe('RegressionTestingInterfaceComponent', () => {
 
     it('reports a loaded session', () => {
       dataServiceSpy.loadRegressionSession.and.returnValue(of({
-        schemaVersion: 5, metadata: { id: 'stored', redisSessionKey: 'stored' },
+        schemaVersion: 6, metadata: { id: 'stored', redisSessionKey: 'stored' },
         inputs: {}, analysis: {},
       } as any));
 

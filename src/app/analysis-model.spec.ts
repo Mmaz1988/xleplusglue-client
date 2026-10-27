@@ -431,7 +431,7 @@ describe('analysis model helpers', () => {
       };
 
       const stored = regressionSessionToDocument(session);
-      expect(stored.schemaVersion).toBe(5);
+      expect(stored.schemaVersion).toBe(6);
       expect(stored.analysis.documents['n3'].reasoningUpdates!.length).toBe(1);
 
       const restored = regressionDocumentToSession(stored);
