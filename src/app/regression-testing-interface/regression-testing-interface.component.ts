@@ -296,6 +296,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private writeSnapshot: ParsedRegressionRunSnapshot | null = null;
   private appendSnapshot: ParsedRegressionRunSnapshot | null = null;
   private appendUpdatedSentenceIds: Set<string> | null = null;
+  /** The sentences the running "reparse selected" parses; null for any other parse. Item
+   *  documents over none of them survive the parse (resetAnalysisDocuments). */
+  private reparsingSentenceIds: Set<string> | null = null;
 
   saveAsSessionName = '';
   testsuiteUpdateMode: 'write' | 'append' = 'write';
@@ -1725,9 +1728,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  item's discourse.
    */
   private resetAnalysisDocuments(): void {
-    // Replaced wholesale rather than merged: a re-parse produces new readings, and an
-    // item's previous document describes readings that no longer exist.
-    this.session.analysisDocuments = {};
+    // Replaced rather than merged: a re-parse produces new readings, and an item's previous
+    // document describes readings that no longer exist. A "reparse selected" keeps the
+    // documents of the items over none of its sentences -- their readings, discourse and
+    // verdicts are still those of the current parse.
+    const reparsed = this.reparsingSentenceIds;
+    if (!reparsed) {
+      this.session.analysisDocuments = {};
+      return;
+    }
+    const untouched = new Set((this.regressionTestItems ?? [])
+      .filter(item => ![...(item?.premises ?? []), ...(item?.conclusion ?? [])]
+        .some((sentenceId: string) => reparsed.has(sentenceId)))
+      .map(item => String(item?.id ?? '')));
+    this.session.analysisDocuments = Object.fromEntries(Object.entries(this.session.analysisDocuments ?? {})
+      .filter(([itemId]) => untouched.has(itemId)));
   }
 
   /** The document for one NLI item (or one sentence, in a parse-only run). Created on
@@ -2379,6 +2394,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.gswbPreferences.onSubmit();
 
     const reparseIds = partial ? this.sentencesToReparse(reparse!) : [];
+    this.reparsingSentenceIds = partial ? new Set(reparseIds) : null;
     if (partial) {
       // Their readings are new: a disambiguation of the old ones names solutions that are gone.
       for (const id of reparseIds) {
@@ -2504,6 +2520,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.commitParsedRegressionSnapshot();
           // Step 1 of every item (N4 6d) is part of the parse; held so an abort stops it.
           this.stopNliPreparation();
+          this.reparsingSentenceIds = null;
           this.nliPreparationSubscription = this.buildParsedDiscourses(parseReport).subscribe(discourseNote => {
             if (gswbRunToken !== this.gswbRunToken) return;
             this.finishParseReport(parseReport, runStartedAt);
@@ -2535,6 +2552,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       },
       error => {
         this.stopGswbSummaryPolling();
+        this.reparsingSentenceIds = null;
         console.error('An error occurred:', error);
         parseReport.phases.forEach(phase => phase.durationMs ??= 0);
         this.finishParseReport(parseReport, runStartedAt,
@@ -2573,6 +2591,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private rederiveInSequenceOutputs(): Observable<string[]> {
     const outputs = { ...(this.session.lastGswbOutputs ?? {}) };
     const sentenceIds = Object.keys(outputs).filter(id => outputs[id]?.derivedInSequence);
+    this.reparsingSentenceIds = null;
     const items: Record<string, GswbRequest> = {};
     for (const id of sentenceIds) {
       const proofs = this.batchProofInputs(id, this.session.lastAnnotations?.[id]);
@@ -2977,18 +2996,24 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   /** Step 1 for every NLI item of a parse (N4 6d), one item at a time: the items whose
-   *  sentences all have a semantics. Resolves to a note for the parse message ('' when there
-   *  is nothing to build). An item that fails is reported here and built again by the next
+   *  sentences all have a semantics and whose discourse is not stored (a "reparse selected"
+   *  keeps the others'). Resolves to a note for the parse message ('' when there is nothing
+   *  to build). An item that fails is reported here and built again by the next
    *  "Run inference". */
   private buildParsedDiscourses(parseReport: ParseReport): Observable<string> {
     const gswbOutputs = this.session.lastGswbOutputs ?? {};
     if (!this.usesLfgxDrt() || !this.session.lastAnnotations) return of('');
-    const builds = (this.regressionTestItems ?? [])
+    let builds = (this.regressionTestItems ?? [])
       .filter(item => [...(item.premises ?? []), ...(item.conclusion ?? [])]
         .every((sentenceId: string) => !gswbOutputs[sentenceId]?.failure && gswbOutputs[sentenceId]?.solutions?.length))
       .map(item => this.nliItemBuild(String(item?.id ?? ''), item.premises ?? [], item.conclusion ?? []))
       .filter((build): build is NliItemBuild => !!build);
-    if (!builds.length) return of('');
+    const stored = (build: NliItemBuild) => !!this.session.analysisDocuments[build.itemId]?.discourseUpdates
+      ?.some(update => update.id === `du-${compositeAnalysisId([...build.premiseSentenceIds, ...build.hypothesisSentenceIds])}`);
+    const kept = builds.filter(stored).length;
+    builds = builds.filter(build => !stored(build));
+    const keptNote = kept ? ` Kept ${kept} item(s) the parse did not touch.` : '';
+    if (!builds.length) return of(keptNote);
     this.displayMessage(`Building the discourses of ${builds.length} item(s) ...`, "blue");
     const endPhase = startPhase(parseReport.phases, PARSE_PHASES.discourses);
     const failed: string[] = [];
@@ -3003,7 +3028,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         endPhase();
         if (failed.length) console.warn('[Regression] some discourses could not be built', failed);
         return ` Built ${builds.length - failed.length} of ${builds.length} discourse(s)`
-          + (failed.length ? `; failed: ${failed.join('; ')}` : '') + '.';
+          + (failed.length ? `; failed: ${failed.join('; ')}` : '') + '.' + keptNote;
       })
     );
   }

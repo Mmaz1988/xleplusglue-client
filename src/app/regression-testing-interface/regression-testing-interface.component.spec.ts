@@ -444,6 +444,21 @@ describe('RegressionTestingInterfaceComponent', () => {
       });
   });
 
+  it('builds at Parse only the discourses that are not stored', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    mockChainEndpoints(dataServiceSpy);
+    component['regressionTestItems'] = [{ id: 'n1', premises: ['S1', 'S2'], conclusion: ['S3'] }];
+
+    (component as any).buildParsedDiscourses({ phases: [] }).subscribe(() => {
+      reasoningPipeline.generateDiscourseMappings.calls.reset();
+      (component as any).buildParsedDiscourses({ phases: [] }).subscribe((note: string) => {
+        expect(reasoningPipeline.generateDiscourseMappings).not.toHaveBeenCalled();
+        expect(note).toBe(' Kept 1 item(s) the parse did not touch.');
+        done();
+      });
+    });
+  });
+
   it('builds every parsed item\'s discourse at Parse, and says how many', done => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
@@ -1372,6 +1387,23 @@ describe('RegressionTestingInterfaceComponent', () => {
 
       (component as any).resetAnalysisDocuments();
 
+      expect(component.session.analysisDocuments).toEqual({});
+    });
+
+    it('keeps, on a reparse of selected sentences, the documents of the items over none of them', () => {
+      component['regressionTestItems'] = [
+        { id: 'n0', premises: ['S0'], conclusion: ['S1'] },
+        { id: 'n1', premises: ['S2'], conclusion: ['S3'] },
+      ];
+      const kept = { id: 'kept' } as any;
+      component.session.analysisDocuments = { n0: { id: 'gone' } as any, n1: kept, S9: {} as any };
+
+      (component as any).reparsingSentenceIds = new Set(['S1']);
+      (component as any).resetAnalysisDocuments();
+      expect(component.session.analysisDocuments).toEqual({ n1: kept });
+
+      (component as any).reparsingSentenceIds = null;
+      (component as any).resetAnalysisDocuments();
       expect(component.session.analysisDocuments).toEqual({});
     });
 
