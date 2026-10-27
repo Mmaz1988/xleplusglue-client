@@ -272,7 +272,8 @@ describe('discourseBranchesForDisplay', () => {
     expect(labels[1]).toContain('reading 1/2 · rank 3');
     expect(labels[1]).toContain('Vampire: failed ×1');
     expect(labels[2]).toContain('reading 2/2');
-    expect(labels[2]).toContain('no reasoning over this branch');
+    expect(labels[2]).not.toContain('Vampire');
+    expect(labels[2]).not.toContain('reasoning');
   });
 
   it('shows the bindings in generation order when there is no ranking', () => {
@@ -280,8 +281,8 @@ describe('discourseBranchesForDisplay', () => {
     const { solutions, labels } = discourseBranchesForDisplay(document);
     expect(solutions.map(solution => solution.id)).toEqual(['b-dog', 'b-none']);
     expect(labels).toEqual([
-      'reading 1/1 · x4 → x2 · no reasoning over this branch',
-      'reading 1/1 · no binding · no reasoning over this branch',
+      'reading 1/1 · x4 → x2',
+      'reading 1/1 · no binding',
     ]);
   });
 });

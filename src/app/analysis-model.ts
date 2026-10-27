@@ -892,11 +892,12 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         });
         const verdicts = own.length
           ? `Vampire: ${[...counts].map(([outcome, count]) => `${outcome} ×${count}`).join(', ')}`
-          : recorded && sentIds.size ? `not sent to Vampire (${describeReadingSelection(recorded)})` : 'no reasoning over this branch';
+          : recorded && sentIds.size ? `not sent to Vampire (${describeReadingSelection(recorded)})` : '';
 
         // `semantic` is what the dialog's Collapse sends to GSWB: the PCDRS with its A:/P:.
         solutions.push({ id: branch.id, solution: branch.drsString, semantic: branch.drsString } as GswbSolution);
-        labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].join(' · '));
+        // Nothing to say about reasoning (no run yet, or no verdict for this branch): left out.
+        labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].filter(part => !!part).join(' · '));
         rankings.push(anaphoraRankingTable(update, branch.id));
         // The stored PCDRS itself, A: and P: inline: its merge chain keeps the sentence
         // dividers (I3), and P: is shown.
