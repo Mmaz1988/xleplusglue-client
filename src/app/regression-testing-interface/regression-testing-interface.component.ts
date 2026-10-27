@@ -84,7 +84,7 @@ import {
 } from '../document-builder/document-builder.service';
 import { LigerWorkspaceService, RuleSetOrigin } from '../liger-workspace/liger-workspace.service';
 import {
-  INFERENCE_PHASES, PARSE_PHASES, ParseReport, RunPhase, addToPhase, reportMarkdown, reportSummary, reportTables, startPhase,
+  DiscourseStepTimings, INFERENCE_PHASES, InferenceReport, PARSE_PHASES, ParseReport, RunPhase, addToPhase, reportMarkdown, reportSummary, reportTables, startPhase,
   timingStats,
 } from './run-report';
 
@@ -1815,7 +1815,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // and the cancel is a round trip it could otherwise finish inside.
     this.vampireRunToken++;
     this.stopNliPreparation();
-    const parse = this.session.report?.parse;
+    const parse = this.runningParseReport;
     if (parse && !parse.finishedAt) {
       parse.phases.forEach(phase => phase.durationMs ??= Date.now() - new Date(phase.startedAt).getTime());
       this.finishParseReport(parse, new Date(parse.startedAt).getTime(), 'aborted');
@@ -1967,7 +1967,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   get hasTimingInfo(): boolean {
-    return !!(this.session.report?.parse || this.session.report?.inference)
+    const report = this.session.report;
+    return !!(report?.parse || report?.inference || report?.rerun?.parse || report?.rerun?.inference)
       || this.session.lastGswbOutputs !== null;
   }
 
@@ -2214,7 +2215,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  testsuite, proofs, and -- read once more from the progress record, which the run may
    *  have finished before the last poll -- Vampire's time per item. */
   private finishInferenceReport(failure?: string): void {
-    const report = this.session.report?.inference;
+    const report = this.runningInferenceReport;
     if (!report || report.finishedAt) return;
     this.endVampirePhase?.();
     this.endVampirePhase = null;
@@ -2239,7 +2240,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       .reduce((sum, checks) => sum + (checks?.length ?? 0), 0);
     this.dataService.getVampireProgress(this.redisSessionKey).subscribe({
       next: progress => {
-        if (this.session.report?.inference !== report) return;
+        if (this.session.report?.inference !== report && this.session.report?.rerun?.inference !== report) return;
         report.vampire = timingStats(progress?.itemTimingsMs ?? {});
         this.scheduleSessionSave();
       },
@@ -2266,6 +2267,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       tables.outcomes.push(['Disambiguated sentences', String(this.disambiguatedSentenceCount)]);
     }
     return tables;
+  }
+
+  /** The last rerun's report as tables; null when there was none since the last full run. */
+  get rerunReport(): ReturnType<typeof reportTables> | null {
+    return this.session.report?.rerun ? reportTables(this.session.report.rerun) : null;
   }
 
   get disambiguatedSentenceCount(): number {
@@ -2340,17 +2346,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (!partial) this.session.testsuiteText = sentences;
     this.syncSessionStateFromUi();
 
-    // A new parse starts a new report; in write mode its inference is gone with its results.
+    // A full parse starts a new main report, without a rerun report; in write mode its
+    // inference is gone with its results. Reparsing selected sentences is a rerun: it starts
+    // a new rerun report and leaves the main report as it is.
     const parseReport: ParseReport = {
       startedAt: new Date(runStartedAt).toISOString(), finishedAt: null, durationMs: null, phases: [],
       parsing: null, composition: null,
       sentences: { total: 0, successful: 0, failedIds: [] },
       items: { total: 0, discourse: 0 },
     };
-    this.session.report = {
-      parse: parseReport,
-      inference: this.testsuiteUpdateMode === 'write' && !partial ? null : this.session.report?.inference ?? null,
-    };
+    this.runningParseReport = parseReport;
+    this.session.report = partial
+      ? { parse: this.session.report?.parse ?? null, inference: this.session.report?.inference ?? null,
+          rerun: { parse: parseReport, inference: null } }
+      : { parse: parseReport, inference: this.testsuiteUpdateMode === 'write' ? null : this.session.report?.inference ?? null,
+          rerun: null };
 
     const gswbRunToken = ++this.gswbRunToken;
 
@@ -2853,19 +2863,23 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       return;
     }
 
-    // This run's report replaces the previous run's.
-    this.session.report = {
-      parse: this.session.report?.parse ?? null,
-      inference: {
-        startedAt: new Date(vampireStartedAt).toISOString(), finishedAt: null, durationMs: null, phases: [],
-        runKind: this.currentVampireRunKind,
-        itemsInRun: this.vampireCurrentRunItemCount,
-        selected: explicitSelection,
-        preparation: null, vampire: null,
-        results: { total: 0, correct: 0, wrong: 0, notParsed: 0, noVerdict: 0 },
-        proofs: 0,
-      },
+    // A full run's report replaces the main report's inference and clears the rerun report;
+    // a run over selected items is a rerun: it replaces the rerun report's inference.
+    const inferenceReport: InferenceReport = {
+      startedAt: new Date(vampireStartedAt).toISOString(), finishedAt: null, durationMs: null, phases: [],
+      runKind: this.currentVampireRunKind,
+      itemsInRun: this.vampireCurrentRunItemCount,
+      selected: explicitSelection,
+      preparation: null, vampire: null,
+      results: { total: 0, correct: 0, wrong: 0, notParsed: 0, noVerdict: 0 },
+      proofs: 0,
     };
+    this.runningInferenceReport = inferenceReport;
+    const report = this.session.report;
+    this.session.report = explicitSelection
+      ? { parse: report?.parse ?? null, inference: report?.inference ?? null,
+          rerun: { parse: report?.rerun?.parse ?? null, inference: inferenceReport } }
+      : { parse: report?.parse ?? null, inference: inferenceReport, rerun: null };
 
     // Fixed for this run: which anaphora branches go to Vampire. The setting can change while
     // the run prepares or afterwards without touching it.
@@ -2906,7 +2920,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // a batch that had not been sent yet, so it cancelled nothing, and the run the user
     // stopped started a few seconds later. 2026-09-08.
     this.nliPreparationSubscription?.unsubscribe();
-    const inferenceReport = this.session.report.inference!;
     const endPreparation = startPhase(inferenceReport.phases, INFERENCE_PHASES.preparation);
     const preparationMs: Record<string, number> = {};
     this.nliPreparationSubscription = from(itemBuilds).pipe(
@@ -3013,15 +3026,24 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.displayMessage(`Building the discourses of ${builds.length} item(s) ...`, "blue");
     const endPhase = startPhase(parseReport.phases, PARSE_PHASES.discourses);
     const failed: string[] = [];
+    // Per item, like parsing and composition: the whole build, and its steps.
+    const itemMs: Record<string, number> = {};
+    const stepTimings = new DiscourseStepTimings();
     return from(builds).pipe(
-      concatMap(build => this.buildItemDiscourse(build, gswbOutputs).pipe(
-        catchError(error => {
-          failed.push(`${build.itemId}: ${error?.message ?? String(error)}`);
-          return of(undefined);
-        }))),
+      concatMap(build => defer(() => {
+        const startedAt = Date.now();
+        return this.buildItemDiscourse(build, gswbOutputs, stepTimings).pipe(
+          catchError(error => {
+            failed.push(`${build.itemId}: ${error?.message ?? String(error)}`);
+            return of(undefined);
+          }),
+          finalize(() => itemMs[build.itemId] = Date.now() - startedAt));
+      })),
       toArray(),
       map(() => {
         endPhase();
+        parseReport.discourses = timingStats(itemMs);
+        parseReport.discourseSteps = stepTimings.stats();
         if (failed.length) console.warn('[Regression] some discourses could not be built', failed);
         return ` Built ${builds.length - failed.length} of ${builds.length} discourse(s)`
           + (failed.length ? `; failed: ${failed.join('; ')}` : '') + '.' + keptNote;
@@ -3037,7 +3059,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  sentence reading is used -- the discriminants narrow at step 2 -- and every PCDRS
    *  reading is stored: the premises sequence, the item's sequence and its DiscourseUpdate,
    *  which is then ranked. Errors when no reading could be generated. */
-  private buildItemDiscourse(build: NliItemBuild, gswbOutputs: Record<string, GswbOutput>): Observable<void> {
+  private buildItemDiscourse(
+    build: NliItemBuild, gswbOutputs: Record<string, GswbOutput>, timings?: DiscourseStepTimings,
+  ): Observable<void> {
     const resolveDrs = !!this.session.gswbPreferences?.resolveDrs;
     // This item's own discourse. Every registration below writes here and nowhere else,
     // so one item's build cannot see or corrupt another's -- see registerAnalysisSentences.
@@ -3056,8 +3080,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       }
       return remaining.reduce(
         (branches$, next) => branches$.pipe(
-          switchMap(branches => this.appendSentenceToBranches(
-            document, branches, next, gswbOutputs, resolveDrs))),
+          switchMap(branches => {
+            const startedAt = Date.now();
+            return this.appendSentenceToBranches(document, branches, next, gswbOutputs, resolveDrs).pipe(
+              tap(() => timings?.add('merge', build.itemId, Date.now() - startedAt)));
+          })),
         of(seed),
       );
     }).pipe(
@@ -3070,7 +3097,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           && branch.sequenceStructure
           ? { semantic: branch.merged.semanticAnalysis, structure: branch.sequenceStructure } : undefined));
         return from(branches).pipe(
-          concatMap((branch, index) => this.branchReadings(build, branch, index)),
+          concatMap((branch, index) => this.branchReadings(build, branch, index, timings)),
           toArray(),
         );
       }),
@@ -3083,7 +3110,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   /** The PCDRS readings of one branch: the post-processing rules over its merged syntax and
    *  semantics, then /generate_pcdrs. A branch that fails is reported, not dropped. */
   private branchReadings(
-    build: NliItemBuild, branch: NliChainBranch, branchIndex: number,
+    build: NliItemBuild, branch: NliChainBranch, branchIndex: number, timings?: DiscourseStepTimings,
   ): Observable<{ readings: PcdrsReading[]; failure?: string }> {
     // Every reading id GSWB mints starts with it.
     const scopeId = `pxq-${build.itemId}-${branchIndex + 1}`;
@@ -3099,6 +3126,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         // Regression stores no SVG: an item's readings are rendered when it is opened
         // (/render_pcdrs).
         includeSvg: false,
+        timing: (step, ms) => timings?.add(step, build.itemId, ms),
       });
     }).pipe(
       map(readings => ({ readings })),
@@ -3543,6 +3571,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   /** Ends the running inference's Vampire phase; set at submission. */
   private endVampirePhase: (() => void) | null = null;
+  /** The reports of the parse and the inference run in flight: in the main report or, for a
+   *  rerun, in the rerun report. */
+  private runningParseReport: ParseReport | null = null;
+  private runningInferenceReport: InferenceReport | null = null;
 
   private submitVampireRequest(
     inference_items: Record<string, nliItem>,
@@ -3602,7 +3634,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.submittedProofBundleCount(vampireRequest));
 
     this.vampireRunInFlight = true;
-    const inferenceReport = this.session.report?.inference;
+    const inferenceReport = this.runningInferenceReport;
     this.endVampirePhase = inferenceReport ? startPhase(inferenceReport.phases, INFERENCE_PHASES.vampire) : null;
 
     // Clear the PREVIOUS run's progress record before polling starts. It is only cleared

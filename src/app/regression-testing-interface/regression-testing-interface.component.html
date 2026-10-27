@@ -245,29 +245,11 @@
       <div class="processing-timing-summary">{{ processingTimingSummary }}<span *ngIf="inferenceFailures.length" class="run-warning"> · inference failed for {{ inferenceFailures.length }} item{{ inferenceFailures.length === 1 ? '' : 's' }}</span></div>
       <app-pill badge="i" variant="content" minimizedColor="#1565c0">
         <div class="run-report">
-          <table *ngIf="runReport.timings.length" class="run-report-timings">
-            <thead>
-              <tr>
-                <th></th><th>Started</th><th>Duration</th><th>Per</th><th>Count</th>
-                <th>Average</th><th>Fastest</th><th>Slowest</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let row of runReport.timings" [class.run-report-phase]="row.phase">
-                <td>{{ row.label }}</td><td>{{ row.started }}</td><td>{{ row.duration }}</td>
-                <td>{{ row.per }}</td><td>{{ row.count }}</td><td>{{ row.average }}</td>
-                <td><ng-container *ngIf="row.fastest">{{ row.fastest.duration }}
-                  <span class="run-report-id">({{ row.fastest.id }})</span></ng-container></td>
-                <td><ng-container *ngIf="row.slowest">{{ row.slowest.duration }}
-                  <span class="run-report-id">({{ row.slowest.id }})</span></ng-container></td>
-              </tr>
-            </tbody>
-          </table>
-          <table *ngIf="runReport.outcomes.length" class="run-report-outcomes">
-            <tr *ngFor="let outcome of runReport.outcomes">
-              <th>{{ outcome[0] }}</th><td>{{ outcome[1] }}</td>
-            </tr>
-          </table>
+          <ng-container *ngTemplateOutlet="reportTablesTemplate; context: { $implicit: runReport }"></ng-container>
+          <ng-container *ngIf="rerunReport as rerun">
+            <div class="run-report-heading">Last rerun</div>
+            <ng-container *ngTemplateOutlet="reportTablesTemplate; context: { $implicit: rerun }"></ng-container>
+          </ng-container>
           <table *ngIf="inferenceFailures.length" class="run-report-failures">
             <caption>Inference failed for {{ inferenceFailures.length }}
               item{{ inferenceFailures.length === 1 ? '' : 's' }}</caption>
@@ -281,6 +263,32 @@
       </app-pill>
     </div>
   </div>
+
+  <ng-template #reportTablesTemplate let-report>
+    <table *ngIf="report.timings.length" class="run-report-timings">
+      <thead>
+        <tr>
+          <th></th><th>Started</th><th>Duration</th><th>Per</th><th>Count</th>
+          <th>Average</th><th>Fastest</th><th>Slowest</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of report.timings" [class.run-report-phase]="row.phase" [class.run-report-part]="row.part">
+          <td>{{ row.label }}</td><td>{{ row.started }}</td><td>{{ row.duration }}</td>
+          <td>{{ row.per }}</td><td>{{ row.count }}</td><td>{{ row.average }}</td>
+          <td><ng-container *ngIf="row.fastest">{{ row.fastest.duration }}
+            <span class="run-report-id">({{ row.fastest.id }})</span></ng-container></td>
+          <td><ng-container *ngIf="row.slowest">{{ row.slowest.duration }}
+            <span class="run-report-id">({{ row.slowest.id }})</span></ng-container></td>
+        </tr>
+      </tbody>
+    </table>
+    <table *ngIf="report.outcomes.length" class="run-report-outcomes">
+      <tr *ngFor="let outcome of report.outcomes">
+        <th>{{ outcome[0] }}</th><td>{{ outcome[1] }}</td>
+      </tr>
+    </table>
+  </ng-template>
 
   <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
   <!-- Separate instance, no selectionChange: its items are discourse branches, not a

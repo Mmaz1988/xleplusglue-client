@@ -1,5 +1,5 @@
 import {
-  INFERENCE_PHASES, PARSE_PHASES, RegressionRunReport, addToPhase, formatDuration, reportMarkdown, reportSummary,
+  DISCOURSE_STEPS, INFERENCE_PHASES, PARSE_PHASES, RegressionRunReport, addToPhase, formatDuration, reportMarkdown, reportSummary,
   reportTables, startPhase, timingStats, totalDurationMs,
 } from './run-report';
 import { createRegressionTestingSession, regressionDocumentToSession, regressionSessionToDocument } from '../models/models';
@@ -75,6 +75,37 @@ describe('run report', () => {
     expect(outcomes).toContain(['Reasoning branches checked', '8']);
   });
 
+  it('tabulates the discourse phase per item, and its steps under it', () => {
+    const withDiscourses = report();
+    withDiscourses.parse!.phases.push({ name: PARSE_PHASES.discourses, startedAt: '2026-10-01T10:00:50.000Z', durationMs: 900 });
+    withDiscourses.parse!.discourses = timingStats({ n0: 400, n1: 500 });
+    withDiscourses.parse!.discourseSteps = {
+      merge: timingStats({ n0: 100, n1: 200 }), rules: timingStats({ n0: 50, n1: 60 }), pcdrs: null,
+    };
+    const { timings } = reportTables(withDiscourses);
+    const rows = timings.map(row => [row.label, !!row.part, row.duration, row.per, row.count]);
+    const at = rows.findIndex(row => row[0] === PARSE_PHASES.discourses);
+    expect(rows.slice(at, at + 3)).toEqual([
+      [PARSE_PHASES.discourses, false, '900ms', 'item', '2'],
+      [DISCOURSE_STEPS.merge, true, '300ms', 'item', '2'],
+      [DISCOURSE_STEPS.rules, true, '110ms', 'item', '2'],
+    ]);
+    expect(rows[at + 3][0]).toBe('Inference');
+  });
+
+  it('shows the last rerun beside the main report', () => {
+    const withRerun: RegressionRunReport = { ...report(), rerun: { parse: null, inference: {
+      ...report().inference!, durationMs: 5000, itemsInRun: 1, selected: true,
+      results: { total: 2, correct: 2, wrong: 0, notParsed: 0, noVerdict: 0 },
+    } } };
+    expect(reportSummary(withRerun)).toBe('Parse 1m00s · Inference 2m00s · Total 3m00s · 1/2 correct · 1 not parsed'
+      + ' · last rerun: Inference 5.00s · 2/2 correct');
+    const markdown = reportMarkdown(withRerun, { sessionKey: 's', settings: [], items: [], confusion: null });
+    expect(markdown).toContain('## Timings');
+    expect(markdown).toContain('## Last rerun: timings');
+    expect(markdown).toContain('## Last rerun: outcomes');
+  });
+
   it('sums a phase over its calls and keeps its first start', () => {
     const phases: any[] = [];
     addToPhase(phases, 'GSWB', Date.parse('2026-10-01T10:00:05.000Z'), 300);
@@ -110,7 +141,7 @@ describe('run report', () => {
   it('loads a session saved before reports existed with an empty one', () => {
     const document: any = regressionSessionToDocument(createRegressionTestingSession());
     delete document.analysis.report;
-    expect(regressionDocumentToSession(document).report).toEqual({ parse: null, inference: null });
+    expect(regressionDocumentToSession(document).report).toEqual({ parse: null, inference: null, rerun: null });
   });
   it('says how many items have no verdict, so a missing verdict does not read as a wrong one', () => {
     const r = report();

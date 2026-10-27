@@ -155,6 +155,15 @@ div.errorhandling {
   padding-left: 24px;
 }
 
+.run-report-timings tr.run-report-part td:first-child {
+  padding-left: 44px;
+}
+
+.run-report-heading {
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+
 .run-report-id {
   color: #8b1a1a;
 }

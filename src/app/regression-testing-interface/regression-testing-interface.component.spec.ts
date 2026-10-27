@@ -462,6 +462,14 @@ describe('RegressionTestingInterfaceComponent', () => {
   it('builds every parsed item\'s discourse at Parse, and says how many', done => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
+    reasoningPipeline.generateDiscourseMappings.and.callFake((request: any) => {
+      request.timing('rules', 30);
+      request.timing('pcdrs', 50);
+      return of([{
+        mapping: { id: `${request.scopeId}-rule-1-pcdrs-1`, semantic: `${request.merged.semString} ok`, anaphoraRelations: [] },
+        ruleBranchIndex: 1, semanticOrigin: request.merged.semId,
+      }]);
+    });
     component['regressionTestItems'] = [
       { id: 'n1', premises: ['S1', 'S2'], conclusion: ['S3'] },
       { id: 'n2', premises: ['S1'], conclusion: ['S4'] },
@@ -472,6 +480,17 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(Object.keys(component.session.analysisDocuments)).toEqual(['n1']);
       expect(note).toBe(' Built 1 of 1 discourse(s).');
       expect(parseReport.phases.map((phase: any) => phase.name)).toEqual(['Discourses (rules, PCDRS)']);
+      // N4 6g: per item, like parsing and composition, and split into its steps.
+      expect(parseReport.discourses.count).toBe(1);
+      expect(parseReport.discourses.fastest.id).toBe('n1');
+      expect(Object.keys(parseReport.discourseSteps)).toEqual(['merge', 'rules', 'pcdrs']);
+      // Two appends (S2, then S3) in one item: one entry, their sum.
+      expect(parseReport.discourseSteps.merge.count).toBe(1);
+      expect(parseReport.discourseSteps.merge.fastest.id).toBe('n1');
+      // Summed over the item's branches.
+      const branches = reasoningPipeline.generateDiscourseMappings.calls.count();
+      expect(parseReport.discourseSteps.rules.totalMs).toBe(30 * branches);
+      expect(parseReport.discourseSteps.pcdrs.totalMs).toBe(50 * branches);
       done();
     });
   });
@@ -610,6 +629,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       I1: [{ proof_files: ['a', 'b'] }, { proof_files: ['c'] }], I2: [{ proof_files: [] }],
     } as any;
     component['vampireProgressProofCount'] = 1;  // a stale poll
+    component['runningInferenceReport'] = component.session.report.inference;
 
     (component as any).finishInferenceReport();
 
@@ -2696,6 +2716,10 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(component.regressionTestResults.map(result => result.sentence_id)).toEqual(['S1', 'S2', 'S3', 'S4']);
       expect(component.session.testsuiteText).toBe('the stored testsuite');
       expect(component.session.report!.inference).toEqual({ kept: true } as any);
+      // A rerun: the main report stays, the rerun report has this parse (N4 6g).
+      expect(component.session.report!.parse).toBeNull();
+      expect(component.session.report!.rerun!.parse!.startedAt).toBeTruthy();
+      expect(component.session.report!.rerun!.inference).toBeNull();
       // The items over the reparsed sentences are what "Run inference" runs next.
       expect(component.selectedNliItemCount).toBe(1);
       expect(component.isNliItemSelected('n1')).toBeTrue();

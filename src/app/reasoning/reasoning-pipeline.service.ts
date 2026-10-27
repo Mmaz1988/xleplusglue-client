@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Observable, catchError, concatMap, forkJoin, from, map, of, switchMap, toArray } from 'rxjs';
+import { Observable, catchError, concatMap, defer, forkJoin, from, map, of, switchMap, tap, toArray } from 'rxjs';
 import { DataService } from '../data.service';
 import { reasoningAssignmentId } from '../analysis-model';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
@@ -199,23 +199,33 @@ export class ReasoningPipelineService {
     sequenceStructure: LigerStructure,
     ruleString: string,
     includeSvg: boolean,
+    timing?: (step: 'rules' | 'pcdrs', ms: number) => void,
   ): Observable<MappingWithStructure[]> {
+    let stepStartedAt = 0;
+    const stepDone = (step: 'rules' | 'pcdrs') => {
+      timing?.(step, Date.now() - stepStartedAt);
+      stepStartedAt = Date.now();
+    };
     // /merge_uploaded_structures only UNIONS the merged syntax with the merged
     // semantics -- both sides end up in one graph with no edges between them. The
     // post-processing rules below are what interconnect them (they join SRC to SYN-ID
     // and emit SYNSEM), and that interconnected form is what the anaphora mappings are
     // read off. Neither join outlives this method: both are derivable again from the
     // element's stored syntax and semantics plus the rule string.
-    return this.dataService.ligerMergeStructure({
-      syntax: sequenceStructure, drs: merged.graph,
-      // Nothing on this path displays a graph: tier A is consumed by the rule application
-      // below and then dropped. Rendering it was ~36% of the response, fetched and
-      // discarded on every pair.
-      includeGraph: false,
+    return defer(() => {
+      stepStartedAt = Date.now();
+      return this.dataService.ligerMergeStructure({
+        syntax: sequenceStructure, drs: merged.graph,
+        // Nothing on this path displays a graph: tier A is consumed by the rule application
+        // below and then dropped. Rendering it was ~36% of the response, fetched and
+        // discarded on every pair.
+        includeGraph: false,
+      });
     }).pipe(
       switchMap(base => this.applyNliRules(base.structureJson, ruleString).pipe(
         map(branches => ({ base, branches }))
       )),
+      tap(() => stepDone('rules')),
       switchMap(({ branches }) => this.documentBuilder.generatePcdrsReadings({
         scopeId,
         branches: branches.map((branch, index) => ({
@@ -229,6 +239,7 @@ export class ReasoningPipelineService {
         })),
         includeSvg,
       })),
+      tap(() => stepDone('pcdrs')),
     );
   }
 
@@ -245,6 +256,9 @@ export class ReasoningPipelineService {
     ruleString: string;
     /** See ReasoningPairRequest.includeSvg. */
     includeSvg: boolean;
+    /** Told how long the post-processing rules (LiGER's structure merge and rule
+     *  application) and /generate_pcdrs took, once each has succeeded. */
+    timing?: (step: 'rules' | 'pcdrs', ms: number) => void;
   }): Observable<MappingWithStructure[]> {
     if (!request.sequenceStructure) {
       throw new Error('Discourse mappings require the sequence provenance structure.');
@@ -258,6 +272,7 @@ export class ReasoningPipelineService {
       request.sequenceStructure,
       request.ruleString ?? '',
       request.includeSvg,
+      request.timing,
     );
   }
 
