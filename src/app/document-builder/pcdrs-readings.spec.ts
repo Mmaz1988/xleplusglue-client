@@ -37,6 +37,16 @@ describe('PCDRS readings', () => {
     expect(discourse[2].drsString).toBe('reading');
   });
 
+  it('stores GSWB\'s pragmatic profile with the reading, where it has one', () => {
+    const pragmaticProfile = { pronouns: [1, 0, 0], binding: [0, 0, 0], accommodation: [0, 0, 1] };
+    const { discourse } = discourseAnalysesOf([
+      { mapping: { id: 'p1', semantic: 'drs-1', pragmaticProfile }, ruleBranchIndex: 1, semanticOrigin: 'sem-1' },
+      { mapping: { id: 'p2', semantic: 'drs-2' }, ruleBranchIndex: 1, semanticOrigin: 'sem-1' },
+    ]);
+    expect(discourse[0].pragmaticProfile).toEqual(pragmaticProfile);
+    expect('pragmaticProfile' in discourse[1]).toBeFalse();
+  });
+
   it('builds the element\'s update, with a rule string only when one is given', () => {
     const readings = [{ mapping: { id: 'p1', semantic: 'drs' }, ruleBranchIndex: 1, semanticOrigin: 'sem-1' }];
     const update = discourseUpdateOf({ id: 'sentence-1+sentence-2', kind: 'sequence' }, readings, 'rules');

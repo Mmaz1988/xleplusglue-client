@@ -87,6 +87,7 @@ export function discourseAnalysesOf(readings: PcdrsReading[]): {
       ...(mapping?.solution ? { svg: mapping.solution } : {}),
       anaphoraMapping: { relations } as AnaphoraMappingModel,
       collapsed: relations.length > 0,
+      ...(mapping?.pragmaticProfile ? { pragmaticProfile: mapping.pragmaticProfile } : {}),
     });
   });
   return { discourse, semDiscourseMapping };

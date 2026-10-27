@@ -252,6 +252,18 @@ export interface DiscourseAnalysis {
   svg?: string;
   anaphoraMapping: AnaphoraMappingModel;  // structured, mirrors LFGxDRT's AnaphoraMapping
   collapsed: boolean;                // true once /collapse_anaphora has resolved this branch
+  pragmaticProfile?: PragmaticProfile; // GSWB's count of the reading's choices; absent on old documents
+}
+
+/** A PCDRS reading's pragmatic profile (GSWB `PragmaticProfileDto`, N4): how many of its choices
+ *  fall in each cell. Rows in priority order, columns best to worst. */
+export interface PragmaticProfile {
+  /** Pronouns: bound, referential, unbound. */
+  pronouns: number[];
+  /** Bound p-boxes by the depth of their site: global, intermediate, local. */
+  binding: number[];
+  /** Accommodated p-boxes by the depth of their site: global, intermediate, local. */
+  accommodation: number[];
 }
 
 export type SemDiscourseMapping = Record<string, string[]>;  // semId -> discourseId[], mirrors SynSemMapping
@@ -701,6 +713,8 @@ export interface GswbSolution {
   semantic?: string;
   anaphoraMapping?: string;
   anaphoraRelations?: AnaphoraRelation[];
+  /** A PCDRS reading's pragmatic profile. */
+  pragmaticProfile?: PragmaticProfile;
   /** A PCDRS reading's P:[p(s2,s1),...], an entry for every p-box: s2 resolved at s1. */
   presuppositionMapping?: string;
   /** What collapsing the reading does, e.g. "s1 accommodated at s0; s3 bound at s0 (x3 ↦ x1)". */
