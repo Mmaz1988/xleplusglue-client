@@ -396,18 +396,37 @@ export class SemVisComponent implements AfterViewInit {
     return semantic ? this.collapsedBySemantic.get(semantic) : undefined;
   }
 
-  /** While the collapsed view is on: what the collapse did to the shown item, or why it is
-   *  not collapsed; '' otherwise. */
+  /** While the collapsed view is on: why the shown item is not collapsed; '' otherwise. What
+   *  the collapse did is `collapseTables`. */
   get collapseNote(): string {
     if (!this.showCollapsed) return '';
     const current = this.items[this.index];
     if (!current) return '';
-    const collapsed = this.collapsedFor(current);
-    if (collapsed) return collapsed.collapseReport ?? '';
+    if (this.collapsedFor(current)) return '';
     if (!this.isCollapsibleItem(current)) return 'nothing to collapse';
     const semantic = this.semanticOf(current);
     const error = semantic ? this.collapseErrors.get(semantic) : undefined;
     return error ? `not collapsed: ${error}` : 'not collapsed';
+  }
+
+  /** While the collapsed view shows a collapsed item: what the collapse did, as rows of the
+   *  p-box table (p-box | resolution | site | depth | bindings) and of the renamed table
+   *  (from | to); null when it did nothing. */
+  get collapseTables(): { resolutions: string[][]; renamed: string[][] } | null {
+    const steps = this.showCollapsed ? this.collapsedFor(this.items[this.index])?.collapseSteps : undefined;
+    if (!steps || (!steps.resolutions.length && !steps.renamed.length)) return null;
+    return {
+      resolutions: steps.resolutions.map(resolution => [
+        resolution.presupposition,
+        resolution.bound ? 'bound' : 'accommodated',
+        resolution.site,
+        resolution.depth.toLowerCase(),
+        resolution.bindings.length
+          ? resolution.bindings.map(binding => `${binding.from} ↦ ${binding.to}`).join(', ')
+          : '–',
+      ]),
+      renamed: steps.renamed.map(renaming => [renaming.from, renaming.to]),
+    };
   }
 
   /** Collapses every collapsible item that has no collapsed DRS yet, one request after

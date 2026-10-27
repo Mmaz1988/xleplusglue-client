@@ -59,6 +59,19 @@
       </span>
       <span class="status-label" *ngIf="currentLabel">{{ currentLabel }}</span>
 
+      <app-pill *ngIf="collapseTables as tables" badge="collapse" variant="content" [minimizedColor]="'#8a5a00'">
+        <table class="ranking-table" *ngIf="tables.resolutions.length">
+          <thead><tr><th>p-box</th><th>resolution</th><th>site</th><th>depth</th><th>bindings</th></tr></thead>
+          <tbody><tr *ngFor="let row of tables.resolutions"><td *ngFor="let cell of row">{{ cell }}</td></tr></tbody>
+        </table>
+        <ng-container *ngIf="tables.renamed.length">
+          <div class="collapse-table-title">renamed</div>
+          <table class="ranking-table">
+            <thead><tr><th>from</th><th>to</th></tr></thead>
+            <tbody><tr *ngFor="let row of tables.renamed"><td *ngFor="let cell of row">{{ cell }}</td></tr></tbody>
+          </table>
+        </ng-container>
+      </app-pill>
       <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
     </div>
 

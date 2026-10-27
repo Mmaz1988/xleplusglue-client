@@ -184,13 +184,27 @@ describe('SemVisComponent', () => {
       dataService.gswbCollapseAnaphora.and.callFake((request: any) => of(request.parentSolutionId === 'bad'
         ? { id: 'c-bad', rejection: 'Referent x2 occurs outside the scope (I9)' }
         : { id: `c-${request.parentSolutionId}`, solution: `<svg>c-${request.parentSolutionId}</svg>`,
-            semantic: 'c', collapseReport: 's1 accommodated at s0' }) as any);
+            semantic: 'c', collapseReport: 's1 accommodated at s0; s2 bound at s0 (s2:y1 ↦ s0:x1); renamed s1:y1 → s0:x2',
+            collapseSteps: {
+              resolutions: [
+                { presupposition: 's1', bound: false, site: 's0', depth: 'GLOBAL', bindings: [] },
+                { presupposition: 's2', bound: true, site: 's0', depth: 'INTERMEDIATE',
+                  bindings: [{ from: 's2:y1', to: 's0:x1' }] },
+              ],
+              renamed: [{ from: 's1:y1', to: 's0:x2' }],
+            } }) as any);
       component.items = [pcdrs('b1', '([x1],[ant(x1)])'), pcdrs('bad', '([x2],[ant(x2)])')];
 
       component.collapseAll();
 
-      expect(component.collapseNote).toBe('s1 accommodated at s0');
+      // N4 6g: tables in a pill, not a line.
+      expect(component.collapseNote).toBe('');
+      expect(component.collapseTables).toEqual({
+        resolutions: [['s1', 'accommodated', 's0', 'global', '–'], ['s2', 'bound', 's0', 'intermediate', 's2:y1 ↦ s0:x1']],
+        renamed: [['s1:y1', 's0:x2']],
+      });
       component.next();
+      expect(component.collapseTables).toBeNull();
       expect(shown()).toBe('<svg>bad</svg>');
       expect(component.collapseNote).toContain('rejected');
       expect(component.collapseNote).toContain('I9');

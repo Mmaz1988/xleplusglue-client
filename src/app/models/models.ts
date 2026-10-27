@@ -270,6 +270,21 @@ export interface PragmaticProfile {
   accommodation: number[];
 }
 
+/** What collapsing a PCDRS reading did (GSWB `CollapseStepsDto`, I7.6): one resolution per
+ *  p-box in the order they were resolved, then the names the collapse's numbering gave the
+ *  referents. `collapseReport` says the same as text. */
+export interface CollapseSteps {
+  resolutions: {
+    presupposition: string;
+    bound: boolean;
+    site: string;
+    depth: 'GLOBAL' | 'INTERMEDIATE' | 'LOCAL';
+    /** A bound p-box's bind referents (`from`) and their binders (`to`). */
+    bindings: { from: string; to: string }[];
+  }[];
+  renamed: { from: string; to: string }[];
+}
+
 export type SemDiscourseMapping = Record<string, string[]>;  // semId -> discourseId[], mirrors SynSemMapping
 
 export interface DiscourseUpdate {
@@ -729,6 +744,8 @@ export interface GswbSolution {
   presuppositionMapping?: string;
   /** What collapsing the reading does, e.g. "s1 accommodated at s0; s3 bound at s0 (x3 ↦ x1)". */
   collapseReport?: string;
+  /** The same as data; the sem view tabulates it (N4 6g). */
+  collapseSteps?: CollapseSteps;
   /** Why the collapse rejects the reading; set instead of a solution. */
   rejection?: string;
   proofId?: string;
