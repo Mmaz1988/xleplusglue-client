@@ -1,6 +1,7 @@
 import {Component, ElementRef, EventEmitter, Output, ViewChild} from '@angular/core';
 import {SemVisComponent} from "../../sem-vis/sem-vis.component";
 import { AnaphoraRankingTable } from "../../analysis-model";
+import { ReadingOrderContext } from "../../reading-order";
 
 @Component({
   selector: 'app-semvis-dialog',
@@ -46,6 +47,8 @@ export class SemvisDialogComponent {
     filter?: { ids: string[]; label: string };
     /** Offers the sem-vis's Collapse for LFGxDRT items with presuppositions or anaphora. */
     collapsible?: boolean;
+    /** The discourse the items are PCDRS readings of, for the reading order and filters. */
+    readingOrder?: ReadingOrderContext;
   }): void {
     this.activeSentenceId = payload.sentenceId;
     this.title = payload.title ?? 'Solutions';
@@ -80,6 +83,8 @@ export class SemvisDialogComponent {
       // but unselectable, since they name scope constraints that do not occur there.
       // Verified live: GSWB returns zero discriminants for those sentences, batch or
       // alone, so the bleed was entirely here. gswb-vis already calls setDiscriminants([]).
+        // Always set: a dialog of semantic readings must not keep the previous discourse's.
+        this.semVis.readingOrder = payload.readingOrder ?? null;
         this.semVis.setDiscriminants(discriminants);
         this.semVis.meaningConstructors = meaningConstructors;
         this.semVis.svgSolutions = svgSolutions;

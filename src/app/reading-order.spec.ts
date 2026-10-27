@@ -32,7 +32,7 @@ const ranking = (branches: AnaphoraRanking['branches'], methods?: any[], average
 const order = (discourse: DiscourseAnalysis[], criteria: ReadingCriterion[], extra: {
   discriminants?: GswbDiscriminant[]; anaphoraRanking?: AnaphoraRanking; averager?: any;
 } = {}) => globalReadingOrder({
-  update: update(discourse, extra.anaphoraRanking),
+  updates: [update(discourse, extra.anaphoraRanking)],
   discriminants: extra.discriminants ?? [],
   criteria,
   averager: extra.averager ?? 'borda',
@@ -94,10 +94,10 @@ describe('reading order', () => {
 
   describe('LM scores across readings', () => {
     it('reads one ranker\'s score as is, across semantic readings', () => {
-      const scores = globalLmScores(ranking([
+      const scores = globalLmScores([ranking([
         { discourseId: 'p1', score: 0.9, rank: 1, scores: { m: 0.4 } },
         { discourseId: 'p2', score: 0.1, rank: 1, scores: { m: 0.7 } },
-      ], ['m']), ['p1', 'p2', 'p3']);
+      ], ['m'])], ['p1', 'p2', 'p3']);
       expect(scores.get('p1')).toBe(0.4);
       expect(scores.get('p2')).toBe(0.7);
       expect(scores.get('p3')).toBeNull();
@@ -106,10 +106,10 @@ describe('reading order', () => {
     it('fuses several rankers over all readings, not within one', () => {
       // Within its own reading each branch was first (rank 1, score 1); across readings p2
       // leads on both rankers.
-      const scores = globalLmScores(ranking([
+      const scores = globalLmScores([ranking([
         { discourseId: 'p1', score: 1, rank: 1, scores: { a: 0.2, b: 0.3 } },
         { discourseId: 'p2', score: 1, rank: 1, scores: { a: 0.8, b: 0.9 } },
-      ], ['a', 'b'], 'borda'), ['p1', 'p2']);
+      ], ['a', 'b'], 'borda')], ['p1', 'p2']);
       expect(scores.get('p2')!).toBeGreaterThan(scores.get('p1')!);
     });
   });

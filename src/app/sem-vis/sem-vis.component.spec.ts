@@ -260,4 +260,94 @@ describe('SemVisComponent', () => {
       expect(component.canCollapse).toBeTrue();
     });
   });
+
+  describe('reading order and filters', () => {
+    const profile = (pronouns: number[], accommodation = [0, 0, 0]) =>
+      ({ pronouns, binding: [0, 0, 0], accommodation });
+    const reading = (id: string, semanticOrigin: string, pragmaticProfile: any) => ({
+      id, semanticOrigin, drsString: id, ruleBranch: 1, anaphoraMapping: { relations: [] }, collapsed: false, pragmaticProfile,
+    });
+    const items = ['p1', 'p2', 'p3'].map(id => ({ id, solution: `<svg>${id}</svg>`, semantic: id } as any));
+    const context = (anaphoraRanking?: any) => ({
+      updates: [{
+        id: 'du-s', sourceElementId: 's', sourceElementKind: 'sequence', semDiscourseMapping: {},
+        discourse: [
+          reading('p1', 'wide+b', profile([0, 0, 1])),
+          reading('p2', 'narrow+b', profile([1, 0, 0], [1, 0, 0])),
+          reading('p3', 'narrow+b', profile([0, 1, 0])),
+        ],
+        ...(anaphoraRanking ? { anaphoraRanking } : {}),
+      }],
+      // `wide` takes scope against the surface.
+      discriminants: [{ id: 'd', type: 'scope', identifier: 'd', associatedSolutions: ['wide'], surfaceAligned: false }],
+      averager: 'borda',
+    } as any);
+    const shown = () => component.allItems.map(item => item.id);
+
+    beforeEach(() => {
+      component.svgSolutions = true;
+      component.items = items;
+      component.itemLabels = ['label p1', 'label p2', 'label p3'];
+    });
+
+    it('offers only the criteria and filters that apply, surface alignment checked', () => {
+      component.readingOrder = context();
+      expect(component.orderOptions.criteria).toEqual(['surface', 'pronouns', 'accommodation']);
+      expect(component.orderOptions.filters).toEqual(['unbound', 'accommodated']);
+      expect(component.orderCriteria).toEqual(['surface']);
+      expect(component.readingFilters).toEqual([]);
+
+      component.readingOrder = context({ method: 'm', methods: ['m'], branches: [], relations: [], warnings: [] });
+      expect(component.orderOptions.criteria).toContain('lm');
+    });
+
+    it('orders by the checked criteria; captions stay with their items', () => {
+      component.readingOrder = context();
+      // Surface alone: p1 scopes against the surface; p2 and p3 tie and keep their order.
+      expect(shown()).toEqual(['p2', 'p3', 'p1']);
+      expect(component.currentPlace).toBe(1);
+
+      component.toggleCriterion('surface');
+      component.toggleCriterion('pronouns');
+      expect(shown()).toEqual(['p2', 'p3', 'p1']);
+      expect(component.currentLabel).toBe('label p2');
+
+      // A refreshed context keeps the reading shown.
+      component.next();
+      component.readingOrder = context();
+      expect(component.currentLabel).toBe('label p3');
+
+      component.toggleCriterion('pronouns');
+      // Nothing checked: the owner's order, one place.
+      expect(shown()).toEqual(['p1', 'p2', 'p3']);
+      expect(component.currentPlace).toBe(1);
+    });
+
+    it('hides readings by the filters, for display only', () => {
+      component.readingOrder = context();
+      component.toggleFilter('unbound');
+      expect(component.items.map(item => item.id)).toEqual(['p2', 'p3']);
+      component.toggleFilter('accommodated');
+      expect(component.items.map(item => item.id)).toEqual(['p3']);
+      expect(component.allItems.length).toBe(3);
+      component.toggleFilter('unbound');
+      component.toggleFilter('accommodated');
+      expect(component.items.length).toBe(3);
+    });
+
+    it('orders semantic readings by its own scope discriminants when no discourse is given', () => {
+      component.setItems([{ id: 's0' }, { id: 's1' }] as any);
+      component.setDiscriminants([
+        { id: 'a', type: 'scope', identifier: 'A', associatedSolutions: ['s0'], surfaceAligned: false },
+        { id: 'b', type: 'scope', identifier: 'B', associatedSolutions: ['s1'], surfaceAligned: true },
+      ]);
+      expect(component.orderOptions).toEqual({ criteria: ['surface'], filters: [] });
+      expect(shown()).toEqual(['s1', 's0']);
+    });
+
+    it('offers nothing without a discourse or scope discriminants', () => {
+      expect(component.orderOptions).toEqual({ criteria: [], filters: [] });
+      expect(shown()).toEqual(['p1', 'p2', 'p3']);
+    });
+  });
 });

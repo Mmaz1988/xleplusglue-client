@@ -29,6 +29,7 @@
             [items]="message.branchSolutions"
             [itemLabels]="message.branchLabels"
             [itemRankings]="message.branchRankings ?? []"
+            [readingOrder]="readingOrders.get(message) ?? null"
             [collapsible]="true"
             [minimizedColor]="'#6a1b9a'"
             [closeOnly]="true">

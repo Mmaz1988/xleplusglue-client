@@ -103,16 +103,13 @@
     <h3>PCDRS solutions</h3>
     <div class="pcdrs-ranking" *ngIf="pcdrsRankingStatusText()">
       <span class="pcdrs-ranking-status">{{ pcdrsRankingStatusText() }}</span>
-      <label *ngIf="canTogglePcdrsOrder()">
-        <input type="checkbox" [checked]="pcdrsGenerationOrder" (change)="togglePcdrsOrder()">
-        Generation order
-      </label>
     </div>
     <app-sem-vis
       #pcdrsSemvis
       [items]="pcdrsDisplaySolutions"
       [itemLabels]="pcdrsDisplayLabels"
       [itemRankings]="pcdrsDisplayRankings"
+      [readingOrder]="pcdrsReadingOrder"
       [svgSolutions]="true"
       [collapsible]="true"></app-sem-vis>
   </div>

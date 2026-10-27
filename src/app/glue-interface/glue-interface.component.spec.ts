@@ -413,7 +413,7 @@ describe('GlueInterfaceComponent', () => {
       }];
     });
 
-    it('stores the PCDRS at once, then orders them by the ranking lm returns', () => {
+    it('stores the PCDRS at once, then hands the sem view the ranking lm returns', () => {
       const lm = new Subject<any>();
       dataServiceMock.lmRankAnaphora.and.returnValue(lm);
 
@@ -441,13 +441,13 @@ describe('GlueInterfaceComponent', () => {
 
       expect(storedUpdate().anaphoraRanking).toEqual(ranking);
       expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
-      expect(shownIds()).toEqual(['s1-pcdrs-2', 's1-pcdrs-1']);
-      expect(component.pcdrsDisplayLabels[0]).toBe('rank 1 · mean score 0.908');
-      expect(component.pcdrsDisplayRankings[0]?.rows).toEqual([['it', 'the big cat', '0.908', 'cos 0.82', '', '2']]);
-      expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent).toContain('Ranked by test-model');
-
-      component.togglePcdrsOrder();
+      // In generation order, captions aligned: the sem view orders them by its options.
       expect(shownIds()).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
+      expect(component.pcdrsDisplayLabels[1]).toBe('rank 1 · mean score 0.908');
+      expect(component.pcdrsDisplayRankings[1]?.rows).toEqual([['it', 'the big cat', '0.908', 'cos 0.82', '', '2']]);
+      expect(component.pcdrsReadingOrder?.updates[0].anaphoraRanking).toEqual(ranking);
+      expect(component.pcdrsReadingOrder?.averager).toBe('borda');
+      expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent).toContain('Ranked by test-model');
     });
 
     it('stores a ranking lm computed with other rankers once, without asking again', () => {
@@ -488,7 +488,7 @@ describe('GlueInterfaceComponent', () => {
       expect(storedUpdate().discourse.length).toBe(2);
       expect(storedUpdate().anaphoraRanking).toBeUndefined();
       expect(shownIds()).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
-      expect(component.canTogglePcdrsOrder()).toBeFalse();
+      expect(component.pcdrsReadingOrder?.updates[0].anaphoraRanking).toBeUndefined();
       expect(fixture.nativeElement.querySelector('.pcdrs-ranking-status')?.textContent)
         .toContain('Ranking unavailable: lm service unreachable');
     });

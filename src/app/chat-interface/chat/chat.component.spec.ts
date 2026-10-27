@@ -667,7 +667,7 @@ describe('ChatComponent', () => {
         warnings: [],
       };
 
-      it('orders turn 1\'s DRS branches by rank once lm answers, and stores the ranking', () => {
+      it('captions turn 1\'s DRS branches with their rank once lm answers, and hands the pill the ranking', () => {
         const lm = new Subject<any>();
         dataServiceSpy.lmRankAnaphora.and.returnValue(lm);
 
@@ -680,9 +680,11 @@ describe('ChatComponent', () => {
         lm.complete();
 
         expect(component.chatDocument.discourseUpdates?.[0].anaphoraRanking).toEqual(ranking as any);
-        expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>cat</svg>', '<svg>dog</svg>']);
-        expect(reply().branchLabels?.[0]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean score 0.950');
-        expect(reply().branchRankings?.[0]?.rows).toEqual([['it', 'the cat', '0.950', 'cos 0.90', '', '2']]);
+        // Generation order, captions aligned: the pill's sem view orders them by its options.
+        expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>dog</svg>', '<svg>cat</svg>']);
+        expect(reply().branchLabels?.[1]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean score 0.950');
+        expect(reply().branchRankings?.[1]?.rows).toEqual([['it', 'the cat', '0.950', 'cos 0.90', '', '2']]);
+        expect(component.readingOrders.get(reply())?.updates[0].anaphoraRanking).toEqual(ranking as any);
         expect(dataServiceSpy.lmRankAnaphora).toHaveBeenCalledTimes(1);
       });
 

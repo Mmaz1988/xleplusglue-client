@@ -5,6 +5,7 @@ import { ConnectedPosition } from '@angular/cdk/overlay';
 import {EditorComponent} from "../../editor/editor.component";
 import {GswbSolution} from "../../models/models";
 import { AnaphoraRankingTable } from '../../analysis-model';
+import { ReadingOrderContext } from '../../reading-order';
 
 
 
@@ -40,6 +41,8 @@ export class PillComponent {
   @Input() itemRankings: (AnaphoraRankingTable | null)[] = [];
   /** sem-vis variant: offers Collapse for items with presuppositions or anaphora. */
   @Input() collapsible = false;
+  /** sem-vis variant: the discourse the items are PCDRS readings of (see app-sem-vis). */
+  @Input() readingOrder: ReadingOrderContext | null = null;
 
   @Input() minimizedColor = '#2e7d32';
 

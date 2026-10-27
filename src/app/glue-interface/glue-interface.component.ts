@@ -9,10 +9,11 @@ import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.servic
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { APP_DEFAULTS } from '../app-defaults';
-import { AnaphoraRankingTable, anaphoraRankerSelection, anaphoraRankingCaption, anaphoraRankingTable, carryAnaphoraRanking, needsAnaphoraRanking, orderByAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
+import { AnaphoraRankingTable, anaphoraRankerSelection, anaphoraRankingCaption, anaphoraRankingTable, carryAnaphoraRanking, needsAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
 import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 import { discourseUpdateOf } from '../document-builder/pcdrs-readings';
+import { ReadingOrderContext } from '../reading-order';
 
 interface PostProcessingResult {
   semanticSolution: GswbSolution;
@@ -59,8 +60,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   pcdrsDisplayRankings: (AnaphoraRankingTable | null)[] = [];
   /** The discourse update the shown PCDRS solutions belong to. */
   pcdrsUpdateId: string | null = null;
-  /** Show PCDRS in the order GSWB generated them instead of by language-model rank. */
-  pcdrsGenerationOrder = false;
+  /** What the sem view orders and filters the shown PCDRS with (N4); set with them, so the
+   *  view gets a new one only when they change. */
+  pcdrsReadingOrder: ReadingOrderContext | null = null;
   /** Latest ranking outcome per discourse update id; 'pending' while lm is working. */
   anaphoraRankingStatus: Record<string, AnaphoraRankingResult | { status: 'pending' }> = {};
   /** The anaphora rankers this view ranks with: the same preferences fields as regression's and
@@ -824,13 +826,16 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
 
   private refreshPcdrsDisplay(): void {
     const update = this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId) : undefined;
-    const ordered = this.pcdrsGenerationOrder
-      ? this.pcdrsSolutions
-      : orderByAnaphoraRanking(this.pcdrsSolutions, [update]);
-    // Collapsing is the sem-vis's own view of these items (Collapse, then a toggle).
-    this.pcdrsDisplaySolutions = ordered;
-    this.pcdrsDisplayLabels = ordered.map(solution => update ? anaphoraRankingCaption(update, solution.id) : '');
-    this.pcdrsDisplayRankings = ordered.map(solution => update ? anaphoraRankingTable(update, solution.id) : null);
+    // In generation order: the sem view orders them (its options), and collapsing is its own
+    // view of these items too (Collapse, then a toggle).
+    this.pcdrsDisplaySolutions = this.pcdrsSolutions;
+    this.pcdrsDisplayLabels = this.pcdrsSolutions.map(solution => update ? anaphoraRankingCaption(update, solution.id) : '');
+    this.pcdrsDisplayRankings = this.pcdrsSolutions.map(solution => update ? anaphoraRankingTable(update, solution.id) : null);
+    this.pcdrsReadingOrder = update ? {
+      updates: [update],
+      discriminants: this.analysisDocument.sentences.flatMap(sentence => sentence.discriminants ?? []),
+      averager: this.anaphoraRankers().averager,
+    } : null;
   }
 
   private currentPcdrsRanking(): AnaphoraRanking | undefined {
@@ -846,19 +851,10 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     }
     switch (status?.status) {
       case 'pending': return 'Ranking with the language model…';
-      case 'unavailable': return `Ranking unavailable: ${status.reason}. Shown in generation order.`;
+      case 'unavailable': return `Ranking unavailable: ${status.reason}.`;
       case 'not-applicable': return `Not ranked: ${status.reason}.`;
       default: return '';
     }
-  }
-
-  canTogglePcdrsOrder(): boolean {
-    return !!this.currentPcdrsRanking();
-  }
-
-  togglePcdrsOrder(): void {
-    this.pcdrsGenerationOrder = !this.pcdrsGenerationOrder;
-    this.refreshPcdrsDisplay();
   }
 
   private focusPcdrsResults(): void {

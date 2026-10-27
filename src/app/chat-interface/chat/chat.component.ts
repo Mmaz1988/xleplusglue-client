@@ -35,7 +35,6 @@ import {
   anaphoraRankingTable,
   carryAnaphoraRanking,
   needsAnaphoraRanking,
-  orderByAnaphoraRanking,
   readingDisplay,
   readingOf,
   reasoningUpdateId,
@@ -44,6 +43,7 @@ import {
 } from '../../analysis-model';
 import { MappingWithStructure, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 import { PcdrsReading, discourseUpdateOf } from '../../document-builder/pcdrs-readings';
+import { ReadingOrderContext } from '../../reading-order';
 import { AnaphoraRankingService } from '../../reasoning/anaphora-ranking.service';
 import {
   DerivedSentence,
@@ -188,6 +188,7 @@ export class ChatComponent {
   resetConversationState(): void {
     this.context = [];
     this.chatHistory = [];
+    this.readingOrders.clear();
     this.userInput = '';
     this.derivedGrammarAxioms = { prolog: [], tptp: [], tffTypes: [] };
     this.derivedAxioms = '';
@@ -208,6 +209,7 @@ export class ChatComponent {
   private pushChatMessage(message: Omit<ChatMessage, 'timestamp'>): ChatMessage {
     const stored: ChatMessage = { ...message, timestamp: new Date().toISOString() };
     this.chatHistory.push(stored);
+    this.refreshBranchRanking(stored);
     return stored;
   }
 
@@ -932,6 +934,7 @@ export class ChatComponent {
             renderedBranches: branchSolutions.length,
           });
           this.upsertDiscourseUpdate(update);
+          if (message) this.refreshBranchRanking(message);
         }
         this.changeDetector.detectChanges();
         this.loading = false;
@@ -1290,36 +1293,46 @@ export class ChatComponent {
       // Stored as lm answered, never re-requested on its account: a ranking that does not match
       // what was asked (an older lm) would otherwise be requested again forever.
       this.storeDiscourseUpdate(ranked);
-      this.chatHistory.forEach(message => this.orderBranchesByRanking(message));
+      this.chatHistory.forEach(message => this.refreshBranchRanking(message));
       this.changeDetector.detectChanges();
     });
   }
 
-  /** Orders a message's DRS branches by reading, each reading by the ranking of the discourse
-   *  update it belongs to (see orderByAnaphoraRanking), and appends the ranking caption;
-   *  unranked branches keep their place after ranked ones. */
-  private orderBranchesByRanking(message: ChatMessage): void {
+  /** What each message's DRS pill orders and filters its branches with (N4): the discourse
+   *  updates its branches belong to. Kept here, not on the message, and replaced only when the
+   *  updates change, so the pill gets a new one only then. */
+  readonly readingOrders = new Map<ChatMessage, ReadingOrderContext>();
+
+  /** Captions a message's DRS branches with the ranking of the discourse update each belongs
+   *  to, and gives its pill the reading order. The branches keep their generation order: the
+   *  pill's sem view orders them by its options. */
+  private refreshBranchRanking(message: ChatMessage): void {
     if (!message.branchSolutions?.length) return;
     let original = this.branchesInGenerationOrder.get(message);
     if (!original) {
       original = { solutions: message.branchSolutions, labels: message.branchLabels ?? [] };
       this.branchesInGenerationOrder.set(message, original);
     }
-    const ranked = (this.chatDocument.discourseUpdates ?? []).filter(update => update.anaphoraRanking);
-    if (!ranked.length) return;
-
-    const labelled = original.solutions.map((solution, index) => {
-      const update = ranked.find(candidate => candidate.anaphoraRanking!.branches
-        .some(branch => branch.discourseId === solution.id));
-      const caption = update ? anaphoraRankingCaption(update, solution.id) : '';
-      return { id: solution.id, solution, label: [original!.labels[index], caption].filter(Boolean).join(' · '),
-        ranking: update ? anaphoraRankingTable(update, solution.id) : null };
+    const ids = new Set(original.solutions.map(solution => solution.id));
+    const updates = (this.chatDocument.discourseUpdates ?? [])
+      .filter(update => update.discourse.some(reading => ids.has(reading.id)));
+    if (!updates.length) return;
+    this.readingOrders.set(message, {
+      updates,
+      discriminants: this.chatDocument.sentences.flatMap(sentence => sentence.discriminants ?? []),
+      averager: this.anaphoraRankers().averager,
     });
-    const entries = orderByAnaphoraRanking(labelled, ranked);
 
-    message.branchSolutions = entries.map(entry => entry.solution);
-    message.branchLabels = entries.map(entry => entry.label);
-    message.branchRankings = entries.map(entry => entry.ranking);
+    const updateOf = (id: string) => updates.find(update => update.discourse.some(reading => reading.id === id));
+    message.branchLabels = original.solutions.map((solution, index) => {
+      const update = updateOf(solution.id);
+      const caption = update ? anaphoraRankingCaption(update, solution.id) : '';
+      return [original!.labels[index], caption].filter(Boolean).join(' · ');
+    });
+    message.branchRankings = original.solutions.map(solution => {
+      const update = updateOf(solution.id);
+      return update ? anaphoraRankingTable(update, solution.id) : null;
+    });
   }
 
   private emitChatDocument(): void {

@@ -4782,6 +4782,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       itemRankings: rankings,
       svgSolutions,
       collapsible: true,
+      readingOrder: {
+        updates: document.discourseUpdates ?? [],
+        discriminants: document.sentences.flatMap(sentence => sentence.discriminants ?? []),
+        averager: this.anaphoraRankers().averager,
+      },
       // Opens on what the run sent to Vampire; the checkbox shows every branch.
       ...(counted ? { filter: { ids: counted, label: 'Only branches sent to Vampire' } } : {}),
     });

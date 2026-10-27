@@ -34,6 +34,7 @@
       <button type="button" (click)="prev()">◀ Prev</button>
 
       <span class="status">{{ index + 1 }} / {{ items.length }} out of {{allItems.length}}</span>
+      <span class="status-place" *ngIf="currentPlace !== null" title="Place in the reading order; tied readings share a place">place {{ currentPlace }}</span>
 
       <button type="button" (click)="next()">Next ▶</button>
 
@@ -69,6 +70,25 @@
       <input type="checkbox" [(ngModel)]="highlightCurrent">
       Highlight discriminants that choose currently selected solution
     </label>
+  </div>
+
+  <!-- Reading order and filters (N4): only what applies to these readings. Display only.
+       The pragmatic discriminants will join this panel. -->
+  <div class="reading-order" *ngIf="orderOptions.criteria.length || orderOptions.filters.length">
+    <div class="reading-order-group" *ngIf="orderOptions.criteria.length">
+      <span class="reading-order-title">Order by</span>
+      <label *ngFor="let criterion of orderOptions.criteria">
+        <input type="checkbox" [checked]="isCriterionChecked(criterion)" (change)="toggleCriterion(criterion)">
+        {{ criterionLabel(criterion) }}
+      </label>
+    </div>
+    <div class="reading-order-group" *ngIf="orderOptions.filters.length">
+      <span class="reading-order-title">Hide</span>
+      <label *ngFor="let filter of orderOptions.filters">
+        <input type="checkbox" [checked]="isFilterChecked(filter)" (change)="toggleFilter(filter)">
+        {{ filterLabel(filter) }}
+      </label>
+    </div>
   </div>
 
   <!-- Discriminant selectors -->

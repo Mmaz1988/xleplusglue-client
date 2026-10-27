@@ -3,8 +3,29 @@ import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import {catchError, concatMap, from, of, toArray} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
-import {GswbDiscriminant, GswbSolution} from "../models/models"; // adjust path
+import {DiscourseAnalysis, GswbDiscriminant, GswbSolution} from "../models/models";
 import { AnaphoraRankingTable, semVisDisplay } from '../analysis-model';
+import {
+  ReadingCriterion,
+  ReadingFilter,
+  ReadingOrderContext,
+  applicableReadingOptions,
+  globalReadingOrder,
+  hiddenByFilter,
+} from '../reading-order';
+
+const CRITERION_LABELS: Record<ReadingCriterion, string> = {
+  surface: 'surface alignment',
+  pronouns: 'pronouns',
+  binding: 'presupposition binding',
+  accommodation: 'accommodation',
+  lm: 'LM ranking',
+};
+
+const FILTER_LABELS: Record<ReadingFilter, string> = {
+  unbound: 'readings with an unbound pronoun',
+  accommodated: 'readings with an accommodated presupposition',
+};
 
 /** What /collapse_anaphora can resolve: an LFGxDRT expression with a presupposition box, an
  *  anaphor marker or an A:/P: mapping. Anything else has nothing to collapse. */
@@ -46,6 +67,111 @@ export class SemVisComponent implements AfterViewInit {
     this.rebuildDiscriminantViews();
   }
 
+  /** The discourse the items are PCDRS readings of (their ids are its readings' ids), for the
+   *  reading order and filters (N4). Without it the items are semantic readings, ordered by
+   *  this view's own scope discriminants. Display only: the owner's items stay as they are. */
+  @Input()
+  set readingOrder(value: ReadingOrderContext | null) {
+    // A first order opens on the best reading; a refreshed one (a ranking arrived) keeps the
+    // reading shown.
+    const refreshed = !!this.readingOrderContext && !!value;
+    this.readingOrderContext = value ?? null;
+    this.reorder(refreshed);
+  }
+  private readingOrderContext: ReadingOrderContext | null = null;
+
+  /** The checked orderings and filters. Surface alignment is the only ordering checked by
+   *  default; the filters are off. Only the applicable ones are offered (`orderOptions`). */
+  orderCriteria: ReadingCriterion[] = ['surface'];
+  readingFilters: ReadingFilter[] = [];
+  /** What applies to the current items; the panel shows only these. */
+  orderOptions: { criteria: ReadingCriterion[]; filters: ReadingFilter[] } = { criteria: [], filters: [] };
+  /** Each item's place in the order: 1 is best, tied items share a place. */
+  private placeById = new Map<string, number>();
+  /** The PCDRS reading behind each item, for the filters. */
+  private readingById = new Map<string, DiscourseAnalysis>();
+
+  criterionLabel(criterion: ReadingCriterion): string {
+    return CRITERION_LABELS[criterion];
+  }
+
+  filterLabel(filter: ReadingFilter): string {
+    return FILTER_LABELS[filter];
+  }
+
+  isCriterionChecked(criterion: ReadingCriterion): boolean {
+    return this.orderCriteria.includes(criterion);
+  }
+
+  isFilterChecked(filter: ReadingFilter): boolean {
+    return this.readingFilters.includes(filter);
+  }
+
+  toggleCriterion(criterion: ReadingCriterion): void {
+    this.orderCriteria = this.isCriterionChecked(criterion)
+      ? this.orderCriteria.filter(checked => checked !== criterion)
+      : [...this.orderCriteria, criterion];
+    this.reorder(false);
+  }
+
+  toggleFilter(filter: ReadingFilter): void {
+    this.readingFilters = this.isFilterChecked(filter)
+      ? this.readingFilters.filter(checked => checked !== filter)
+      : [...this.readingFilters, filter];
+    this.applyFiltersAndResetIndex(0, true);
+  }
+
+  get currentPlace(): number | null {
+    const current = this.items[this.index];
+    return current ? this.placeById.get(current.id) ?? null : null;
+  }
+
+  /** The context the order is computed in: the owner's, or -- for semantic readings -- one
+   *  built from this view's scope discriminants, where only surface alignment applies. */
+  private orderContext(): ReadingOrderContext | null {
+    if (this.readingOrderContext) return this.readingOrderContext;
+    if (!this.scope_discriminants.length) return null;
+    return {
+      updates: [{
+        id: '', sourceElementId: '', sourceElementKind: 'sentence', semDiscourseMapping: {},
+        discourse: this.inputItems.map(item => ({
+          id: item.id, semanticOrigin: item.id, drsString: '', ruleBranch: 1,
+          anaphoraMapping: { relations: [] }, collapsed: false,
+        } as DiscourseAnalysis)),
+      }],
+      discriminants: this.scope_discriminants,
+      averager: 'borda',
+    };
+  }
+
+  /** Orders the items by the checked, applicable criteria; tied items, and items the context
+   *  does not know, keep the owner's order. */
+  private orderItems(items: GswbSolution[]): GswbSolution[] {
+    const context = this.orderContext();
+    this.orderOptions = context ? applicableReadingOptions(context) : { criteria: [], filters: [] };
+    this.readingById = new Map((context?.updates ?? []).flatMap(update => update.discourse)
+      .map(reading => [reading.id, reading]));
+    this.placeById.clear();
+    if (!context) return items;
+    const places = globalReadingOrder({
+      ...context,
+      criteria: this.orderCriteria.filter(criterion => this.orderOptions.criteria.includes(criterion)),
+    });
+    places.forEach(place => this.placeById.set(place.id, place.place));
+    const position = new Map(places.map((place, index) => [place.id, index]));
+    const unknown = Number.MAX_SAFE_INTEGER;
+    return items
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => (position.get(a.item.id) ?? unknown) - (position.get(b.item.id) ?? unknown) || a.index - b.index)
+      .map(({ item }) => item);
+  }
+
+  /** Orders the items again, showing the first or keeping the current one. */
+  private reorder(keepCurrent: boolean): void {
+    this.allItems = this.orderItems(this.inputItems);
+    this.applyFiltersAndResetIndex(0, keepCurrent, false);
+  }
+
   /** Optional caption per item, index-aligned with the array passed to `items`. Empty by
    *  default, so callers that don't set it are unaffected. */
   @Input() itemLabels: string[] = [];
@@ -69,7 +195,7 @@ export class SemVisComponent implements AfterViewInit {
 
   private currentPosition(): number {
     const current = this.items[this.index];
-    return current ? this.allItems.indexOf(current) : -1;
+    return current ? this.inputItems.indexOf(current) : -1;
   }
 
   @Output() selectionChange = new EventEmitter<{
@@ -87,7 +213,10 @@ export class SemVisComponent implements AfterViewInit {
   scope_discriminants: GswbDiscriminant[] = [];
   mc_discriminants: GswbDiscriminant[] = [];
 
+  /** Every item, in the order shown. */
   allItems: GswbSolution[] = [];
+  /** Every item as the owner gave them; `itemLabels` and `itemRankings` align with these. */
+  private inputItems: GswbSolution[] = [];
 
   index = 0;
 
@@ -162,7 +291,8 @@ export class SemVisComponent implements AfterViewInit {
       this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(this.semanticOf(item)!));
     if (!pending.length || this.collapseLoading || !this.injector) return;
     const dataService = this.injector.get(DataService);
-    const items = this.allItems;
+    // The owner's items: reordering them is not a new item set.
+    const items = this.inputItems;
     this.collapseLoading = true;
     from(pending).pipe(
       concatMap(item => dataService.gswbCollapseAnaphora({
@@ -175,7 +305,7 @@ export class SemVisComponent implements AfterViewInit {
     ).subscribe(responses => {
       this.collapseLoading = false;
       // A new item set arrived meanwhile: these belong to the old one.
-      if (items !== this.allItems) return;
+      if (items !== this.inputItems) return;
       responses.forEach((response, index) => {
         if (response?.rejection) {
           this.collapseErrors.set(this.semanticOf(pending[index])!, `the reading is rejected: ${response.rejection}`);
@@ -207,8 +337,9 @@ export class SemVisComponent implements AfterViewInit {
       this.collapseErrors.clear();
       this.showCollapsed = false;
     }
-    this._items = next;
-    this.allItems = this._items;
+    this.inputItems = next;
+    this.allItems = this.orderItems(next);
+    this._items = this.filterItemsBySelectedDiscriminants(this.allItems);
     if (this.index >= this._items.length) {
       this.index = Math.max(this._items.length - 1, 0);
     }
@@ -238,6 +369,8 @@ export class SemVisComponent implements AfterViewInit {
   public setDiscriminants(items: GswbDiscriminant[]): void {
     this.scope_discriminants = items.filter(s => s.type === "scope");
     this.mc_discriminants = items.filter(s => s.type === "MCs");
+    // Semantic readings are ordered by these.
+    this.allItems = this.orderItems(this.inputItems);
 
     this.applyFiltersAndResetIndex(0, true);
   }
@@ -312,7 +445,7 @@ export class SemVisComponent implements AfterViewInit {
   }
 
 
-  applyFiltersAndResetIndex(startIndex = 0, preserveCurrent = true): void {
+  applyFiltersAndResetIndex(startIndex = 0, preserveCurrent = true, notify = true): void {
     const currentId = preserveCurrent ? this.items[this.index]?.id ?? null : null;
     const filtered = this.filterItemsBySelectedDiscriminants(this.allItems);
 
@@ -332,6 +465,7 @@ export class SemVisComponent implements AfterViewInit {
     this.rebuildDiscriminantViews();
 
     //notify parent(s)
+    if (!notify) return;
     this.selectionChange.emit({
       items: this.items,
       selectedScopeIds: [...this.selectedScopeIds],
@@ -361,6 +495,14 @@ export class SemVisComponent implements AfterViewInit {
   private filterItemsBySelectedDiscriminants(items: GswbSolution[]): GswbSolution[] {
     const idFilter = this.itemIdFilter;
     if (idFilter) items = items.filter(item => idFilter.has(item.id));
+    // The reading filters hide; they never change what the owner reasons over.
+    const filters = this.readingFilters.filter(filter => this.orderOptions.filters.includes(filter));
+    if (filters.length) {
+      items = items.filter(item => {
+        const reading = this.readingById.get(item.id);
+        return !reading || !filters.some(filter => hiddenByFilter(reading, filter));
+      });
+    }
     const selectedDiscriminants = this.getSelectedDiscriminants();
 
     // No selection => no filtering

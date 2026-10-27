@@ -15,6 +15,48 @@ export type ReadingCriterion = typeof READING_CRITERIA[number];
 const MATRIX_ROWS = ['pronouns', 'binding', 'accommodation'] as const;
 type MatrixRow = typeof MATRIX_ROWS[number];
 
+/** What a view orders a discourse's readings with: the discourse updates the readings belong
+ *  to (their profiles and LM rankings), the scope discriminants of its sentences, and the
+ *  session's averager. */
+export interface ReadingOrderContext {
+  updates: DiscourseUpdate[];
+  discriminants: GswbDiscriminant[];
+  averager: AnaphoraAverager;
+}
+
+/** The display filters (N4): they hide readings, never change what reaches Vampire. */
+export const READING_FILTERS = ['unbound', 'accommodated'] as const;
+export type ReadingFilter = typeof READING_FILTERS[number];
+
+/** Whether a reading is hidden by a filter: an unbound pronoun, an accommodated presupposition.
+ *  A reading without a profile is never hidden. */
+export function hiddenByFilter(reading: DiscourseAnalysis, filter: ReadingFilter): boolean {
+  const profile = reading.pragmaticProfile;
+  if (!profile) return false;
+  return filter === 'unbound'
+    ? (profile.pronouns?.[2] ?? 0) > 0
+    : (profile.accommodation ?? []).some(count => count > 0);
+}
+
+/** The criteria and filters that apply to these readings, for a context-sensitive panel:
+ *  surface alignment where there are scope discriminants, a matrix row where some reading has
+ *  a choice in it, the LM where a ranking exists; a filter where it would hide something. */
+export function applicableReadingOptions(context: ReadingOrderContext): {
+  criteria: ReadingCriterion[];
+  filters: ReadingFilter[];
+} {
+  const readings = context.updates.flatMap(update => update.discourse);
+  const rowUsed = (row: MatrixRow) => readings.some(reading =>
+    (reading.pragmaticProfile?.[row] ?? []).some(count => count > 0));
+  const criteria = READING_CRITERIA.filter(criterion => {
+    if (criterion === 'surface') return context.discriminants.some(discriminant => discriminant.type === 'scope');
+    if (criterion === 'lm') return context.updates.some(update => !!update.anaphoraRanking);
+    return rowUsed(criterion);
+  });
+  const filters = READING_FILTERS.filter(filter => readings.some(reading => hiddenByFilter(reading, filter)));
+  return { criteria, filters };
+}
+
 /** A reading's place in the global order: 1 is best, tied readings share a place, and places
  *  are dense (1, 2, 2, 3), so k places hold every reading tied with the k-th. */
 export interface ReadingPlace {
@@ -65,19 +107,37 @@ export function compareProfiles(
   return distinctColumns(a) - distinctColumns(b);
 }
 
-/** Competition ranks ("1224"): 1 + the number of items strictly better under `compare`. */
+/** Competition ranks ("1224"): 1 + the number of items strictly better under `compare`, a
+ *  total preorder (negative: `a` better, 0: tied). Sorted once, since a discourse can have
+ *  a thousand readings. */
 function competitionRanks<T>(items: T[], compare: (a: T, b: T) => number): number[] {
-  return items.map(item => 1 + items.filter(other => compare(other, item) < 0).length);
+  const order = items.map((_, index) => index).sort((a, b) => compare(items[a], items[b]));
+  const ranks = new Array<number>(items.length);
+  order.forEach((index, position) => {
+    const previous = order[position - 1];
+    ranks[index] = position > 0 && compare(items[previous], items[index]) === 0 ? ranks[previous] : position + 1;
+  });
+  return ranks;
 }
 
-/** Every reading's LM score across ALL readings of the discourse. lm ranks only within one
+/** Higher first, missing last; equal values (two missing among them) tie. */
+function descending(a: number | null, b: number | null): number {
+  const left = a ?? -Infinity;
+  const right = b ?? -Infinity;
+  return left === right ? 0 : right - left;
+}
+
+/** Every reading's LM score across ALL readings of the discourse, from the rankings of its
+ *  updates. lm ranks only within one
  *  semantic reading, so its combined `score` is not comparable across them (Borda and RRF are
  *  rank based); the rankers' own scores are, and are fused here over all readings the way lm's
  *  `fuse_branches` fuses within one. One ranker: its score. Null where no ranker scored. */
-export function globalLmScores(ranking: AnaphoraRanking | undefined, ids: string[]): Map<string, number | null> {
+export function globalLmScores(rankings: AnaphoraRanking[], ids: string[]): Map<string, number | null> {
   const scores = new Map<string, number | null>(ids.map(id => [id, null]));
+  // The discourse's updates are ranked with the session's rankers, so the first names them.
+  const ranking = rankings[0];
   if (!ranking) return scores;
-  const byId = new Map(ranking.branches.map(branch => [branch.discourseId, branch]));
+  const byId = new Map(rankings.flatMap(each => each.branches).map(branch => [branch.discourseId, branch]));
   const rankers = ranking.methods?.length ? ranking.methods : [ranking.method];
   // Old rankings carry only the combined score; read it as the one ranker's.
   const own = ids.map(id => {
@@ -87,7 +147,7 @@ export function globalLmScores(ranking: AnaphoraRanking | undefined, ids: string
   const m = own[0]?.length ?? 0;
   const n = ids.length;
   const ranks = Array.from({ length: m }, (_, r) =>
-    competitionRanks(own.map(values => values[r]), (a, b) => (b ?? -Infinity) - (a ?? -Infinity)));
+    competitionRanks(own.map(values => values[r]), descending));
   ids.forEach((id, i) => {
     const values = own[i];
     if (values.every(value => value === null)) return;
@@ -126,15 +186,11 @@ function fuse(ranks: (number | null)[], n: number, averager: AnaphoraAverager): 
  *  a criterion's priority -- which is why `weighted`, a fusion by priority, fuses as Borda here.
  *  A criterion with nothing to tell the readings apart (no LM ranking, no profiles, no scoping
  *  against the surface) ranks them all first and changes nothing. Returns the readings best
- *  first; tied readings keep the update's order. */
-export function globalReadingOrder(request: {
-  update: DiscourseUpdate;
-  /** Scope discriminants of the sentences the update's element spans. */
-  discriminants: GswbDiscriminant[];
+ *  first; tied readings keep the updates' order. */
+export function globalReadingOrder(request: ReadingOrderContext & {
   criteria: readonly ReadingCriterion[];
-  averager: AnaphoraAverager;
 }): ReadingPlace[] {
-  const readings = request.update.discourse;
+  const readings = request.updates.flatMap(update => update.discourse);
   if (!readings.length) return [];
   const checked = READING_CRITERIA.filter(criterion => request.criteria.includes(criterion));
   const rows = MATRIX_ROWS.filter(row => checked.includes(row));
@@ -150,9 +206,11 @@ export function globalReadingOrder(request: {
       compareProfiles(a.pragmaticProfile, b.pragmaticProfile, rows)));
   }
   if (checked.includes('lm')) {
-    const scores = globalLmScores(request.update.anaphoraRanking, readings.map(reading => reading.id));
+    const lmRankings = request.updates.map(update => update.anaphoraRanking)
+      .filter((ranking): ranking is AnaphoraRanking => !!ranking);
+    const scores = globalLmScores(lmRankings, readings.map(reading => reading.id));
     const lm = readings.map(reading => scores.get(reading.id) ?? null);
-    rankings.push(competitionRanks(readings.map((_, i) => i), (a, b) => (lm[b] ?? -Infinity) - (lm[a] ?? -Infinity)));
+    rankings.push(competitionRanks(lm, descending));
   }
 
   const averager = request.averager === 'rrf' ? 'rrf' : 'borda';
@@ -161,15 +219,12 @@ export function globalReadingOrder(request: {
     score: rankings.length ? fuse(rankings.map(ranks => ranks[i]), readings.length, averager) : 1,
     index: i,
   }));
-  const distinctScores = fused.map(entry => entry.score)
-    .filter((score, i, all) => all.findIndex(other => Math.abs(other - score) < EPSILON) === i);
-  return fused
-    .map(entry => ({
-      id: entry.id,
-      score: entry.score,
-      place: 1 + distinctScores.filter(score => score - entry.score > EPSILON).length,
-      index: entry.index,
-    }))
-    .sort((a, b) => a.place - b.place || a.index - b.index)
-    .map(({ id, place, score }) => ({ id, place, score }));
+  // Best first, tied readings in the updates' order; a place per distinct score.
+  const sorted = [...fused].sort((a, b) =>
+    (Math.abs(a.score - b.score) < EPSILON ? 0 : b.score - a.score) || a.index - b.index);
+  let place = 0;
+  return sorted.map((entry, position) => {
+    if (position === 0 || sorted[position - 1].score - entry.score > EPSILON) place++;
+    return { id: entry.id, place, score: entry.score };
+  });
 }

@@ -200,3 +200,31 @@ button.chip.selected.current-hit{
 .ranking-table th {
   background: #f5f5f5;
 }
+
+.status-place {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.reading-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.reading-order-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.reading-order-title {
+  font-weight: 600;
+}
+
+.reading-order input {
+  margin-right: 4px;
+}
