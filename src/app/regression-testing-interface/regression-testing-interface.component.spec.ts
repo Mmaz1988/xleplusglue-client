@@ -1756,7 +1756,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(assignments[1].discourseUpdateId).toBeUndefined();
       expect(assignments[1].discourseId).toBeUndefined();
       const { labels } = discourseBranchesForDisplay(component.session.analysisDocuments['n0']);
-      expect(labels[0]).toContain('Vampire: entailment ×1');
+      expect(labels[0]).toMatch(/ · sent$/);
     });
 
     it('writes nothing, and fails the item, when there is no registered sequence or no reading', () => {

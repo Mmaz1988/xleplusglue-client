@@ -940,6 +940,9 @@ export interface AnaphoraRankingTable {
   columns: string[];
   /** One per binding: anaphor, antecedent, then the scores. */
   rows: string[][];
+  /** Why the last run did not send the reading, e.g. "not sent to Vampire: top 1 by LM". A
+   *  reading without a ranking can have a note alone (no summary, no columns). */
+  note?: string;
 }
 
 /** The ranking of `discourseId` within `update`; null when unranked. Scores are in [0, 1] for
@@ -979,17 +982,18 @@ export function anaphoraRankingTable(update: DiscourseUpdate, discourseId: strin
   return { summary, columns, rows };
 }
 
-/** The summary line of anaphoraRankingTable; empty when unranked. */
+/** "rank r" of `discourseId` within `update`; empty when unranked. The rest of the summary
+ *  is in the rank pill (anaphoraRankingTable). */
 export function anaphoraRankingCaption(update: DiscourseUpdate, discourseId: string): string {
-  return anaphoraRankingTable(update, discourseId)?.summary ?? '';
+  const rank = update.anaphoraRanking?.branches.find(candidate => candidate.discourseId === discourseId)?.rank;
+  return rank == null || !anaphoraRankingTable(update, discourseId) ? '' : `rank ${rank}`;
 }
-
-const NLI_LABEL_NAMES: Record<NliLabel, string> = { '1': 'entailment', '0': 'neutral', '-1': 'contradiction' };
 
 /** Every discourse branch of a document, for paging through in a dialog: text DRSs grouped by
  *  reading (in the order the readings first appear), each reading's branches by anaphora rank
- *  (generation order when unranked), captioned with the ranking and with the Vampire verdicts
- *  of the reasoning assignments computed over that branch. Reads the document only. */
+ *  (generation order when unranked), captioned "reading i/n · rank r · sent/not sent" once a
+ *  run sent any; the ranker breakdown and why a reading was not sent are in its rank pill
+ *  (`rankings`). Reads the document only. */
 export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   solutions: GswbSolution[];
   labels: string[];
@@ -1022,22 +1026,21 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         const ranking = anaphoraRankingCaption(update, branch.id) || (update.anaphoraRanking ? 'unranked' : bindings);
 
         const own = assignments.filter(assignment => assignment.discourseId === branch.id);
-        const counts = new Map<string, number>();
-        own.forEach(assignment => {
-          const outcome = assignment.verdict
-            ? NLI_LABEL_NAMES[nliLabelFromVerdicts(assignment.verdict.consistent, assignment.verdict.informative)]
-            : assignment.failure ? 'failed' : 'not run';
-          counts.set(outcome, (counts.get(outcome) ?? 0) + 1);
-        });
-        const verdicts = own.length
-          ? `Vampire: ${[...counts].map(([outcome, count]) => `${outcome} ×${count}`).join(', ')}`
-          : recorded && sentIds.size ? `not sent to Vampire (${describeReadingSelection(recorded)})` : '';
+        // A branch whose every check bundle failed to prepare never reached Vampire.
+        const sent = own.some(assignment => !assignment.failure);
+        const sending = sent ? 'sent'
+          : own.length ? 'not sent (preparation failed)'
+          : sentIds.size ? 'not sent' : '';
+        const note = !own.length && recorded && sentIds.size
+          ? `not sent to Vampire: ${describeReadingSelection(recorded)}` : undefined;
 
         // `semantic` is what the dialog's Collapse sends to GSWB: the PCDRS with its A:/P:.
         solutions.push({ id: branch.id, solution: branch.drsString, semantic: branch.drsString } as GswbSolution);
         // Nothing to say about reasoning (no run yet, or no verdict for this branch): left out.
-        labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, verdicts].filter(part => !!part).join(' · '));
-        rankings.push(anaphoraRankingTable(update, branch.id));
+        labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, sending].filter(part => !!part).join(' · '));
+        const table = anaphoraRankingTable(update, branch.id);
+        rankings.push(table ? { ...table, ...(note ? { note } : {}) }
+          : note ? { summary: '', columns: [], rows: [], note } : null);
         // The stored PCDRS itself, A: and P: inline: its merge chain keeps the sentence
         // dividers (I3), and P: is shown.
         render.push({ id: branch.id, semantic: branch.drsString });

@@ -186,9 +186,9 @@ describe('anaphora ranking document helpers', () => {
     expect(orderByAnaphoraRanking(branches, [ranked]).map(entry => entry.id)).toEqual(['r1-b', 'r1-a', 'r2-b', 'r2-a']);
   });
 
-  it('captions a branch with its rank and score, and tables each binding', () => {
+  it('captions a branch with its rank, and tables its score and each binding', () => {
     const ranked = { ...twoBranches(), anaphoraRanking: ranking([['b-dog', 2, 0.894], ['b-cat', 1, 0.908]]) };
-    expect(anaphoraRankingCaption(ranked, 'b-cat')).toBe('rank 1 · mean score 0.908');
+    expect(anaphoraRankingCaption(ranked, 'b-cat')).toBe('rank 1');
     expect(anaphoraRankingTable(ranked, 'b-cat')).toEqual({
       summary: 'rank 1 · mean score 0.908',
       columns: ['Anaphor', 'Antecedent', 'Score', 'Raw', 'Substitution', 'Recency'],
@@ -267,13 +267,25 @@ describe('discourseBranchesForDisplay', () => {
     expect(render.map(item => [item.id, item.semantic])).toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
     expect(solutions.map(solution => [solution.id, solution.solution]))
       .toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
-    expect(labels[0]).toBe('reading 1/2 · rank 1 · mean score 0.908 · Vampire: neutral ×2, entailment ×1');
+    // N4 6g: the caption is short; the ranker breakdown is the rank pill's.
+    expect(labels[0]).toBe('reading 1/2 · rank 1 · sent');
+    expect(rankings[0]!.summary).toBe('rank 1 · mean score 0.908');
     expect(rankings[0]!.rows).toEqual([['it', 'the big cat', '0.908', 'cos 0.82', '', '2']]);
-    expect(labels[1]).toContain('reading 1/2 · rank 3');
-    expect(labels[1]).toContain('Vampire: failed ×1');
-    expect(labels[2]).toContain('reading 2/2');
-    expect(labels[2]).not.toContain('Vampire');
-    expect(labels[2]).not.toContain('reasoning');
+    expect(labels[1]).toBe('reading 1/2 · rank 3 · not sent (preparation failed)');
+    expect(labels[2]).toBe('reading 2/2 · rank 1 · not sent');
+  });
+
+  it('gives an unranked reading the run did not send a rank pill with the note alone', () => {
+    const document = documentWith(update([branch('b-dog', [['x4', 'x2']]), branch('b-none', [])]));
+    document.reasoningUpdates = [{
+      id: 'ru-n0', premiseElementIds: ['sentence-1'], hypothesisElementIds: ['sentence-1'], logicType: 'fof',
+      readingSelection: { criteria: ['surface'], filters: [], k: 1, applied: true },
+      assignments: [assignment('b-dog', { consistent: true, informative: true })] as any,
+    }];
+    const { labels, rankings } = discourseBranchesForDisplay(document);
+    expect(labels).toEqual(['reading 1/1 · x4 → x2 · sent', 'reading 1/1 · no binding · not sent']);
+    expect(rankings[0]).toBeNull();
+    expect(rankings[1]).toEqual({ summary: '', columns: [], rows: [], note: 'not sent to Vampire: top 1 by surface' });
   });
 
   it('shows the bindings in generation order when there is no ranking', () => {
@@ -431,10 +443,15 @@ describe('anaphora branch selection for verdicts', () => {
     });
     document.reasoningUpdates![0].readingSelection = { ...lmTop(2), applied: true };
 
-    const { solutions, labels, counted } = discourseBranchesForDisplay(document);
+    const { solutions, labels, rankings, counted } = discourseBranchesForDisplay(document);
     expect(counted).toEqual(['b-event', 'b-cat']);
-    expect(labels[solutions.findIndex(solution => solution.id === 'b-dog')]).toContain('not sent to Vampire (top 2 by LM)');
-    expect(labels[solutions.findIndex(solution => solution.id === 'b-cat')]).toContain('Vampire: not run ×1');
+    const dog = solutions.findIndex(solution => solution.id === 'b-dog');
+    const cat = solutions.findIndex(solution => solution.id === 'b-cat');
+    expect(labels[dog]).toMatch(/ · not sent$/);
+    // The top-k note is the rank pill's.
+    expect(rankings[dog]!.note).toBe('not sent to Vampire: top 2 by LM');
+    expect(labels[cat]).toMatch(/ · sent$/);
+    expect(rankings[cat]!.note).toBeUndefined();
   });
 
   it('narrows sem-vis items to an id filter like a discriminant selection, and back', () => {

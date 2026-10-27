@@ -184,6 +184,10 @@ button.chip.selected.current-hit{
   margin-bottom: 6px;
 }
 
+.ranking-note {
+  margin-bottom: 6px;
+}
+
 .collapse-table-title {
   font-weight: 600;
   margin: 8px 0 4px;

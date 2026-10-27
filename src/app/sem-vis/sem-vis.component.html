@@ -40,8 +40,9 @@
       <!-- After the buttons, so captions of different lengths do not move them; the
            ranking's per-binding detail is a table in a pill. -->
       <app-pill *ngIf="currentRanking as ranking" badge="rank" variant="content" [minimizedColor]="'#1565c0'">
-        <div class="ranking-summary">{{ ranking.summary }}</div>
-        <table class="ranking-table">
+        <div class="ranking-summary" *ngIf="ranking.summary">{{ ranking.summary }}</div>
+        <div class="ranking-note" *ngIf="ranking.note">{{ ranking.note }}</div>
+        <table class="ranking-table" *ngIf="ranking.columns.length">
           <thead><tr><th *ngFor="let column of ranking.columns">{{ column }}</th></tr></thead>
           <tbody>
             <tr *ngFor="let row of ranking.rows"><td *ngFor="let cell of row">{{ cell }}</td></tr>

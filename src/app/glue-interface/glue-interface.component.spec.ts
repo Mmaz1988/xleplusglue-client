@@ -443,7 +443,7 @@ describe('GlueInterfaceComponent', () => {
       expect(dataServiceMock.lmRankAnaphora).toHaveBeenCalledTimes(1);
       // In generation order, captions aligned: the sem view orders them by its options.
       expect(shownIds()).toEqual(['s1-pcdrs-1', 's1-pcdrs-2']);
-      expect(component.pcdrsDisplayLabels[1]).toBe('rank 1 · mean score 0.908');
+      expect(component.pcdrsDisplayLabels[1]).toBe('rank 1');
       expect(component.pcdrsDisplayRankings[1]?.rows).toEqual([['it', 'the big cat', '0.908', 'cos 0.82', '', '2']]);
       expect(component.pcdrsReadingOrder?.updates[0].anaphoraRanking).toEqual(ranking);
       expect(component.pcdrsReadingOrder?.averager).toBe('borda');
