@@ -479,6 +479,22 @@ describe('GlueInterfaceComponent', () => {
       expect(storedUpdate().anaphoraRanking).toEqual(fused);
     });
 
+    it('stores a sem-view selection with the shown discourse, the built-in default otherwise', () => {
+      dataServiceMock.lmRankAnaphora.and.returnValue(of(ranking));
+      component.generatePcdrs();
+      expect(component.pcdrsReadingSelection).toEqual({ selection: { criteria: ['surface'], filters: [], k: null }, own: false });
+      const saves = dataServiceMock.saveAnalysisDocument.calls.count();
+
+      component.onPcdrsReadingSelectionChange({ criteria: ['lm'], filters: [], k: 1 });
+      expect(storedUpdate().readingSelection).toEqual({ criteria: ['lm'], filters: [], k: 1 });
+      expect(component.pcdrsReadingSelection).toEqual({ selection: { criteria: ['lm'], filters: [], k: 1 }, own: true });
+      expect(dataServiceMock.saveAnalysisDocument.calls.count()).toBeGreaterThan(saves);
+
+      component.onPcdrsReadingSelectionChange(null);
+      expect(storedUpdate().readingSelection).toBeUndefined();
+      expect(component.pcdrsReadingSelection?.own).toBeFalse();
+    });
+
     it('works unchanged when lm is down', () => {
       dataServiceMock.lmRankAnaphora.and.returnValue(throwError(() => ({ status: 0 })));
 

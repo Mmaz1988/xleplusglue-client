@@ -110,6 +110,8 @@
       [itemLabels]="pcdrsDisplayLabels"
       [itemRankings]="pcdrsDisplayRankings"
       [readingOrder]="pcdrsReadingOrder"
+      [readingSelection]="pcdrsReadingSelection"
+      (readingSelectionChange)="onPcdrsReadingSelectionChange($event)"
       [svgSolutions]="true"
       [collapsible]="true"></app-sem-vis>
   </div>

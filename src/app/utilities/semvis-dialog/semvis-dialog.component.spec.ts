@@ -22,18 +22,13 @@ describe('SemvisDialogComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('always narrows to the discriminant selection, and the checkbox filters within it', () => {
-    const setItemFilter = jasmine.createSpy('setItemFilter');
-    component.semVis = { setItemFilter } as any;
-    component.filterIds = ['a', 'b'];
-    component.narrowIds = ['b', 'c'];
-
-    component.toggleFilter(true);
-    expect(setItemFilter).toHaveBeenCalledWith(['b']);
-    component.toggleFilter(false);
-    expect(setItemFilter).toHaveBeenCalledWith(['b', 'c']);
-    component.narrowIds = null;
-    component.toggleFilter(false);
-    expect(setItemFilter).toHaveBeenCalledWith(null);
+  it('passes a discourse selection change on, keyed by the dialog\'s item', () => {
+    const changes: any[] = [];
+    component.readingSelectionChange.subscribe(change => changes.push(change));
+    (component as any).activeSentenceId = 'n1';
+    const selection = { criteria: ['surface'], filters: [], k: 1 } as any;
+    component.onReadingSelectionChange(selection);
+    component.onReadingSelectionChange(null);
+    expect(changes).toEqual([{ sentenceId: 'n1', selection }, { sentenceId: 'n1', selection: null }]);
   });
 });

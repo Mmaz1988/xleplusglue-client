@@ -2,13 +2,9 @@
   <h3>{{ title }}</h3>
   <p *ngIf="subtitle" class="dialog-subtitle">{{ subtitle }}</p>
 
-  <label *ngIf="filterIds" class="dialog-filter">
-    <input type="checkbox" [checked]="filterActive" (change)="toggleFilter($any($event.target).checked)">
-    {{ filterLabel }}
-  </label>
-
   <div class="dialog-body semvis-wrapper">
-    <app-sem-vis #semVis (selectionChange)="onSemVisSelection($event)"></app-sem-vis>
+    <app-sem-vis #semVis (selectionChange)="onSemVisSelection($event)"
+                 (readingSelectionChange)="onReadingSelectionChange($event)"></app-sem-vis>
   </div>
 
   <button type="button" (click)="close()">OK</button>

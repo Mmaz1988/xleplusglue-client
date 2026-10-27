@@ -11,7 +11,7 @@ import {
   createRegressionAnalysisDocument,
   createRegressionTestingSession,
 } from '../models/models';
-import { discourseBranchesForDisplay, reasoningAssignmentId } from '../analysis-model';
+import { discourseBranchesForDisplay, readingsForReasoning, reasoningAssignmentId } from '../analysis-model';
 import { LigerFileSource } from '../liger-workspace/liger-file-source.service';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { FILES, RULE_SET, TREE, fileSourceSpy } from '../liger-workspace/liger-workspace.testing';
@@ -1562,12 +1562,20 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(payload.items.length).toBe(2);
       });
 
-      it('opens on the branches the run sent to Vampire', () => {
+      it('opens on the item\'s selection and marks what the run sent to Vampire', () => {
         dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
           solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
         }));
+        component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
+        component.vampirePreferences.vampirePreferences = {
+          ...component.vampirePreferences.vampirePreferences,
+          reading_selection: { criteria: ['lm'], filters: [], k: 2 },
+        };
         component.openDiscourseDialog('n0');
-        expect(open.calls.mostRecent().args[0].filter).toBeUndefined();
+        let payload = open.calls.mostRecent().args[0];
+        expect(payload.readingSelection).toEqual({ selection: { criteria: ['lm'], filters: [], k: 2 }, own: false });
+        expect(payload.readingOrder.updates.map((update: any) => update.id)).toEqual(['du-S0+S1']);
+        expect(payload.sentByLastRun).toBeUndefined();
 
         // A top-1 run sent only pcdrs-2; no verdict has come back yet.
         document.reasoningUpdates = [{
@@ -1578,8 +1586,30 @@ describe('RegressionTestingInterfaceComponent', () => {
             discourseUpdateId: 'du-S0+S1', discourseId: 'pcdrs-2',
           }],
         }];
+        document.discourseUpdates[0].readingSelection = { criteria: ['surface'], filters: [], k: 1 };
         component.openDiscourseDialog('n0');
-        expect(open.calls.mostRecent().args[0].filter).toEqual({ ids: ['pcdrs-2'], label: 'Only branches sent to Vampire' });
+        payload = open.calls.mostRecent().args[0];
+        expect(payload.sentByLastRun).toEqual(['pcdrs-2']);
+        expect(payload.readingSelection).toEqual({ selection: { criteria: ['surface'], filters: [], k: 1 }, own: true });
+      });
+
+      it('stores a change made in the dialog with the item\'s discourse, for the next run', () => {
+        component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
+        const setReadingSelection = jasmine.createSpy('setReadingSelection');
+        (component as any).discourseDialog = { open, setReadingSelection };
+        const save = spyOn<any>(component, 'scheduleSessionSave');
+
+        component.onDiscourseReadingSelectionChange({ sentenceId: 'n0', selection: { criteria: ['pronouns'], filters: ['unbound'], k: 1 } });
+        expect(document.discourseUpdates[0].readingSelection).toEqual({ criteria: ['pronouns'], filters: ['unbound'], k: 1 });
+        expect(setReadingSelection).toHaveBeenCalledWith({ selection: { criteria: ['pronouns'], filters: ['unbound'], k: 1 }, own: true });
+        // What the next run sends.
+        const { selection } = readingsForReasoning(document, document.discourseUpdates[0], { ...ALL_READINGS }, 'borda');
+        expect(selection).toEqual({ criteria: ['pronouns'], filters: ['unbound'], k: 1 });
+        expect(save).toHaveBeenCalled();
+
+        component.onDiscourseReadingSelectionChange({ sentenceId: 'n0', selection: null });
+        expect(document.discourseUpdates[0].readingSelection).toBeUndefined();
+        expect(setReadingSelection.calls.mostRecent().args[0].own).toBeFalse();
       });
 
       it('falls back to the text DRSs when GSWB cannot render them', () => {

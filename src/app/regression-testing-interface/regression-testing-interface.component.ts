@@ -4916,6 +4916,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (!document || this.discourseDialogLoadingItemId) return;
     const { solutions, labels, rankings, render, counted } = discourseBranchesForDisplay(document);
     const narrowTo = this.discriminantNarrowing(itemId, document);
+    const update = this.itemDiscourseUpdate(itemId);
     const open = (items: GswbSolution[], svgSolutions: boolean, itemLabels: string[]) => this.discourseDialog.open({
       sentenceId: itemId,
       title: `Discourses — ${itemId}`,
@@ -4926,12 +4927,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       svgSolutions,
       collapsible: true,
       readingOrder: {
-        updates: document.discourseUpdates ?? [],
+        updates: update ? [update] : document.discourseUpdates ?? [],
         discriminants: document.sentences.flatMap(sentence => sentence.discriminants ?? []),
         averager: this.anaphoraRankers().averager,
       },
-      // Opens on what the run sent to Vampire; the checkbox shows every branch.
-      ...(counted ? { filter: { ids: counted, label: 'Only branches sent to Vampire' } } : {}),
+      // The item's selection, which the next "Run inference" sends; what the last run sent is
+      // marked while they differ.
+      ...(update ? { readingSelection: this.discourseReadingSelection(update) } : {}),
+      ...(counted ? { sentByLastRun: counted } : {}),
       // Hidden as a sentence's discriminants hide its readings; the counter keeps the total.
       ...(narrowTo ? { narrowTo } : {}),
     });
@@ -4955,6 +4958,35 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         open(solutions, false, labels);
       },
     });
+  }
+
+  /** The item's discourse, the one "Run inference" reasons over (`reasonOverItem`). */
+  private itemDiscourseUpdate(itemId: string): DiscourseUpdate | undefined {
+    const item = this.regressionTestItems.find(candidate => String(candidate?.id ?? '') === itemId);
+    if (!item) return undefined;
+    const id = `du-${compositeAnalysisId([...(item.premises ?? []), ...(item.conclusion ?? [])])}`;
+    return this.session.analysisDocuments[itemId]?.discourseUpdates?.find(update => update.id === id);
+  }
+
+  /** A discourse's own selection, else the session default. */
+  private discourseReadingSelection(update: DiscourseUpdate): { selection: ReadingSelection; own: boolean } {
+    return update.readingSelection
+      ? { selection: normalizedReadingSelection(update.readingSelection), own: true }
+      : { selection: this.readingSelection(), own: false };
+  }
+
+  /** Stores a change made in an item's discourse dialog with its discourse (null: back to the
+   *  default), for the next "Run inference". */
+  onDiscourseReadingSelectionChange(change: { sentenceId: string; selection: ReadingSelection | null }): void {
+    const update = this.itemDiscourseUpdate(change.sentenceId);
+    if (!update) return;
+    if (change.selection) {
+      update.readingSelection = normalizedReadingSelection(change.selection);
+    } else {
+      delete update.readingSelection;
+    }
+    this.discourseDialog?.setReadingSelection(this.discourseReadingSelection(update));
+    this.scheduleSessionSave();
   }
 
   /** The discourse readings of an item the session's discriminant selection keeps, or null

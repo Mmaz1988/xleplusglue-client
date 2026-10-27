@@ -13,7 +13,7 @@ import { AnaphoraRankingTable, anaphoraRankerSelection, anaphoraRankingCaption, 
 import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 import { discourseUpdateOf } from '../document-builder/pcdrs-readings';
-import { ReadingOrderContext } from '../reading-order';
+import { DEFAULT_READING_SELECTION, ReadingOrderContext, ReadingSelection, normalizedReadingSelection } from '../reading-order';
 
 interface PostProcessingResult {
   semanticSolution: GswbSolution;
@@ -63,6 +63,9 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   /** What the sem view orders and filters the shown PCDRS with (N4); set with them, so the
    *  view gets a new one only when they change. */
   pcdrsReadingOrder: ReadingOrderContext | null = null;
+  /** The shown discourse's reading selection (N4 6d): its own, else the built-in default.
+   *  Display and storage only, analysis has no Vampire. */
+  pcdrsReadingSelection: { selection: ReadingSelection; own: boolean } | null = null;
   /** Latest ranking outcome per discourse update id; 'pending' while lm is working. */
   anaphoraRankingStatus: Record<string, AnaphoraRankingResult | { status: 'pending' }> = {};
   /** The anaphora rankers this view ranks with: the same preferences fields as regression's and
@@ -836,6 +839,26 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       discriminants: this.analysisDocument.sentences.flatMap(sentence => sentence.discriminants ?? []),
       averager: this.anaphoraRankers().averager,
     } : null;
+    this.pcdrsReadingSelection = update ? this.readingSelectionOf(update) : null;
+  }
+
+  private readingSelectionOf(update: DiscourseUpdate): { selection: ReadingSelection; own: boolean } {
+    return update.readingSelection
+      ? { selection: normalizedReadingSelection(update.readingSelection), own: true }
+      : { selection: { ...DEFAULT_READING_SELECTION }, own: false };
+  }
+
+  /** Stores a sem-view change with the shown discourse (null: back to the default). */
+  onPcdrsReadingSelectionChange(selection: ReadingSelection | null): void {
+    const update = this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId) : undefined;
+    if (!update) return;
+    if (selection) {
+      update.readingSelection = normalizedReadingSelection(selection);
+    } else {
+      delete update.readingSelection;
+    }
+    this.pcdrsReadingSelection = this.readingSelectionOf(update);
+    this.persistAnalysisDocument();
   }
 
   private currentPcdrsRanking(): AnaphoraRanking | undefined {

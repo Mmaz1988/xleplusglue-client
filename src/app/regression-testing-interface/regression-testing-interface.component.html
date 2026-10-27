@@ -287,7 +287,7 @@
   <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
   <!-- Separate instance, no selectionChange: its items are discourse branches, not a
        sentence's readings, so nothing it emits may be stored as a sentence's selection. -->
-  <app-semvis-dialog #discourseDialog></app-semvis-dialog>
+  <app-semvis-dialog #discourseDialog (readingSelectionChange)="onDiscourseReadingSelectionChange($event)"></app-semvis-dialog>
   <div class="results-grid">
     <div class="results-panel">
       <h3>Parsing report ({{ parseResultCount }} of {{ expectedParseCount }}):</h3>

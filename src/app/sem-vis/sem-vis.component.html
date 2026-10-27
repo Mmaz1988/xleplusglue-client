@@ -49,6 +49,10 @@
           </tbody>
         </table>
       </app-pill>
+      <span class="last-run-badge" *ngIf="currentSentByLastRun !== null" [class.not-sent]="!currentSentByLastRun"
+            title="The selection keeps other readings than the last run sent to Vampire.">
+        {{ currentSentByLastRun ? 'sent by the last run' : 'not sent by the last run' }}
+      </span>
       <span class="status-label" *ngIf="currentLabel">{{ currentLabel }}</span>
 
       <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
@@ -73,7 +77,7 @@
 
   <!-- Reading order and filters (N4): only what applies to these readings. Display only.
        The pragmatic discriminants will join this panel. -->
-  <div class="reading-order" *ngIf="orderOptions.criteria.length || orderOptions.filters.length">
+  <div class="reading-order" *ngIf="orderOptions.criteria.length || orderOptions.filters.length || readingSelectionEditable">
     <div class="reading-order-group" *ngIf="orderOptions.criteria.length">
       <span class="reading-order-title" [title]="orderHint">Order by ⓘ</span>
       <label *ngFor="let criterion of orderOptions.criteria" [title]="criterionHint(criterion)">
@@ -87,6 +91,24 @@
         <input type="checkbox" [checked]="isFilterChecked(filter)" (change)="toggleFilter(filter)">
         {{ filterLabel(filter) }}
       </label>
+    </div>
+    <!-- A discourse's selection (N4 6d): stored with it by the owner. -->
+    <div class="reading-order-group reading-top-k" *ngIf="readingSelectionEditable">
+      <span class="reading-order-title" [title]="topKHint">Keep ⓘ</span>
+      <select [value]="readingK === null ? 'all' : 'top'" (change)="setTopKMode($any($event.target).value)">
+        <option value="all">all readings</option>
+        <option value="top">top k places</option>
+      </select>
+      <label *ngIf="readingK !== null">
+        k
+        <input type="number" min="1" step="1" [value]="readingK" (change)="setTopK($any($event.target).value)">
+      </label>
+      <label *ngIf="readingK !== null">
+        <input type="checkbox" [checked]="showBeyondTopK" (change)="toggleBeyondTopK($any($event.target).checked)">
+        show all readings
+      </label>
+      <span class="reading-selection-source">{{ readingSelectionOwn ? 'set for this discourse' : 'default' }}</span>
+      <button type="button" class="link-button" *ngIf="readingSelectionOwn" (click)="useDefaultReadingSelection()">use the default</button>
     </div>
   </div>
 

@@ -91,6 +91,10 @@ export const ORDER_HINT = 'Each checked ordering ranks the readings; the ranks a
   + 'RRF, as the session\'s ranker averager), so a reading better on every checked ordering comes '
   + 'first.';
 
+/** What the view's top k keeps, for the k control. */
+export const TOP_K_HINT = 'Keeps the readings on the first k places of the order, after the filters; '
+  + 'tied readings share a place. In regression, what "Run inference" sends to Vampire for this item.';
+
 export const FILTER_LABELS: Record<ReadingFilter, string> = {
   unbound: 'readings with an unbound pronoun',
   accommodated: 'readings with an accommodated presupposition',

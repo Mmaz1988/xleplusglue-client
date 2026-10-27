@@ -355,5 +355,85 @@ describe('SemVisComponent', () => {
       expect(component.orderOptions).toEqual({ criteria: [], filters: [] });
       expect(shown()).toEqual(['p1', 'p2', 'p3']);
     });
+
+    describe('with the discourse\'s selection', () => {
+      const visible = () => component.items.map(item => item.id);
+      let changes: any[];
+
+      beforeEach(() => {
+        changes = [];
+        component.readingSelectionChange.subscribe(change => changes.push(change));
+        component.readingOrder = context();
+      });
+
+      it('starts from it and keeps the top k places, ties together', () => {
+        component.readingSelection = { selection: { criteria: ['surface'], filters: [], k: 1 }, own: false };
+        expect(component.orderCriteria).toEqual(['surface']);
+        expect(component.readingK).toBe(1);
+        // p2 and p3 tie on the first place.
+        expect(visible()).toEqual(['p2', 'p3']);
+        expect(component.allItems.length).toBe(3);
+
+        component.readingSelection = { selection: { criteria: ['pronouns'], filters: [], k: 1 }, own: true };
+        expect(visible()).toEqual(['p2']);
+        component.toggleBeyondTopK(true);
+        expect(visible()).toEqual(['p2', 'p3', 'p1']);
+        expect(changes).toEqual([]);
+      });
+
+      it('takes the top k over what the narrowing leaves, as a run does', () => {
+        component.readingSelection = { selection: { criteria: ['pronouns'], filters: [], k: 1 }, own: true };
+        component.setItemFilter(['p1', 'p3']);
+        expect(visible()).toEqual(['p3']);
+      });
+
+      it('emits every change for the owner to store, and null for the default', () => {
+        component.readingSelection = { selection: { criteria: ['surface'], filters: [], k: null }, own: false };
+        component.setTopKMode('top');
+        component.setTopK('2');
+        component.toggleFilter('unbound');
+        component.toggleCriterion('lm');
+        expect(changes).toEqual([
+          { criteria: ['surface'], filters: [], k: 1 },
+          { criteria: ['surface'], filters: [], k: 2 },
+          { criteria: ['surface'], filters: ['unbound'], k: 2 },
+          { criteria: ['surface', 'lm'], filters: ['unbound'], k: 2 },
+        ]);
+        // The owner's echo keeps the reading shown.
+        component.next();
+        const current = component.items[component.index].id;
+        component.readingSelection = { selection: changes[changes.length - 1], own: true };
+        expect(component.items[component.index].id).toBe(current);
+        expect(component.readingSelectionOwn).toBeTrue();
+
+        component.useDefaultReadingSelection();
+        expect(changes[changes.length - 1]).toBeNull();
+      });
+
+      it('marks what the last run sent once the selection keeps something else', () => {
+        component.readingSelection = { selection: { criteria: ['surface'], filters: [], k: 1 }, own: false };
+        component.sentByLastRun = ['p2', 'p3'];
+        expect(component.currentSentByLastRun).toBeNull();
+
+        component.setTopKMode('all');
+        expect(visible()).toEqual(['p2', 'p3', 'p1']);
+        expect(component.currentSentByLastRun).toBeTrue();
+        component.next();
+        component.next();
+        expect(component.currentSentByLastRun).toBeFalse();
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('.last-run-badge')?.textContent).toContain('not sent by the last run');
+      });
+
+      it('shows the k control only for a discourse\'s selection', () => {
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('.reading-top-k')).toBeNull();
+        component.readingSelection = { selection: { criteria: ['surface'], filters: [], k: 1 }, own: true };
+        fixture.detectChanges();
+        const control: HTMLElement = fixture.nativeElement.querySelector('.reading-top-k');
+        expect(control.textContent).toContain('set for this discourse');
+        expect(control.querySelector('input[type="number"]')).not.toBeNull();
+      });
+    });
   });
 });

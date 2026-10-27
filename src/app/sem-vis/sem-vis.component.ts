@@ -14,9 +14,13 @@ import {
   FILTER_HINTS,
   FILTER_LABELS,
   ORDER_HINT,
+  ReadingSelection,
+  TOP_K_HINT,
   applicableReadingOptions,
   globalReadingOrder,
   hiddenByFilter,
+  sameReadingSelection,
+  selectedReadingIds,
 } from '../reading-order';
 
 /** What /collapse_anaphora can resolve: an LFGxDRT expression with a presupposition box, an
@@ -78,6 +82,90 @@ export class SemVisComponent implements AfterViewInit {
   readingFilters: ReadingFilter[] = [];
   /** What applies to the current items; the panel shows only these. */
   orderOptions: { criteria: ReadingCriterion[]; filters: ReadingFilter[] } = { criteria: [], filters: [] };
+
+  /** The discourse's reading selection (N4 6d), from an owner that stores it with the
+   *  discourse: the options start from it, the view applies its top k, and every change is
+   *  emitted (`readingSelectionChange`) for the owner to store and pass back. `own`: stored
+   *  for this discourse; otherwise it is the default. Null: the options are this view's own,
+   *  with no top k. */
+  @Input()
+  set readingSelection(value: { selection: ReadingSelection; own: boolean } | null) {
+    this.readingSelectionOwn = !!value?.own;
+    if (!value) {
+      this.readingSelectionEditable = false;
+      this.readingK = null;
+      this.showBeyondTopK = false;
+      return;
+    }
+    const unchanged = this.readingSelectionEditable && sameReadingSelection(this.currentReadingSelection(), value.selection);
+    this.readingSelectionEditable = true;
+    if (unchanged) return;
+    this.orderCriteria = [...value.selection.criteria];
+    this.readingFilters = [...value.selection.filters];
+    this.readingK = value.selection.k;
+    this.reorder(false);
+  }
+  readingSelectionEditable = false;
+  readingSelectionOwn = false;
+  /** The top k places shown; null: every reading. */
+  readingK: number | null = null;
+  /** Shows the readings beyond the top k too (the filters still hide). */
+  showBeyondTopK = false;
+  readonly topKHint = TOP_K_HINT;
+
+  /** A changed selection, or null to go back to the default. */
+  @Output() readingSelectionChange = new EventEmitter<ReadingSelection | null>();
+
+  /** The readings the last run sent, to mark them while they differ from what the current
+   *  selection keeps; null: no run, or nothing to mark. */
+  @Input()
+  set sentByLastRun(value: string[] | null) {
+    this.lastRunIds = value ? new Set(value) : null;
+  }
+  private lastRunIds: Set<string> | null = null;
+  /** What the current selection keeps (discriminants, filters, top k), whatever is shown. */
+  private keptBySelection: Set<string> | null = null;
+
+  /** For the current reading, whether the last run sent it; null when the selection keeps
+   *  what that run sent, or there was no run. */
+  get currentSentByLastRun(): boolean | null {
+    const lastRun = this.lastRunIds;
+    const kept = this.keptBySelection;
+    const current = this.items[this.index];
+    if (!lastRun || !kept || !current) return null;
+    const same = lastRun.size === kept.size && [...kept].every(id => lastRun.has(id));
+    return same ? null : lastRun.has(current.id);
+  }
+
+  private currentReadingSelection(): ReadingSelection {
+    return { criteria: [...this.orderCriteria], filters: [...this.readingFilters], k: this.readingK };
+  }
+
+  private emitReadingSelection(): void {
+    if (this.readingSelectionEditable) this.readingSelectionChange.emit(this.currentReadingSelection());
+  }
+
+  setTopKMode(mode: string): void {
+    this.setTopK(mode === 'all' ? null : this.readingK ?? 1);
+  }
+
+  setTopK(value: number | string | null): void {
+    const k = value === null || value === '' ? null : Math.max(1, Math.floor(Number(value)) || 1);
+    if (k === this.readingK) return;
+    this.readingK = k;
+    this.applyFiltersAndResetIndex(0, true);
+    this.emitReadingSelection();
+  }
+
+  toggleBeyondTopK(show: boolean): void {
+    this.showBeyondTopK = show;
+    this.applyFiltersAndResetIndex(0, true);
+  }
+
+  /** Drops the discourse's own selection; the owner passes the default back. */
+  useDefaultReadingSelection(): void {
+    this.readingSelectionChange.emit(null);
+  }
   /** The PCDRS reading behind each item, for the filters. */
   private readingById = new Map<string, DiscourseAnalysis>();
 
@@ -112,6 +200,7 @@ export class SemVisComponent implements AfterViewInit {
       ? this.orderCriteria.filter(checked => checked !== criterion)
       : [...this.orderCriteria, criterion];
     this.reorder(false);
+    this.emitReadingSelection();
   }
 
   toggleFilter(filter: ReadingFilter): void {
@@ -119,6 +208,7 @@ export class SemVisComponent implements AfterViewInit {
       ? this.readingFilters.filter(checked => checked !== filter)
       : [...this.readingFilters, filter];
     this.applyFiltersAndResetIndex(0, true);
+    this.emitReadingSelection();
   }
 
   /** The context the order is computed in: the owner's, or -- for semantic readings -- one
@@ -488,20 +578,37 @@ export class SemVisComponent implements AfterViewInit {
   private filterItemsBySelectedDiscriminants(items: GswbSolution[]): GswbSolution[] {
     const idFilter = this.itemIdFilter;
     if (idFilter) items = items.filter(item => idFilter.has(item.id));
+    items = this.narrowBySelectedDiscriminants(items);
+    this.keptBySelection = null;
+    // A discourse's selection, over what the narrowing left, as a run takes it
+    // (`readingsForReasoning`): filters, then the top k places.
+    const context = this.readingOrderContext;
+    if (this.readingSelectionEditable && context) {
+      const narrowed = new Set(items.map(item => item.id));
+      const kept = new Set(selectedReadingIds({
+        ...context,
+        updates: context.updates.map(update => ({ ...update, discourse: update.discourse.filter(reading => narrowed.has(reading.id)) })),
+      }, this.currentReadingSelection()));
+      this.keptBySelection = kept;
+      const filtersOnly = this.showBeyondTopK || this.readingK === null;
+      return items.filter(item => !this.readingById.has(item.id) || (filtersOnly
+        ? !this.readingFilters.some(filter => hiddenByFilter(this.readingById.get(item.id)!, filter))
+        : kept.has(item.id)));
+    }
     // The reading filters hide; they never change what the owner reasons over.
     const filters = this.readingFilters.filter(filter => this.orderOptions.filters.includes(filter));
-    if (filters.length) {
-      items = items.filter(item => {
-        const reading = this.readingById.get(item.id);
-        return !reading || !filters.some(filter => hiddenByFilter(reading, filter));
-      });
-    }
-    const selectedDiscriminants = this.getSelectedDiscriminants();
+    if (!filters.length) return items;
+    return items.filter(item => {
+      const reading = this.readingById.get(item.id);
+      return !reading || !filters.some(filter => hiddenByFilter(reading, filter));
+    });
+  }
 
-    // No selection => no filtering
+  /** AND logic: an item must be in every selected discriminant's associatedSolutions. */
+  private narrowBySelectedDiscriminants(items: GswbSolution[]): GswbSolution[] {
+    const selectedDiscriminants = this.getSelectedDiscriminants();
     if (selectedDiscriminants.length === 0) return items;
 
-    // AND logic: item must be in every selected discriminant's associatedSolutions
     let allowed: Set<string> | null = null;
 
     for (const d of selectedDiscriminants) {
@@ -511,7 +618,7 @@ export class SemVisComponent implements AfterViewInit {
     }
 
     const allowedIds = allowed ?? new Set<string>();
-    return items.filter(it => allowedIds.has(it.id)); // replace with it.id if typed
+    return items.filter(it => allowedIds.has(it.id));
   }
 
   private getSelectedDiscriminants(): GswbDiscriminant[] {

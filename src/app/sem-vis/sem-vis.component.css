@@ -227,3 +227,36 @@ button.chip.selected.current-hit{
 .reading-order input {
   margin-right: 4px;
 }
+
+.reading-top-k input[type="number"] {
+  width: 4em;
+  margin-left: 4px;
+}
+
+.reading-selection-source {
+  color: #666;
+}
+
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #1565c0;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.last-run-badge {
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  white-space: nowrap;
+}
+
+.last-run-badge.not-sent {
+  background: #fff3e0;
+  color: #e65100;
+}
