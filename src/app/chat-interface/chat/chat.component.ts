@@ -34,7 +34,6 @@ import {
   compositeAnalysisId,
   majorityVerdict,
   anaphoraRankerSelection,
-  anaphoraRankingCaption,
   anaphoraRankingTable,
   carryAnaphoraRanking,
   discourseDiscriminantsOf,
@@ -538,7 +537,6 @@ export class ChatComponent {
     (previousNeedsRanking ? this.rankingOf(previous!.update.id) : of(undefined)).pipe(
       switchMap(() => {
         const contextIndices = this.priorContextIndices();
-        this.fixLatestTurnSelection();
         console.info('[Chat] Preparing NLI reasoning', {
           sentence: userMessage, newSentenceId, contextIndices, contexts: this.context.length,
         });
@@ -1049,7 +1047,7 @@ export class ChatComponent {
           const bound = mapping.anaphoraRelations?.length
             ? `${mapping.anaphoraRelations.length} binding(s)`
             : 'no binding';
-          branchLabels.push(`${mapping.id} — ${bound}`);
+          branchLabels.push(bound);
         });
 
         // Swap the placeholder text pill for the rendered branches, exactly as every later
@@ -1134,15 +1132,19 @@ export class ChatComponent {
       entryOf.set(turnPair, entry);
       newContext.push(entry);
     });
+    // No reading accepted (entailed, inconsistent): the discourse stays as it was. The
+    // history repeats its readings for this turn, and the previous message stays the one
+    // that decides what the next turn builds on.
+    const extends_ = newContext.length > 0;
     console.info('[Chat] Vampire verdict (lfgxdrt)', {
       sentence: userMessage,
       consistent, informative, relevant,
       sent: turn.assignments.length,
       accepted: accepted.length,
-      contextReadings: newContext.length,
+      contextReadings: extends_ ? newContext.length : `${this.context.length} (unchanged)`,
     });
-    this.context = newContext;
-    this.history.push(newContext);
+    if (extends_) this.context = newContext;
+    this.history.push([...this.context]);
     this.historyChange.emit(this.history);
     this.changeDetector.detectChanges();
 
@@ -1151,7 +1153,7 @@ export class ChatComponent {
     const branches = this.branchDetail(turn.assignments, turn.mappings, verdictFor);
     if (this.lastTurn) {
       this.lastTurn.branches = turn.assignments.length;
-      this.lastTurn.survivingReadings = newContext.length;
+      this.lastTurn.survivingReadings = this.context.length;
     }
     const message = this.pushChatMessage({
       text: this.verdictMessage(consistent, informative, relevant),
@@ -1159,19 +1161,26 @@ export class ChatComponent {
       glyphs,
       safeGlyphs: glyphs.map(glyph => this.sanitizer.bypassSecurityTrustHtml(glyph)),
       glyphGridSize: Math.max(1, Math.ceil(Math.sqrt(glyphs.length))),
-      semanticText: branches.solutions.length ? '' : newContext.map(item => item.semantic || item.prolog_drs).filter(Boolean).join('\n'),
+      semanticText: branches.solutions.length ? '' : this.context.map(item => item.semantic || item.prolog_drs).filter(Boolean).join('\n'),
       detailText: branches.tptp,
       branchSolutions: branches.solutions,
       branchLabels: branches.labels,
     });
     if (turn.update) {
-      this.setLatestTurn(message, {
+      const record: ChatTurn = {
         updateId: turn.update.id,
         sentenceId: newSentenceId,
         defaultSelection: turn.selection,
         sent: turn.assignments.map(item => item.assignment.mappingId),
         accepted: accepted.map(item => item.assignment.mappingId),
-      });
+      };
+      if (extends_) {
+        this.setLatestTurn(message, record);
+      } else {
+        // Shown for inspection only: what was checked, with its verdicts.
+        this.turns.set(message, record);
+        this.refreshBranchRanking(message);
+      }
     }
     this.loading = false;
   }
@@ -1198,9 +1207,11 @@ export class ChatComponent {
         verdict?.relevant ? 'relevant' : 'irrelevant',
       ].join(', ');
       const id = item.assignment.mappingId ?? item.assignment.assignmentId ?? `branch-${index + 1}`;
-      const label = `${id} — ${marks}`;
+      // The pill's caption is the verdict alone: the reading's id is long and says nothing
+      // there. The TPTP block names it.
+      const label = marks;
 
-      blocks.push(`% ${label}\n${item.assignment.sequenceTptp || '% (no TPTP produced for this branch)'}`);
+      blocks.push(`% ${id} — ${marks}\n${item.assignment.sequenceTptp || '% (no TPTP produced for this branch)'}`);
 
       const mapping = mappings.get(item.assignment.mappingId);
       if (mapping?.solution) {
@@ -1213,9 +1224,11 @@ export class ChatComponent {
   }
 
   /** Makes `message` the latest: the one whose discourse can be narrowed, and whose
-   *  survivors are the next turn's prior. The previous latest becomes order only. */
+   *  survivors are the next turn's prior. The previous latest becomes order only, its
+   *  selection fixed. */
   private setLatestTurn(message: ChatMessage, turn: ChatTurn): void {
     const previous = this.latestTurnMessage;
+    if (previous && previous !== message) this.fixLatestTurnSelection();
     this.turns.set(message, turn);
     this.latestTurnMessage = message;
     if (previous && previous !== message) this.refreshBranchRanking(previous);
@@ -1256,8 +1269,9 @@ export class ChatComponent {
     return `${kept} of ${this.context.length} reading${this.context.length === 1 ? '' : 's'}`;
   }
 
-  /** Sending the next sentence fixes the latest message's selection: recorded with its
-   *  discourse, so the document says what the next turn was built on. */
+  /** A turn that extends the discourse fixes the latest message's selection: recorded with
+   *  its discourse, so the document says what the next turn was built on. A turn whose
+   *  readings were all rejected leaves it open. */
   private fixLatestTurnSelection(): void {
     const latest = this.latestTurnUpdate();
     if (!latest || latest.update.readingSelection) return;
@@ -1417,8 +1431,8 @@ export class ChatComponent {
    *  the message, and replaced only when they change, so the pill gets a new one only then. */
   readonly messageViews = new Map<ChatMessage, ChatMessageView>();
 
-  /** Captions a message's DRS branches with the ranking of the discourse update each belongs
-   *  to, and gives its pill its view. The branches keep their generation order: the pill's
+  /** Gives a message's DRS branches the ranking of the discourse update each belongs to, and
+   *  its pill its view. The branches keep their generation order: the pill's
    *  sem view orders them by its options. */
   private refreshBranchRanking(message: ChatMessage): void {
     if (!message.branchSolutions?.length) return;
@@ -1433,12 +1447,9 @@ export class ChatComponent {
     if (!updates.length) return;
     this.messageViews.set(message, this.messageView(message, updates));
 
+    // The caption stays the verdict (or the bindings on turn 1); the ranking is in its pill.
     const updateOf = (id: string) => updates.find(update => update.discourse.some(reading => reading.id === id));
-    message.branchLabels = original.solutions.map((solution, index) => {
-      const update = updateOf(solution.id);
-      const caption = update ? anaphoraRankingCaption(update, solution.id) : '';
-      return [original!.labels[index], caption].filter(Boolean).join(' · ');
-    });
+    message.branchLabels = [...original.labels];
     message.branchRankings = original.solutions.map(solution => {
       const update = updateOf(solution.id);
       return update ? anaphoraRankingTable(update, solution.id) : null;

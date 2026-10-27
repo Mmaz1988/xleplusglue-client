@@ -247,7 +247,16 @@ describe('ChatComponent', () => {
       component.context = [priorReading('sem-1a', 'P1'), priorReading('sem-1b', 'P2')] as any;
       accepts = () => true;
       dataServiceSpy.lmRankAnaphora.and.returnValue(throwError(() => ({ status: 0 })));
-      dataServiceSpy.ligerSequence.and.returnValue(of(ligerResponse()));
+      // One parse per sentence supplied, S<n> positionally, each part offset by 7 constructors.
+      dataServiceSpy.ligerSequence.and.callFake((request: any) => {
+        const ids = request.sentenceIds.map((_: string, index: number) => `S${index}`);
+        return of({ solutions: [{
+          ...ligerResponse().solutions[0],
+          solutionKey: `sequence-1-${ids.join('+')}`,
+          sequenceParts: ids.map((syntaxVariantId: string, sourceIndex: number) =>
+            ({ sourceIndex, syntaxVariantId, sourceIndexOffset: sourceIndex * 7 })),
+        }] });
+      });
       dataServiceSpy.gswbMergeSequenceSemantics.and.callFake((request: any) => {
         const id = request.parts.map((part: any) => part.id).join('+');
         return of({ id, solutionKey: request.solutionKey, semanticAnalysis: {
@@ -395,7 +404,7 @@ describe('ChatComponent', () => {
       expect(component.priorContextIndices().length).toBe(1);
     });
 
-    it('fixes the message\'s selection when the next turn starts; it cannot change during a turn', () => {
+    it('keeps the message\'s selection as it is during a turn', () => {
       startTurn(newSentence('sentence-3', 1));
       const first = lastMessage();
       dataServiceSpy.ligerSequence.and.returnValue(new Subject());
@@ -405,14 +414,13 @@ describe('ChatComponent', () => {
       startTurn(newSentence('sentence-4', 1));
 
       const stored = () => component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection;
-      expect(stored()).toEqual({ criteria: [], filters: [], k: null });
       component.onReadingSelectionChange(first, { criteria: [], filters: ['unbound'], k: null });
-      expect(stored()).toEqual({ criteria: [], filters: [], k: null });
+      expect(stored()).toBeUndefined();
       // The new turn appends to the turn's sequence.
       expect(dataServiceSpy.ligerSequence.calls.mostRecent().args[0].sentenceIds).toEqual(['sentence-1', 'sentence-3', 'sentence-4']);
     });
 
-    it('makes an older message order only', () => {
+    it('makes an older message order only, its selection fixed', () => {
       startTurn(newSentence('sentence-3', 1));
       const first = lastMessage();
       const second = (component as any).pushChatMessage({ text: 'next', sender: 'Bot', branchSolutions: first.branchSolutions });
@@ -427,7 +435,33 @@ describe('ChatComponent', () => {
       }));
       expect(component.messageViews.get(second)?.orderOnly).toBeFalse();
       component.onReadingSelectionChange(first, { criteria: [], filters: ['unbound'], k: null });
+      expect(component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection)
+        .toEqual({ criteria: [], filters: [], k: null });
+    });
+
+    it('leaves the discourse as it was when no reading is accepted (an entailed input)', () => {
+      startTurn(newSentence('sentence-3', 1));
+      const first = lastMessage();
+      const context = component.context;
+      const rows = component.history.length;
+      accepts = () => false;
+
+      startTurn(newSentence('sentence-4', 1), { criteria: [], filters: [], k: 1 });
+
+      const answer = lastMessage();
+      expect(answer.text).toBe('Your input is not informative.');
+      // The context, the history's last row and the latest message are the previous turn's.
+      expect(component.context).toBe(context);
+      expect(component.history.length).toBe(rows + 1);
+      expect(component.history[component.history.length - 1].map(entry => entry.semanticAnalysis?.semId))
+        .toEqual(context.map(entry => entry.semanticAnalysis?.semId));
+      expect(component.messageViews.get(first)?.orderOnly).toBeFalse();
       expect(component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection).toBeUndefined();
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+      // The answer shows what was checked, with its verdicts, for inspection only.
+      expect(answer.branchSolutions?.length).toBe(sentReadings().length);
+      expect(answer.branchLabels?.[0]).toBe('consistent, uninformative, irrelevant');
+      expect(component.messageViews.get(answer)?.orderOnly).toBeTrue();
     });
 
     it('hands the pills one TPTP block and one DRS per reading sent, labelled with its verdict', () => {
@@ -438,8 +472,10 @@ describe('ChatComponent', () => {
       const message = lastMessage();
       const blocks = (message.detailText ?? '').split('\n\n').filter(Boolean);
       expect(blocks.length).toBe(4);
-      expect(message.branchLabels?.[0]).toContain('consistent, informative, irrelevant');
-      expect(message.branchLabels?.[1]).toContain('consistent, uninformative, irrelevant');
+      // The verdict alone: the reading's id overlapped the controls.
+      expect(message.branchLabels?.[0]).toBe('consistent, informative, irrelevant');
+      expect(message.branchLabels?.[1]).toBe('consistent, uninformative, irrelevant');
+      expect(blocks[0]).toContain('-pcdrs-1 — consistent, informative, irrelevant');
       // The paged viewer replaces the concatenated-text pill on this path.
       expect(message.semanticText).toBe('');
     });
@@ -665,7 +701,8 @@ describe('ChatComponent', () => {
         expect(component.chatDocument.discourseUpdates?.[0].anaphoraRanking).toEqual(ranking as any);
         // Generation order, captions aligned: the pill's sem view orders them by its options.
         expect(reply().branchSolutions?.map(s => s.solution)).toEqual(['<svg>dog</svg>', '<svg>cat</svg>']);
-        expect(reply().branchLabels?.[1]).toBe('pcdrs-2 — 1 binding(s) · rank 1 · mean score 0.950');
+        // The ranking is in its pill, not the caption.
+        expect(reply().branchLabels?.[1]).toBe('1 binding(s)');
         expect(reply().branchRankings?.[1]?.rows).toEqual([['it', 'the cat', '0.950', 'cos 0.90', '', '2']]);
         expect(component.messageViews.get(reply())?.readingOrder.updates[0].anaphoraRanking).toEqual(ranking as any);
         expect(dataServiceSpy.lmRankAnaphora).toHaveBeenCalledTimes(1);
