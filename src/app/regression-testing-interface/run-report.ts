@@ -254,6 +254,7 @@ export function reportTables(
 export const PARSE_PHASES = {
   parsing: 'Parsing (LiGER)',
   composition: 'Composition (GSWB)',
+  discourses: 'Discourses (rules, PCDRS)',
 } as const;
 
 export const INFERENCE_PHASES = {

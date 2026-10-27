@@ -108,10 +108,17 @@ describe('RegressionTestingInterfaceComponent', () => {
     dataServiceSpy.gswbMergeSequenceSemantics.and.returnValue(
       of(derived({ id: 'sem-1+sem-2', semantic: 'P + Q', graph: { constraints: [] } })));
 
-    reasoningPipeline = jasmine.createSpyObj<ReasoningPipelineService>(
-      'ReasoningPipelineService', ['prepareReasoningChecks', 'prepareReasoningChecksSequentially']);
+    reasoningPipeline = jasmine.createSpyObj<ReasoningPipelineService>('ReasoningPipelineService',
+      ['prepareReasoningChecks', 'prepareReasoningChecksSequentially', 'generateDiscourseMappings', 'prepareStoredReadingChecks']);
     reasoningPipeline.prepareReasoningChecks.and.returnValue(
       of({ scopeId: 'pxq-n1-1-1', assignments: [], failures: [], degradations: [] }));
+    // One PCDRS reading per merged reading, named under the request's scope as GSWB names it.
+    reasoningPipeline.generateDiscourseMappings.and.callFake((request: any) => of([{
+      mapping: { id: `${request.scopeId}-rule-1-pcdrs-1`, semantic: `${request.merged.semString} ok`, anaphoraRelations: [] },
+      ruleBranchIndex: 1, semanticOrigin: request.merged.semId,
+    }]));
+    reasoningPipeline.prepareStoredReadingChecks.and.callFake((request: any) =>
+      of({ scopeId: request.scopeId, assignments: [], failures: [], degradations: [] }));
 
     TestBed.configureTestingModule({
       imports: [FormsModule],
@@ -215,7 +222,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(selected.map((solution: any) => solution.id)).toEqual(['sol-1']);
   });
 
-  /** One NLI item build: two premises, one hypothesis -- the shape prepareNliItem chains
+  /** One NLI item build: two premises, one hypothesis -- the shape buildItemDiscourse chains
    *  over (append S2 to seed S1, then S3 as the hypothesis). */
   const itemBuild = () => ({
     itemId: 'n1', updateId: 'ru-n1',
@@ -269,7 +276,8 @@ describe('RegressionTestingInterfaceComponent', () => {
       return of({
         id: `merged-${combined}`,
         semanticAnalysis: {
-          syntacticOrigin: request.solutionKey, semId: `sem-${combined}`,
+          // As GSWB: the positional composite of the parts' semIds.
+          syntacticOrigin: request.solutionKey, semId: request.parts.map((part: any) => part.id).join('+'),
           semString: combined, graph: { id: 'merged-graph' }, semType: 'lfgxdrt',
         },
       } as any);
@@ -280,7 +288,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
+    (component as any).buildItemDiscourse(itemBuild(), component.session.lastGswbOutputs)
       .subscribe(() => {
         expect(dataServiceSpy.gswbDeduce).not.toHaveBeenCalled();
         const calls = dataServiceSpy.ligerSequence.calls.all().map(call => call.args[0] as any);
@@ -297,36 +305,97 @@ describe('RegressionTestingInterfaceComponent', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
+    (component as any).buildItemDiscourse(itemBuild(), component.session.lastGswbOutputs)
       .subscribe(() => {
         const merges = dataServiceSpy.gswbMergeSequenceSemantics.calls.allArgs().map(([request]: any[]) => request);
         expect(merges.map(request => request.parts[1].id)).toEqual(['S2-sol-1', 'S3-sol-1']);
         expect(merges.map(request => request.parts[1].sourceIndexOffset)).toEqual([5, 8]);
         expect(merges.map(request => request.solutionKey)).toEqual(['B1+B2', 'B1+B2+B3']);
-        const request = reasoningPipeline.prepareReasoningChecks.calls.mostRecent().args[0];
-        expect(request.premiseAsts as any).toEqual([{ id: 'S1-graph' }, { id: 'S2-graph' }]);
-        expect(request.hypothesisAsts as any).toEqual([{ id: 'S3-graph' }]);
+        const request = reasoningPipeline.generateDiscourseMappings.calls.mostRecent().args[0];
         expect((request.sequenceStructure as any).id).toBe('merged-S1+S2+S3');
+        expect(request.merged.semString).toBe('A + B + C');
+        // The loaded rule set's post-processing rules, not a client-side default.
+        expect(request.ruleString).toBe('pragmatics rules');
         done();
       });
   });
 
-  it('sends the merged premises alone as the prior, separately from the whole merged sequence', done => {
+  it('stores the premises sequence, the item sequence and every reading of its discourse at step 1', done => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
+    // Step 1 ignores the discriminants: they narrow at step 2.
+    component.session.selectedSolutionIdsBySentence = { S1: [], S2: [], S3: [] };
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
+    (component as any).buildItemDiscourse(itemBuild(), component.session.lastGswbOutputs)
       .subscribe(() => {
-        const request = reasoningPipeline.prepareReasoningChecks.calls.mostRecent().args[0];
+        const document = component.session.analysisDocuments['n1'];
+        expect(document.sequences.map(sequence => [sequence.id, sequence.semantics.map(semantic => semantic.semId)]))
+          .toEqual([['S1+S2', ['S1-sol-1+S2-sol-1']], ['S1+S2+S3', ['S1-sol-1+S2-sol-1+S3-sol-1']]]);
+        const update = document.discourseUpdates![0];
+        expect(update.id).toBe('du-S1+S2+S3');
+        expect(update.discourse.map(reading => [reading.id, reading.semanticOrigin]))
+          .toEqual([['pxq-n1-1-rule-1-pcdrs-1', 'S1-sol-1+S2-sol-1+S3-sol-1']]);
+        expect(reasoningPipeline.prepareStoredReadingChecks).not.toHaveBeenCalled();
+        done();
+      });
+  });
+
+  it('reasons over the stored readings: check ASTs, prior and ids read from the document', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    mockChainEndpoints(dataServiceSpy);
+    const outputs = component.session.lastGswbOutputs;
+
+    (component as any).buildItemDiscourse(itemBuild(), outputs).subscribe(() => {
+      dataServiceSpy.ligerSequence.calls.reset();
+      dataServiceSpy.gswbMergeSequenceSemantics.calls.reset();
+      reasoningPipeline.generateDiscourseMappings.calls.reset();
+      (component as any).reasonOverItem(itemBuild(), outputs, false, false, false).subscribe((pair: any) => {
+        // Nothing is merged or generated again.
+        expect(dataServiceSpy.ligerSequence).not.toHaveBeenCalled();
+        expect(dataServiceSpy.gswbMergeSequenceSemantics).not.toHaveBeenCalled();
+        expect(reasoningPipeline.generateDiscourseMappings).not.toHaveBeenCalled();
+        expect((component as any).runDiscoursesBuilt).toBe(0);
+        const request = reasoningPipeline.prepareStoredReadingChecks.calls.mostRecent().args[0];
+        expect(request.premiseAsts as any).toEqual([{ id: 'S1-graph' }, { id: 'S2-graph' }]);
+        expect(request.hypothesisAsts as any).toEqual([{ id: 'S3-graph' }]);
         // The prior is the merged premises alone -- the conclusion must not appear in the
         // axiom the four checks are tested against.
         expect(request.premiseSemantic).toBe('A + B');
-        expect(request.merged.semString).toBe('A + B + C');
-        expect(request.scope!.updateId).toBe('ru-n1');
-        // The loaded rule set's post-processing rules, not a client-side default.
-        expect(request.ruleString).toBe('pragmatics rules');
-        expect(request.scope!.premiseSemanticIds).toEqual(['S1-sol-1', 'S2-sol-1']);
-        expect(request.scope!.hypothesisSemanticIds).toEqual(['S3-sol-1']);
+        expect(request.readings.map(reading => [reading.id, reading.drsString]))
+          .toEqual([['pxq-n1-1-rule-1-pcdrs-1', 'A + B + C ok']]);
+        expect(request.scope).toEqual({
+          updateId: 'ru-n1', premiseSemanticIds: ['S1-sol-1', 'S2-sol-1'], hypothesisSemanticIds: ['S3-sol-1'],
+        });
+        expect(pair.failures).toEqual([]);
+        done();
+      });
+    });
+  });
+
+  it('builds the discourse first for an item that has none stored, and counts it', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    mockChainEndpoints(dataServiceSpy);
+
+    (component as any).reasonOverItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
+      .subscribe((pair: any) => {
+        expect(reasoningPipeline.generateDiscourseMappings).toHaveBeenCalledTimes(1);
+        expect(reasoningPipeline.prepareStoredReadingChecks).toHaveBeenCalledTimes(1);
+        expect((component as any).runDiscoursesBuilt).toBe(1);
+        expect(pair.failures).toEqual([]);
+        done();
+      });
+  });
+
+  it('narrows the stored readings by the discriminant selection at step 2', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    mockChainEndpoints(dataServiceSpy);
+    component.session.selectedSolutionIdsBySentence = { S1: ['S1-sol-1'], S2: ['S2-sol-1'], S3: [] };
+
+    (component as any).reasonOverItem(itemBuild(), component.session.lastGswbOutputs, true, false, false)
+      .subscribe((pair: any) => {
+        expect(component.session.analysisDocuments['n1'].discourseUpdates![0].discourse.length).toBe(1);
+        expect(reasoningPipeline.prepareStoredReadingChecks).not.toHaveBeenCalled();
+        expect(pair.assignments).toEqual([]);
         done();
       });
   });
@@ -335,7 +404,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy, false);
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
+    (component as any).reasonOverItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe((pair: any) => {
         expect(dataServiceSpy.ligerSequence).not.toHaveBeenCalled();
         expect(pair.failures.length).toBe(1);
@@ -349,10 +418,10 @@ describe('RegressionTestingInterfaceComponent', () => {
     // so one unpreparable item killed the whole run.
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     mockChainEndpoints(dataServiceSpy);
-    reasoningPipeline.prepareReasoningChecks.and.returnValue(
+    reasoningPipeline.prepareStoredReadingChecks.and.returnValue(
       throwError(() => new Error('no post-processed sequence interpretations')));
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
+    (component as any).reasonOverItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe((pair: any) => {
         expect(pair.itemId).toBe('n1');
         expect(pair.assignments).toEqual([]);
@@ -360,6 +429,23 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(pair.failures[0]).toContain('no post-processed sequence interpretations');
         done();
       });
+  });
+
+  it('builds every parsed item\'s discourse at Parse, and says how many', done => {
+    const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
+    mockChainEndpoints(dataServiceSpy);
+    component['regressionTestItems'] = [
+      { id: 'n1', premises: ['S1', 'S2'], conclusion: ['S3'] },
+      { id: 'n2', premises: ['S1'], conclusion: ['S4'] },
+    ];
+    const parseReport: any = { phases: [] };
+
+    (component as any).buildParsedDiscourses(parseReport).subscribe((note: string) => {
+      expect(Object.keys(component.session.analysisDocuments)).toEqual(['n1']);
+      expect(note).toBe(' Built 1 of 1 discourse(s).');
+      expect(parseReport.phases.map((phase: any) => phase.name)).toEqual(['Discourses (rules, PCDRS)']);
+      done();
+    });
   });
 
   describe('a session parsed when discourse items were derived in sequence', () => {
@@ -403,7 +489,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     mockChainEndpoints(dataServiceSpy);
     dataServiceSpy.ligerSequence.and.returnValue(of({ solutions: [] } as any));
 
-    (component as any).prepareNliItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
+    (component as any).reasonOverItem(itemBuild(), component.session.lastGswbOutputs, false, false, false)
       .subscribe((pair: any) => {
         expect(pair.itemId).toBe('n1');
         expect(pair.assignments).toEqual([]);
@@ -821,18 +907,17 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(document.inputs.pragmaticsRules).toBe(texts.pragmatics);
     });
 
-    it('still prepares an NLI branch when no post-processing rules are loaded', done => {
+    it('still generates an NLI branch\'s readings when no post-processing rules are loaded', done => {
       component.session.pragmaticsRulesText = '';
-      reasoningPipeline.prepareReasoningChecks.and.returnValue(
-        of({ scopeId: 'pxq-n1-1', assignments: [], failures: [], degradations: [] }) as any);
-      (component as any).prepareBranchChecks(
+      (component as any).branchReadings(
         { itemId: 'n1', updateId: 'u1' },
         { sequenceStructure: { constraints: [] }, merged: derived({ id: 'm', graph: {} }) },
-        0, false, false,
-      ).subscribe((pair: any) => {
-        expect(pair.failures).toEqual([]);
-        expect(reasoningPipeline.prepareReasoningChecks).toHaveBeenCalledWith(
-          jasmine.objectContaining({ ruleString: '' }));
+        0,
+      ).subscribe((result: any) => {
+        expect(result.failure).toBeUndefined();
+        expect(result.readings.length).toBe(1);
+        expect(reasoningPipeline.generateDiscourseMappings).toHaveBeenCalledWith(
+          jasmine.objectContaining({ ruleString: '', scopeId: 'pxq-n1-1' }));
         done();
       });
     });
@@ -1281,21 +1366,16 @@ describe('RegressionTestingInterfaceComponent', () => {
       const document: any = createRegressionAnalysisDocument('doc');
       document.sequences = [{ id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'], syntax: [], semantics: [], synSemMapping: {} }];
       const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
-      const branches: any = [
-        { merged: { semanticAnalysis: { semId: 'sem-a' } } },
-        { merged: { semanticAnalysis: { semId: 'sem-b' } } },
-      ];
-      const assignment = (mappingId: string, relations: any[]) => ({
-        mappingId,
-        ruleBranchIndex: 1,
+      const reading = (mappingId: string, semanticOrigin: string, relations: any[]) => ({
         mapping: { id: mappingId, semantic: 'drs', graph: { id: 'g' }, anaphoraRelations: relations },
+        ruleBranchIndex: 1,
+        semanticOrigin,
       });
-      const prepared: any = [
-        { scopeId: 'p1', assignments: [assignment('pcdrs-a', [{ pronoun: 'x2', antecedent: 'x1' }])], failures: [], degradations: [] },
-        { scopeId: 'p2', assignments: [assignment('pcdrs-b', [])], failures: [], degradations: [] },
-      ];
 
-      (component as any).registerDiscourseUpdate(document, build, branches, prepared);
+      (component as any).registerDiscourseUpdate(document, build, [
+        reading('pcdrs-a', 'sem-a', [{ pronoun: 'x2', antecedent: 'x1' }]),
+        reading('pcdrs-b', 'sem-b', []),
+      ], ['pxq-n0-3: rules failed']);
 
       const update = document.discourseUpdates[0];
       expect(update.id).toBe('du-S0+S1');
@@ -1314,6 +1394,8 @@ describe('RegressionTestingInterfaceComponent', () => {
       // measured item) while adding nothing recoverable that the element's own syntax and
       // semantics do not already hold.
       expect(update.discourse.map((d: any) => d.ruleBranch)).toEqual([1, 1]);
+      // A branch whose readings could not be generated is recorded, for the run to report.
+      expect(update.failures).toEqual(['pxq-n0-3: rules failed']);
       expect(update.structures).toBeUndefined();
       expect(update.mergedGraphs).toBeUndefined();
     });
@@ -1333,12 +1415,10 @@ describe('RegressionTestingInterfaceComponent', () => {
       component.session.analysisDocuments = { n0: document };
       const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
       const relations = [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }];
-      const prepared: any = [{
-        scopeId: 'p1', failures: [], degradations: [],
-        assignments: [{ mappingId: 'pcdrs-a', ruleBranchIndex: 1, mapping: { id: 'pcdrs-a', semantic: 'drs', anaphoraRelations: relations } }],
-      }];
 
-      (component as any).registerDiscourseUpdate(document, build, [{ merged: { semanticAnalysis: { semId: 'sem-a' } } }], prepared);
+      (component as any).registerDiscourseUpdate(document, build, [{
+        mapping: { id: 'pcdrs-a', semantic: 'drs', anaphoraRelations: relations }, ruleBranchIndex: 1, semanticOrigin: 'sem-a',
+      }], []);
 
       expect(document.discourseUpdates[0].anaphoraRanking).toBeUndefined();
       expect(dataService.lmRankAnaphora.calls.mostRecent().args[0].syntax).toEqual({ 'syn-a': { id: 'seq-structure' } });
@@ -1507,13 +1587,10 @@ describe('RegressionTestingInterfaceComponent', () => {
       }];
       component.session.analysisDocuments = { n0: document };
       const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
-      const prepared: any = [{
-        scopeId: 'p1', failures: [], degradations: [],
-        assignments: [{ mappingId: 'pcdrs-a', ruleBranchIndex: 1,
-          mapping: { id: 'pcdrs-a', semantic: 'drs', anaphoraRelations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }] } }],
-      }];
-
-      (component as any).registerDiscourseUpdate(document, build, [{ merged: { semanticAnalysis: { semId: 'sem-a' } } }], prepared);
+      (component as any).registerDiscourseUpdate(document, build, [{
+        mapping: { id: 'pcdrs-a', semantic: 'drs', anaphoraRelations: [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }] },
+        ruleBranchIndex: 1, semanticOrigin: 'sem-a',
+      }], []);
       let ranked = false;
       (component as any).rankingOf('n0').subscribe({ complete: () => ranked = true });
       expect(ranked).toBeFalse();
@@ -1581,10 +1658,15 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(labels[0]).toContain('Vampire: entailment ×1');
     });
 
-    it('writes nothing when the item has no registered sequence to hang it off', () => {
+    it('writes nothing, and fails the item, when there is no registered sequence or no reading', () => {
       const document: any = createRegressionAnalysisDocument('doc');
       const build: any = { itemId: 'n0', updateId: 'ru-n0', premiseSentenceIds: ['S0'], hypothesisSentenceIds: ['S1'] };
-      (component as any).registerDiscourseUpdate(document, build, [], []);
+      const reading = { mapping: { id: 'pcdrs-a', semantic: 'drs', anaphoraRelations: [] }, ruleBranchIndex: 1, semanticOrigin: 'sem-a' };
+      expect(() => (component as any).registerDiscourseUpdate(document, build, [reading], []))
+        .toThrowError(/No sequence S0\+S1/);
+      document.sequences = [{ id: 'S0+S1', text: '', sentenceIds: ['S0', 'S1'], syntax: [], semantics: [], synSemMapping: {} }];
+      expect(() => (component as any).registerDiscourseUpdate(document, build, [], ['pxq-n0-1: boom']))
+        .toThrowError(/No reading of S0\+S1 could be generated\. pxq-n0-1: boom/);
       expect(document.discourseUpdates).toEqual([]);
     });
   });
@@ -2249,7 +2331,7 @@ describe('RegressionTestingInterfaceComponent', () => {
     beforeEach(() => {
       submitted = spyOn<any>(component, 'submitVampireRequest');
       preparation = new Subject<any>();
-      prepare = spyOn<any>(component, 'prepareNliItem').and.returnValue(preparation.asObservable());
+      prepare = spyOn<any>(component, 'reasonOverItem').and.returnValue(preparation.asObservable());
       component['contextPruning'] = { nativeElement: { checked: false } } as any;
       component['session'].gswbPreferences.outputstyle = 5;
       component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
@@ -2397,7 +2479,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       for (const output of Object.values(component['session'].lastGswbOutputs!)) {
         output.solutions.forEach((solution: any) => solution.semanticAnalysis.graph = { nodes: [], edges: [] });
       }
-      const prepare = spyOn<any>(component, 'prepareNliItem').and.returnValue(EMPTY);
+      const prepare = spyOn<any>(component, 'reasonOverItem').and.returnValue(EMPTY);
 
       (component as any).runVampireFromCurrentState(false);
 

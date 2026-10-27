@@ -11,7 +11,7 @@ import {
   anaphoraRankingTable,
   inferenceResultsFromDocument,
   readingSelectionOf,
-  selectForVampire,
+  readingsForReasoning,
   selectReasoningAssignments,
   discourseBranchesForDisplay,
   anaphoraRankingRequest,
@@ -318,30 +318,49 @@ describe('anaphora branch selection for verdicts', () => {
 
   const lmTop = (k: number): ReadingSelection => ({ criteria: ['lm'], filters: [], k });
 
+  const idsOf = (result: { readings: DiscourseAnalysis[] }) => result.readings.map(reading => reading.id);
+
   it('selects before Vampire: the top k places of the global order, everything when unranked', () => {
-    const prepared = ['b-dog', 'b-cat', 'b-event', 'b2-cat', 'b2-dog', 'unrelated'].map(mappingId => ({ mappingId }));
     const discourse = ranked();
     // Global: the event is first over both readings; the unscored readings come last.
-    const top1 = selectForVampire(documentWith(discourse), discourse, prepared, lmTop(1), 'borda');
-    expect(top1.items.map(item => item.mappingId)).toEqual(['b-event', 'unrelated']);
+    const top1 = readingsForReasoning(documentWith(discourse), discourse, lmTop(1), 'borda');
+    expect(idsOf(top1)).toEqual(['b-event']);
     expect(top1.applied).toBeTrue();
-    const top2 = selectForVampire(documentWith(discourse), discourse, prepared, lmTop(2), 'borda');
-    expect(top2.items.map(item => item.mappingId)).toEqual(['b-cat', 'b-event', 'unrelated']);
+    expect(idsOf(readingsForReasoning(documentWith(discourse), discourse, lmTop(2), 'borda')))
+      .toEqual(['b-event', 'b-cat']);
 
-    const plain = update([branch('b-dog', [['x4', 'x2']])]);
-    const unranked = selectForVampire(documentWith(plain), plain, prepared, lmTop(1), 'borda');
-    expect(unranked.items.length).toBe(6);
+    const plain = update([branch('b-dog', [['x4', 'x2']]), branch('b-cat', [['x4', 'x1']])]);
+    const unranked = readingsForReasoning(documentWith(plain), plain, lmTop(1), 'borda');
+    expect(idsOf(unranked)).toEqual(['b-dog', 'b-cat']);
     expect(unranked.applied).toBeFalse();
-    expect(selectForVampire(documentWith(discourse), discourse, prepared, ALL_READINGS, 'borda').items.length).toBe(6);
+    expect(readingsForReasoning(documentWith(discourse), discourse, ALL_READINGS, 'borda').readings.length).toBe(5);
   });
 
   it('keeps tied readings together: k counts places', () => {
     const tied = { ...update([branch('a', [['x4', 'x1']]), branch('b', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]),
       anaphoraRanking: ranking([['a', 1, 0.9], ['b', 1, 0.9], ['c', 3, 0.1]]) };
-    const prepared = ['a', 'b', 'c'].map(mappingId => ({ mappingId }));
-    expect(selectForVampire(documentWith(tied), tied, prepared, lmTop(1), 'borda').items.map(item => item.mappingId))
-      .toEqual(['a', 'b']);
-    expect(selectForVampire(documentWith(tied), tied, prepared, lmTop(2), 'borda').items.length).toBe(3);
+    expect(idsOf(readingsForReasoning(documentWith(tied), tied, lmTop(1), 'borda'))).toEqual(['a', 'b']);
+    expect(readingsForReasoning(documentWith(tied), tied, lmTop(2), 'borda').readings.length).toBe(3);
+  });
+
+  it('takes the discourse\'s own selection over the session default, and records it', () => {
+    const discourse = { ...ranked(), readingSelection: lmTop(2) };
+    const result = readingsForReasoning(documentWith(discourse), discourse, ALL_READINGS, 'borda');
+    expect(idsOf(result)).toEqual(['b-event', 'b-cat']);
+    expect(result.selection).toEqual(lmTop(2));
+  });
+
+  it('narrows by the discriminants first: the top k is taken over what they leave', () => {
+    const multi = (id: string, origin: string, antecedent: string) => branch(id, [['x4', antecedent]], origin);
+    const discourse = {
+      ...update([multi('r1', 'S0-s0+S1-s0', 'x1'), multi('r2', 'S0-s1+S1-s0', 'x2'), multi('r3', 'S0-s1+S1-s0', 'x3')]),
+      anaphoraRanking: ranking([['r1', 1, 0.9], ['r2', 2, 0.5], ['r3', 3, 0.1]]),
+    };
+    const allowed = new Set(['S0-s1', 'S1-s0']);
+    expect(idsOf(readingsForReasoning(documentWith(discourse), discourse, lmTop(1), 'borda', allowed)))
+      .toEqual(['r2']);
+    expect(idsOf(readingsForReasoning(documentWith(discourse), discourse, ALL_READINGS, 'borda', allowed)))
+      .toEqual(['r2', 'r3']);
   });
 
   it('compares stored results restricted to a selection', () => {

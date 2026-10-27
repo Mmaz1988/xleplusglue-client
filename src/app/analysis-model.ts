@@ -633,25 +633,37 @@ export function discourseOrderContext(
   };
 }
 
-/** The prepared items (anything carrying the reading it was built over as `mappingId`) that a
- *  run sends to Vampire under `selection`. An item whose reading is not in `discourseUpdate` is
- *  always sent: there is nothing to order it by. `applied` is false when the selection needed
- *  the LM ranking and the update has none, in which case everything is sent. */
-export function selectForVampire<T extends { mappingId?: string }>(
+/** The sentence readings a discourse reading was built from, in sentence order: the parts of
+ *  its semanticOrigin, a positional composite (`S0-s0+S1-s0`). */
+export function sentenceReadingIdsOf(reading: Pick<DiscourseAnalysis, 'semanticOrigin'>): string[] {
+  return reading.semanticOrigin.split('+');
+}
+
+/** The readings of `update` a run reasons over (N4 6d step 2), best first. First the
+ *  discriminant selection: a reading survives when each of its sentence readings is in
+ *  `allowedSentenceReadings` (absent: no narrowing). Then the discourse's own selection, or
+ *  `fallback` (the session default), over what survived: order, filters, top k places.
+ *  `applied` is false when the selection needed the LM ranking and the update has none, in
+ *  which case every surviving reading is reasoned over. */
+export function readingsForReasoning(
   document: XlePlusGlueDocument,
-  discourseUpdate: DiscourseUpdate | undefined,
-  items: T[],
-  selection: ReadingSelection,
+  update: DiscourseUpdate,
+  fallback: ReadingSelection,
   averager: AnaphoraAverager,
-): { items: T[]; applied: boolean } {
-  if (!discourseUpdate) return { items, applied: true };
-  if (selectionNeedsRanking(selection) && !discourseUpdate.anaphoraRanking) return { items, applied: false };
-  const selected = new Set(selectedReadingIds(discourseOrderContext(document, [discourseUpdate], averager), selection));
-  const known = new Set(discourseUpdate.discourse.map(branch => branch.id));
-  return {
-    items: items.filter(item => !item.mappingId || !known.has(item.mappingId) || selected.has(item.mappingId)),
-    applied: true,
+  allowedSentenceReadings?: Set<string>,
+): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
+  const selection = normalizedReadingSelection(update.readingSelection ?? fallback);
+  const narrowed: DiscourseUpdate = !allowedSentenceReadings ? update : {
+    ...update,
+    discourse: update.discourse.filter(reading =>
+      sentenceReadingIdsOf(reading).every(id => allowedSentenceReadings.has(id))),
   };
+  if (selectionNeedsRanking(selection) && !update.anaphoraRanking) {
+    return { readings: narrowed.discourse, selection, applied: false };
+  }
+  const byId = new Map(narrowed.discourse.map(reading => [reading.id, reading]));
+  const ids = selectedReadingIds(discourseOrderContext(document, [narrowed], averager), selection);
+  return { readings: ids.map(id => byId.get(id)!), selection, applied: true };
 }
 
 /** The assignments of `update` that survive `selection` -- for comparing stored results under

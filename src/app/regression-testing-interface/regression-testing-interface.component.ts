@@ -1,7 +1,7 @@
 import { Component, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { DataService } from "../data.service";
 import { proofInputsFrom } from '../document-builder/proof-inputs';
-import { discourseUpdateOf } from '../document-builder/pcdrs-readings';
+import { PcdrsReading, discourseUpdateOf } from '../document-builder/pcdrs-readings';
 import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
 import { ActivatedRoute } from '@angular/router';
 import {
@@ -38,6 +38,7 @@ import {
   nliItem,
   vampireMultipleRequest,
   check,
+  DiscourseAnalysis,
   VampireSessionSummary,
   sameReasoningUpdate,
   POST_PROCESSING_SKIPPED_NOTICE,
@@ -58,7 +59,6 @@ import {
   anaphoraRankerSelection,
   carryAnaphoraRanking,
   compositeAnalysisId,
-  selectForVampire,
   discourseBranchesForDisplay,
   inferenceResultsFromDocument,
   majorityVerdict,
@@ -66,11 +66,15 @@ import {
   parseReasoningAssignmentId,
   readingOf,
   readingSelectionOf,
+  readingsForReasoning,
   reasoningUpdateId,
+  sentenceReadingIdsOf,
   validateReasoningUpdate,
 } from '../analysis-model';
 import { ALL_READINGS, ReadingSelection, describeReadingSelection, normalizedReadingSelection, sameReadingSelection, selectionNeedsRanking } from '../reading-order';
-import { PreparedReasoningPair, ReasoningPipelineService } from '../reasoning/reasoning-pipeline.service';
+import {
+  PreparedReasoningPair, ReadingAssignment, ReasoningPipelineService,
+} from '../reasoning/reasoning-pipeline.service';
 import { AnaphoraRankingService } from '../reasoning/anaphora-ranking.service';
 import {
   DocumentBuilderService,
@@ -102,8 +106,8 @@ type NliItemBuild = {
   hypothesisSentenceIds: string[];
 };
 
-/** One reading-path through an NLI item's chained sequence build -- one selected
- *  reading of every sentence folded in so far, in order. `element`/`semantic` are the
+/** One reading-path through an NLI item's chained sequence build -- one reading of every
+ *  sentence folded in so far, in order. `element`/`semantic` are the
  *  running prior fed to the NEXT `appendSentence` call; `sequenceStructure`/
  *  `merged` are the latest merge's own output, unset until at least one merge has run
  *  (i.e. until a second sentence has been folded in -- every item has at least a
@@ -114,17 +118,12 @@ interface NliChainBranch {
   sentenceIdsSoFar: string[];
   sequenceStructure?: LigerStructure;
   merged?: GswbSolution;
-  /** The running merged premises' own semantic text, captured once at the
-   *  premise/hypothesis boundary -- the `Q` context axiom input, never re-derived once
-   *  the hypothesis starts folding in. */
-  premiseSemantic?: string;
-  premiseSemanticIds: string[];
-  hypothesisSemanticIds: string[];
-  premiseAsts: LigerStructure[];
-  hypothesisAsts: LigerStructure[];
+  /** The merge of all premises, once a second premise was folded in: registered as the
+   *  premises sequence, whose reading is the prior (`Q`) step 2 reasons against. */
+  premiseSequence?: { semantic: SemanticAnalysis; structure: LigerStructure };
 }
 
-type PreparedNliPair = PreparedReasoningPair & { itemId: string };
+type PreparedNliPair = PreparedReasoningPair<ReadingAssignment> & { itemId: string };
 
 type ParsedRegressionRunSnapshot = {
   regressionTestItems: any[];
@@ -1707,7 +1706,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *
    *  Deliberately does NOT populate them. An item's document holds the readings that
    *  item's chain actually used -- registered by `registerBatchParsedSentence` for the
-   *  seed and `foldSentenceIntoBranches`/`registerFinalSequence` for the rest -- exactly
+   *  seed and `appendSentenceToBranches`/`registerSequence` for the rest -- exactly
    *  as chat's document holds the readings its turns used.
    *
    *  Registering the batch parse here as well was the root cause of a broken
@@ -1765,10 +1764,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  its Continue/Skip buttons were gone it said nothing more than "do not run inference
    *  yet", which is this switch: selecting discriminants is something you do to a parsed
    *  session, not a mode the session has to be put into first. */
-  private continueAfterParse(): void {
+  private continueAfterParse(discourseNote = ''): void {
     if (!this.enableInference) {
       this.displayMessage(
-        "Parsing complete. Inference was not run \u2014 select discriminants if you want to, "
+        `Parsing complete.${discourseNote} Inference was not run \u2014 select discriminants if you want to, `
         + "then click Run inference.",
         "blue"
       );
@@ -2502,30 +2501,35 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           this.applyAppendSnapshotToParsedState(outputs);
           this.renderGswbResults(outputs);
           this.commitParsedRegressionSnapshot();
-          this.finishParseReport(parseReport, runStartedAt);
-          this.loading = false;
-          this.activeGswbRunStartedAt = null;
-          this.saveSessionSnapshot();
-          this.displayMessage(
-            partial
-              ? `Reparsed ${reparseIds.length} sentence(s).`
-              : this.testsuiteUpdateMode === 'append'
-              ? "Append parsing completed successfully."
-              : "Batch processing completed successfully.",
-            "green"
-          );
+          // Step 1 of every item (N4 6d) is part of the parse; held so an abort stops it.
+          this.stopNliPreparation();
+          this.nliPreparationSubscription = this.buildParsedDiscourses(parseReport).subscribe(discourseNote => {
+            if (gswbRunToken !== this.gswbRunToken) return;
+            this.finishParseReport(parseReport, runStartedAt);
+            this.loading = false;
+            this.activeGswbRunStartedAt = null;
+            this.saveSessionSnapshot();
+            this.displayMessage(
+              (partial
+                ? `Reparsed ${reparseIds.length} sentence(s).`
+                : this.testsuiteUpdateMode === 'append'
+                ? "Append parsing completed successfully."
+                : "Batch processing completed successfully.") + discourseNote,
+              "green"
+            );
 
-          if (partial) {
-            // The items over these sentences are what has to be reasoned over again.
-            const reparsed = new Set(reparseIds);
-            this.selectedNliItemIds.clear();
-            for (const item of this.regressionTestItems ?? []) {
-              const sentenceIds: string[] = [...(item?.premises ?? []), ...(item?.conclusion ?? [])];
-              if (sentenceIds.some(id => reparsed.has(id))) this.selectedNliItemIds.add(String(item.id));
+            if (partial) {
+              // The items over these sentences are what has to be reasoned over again.
+              const reparsed = new Set(reparseIds);
+              this.selectedNliItemIds.clear();
+              for (const item of this.regressionTestItems ?? []) {
+                const sentenceIds: string[] = [...(item?.premises ?? []), ...(item?.conclusion ?? [])];
+                if (sentenceIds.some(id => reparsed.has(id))) this.selectedNliItemIds.add(String(item.id));
+              }
+              this.selectedParseSentenceIds.clear();
             }
-            this.selectedParseSentenceIds.clear();
-          }
-          this.continueAfterParse();
+            this.continueAfterParse(discourseNote);
+          });
         });
       },
       error => {
@@ -2847,7 +2851,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // Fixed for this run: which anaphora branches go to Vampire. The setting can change while
     // the run prepares or afterwards without touching it.
     this.runReadingSelection = this.readingSelection();
-    this.runReadingSelectionApplied = {};
+    this.runReadingSelectionByItem = {};
+    this.runDiscoursesBuilt = 0;
 
     if (Number(this.session.gswbPreferences.outputstyle) !== 5) {
       this.submitVampireRequest(
@@ -2863,17 +2868,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.displayMessage("Building TPTP reasoning checks ...", "blue");
     const typed = logicType === 'tff';
     const pruning = this.contextPruning.nativeElement.checked;
-    const itemBuilds: NliItemBuild[] = [];
-    for (const [id, item] of Object.entries(inference_items)) {
-      const premiseSentenceIds = item.premise_sentence_ids ?? [];
-      const hypothesisSentenceIds = item.hypothesis_sentence_ids ?? [];
-      if (!premiseSentenceIds.length || !hypothesisSentenceIds.length) continue;
-      // The regression item id IS the reasoning update id -- ru-n3, not the element-pair
-      // form chat gets. Every branch of the item's chained sequence build below is
-      // another assignment of that one update.
-      const updateId = reasoningUpdateId(premiseSentenceIds, hypothesisSentenceIds, id);
-      itemBuilds.push({ itemId: id, updateId, premiseSentenceIds, hypothesisSentenceIds });
-    }
+    const itemBuilds: NliItemBuild[] = Object.entries(inference_items)
+      .map(([id, item]) => this.nliItemBuild(id, item.premise_sentence_ids ?? [], item.hypothesis_sentence_ids ?? []))
+      .filter((build): build is NliItemBuild => !!build);
 
     if (!itemBuilds.length) {
       this.displayMessage("No reading assignments to build TPTP reasoning checks from.", "red");
@@ -2898,7 +2895,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.nliPreparationSubscription = from(itemBuilds).pipe(
       concatMap(build => defer(() => {
         const started = Date.now();
-        return this.prepareNliItem(build, gswbOutputs, useDisambiguated, typed, pruning).pipe(
+        return this.reasonOverItem(build, gswbOutputs, useDisambiguated, typed, pruning).pipe(
           tap(() => preparationMs[build.itemId] = Date.now() - started));
       })),
       toArray()
@@ -2912,19 +2909,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         for (const item of Object.values(inference_items)) item.tptp_checks = [];
         const failures: string[] = [...stoppedItems];
         const degradations: string[] = [];
-        const selection = this.runReadingSelection ?? ALL_READINGS;
-        const averager = this.anaphoraRankers().averager;
-        prepared = prepared.map(pair => {
-          const itemBuild = itemBuilds.find(candidate => candidate.itemId === pair.itemId);
-          const sequenceId = itemBuild
-            ? compositeAnalysisId([...itemBuild.premiseSentenceIds, ...itemBuild.hypothesisSentenceIds]) : '';
-          const document = this.session.analysisDocuments[pair.itemId];
-          const discourseUpdate = document?.discourseUpdates?.find(update => update.id === `du-${sequenceId}`);
-          if (!document) return pair;
-          const selected = selectForVampire(document, discourseUpdate, pair.assignments, selection, averager);
-          this.runReadingSelectionApplied[pair.itemId] = selected.applied;
-          return { ...pair, assignments: selected.items };
-        });
         for (const preparedPair of prepared) {
           failures.push(...preparedPair.failures);
           degradations.push(...preparedPair.degradations);
@@ -2955,10 +2939,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }
         const skipped = hasPostProcessingRules(this.session.pragmaticsRulesText)
           ? '' : ` ${POST_PROCESSING_SKIPPED_NOTICE}`;
-        if (failures.length || degradations.length || skipped) {
+        const built = this.runDiscoursesBuilt
+          ? ` ${this.runDiscoursesBuilt} item(s) had no stored discourse; it was built first.` : '';
+        if (failures.length || degradations.length || skipped || built) {
           this.displayMessage(
             `Built ${bundleCount} reasoning bundle(s); ${failures.length} branch(es) failed, `
-            + `${degradations.length} not fully resolved.${skipped}`, "blue");
+            + `${degradations.length} not fully resolved.${built}${skipped}`, "blue");
         }
         this.submitVampireRequest(
           inference_items,
@@ -2978,25 +2964,63 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     });
   }
 
-  /** One NLI item, all the way to prepared bundles -- built document-first, the way chat
-   *  builds a discourse: register the first premise sentence's own (disambiguated)
-   *  batch-parse reading(s) as the seed, then append every remaining sentence in order
-   *  (later premises, then the hypothesis): its own batch readings, registered, then merged
-   *  onto every branch of its own sequence variant (DocumentBuilderService.appendSentence).
-   *  No sentence is derived again. No pruning until
-   *  ReasoningPipelineService.prepareReasoningChecks's own `prune` at the very end --
-   *  every branch (one full reading-path through every sentence) is reasoned over. */
-  private prepareNliItem(
-    build: NliItemBuild,
-    gswbOutputs: Record<string, GswbOutput>,
-    useDisambiguated: boolean,
-    typed: boolean,
-    pruning: boolean
-  ): Observable<PreparedNliPair> {
+  /** The build of one NLI item: its sentence ids and the update id every reading of its
+   *  discourse is an assignment of. Null for an item without a premise or a hypothesis. */
+  private nliItemBuild(itemId: string, premiseSentenceIds: string[], hypothesisSentenceIds: string[]): NliItemBuild | null {
+    if (!premiseSentenceIds.length || !hypothesisSentenceIds.length) return null;
+    // The regression item id IS the reasoning update id -- ru-n3, not the element-pair
+    // form chat gets. Every reading of the item's discourse is another assignment of
+    // that one update.
+    const updateId = reasoningUpdateId(premiseSentenceIds, hypothesisSentenceIds, itemId);
+    return { itemId, updateId, premiseSentenceIds, hypothesisSentenceIds };
+  }
+
+  /** Step 1 for every NLI item of a parse (N4 6d), one item at a time: the items whose
+   *  sentences all have a semantics. Resolves to a note for the parse message ('' when there
+   *  is nothing to build). An item that fails is reported here and built again by the next
+   *  "Run inference". */
+  private buildParsedDiscourses(parseReport: ParseReport): Observable<string> {
+    const gswbOutputs = this.session.lastGswbOutputs ?? {};
+    if (!this.usesLfgxDrt() || !this.session.lastAnnotations) return of('');
+    const builds = (this.regressionTestItems ?? [])
+      .filter(item => [...(item.premises ?? []), ...(item.conclusion ?? [])]
+        .every((sentenceId: string) => !gswbOutputs[sentenceId]?.failure && gswbOutputs[sentenceId]?.solutions?.length))
+      .map(item => this.nliItemBuild(String(item?.id ?? ''), item.premises ?? [], item.conclusion ?? []))
+      .filter((build): build is NliItemBuild => !!build);
+    if (!builds.length) return of('');
+    this.displayMessage(`Building the discourses of ${builds.length} item(s) ...`, "blue");
+    const endPhase = startPhase(parseReport.phases, PARSE_PHASES.discourses);
+    const failed: string[] = [];
+    return from(builds).pipe(
+      concatMap(build => this.buildItemDiscourse(build, gswbOutputs).pipe(
+        catchError(error => {
+          failed.push(`${build.itemId}: ${error?.message ?? String(error)}`);
+          return of(undefined);
+        }))),
+      toArray(),
+      map(() => {
+        endPhase();
+        if (failed.length) console.warn('[Regression] some discourses could not be built', failed);
+        return ` Built ${builds.length - failed.length} of ${builds.length} discourse(s)`
+          + (failed.length ? `; failed: ${failed.join('; ')}` : '') + '.';
+      })
+    );
+  }
+
+  /** Step 1 of one NLI item (N4 6d): its discourse, built document-first, the way chat
+   *  builds one: register the first premise sentence's batch-parse readings as the seed,
+   *  then append every remaining sentence in order (later premises, then the hypothesis):
+   *  its own batch readings, registered, then merged onto every branch of its own sequence
+   *  variant (DocumentBuilderService.appendSentence). No sentence is derived again. Every
+   *  sentence reading is used -- the discriminants narrow at step 2 -- and every PCDRS
+   *  reading is stored: the premises sequence, the item's sequence and its DiscourseUpdate,
+   *  which is then ranked. Errors when no reading could be generated. */
+  private buildItemDiscourse(build: NliItemBuild, gswbOutputs: Record<string, GswbOutput>): Observable<void> {
     const resolveDrs = !!this.session.gswbPreferences?.resolveDrs;
     // This item's own discourse. Every registration below writes here and nowhere else,
     // so one item's build cannot see or corrupt another's -- see registerAnalysisSentences.
     const document = this.documentFor(build.itemId);
+    const sentenceIds = [...build.premiseSentenceIds, ...build.hypothesisSentenceIds];
 
     const remaining: Array<{ sentenceId: string; side: 'premise' | 'hypothesis' }> = [
       ...build.premiseSentenceIds.slice(1).map(sentenceId => ({ sentenceId, side: 'premise' as const })),
@@ -3004,44 +3028,130 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     ];
 
     return defer(() => {
-      const seed = this.seedNliChainBranches(document, build.premiseSentenceIds[0], gswbOutputs, useDisambiguated);
+      const seed = this.seedNliChainBranches(document, build.premiseSentenceIds[0], gswbOutputs);
       if (!seed.length) {
-        throw new Error(`No selected reading for ${build.premiseSentenceIds[0]}.`);
+        throw new Error(`No reading for ${build.premiseSentenceIds[0]}.`);
       }
       return remaining.reduce(
         (branches$, next) => branches$.pipe(
           switchMap(branches => this.appendSentenceToBranches(
-            document, branches, next, gswbOutputs, useDisambiguated, resolveDrs))),
+            document, branches, next, gswbOutputs, resolveDrs))),
         of(seed),
       );
     }).pipe(
       switchMap(branches => {
-        this.registerFinalSequence(document, build, branches);
+        if (build.premiseSentenceIds.length > 1) {
+          this.registerSequence(document, build.premiseSentenceIds,
+            branches.map(branch => branch.premiseSequence));
+        }
+        this.registerSequence(document, sentenceIds, branches.map(branch => branch.merged?.semanticAnalysis
+          && branch.sequenceStructure
+          ? { semantic: branch.merged.semanticAnalysis, structure: branch.sequenceStructure } : undefined));
         return from(branches).pipe(
-          concatMap((branch, index) => this.prepareBranchChecks(build, branch, index, typed, pruning)),
+          concatMap((branch, index) => this.branchReadings(build, branch, index)),
           toArray(),
-          // The pragmatic layer. Written BEFORE the reasoning updates, because a
-          // ReasoningAssignment's id names the anaphora branch it was built from and
-          // validateReasoningUpdate resolves that hop.
-          tap(prepared => this.registerDiscourseUpdate(document, build, branches, prepared)),
-          // Top-k selects branches before Vampire, so it needs the ranking first. With every
-          // branch sent, nothing waits on lm.
-          concatMap(prepared => this.runReadingSelection && selectionNeedsRanking(this.runReadingSelection)
-            ? this.rankingOf(build.itemId).pipe(map(() => prepared))
-            : of(prepared)),
-          map(prepared => ({
+        );
+      }),
+      map(results => this.registerDiscourseUpdate(
+        document, build, results.flatMap(result => result.readings),
+        results.map(result => result.failure).filter((failure): failure is string => !!failure))),
+    );
+  }
+
+  /** The PCDRS readings of one branch: the post-processing rules over its merged syntax and
+   *  semantics, then /generate_pcdrs. A branch that fails is reported, not dropped. */
+  private branchReadings(
+    build: NliItemBuild, branch: NliChainBranch, branchIndex: number,
+  ): Observable<{ readings: PcdrsReading[]; failure?: string }> {
+    // Every reading id GSWB mints starts with it.
+    const scopeId = `pxq-${build.itemId}-${branchIndex + 1}`;
+    return defer(() => {
+      if (!branch.sequenceStructure || !branch.merged) {
+        throw new Error('no merged sequence for this branch.');
+      }
+      return this.reasoningPipeline.generateDiscourseMappings({
+        scopeId,
+        merged: readingOf(branch.merged),
+        sequenceStructure: branch.sequenceStructure,
+        ruleString: this.session.pragmaticsRulesText ?? '',
+        // Regression stores no SVG: an item's readings are rendered when it is opened
+        // (/render_pcdrs).
+        includeSvg: false,
+      });
+    }).pipe(
+      map(readings => ({ readings })),
+      catchError(error => {
+        console.warn('[Regression] NLI branch readings could not be generated', { itemId: build.itemId, error });
+        return of({ readings: [], failure: `${scopeId}: ${error?.message ?? String(error)}` });
+      })
+    );
+  }
+
+  /** Step 2 of one NLI item (N4 6d): the four checks over the readings its discourse
+   *  selects -- the discriminants, then the discourse's own selection or the run's default
+   *  -- read from the item's stored document. Nothing is merged again. An item without a
+   *  stored discourse (an old session, a failed step 1) runs step 1 first. */
+  private reasonOverItem(
+    build: NliItemBuild,
+    gswbOutputs: Record<string, GswbOutput>,
+    useDisambiguated: boolean,
+    typed: boolean,
+    pruning: boolean
+  ): Observable<PreparedNliPair> {
+    const sentenceIds = [...build.premiseSentenceIds, ...build.hypothesisSentenceIds];
+    const discourseUpdateId = `du-${compositeAnalysisId(sentenceIds)}`;
+    const stored = () => this.session.analysisDocuments[build.itemId]?.discourseUpdates
+      ?.find(update => update.id === discourseUpdateId);
+    const fallback = this.runReadingSelection ?? ALL_READINGS;
+
+    return defer(() => {
+      if (stored()) return of(undefined);
+      this.runDiscoursesBuilt++;
+      return this.buildItemDiscourse(build, gswbOutputs);
+    }).pipe(
+      // A selection by the LM ranking waits for it; one that was never asked for (a loaded
+      // session, changed rankers) is asked for now.
+      concatMap(() => {
+        const update = stored()!;
+        if (!selectionNeedsRanking(normalizedReadingSelection(update.readingSelection ?? fallback))) return of(undefined);
+        if (!this.pendingRankings.has(build.itemId) && needsAnaphoraRanking(update, this.anaphoraRankers())) {
+          this.rankDiscourseUpdate(build.itemId, update);
+        }
+        return this.rankingOf(build.itemId);
+      }),
+      concatMap(() => {
+        const document = this.session.analysisDocuments[build.itemId];
+        const update = stored()!;
+        const allowed = useDisambiguated
+          ? new Set(sentenceIds.flatMap(sentenceId => this.selectedSolutions(sentenceId, gswbOutputs, true)
+            .map(solution => readingOf(solution).semId)))
+          : undefined;
+        const { readings, selection, applied } = readingsForReasoning(
+          document, update, fallback, this.anaphoraRankers().averager, allowed);
+        this.runReadingSelectionByItem[build.itemId] = { selection, applied };
+        // In generation order, per semantic reading; pruning keeps the first of each.
+        const selected = new Set(readings.map(reading => reading.id));
+        const byOrigin = new Map<string, DiscourseAnalysis[]>();
+        update.discourse.filter(reading => selected.has(reading.id)).forEach(reading => {
+          const group = byOrigin.get(reading.semanticOrigin) ?? [];
+          if (!pruning || !group.length) group.push(reading);
+          byOrigin.set(reading.semanticOrigin, group);
+        });
+        return from([...byOrigin]).pipe(
+          concatMap(([semanticOrigin, group]) => this.storedReadingChecks(build, document, semanticOrigin, group, typed)),
+          toArray(),
+          map(pairs => ({
             itemId: build.itemId,
             scopeId: build.updateId,
-            assignments: prepared.flatMap(result => result.assignments),
-            failures: prepared.flatMap(result => result.failures),
-            degradations: prepared.flatMap(result => result.degradations),
+            assignments: pairs.flatMap(pair => pair.assignments),
+            failures: [...(update.failures ?? []), ...pairs.flatMap(pair => pair.failures)],
+            degradations: pairs.flatMap(pair => pair.degradations),
           } as PreparedNliPair))
         );
       }),
-      // One item's failure used to abort the whole batch: every pair of every item used
-      // to live in one forkJoin under a single error handler. An item that cannot be
-      // prepared at all is now a reported failure of that item alone; a branch that fails
-      // only its own final reasoning call is isolated further, in prepareBranchChecks.
+      // An item that cannot be prepared at all is a reported failure of that item alone; a
+      // semantic reading that fails only its own checks is isolated further, in
+      // storedReadingChecks.
       catchError(error => {
         const reason = `${build.itemId}: ${error?.message ?? String(error)}`;
         console.warn('[Regression] NLI item could not be prepared', { itemId: build.itemId, error });
@@ -3053,15 +3163,72 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     );
   }
 
-  /** The starting branch(es) for one item's chain: one per selected reading of its FIRST
+  /** The checks of the selected readings of one semantic reading of the item's sequence.
+   *  Its inputs are read from the stored document: the sentence readings it is made of
+   *  (the parts of its semId), their graphs as the check ASTs, and the prior Q -- the
+   *  premises sequence's reading named by the premise parts, or the single premise's
+   *  reading. */
+  private storedReadingChecks(
+    build: NliItemBuild,
+    document: XlePlusGlueDocument,
+    semanticOrigin: string,
+    readings: DiscourseAnalysis[],
+    typed: boolean,
+  ): Observable<PreparedReasoningPair<ReadingAssignment>> {
+    const pairId = `pxq-${build.itemId}-${semanticOrigin}`;
+    return defer(() => {
+      const sentenceIds = [...build.premiseSentenceIds, ...build.hypothesisSentenceIds];
+      const parts = sentenceReadingIdsOf({ semanticOrigin });
+      if (parts.length !== sentenceIds.length) {
+        throw new Error(`reading ${semanticOrigin} has ${parts.length} part(s) for ${sentenceIds.length} sentence(s).`);
+      }
+      const sentenceReadings = parts.map((semId, index) => {
+        const reading = document.sentences.find(sentence => sentence.id === sentenceIds[index])
+          ?.semantics.find(semantic => semantic.semId === semId);
+        if (!reading?.graph) {
+          throw new Error(`sentence reading ${semId} of ${sentenceIds[index]} is not stored with its graph.`);
+        }
+        return reading;
+      });
+      const premiseCount = build.premiseSentenceIds.length;
+      const premiseSemanticIds = parts.slice(0, premiseCount);
+      const prior = premiseCount === 1
+        ? sentenceReadings[0]
+        : document.sequences.find(sequence => sequence.id === compositeAnalysisId(build.premiseSentenceIds))
+          ?.semantics.find(semantic => semantic.semId === compositeAnalysisId(premiseSemanticIds));
+      if (!prior?.semString) {
+        throw new Error(`no stored premises reading ${compositeAnalysisId(premiseSemanticIds)}.`);
+      }
+      return this.reasoningPipeline.prepareStoredReadingChecks({
+        scopeId: pairId,
+        scope: {
+          updateId: build.updateId,
+          premiseSemanticIds,
+          hypothesisSemanticIds: parts.slice(premiseCount),
+        },
+        readings,
+        premiseSemantic: prior.semString,
+        premiseAsts: sentenceReadings.slice(0, premiseCount).map(reading => reading.graph as LigerStructure),
+        hypothesisAsts: sentenceReadings.slice(premiseCount).map(reading => reading.graph as LigerStructure),
+        typed,
+      });
+    }).pipe(
+      catchError(error => {
+        const reason = `${pairId}: ${error?.message ?? String(error)}`;
+        console.warn('[Regression] NLI reading checks could not be prepared', { itemId: build.itemId, error });
+        return of({ scopeId: pairId, assignments: [], failures: [reason], degradations: [] });
+      })
+    );
+  }
+
+  /** The starting branch(es) for one item's chain: one per reading of its FIRST
    *  premise sentence, registered from its batch-parse reading. */
   private seedNliChainBranches(
     document: XlePlusGlueDocument,
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,
-    useDisambiguated: boolean,
   ): NliChainBranch[] {
-    return this.registerBatchParsedSentence(document, sentenceId, gswbOutputs, useDisambiguated)
+    return this.registerBatchParsedSentence(document, sentenceId, gswbOutputs)
       .map(({ syntax, semantic }) => ({
         element: {
           id: sentenceId,
@@ -3072,13 +3239,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         },
         semantic,
         sentenceIdsSoFar: [sentenceId],
-        // A single premise needs no merge call: its own semantic IS the prior. See
-        // ReasoningPairRequest.premiseSemantic.
-        premiseSemantic: semantic.semString,
-        premiseSemanticIds: [semantic.semId],
-        hypothesisSemanticIds: [],
-        premiseAsts: [semantic.graph as LigerStructure],
-        hypothesisAsts: [],
       }));
   }
 
@@ -3104,17 +3264,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return syntaxByReading;
   }
 
-  /** Registers one sentence's batch-parse reading(s) into the item's document, filtered to
-   *  this run's disambiguation selection (matching every other reader of
-   *  `selectedSolutions`), each with the syntax of the analysis it was derived from
-   *  (`batchSyntaxFor`). Nothing is parsed or derived again. */
+  /** Registers one sentence's batch-parse readings into the item's document -- all of them:
+   *  the discriminants narrow at step 2 -- each with the syntax of the analysis it was
+   *  derived from (`batchSyntaxFor`). Nothing is parsed or derived again. */
   private registerBatchParsedSentence(
     document: XlePlusGlueDocument,
     sentenceId: string,
     gswbOutputs: Record<string, GswbOutput>,
-    useDisambiguated: boolean,
   ): { syntax: SyntacticAnalysis; semantic: SemanticAnalysis }[] {
-    const solutions = this.selectedSolutions(sentenceId, gswbOutputs, useDisambiguated);
+    const solutions = this.selectedSolutions(sentenceId, gswbOutputs, false);
     if (!solutions.length) return [];
     const syntaxOf = this.batchSyntaxFor(sentenceId, solutions);
     const entries = solutions.map(solution => {
@@ -3149,14 +3307,13 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     branches: NliChainBranch[],
     next: { sentenceId: string; side: 'premise' | 'hypothesis' },
     gswbOutputs: Record<string, GswbOutput>,
-    useDisambiguated: boolean,
     resolveDrs: boolean,
   ): Observable<NliChainBranch[]> {
     return defer(() => {
-      const readings = this.registerBatchParsedSentence(document, next.sentenceId, gswbOutputs, useDisambiguated)
+      const readings = this.registerBatchParsedSentence(document, next.sentenceId, gswbOutputs)
         .map(entry => entry.semantic);
       if (!readings.length) {
-        throw new Error(`No selected reading for ${next.sentenceId}.`);
+        throw new Error(`No reading for ${next.sentenceId}.`);
       }
       const previousContexts: SequenceMergePreviousContext[] = branches.map(branch =>
         ({ semantic: branch.semantic, element: branch.element }));
@@ -3203,7 +3360,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         return;
       }
       const sentenceIdsSoFar = [...branch.sentenceIdsSoFar, next.sentenceId];
-      const currentGraph = pair.currentSemantic.graph as LigerStructure;
       const syntaxId = mergedSemantic.syntacticOrigin;
       folded.push({
         element: {
@@ -3220,15 +3376,9 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         merged: pair.merged,
         // Kept exactly as it was once the hypothesis starts folding in -- the prior
         // (`Q`) is the merged premises alone, never premises + conclusion.
-        premiseSemantic: isPremise ? mergedSemantic.semString : branch.premiseSemantic,
-        premiseSemanticIds: isPremise
-          ? [...branch.premiseSemanticIds, pair.currentSemantic.semId]
-          : branch.premiseSemanticIds,
-        hypothesisSemanticIds: isPremise
-          ? branch.hypothesisSemanticIds
-          : [...branch.hypothesisSemanticIds, pair.currentSemantic.semId],
-        premiseAsts: isPremise ? [...branch.premiseAsts, currentGraph] : branch.premiseAsts,
-        hypothesisAsts: isPremise ? branch.hypothesisAsts : [...branch.hypothesisAsts, currentGraph],
+        premiseSequence: isPremise
+          ? { semantic: mergedSemantic, structure: pair.sequenceStructure }
+          : branch.premiseSequence,
       });
     });
     if (!folded.length) {
@@ -3237,32 +3387,32 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return folded;
   }
 
-  /** Registers the item's complete premises+hypothesis sequence once, aggregating every
-   *  surviving branch's own final reading into one SequenceAnalysis -- mirrors chat's
-   *  `upsertSequenceFromContexts`, unconditional here (every branch is kept, not just
-   *  Vampire-accepted ones: an NLI item's premises/hypothesis are given up front, not
-   *  discovered turn by turn). Intermediate (premises-only, or partial-hypothesis)
-   *  sequences along the chain are never registered as document elements -- nothing else
-   *  needs to reference them, only the complete item sequence a ReasoningUpdate's
-   *  sourceElementId points at. */
-  private registerFinalSequence(
-    document: XlePlusGlueDocument, build: NliItemBuild, branches: NliChainBranch[]
+  /** Registers one sequence of the item once, aggregating every branch's own reading of it
+   *  into one SequenceAnalysis -- mirrors chat's `upsertSequenceFromContexts`, unconditional
+   *  here (every branch is kept: an NLI item's premises/hypothesis are given up front, not
+   *  discovered turn by turn). Two are registered: the item's complete premises+hypothesis
+   *  sequence, which a ReasoningUpdate's sourceElementId points at, and, with several
+   *  premises, the premises sequence, whose readings are the priors step 2 reasons against.
+   *  Partial sequences along the chain are not registered: nothing references them. */
+  private registerSequence(
+    document: XlePlusGlueDocument,
+    sentenceIds: string[],
+    readings: Array<{ semantic: SemanticAnalysis; structure: LigerStructure } | undefined>,
   ): void {
-    const allSentenceIds = [...build.premiseSentenceIds, ...build.hypothesisSentenceIds];
-    const sequenceId = compositeAnalysisId(allSentenceIds);
+    const sequenceId = compositeAnalysisId(sentenceIds);
     const syntaxById = new Map<string, SyntacticAnalysis>();
     const semanticsById = new Map<string, SemanticAnalysis>();
     const synSemMapping: SynSemMapping = {};
 
-    branches.forEach(branch => {
-      const semantic = branch.merged?.semanticAnalysis;
-      if (!semantic || !branch.sequenceStructure) return;
+    readings.forEach(reading => {
+      if (!reading) return;
+      const { semantic, structure } = reading;
       const synId = semantic.syntacticOrigin;
       if (synId && !syntaxById.has(synId)) {
         // As chat's own upsertSequenceFromContexts does: .graph is display-only and
         // unused by appendSentence, so the merged structure stands in for
         // both fields rather than leaving a real LigerWebGraph unbuilt here.
-        syntaxById.set(synId, { synId, structure: branch.sequenceStructure, graph: branch.sequenceStructure } as unknown as SyntacticAnalysis);
+        syntaxById.set(synId, { synId, structure, graph: structure } as unknown as SyntacticAnalysis);
       }
       if (!semanticsById.has(semantic.semId)) semanticsById.set(semantic.semId, semantic);
       if (synId) {
@@ -3276,29 +3426,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.documentBuilder.upsertSequenceAnalyses(document, [{
       id: sequenceId,
-      text: allSentenceIds.map(id => this.sentenceMap[id] ?? '').join(' '),
-      sentenceIds: allSentenceIds,
+      text: sentenceIds.map(id => this.sentenceMap[id] ?? '').join(' '),
+      sentenceIds,
       syntax: Array.from(syntaxById.values()),
       semantics: Array.from(semanticsById.values()),
       synSemMapping,
     }]);
   }
 
-  /** One branch's final reasoning call, isolated so one branch's failure never drops the
-   *  others -- mirrors the old per-pair catchError, just at branch instead of pair
-   *  granularity now that the syntax merge and per-sentence deduce run once per item. */
-  /** Records this item's pragmatic analyses -- one `DiscourseAnalysis` per PCDRS branch,
-   *  linked to the merged reading it annotates.
+  /** Records this item's pragmatic analyses -- one `DiscourseAnalysis` per PCDRS reading,
+   *  linked to the merged reading it annotates -- and has them ranked. Errors when there is
+   *  no reading at all: the item then has no discourse, and the next run builds it again.
    *
-   *  Regression never wrote these. The data was always there: `prepareReasoningChecks`
-   *  returns each assignment's `mapping` and rule branch, and regression consumed them to
-   *  build the Vampire bundles and then dropped them. Chat and glue-vis take the same
-   *  values and register them, which is why only
-   *  regression's documents had no `prag` layer at all -- and it was categorical, not a
-   *  property of the examples: chat writes a DiscourseUpdate even for a pronoun-free
-   *  discourse, where `anaphoraMapping.relations` is legitimately empty. "Post-processing
-   *  ran and bound nothing" is a different fact from "post-processing never ran", and
-   *  only the first is recoverable from a stored document.
+   *  "Post-processing ran and bound nothing" is a different fact from "post-processing never
+   *  ran", and only the first is recoverable from a stored document -- which is why a
+   *  pronoun-free item gets a DiscourseUpdate too.
    *
    *  With this, `(syn_id, sem_id, prag_id)` is recoverable for an item without
    *  materialising the triples: syntax -> semantics via the sentence/sequence
@@ -3306,29 +3448,24 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   private registerDiscourseUpdate(
     document: XlePlusGlueDocument,
     build: NliItemBuild,
-    branches: NliChainBranch[],
-    prepared: PreparedReasoningPair[],
+    readings: PcdrsReading[],
+    failures: string[],
   ): void {
     const sequenceId = compositeAnalysisId([...build.premiseSentenceIds, ...build.hypothesisSentenceIds]);
     if (!document.sequences.some(sequence => sequence.id === sequenceId)) {
-      return;
+      throw new Error(`No sequence ${sequenceId} was registered. ${failures.join('; ')}`.trim());
+    }
+    if (!readings.length) {
+      throw new Error(`No reading of ${sequenceId} could be generated. ${failures.join('; ')}`.trim());
     }
 
-    // `prepared` is built by concatMap over `branches`, so index i belongs to branch i.
-    const readings = prepared.flatMap((pair, index) => {
-      const semId = branches[index]?.merged?.semanticAnalysis?.semId;
-      return semId
-        ? (pair.assignments ?? []).map(({ mapping, ruleBranchIndex }) =>
-          ({ mapping, ruleBranchIndex, semanticOrigin: semId }))
-        : [];
-    });
-    if (!readings.length) return;
-
     const rankers = this.anaphoraRankers();
-    const update = carryAnaphoraRanking(
-      document.discourseUpdates?.find(existing => existing.id === `du-${sequenceId}`),
-      discourseUpdateOf({ id: sequenceId, kind: 'sequence' }, readings),
-      rankers);
+    const previous = document.discourseUpdates?.find(existing => existing.id === `du-${sequenceId}`);
+    const generated = discourseUpdateOf({ id: sequenceId, kind: 'sequence' }, readings);
+    const update = carryAnaphoraRanking(previous, {
+      ...generated,
+      ...(failures.length ? { failures } : {}),
+    }, rankers);
     document.discourseUpdates = [
       ...(document.discourseUpdates ?? []).filter(existing => existing.id !== update.id),
       update,
@@ -3339,6 +3476,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     console.info('[Regression] discourse update registered', {
       itemId: build.itemId, sequenceId, branches: update.discourse.length,
       anaphoraResolved: update.discourse.filter(entry => entry.collapsed).length,
+      failures: failures.length,
     });
   }
 
@@ -3356,7 +3494,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           if (!ranked || !document) return;
           document.discourseUpdates = (document.discourseUpdates ?? [])
             .map(existing => existing.id === ranked.id ? ranked : existing);
-          // Verdicts do not change -- the branches were selected before Vampire -- but the
+          // Verdicts do not change -- the readings were selected before Vampire -- but the
           // summary's comparison does.
           this.refreshInferenceFromDocuments();
           this.scheduleSessionSave();
@@ -3380,47 +3518,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   /** Ends the running inference's Vampire phase; set at submission. */
   private endVampirePhase: (() => void) | null = null;
-
-  private prepareBranchChecks(
-    build: NliItemBuild,
-    branch: NliChainBranch,
-    branchIndex: number,
-    typed: boolean,
-    pruning: boolean,
-  ): Observable<PreparedReasoningPair> {
-    const pairId = `pxq-${build.itemId}-${branchIndex + 1}`;
-    if (!branch.sequenceStructure || !branch.merged) {
-      return of({
-        scopeId: pairId, assignments: [],
-        failures: [`${pairId}: no merged sequence for this branch.`], degradations: [],
-      });
-    }
-    return this.reasoningPipeline.prepareReasoningChecks({
-      scopeId: pairId,
-      scope: {
-        updateId: build.updateId,
-        premiseSemanticIds: branch.premiseSemanticIds,
-        hypothesisSemanticIds: branch.hypothesisSemanticIds,
-      },
-      merged: readingOf(branch.merged),
-      premiseSemantic: branch.premiseSemantic,
-      sequenceStructure: branch.sequenceStructure,
-      premiseAsts: branch.premiseAsts,
-      hypothesisAsts: branch.hypothesisAsts,
-      typed,
-      prune: pruning,
-      // Regression stores no SVG: an item's readings are rendered when it is opened
-      // (/render_pcdrs).
-      includeSvg: false,
-      ruleString: this.session.pragmaticsRulesText ?? '',
-    }).pipe(
-      catchError(error => {
-        const reason = `${pairId}: ${error?.message ?? String(error)}`;
-        console.warn('[Regression] NLI branch could not be prepared', { itemId: build.itemId, error });
-        return of({ scopeId: pairId, assignments: [], failures: [reason], degradations: [] } as PreparedReasoningPair);
-      })
-    );
-  }
 
   private submitVampireRequest(
     inference_items: Record<string, nliItem>,
@@ -3923,8 +4020,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       const updateId = reasoningUpdateId(item.premises ?? [], item.conclusion ?? [], pair.itemId);
 
       if (!updates.has(updateId)) {
-        // Only set when registerFinalSequence actually registered it -- an item whose
-        // sequence build failed outright (caught in prepareNliItem's own catchError) never
+        // Only set when registerSequence actually registered it -- an item whose
+        // sequence build failed outright (caught in reasonOverItem's own catchError) never
         // reaches that call, and validateReasoningUpdate throws on a sourceElementId that
         // does not resolve, which would drop this update's failure message too.
         const sequenceId = compositeAnalysisId([...(item.premises ?? []), ...(item.conclusion ?? [])]);
@@ -3939,8 +4036,10 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           logicType: this.session.lastLogicType === 'tff' ? 'tff' : 'fof',
           ruleString: this.session.pragmaticsRulesText,
           pruned: this.contextPruning?.nativeElement?.checked ?? false,
-          readingSelection: this.runReadingSelection
-            ? { ...this.runReadingSelection, applied: this.runReadingSelectionApplied[pair.itemId] ?? true }
+          readingSelection: this.runReadingSelectionByItem[pair.itemId]
+            ? { ...this.runReadingSelectionByItem[pair.itemId].selection, applied: this.runReadingSelectionByItem[pair.itemId].applied }
+            : this.runReadingSelection
+            ? { ...this.runReadingSelection, applied: true }
             : this.session.analysisDocuments[pair.itemId]?.reasoningUpdates?.find(existing => existing.id === updateId)?.readingSelection
               ?? { ...ALL_READINGS },
           assignments: [],
@@ -4190,12 +4289,15 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     }
   }
 
-  /** The selection the current (or last) Vampire run of this page started with, and per item
-   *  whether a ranking was there to apply it. */
+  /** The session default the current (or last) Vampire run of this page started with, and per
+   *  item the selection it used (the discourse's own, else that default) and whether a ranking
+   *  was there to apply it. */
   private runReadingSelection: ReadingSelection | null = null;
   /** The Vampire settings of the current inference run, fixed when it starts. */
   private runVampirePreferences: VampirePreferences | null = null;
-  private runReadingSelectionApplied: Record<string, boolean> = {};
+  private runReadingSelectionByItem: Record<string, { selection: ReadingSelection; applied: boolean }> = {};
+  /** Items of the current run whose discourse was built at inference time (step 1 first). */
+  private runDiscoursesBuilt = 0;
 
   /** The selection the settings ask for -- applied to the next run, not to existing verdicts. */
   private readingSelection(): ReadingSelection {

@@ -288,6 +288,13 @@ export interface DiscourseUpdate {
   // synSemMapping, the semantic alternatives or the branches themselves. Absent when the lm
   // service was unavailable or there was nothing to rank.
   anaphoraRanking?: AnaphoraRanking;
+  // Which readings of this discourse go to Vampire, when it was changed for this discourse in
+  // its sem view (N4 6d); absent: the session's VampirePreferences.reading_selection.
+  readingSelection?: ReadingSelection;
+  // Readings of this discourse that could not be generated (a rule branch whose
+  // /generate_pcdrs failed), as human-readable reasons. Kept rather than dropped: the
+  // discourse is stored without them, and a run over it reports them.
+  failures?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
