@@ -664,14 +664,27 @@ export function readingsForReasoning(
   averager: AnaphoraAverager,
   allowedSentenceReadings?: Set<string>,
 ): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
-  const selection = normalizedReadingSelection(update.readingSelection ?? fallback);
   const narrowed: DiscourseUpdate = { ...update, discourse: readingsAllowedByDiscriminants(update, allowedSentenceReadings) };
-  if (selectionNeedsRanking(selection) && !update.anaphoraRanking) {
-    return { readings: narrowed.discourse, selection, applied: false };
+  return readingsSelectedAcross(document, [narrowed], update.readingSelection ?? fallback, averager);
+}
+
+/** The readings of `updates` that `selection` keeps, best first, in one order over all of
+ *  them. `applied` is false when the selection needs the LM ranking and an update with
+ *  readings has none: then every reading is kept. */
+export function readingsSelectedAcross(
+  document: XlePlusGlueDocument,
+  updates: DiscourseUpdate[],
+  selection: ReadingSelection,
+  averager: AnaphoraAverager,
+): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
+  const normalized = normalizedReadingSelection(selection);
+  const readings = updates.flatMap(update => update.discourse);
+  if (selectionNeedsRanking(normalized) && updates.some(update => update.discourse.length && !update.anaphoraRanking)) {
+    return { readings, selection: normalized, applied: false };
   }
-  const byId = new Map(narrowed.discourse.map(reading => [reading.id, reading]));
-  const ids = selectedReadingIds(discourseOrderContext(document, [narrowed], averager), selection);
-  return { readings: ids.map(id => byId.get(id)!), selection, applied: true };
+  const byId = new Map(readings.map(reading => [reading.id, reading]));
+  const ids = selectedReadingIds(discourseOrderContext(document, updates, averager), normalized);
+  return { readings: ids.map(id => byId.get(id)!), selection: normalized, applied: true };
 }
 
 /** The readings of a sentence its discriminant selection keeps: those in every selected scope
@@ -695,38 +708,38 @@ export function latestSentenceReadingOf(reading: Pick<DiscourseAnalysis, 'semant
  *  discourse readings built from the sentence readings it names, so a discourse view narrows
  *  by them as a sentence's view does (chat, N4 6d). */
 export function discourseDiscriminantsOf(
-  discriminants: GswbDiscriminant[], update: DiscourseUpdate,
+  discriminants: GswbDiscriminant[], readings: DiscourseAnalysis[],
 ): GswbDiscriminant[] {
   return discriminants.map(discriminant => {
     const named = new Set(discriminant.associatedSolutions ?? []);
     return {
       ...discriminant,
-      associatedSolutions: update.discourse
+      associatedSolutions: readings
         .filter(reading => named.has(latestSentenceReadingOf(reading)))
         .map(reading => reading.id),
     };
   });
 }
 
-/** What survives a chat turn's message (N4 6d), best first: of the `selectable` readings
- *  (sent and accepted; null: all, a first turn), those whose latest sentence reading is in
- *  `allowedLatest` (the latest sentence's discriminant selection; absent: all), then the
- *  discourse's selection or `fallback` (the default the turn started with). Only the latest
+/** What survives a chat turn's message (N4 6d), best first, over the turn's discourse
+ *  updates (one per sequence it extended): of the `selectable` readings (sent and consistent;
+ *  null: all, a first turn), those whose latest sentence reading is in `allowedLatest` (the
+ *  latest sentence's discriminant selection; absent: all), then `selection`. Only the latest
  *  sentence is narrowed: the earlier ones were fixed by the turns before. */
 export function turnSurvivors(
   document: XlePlusGlueDocument,
-  update: DiscourseUpdate,
-  fallback: ReadingSelection,
+  updates: DiscourseUpdate[],
+  selection: ReadingSelection,
   averager: AnaphoraAverager,
   selectable: Set<string> | null,
   allowedLatest?: Set<string>,
 ): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
-  const narrowed: DiscourseUpdate = {
+  const narrowed = updates.map(update => ({
     ...update,
     discourse: update.discourse.filter(reading => (!selectable || selectable.has(reading.id))
       && (!allowedLatest || allowedLatest.has(latestSentenceReadingOf(reading)))),
-  };
-  return readingsForReasoning(document, narrowed, fallback, averager);
+  }));
+  return readingsSelectedAcross(document, narrowed, selection, averager);
 }
 
 /** The assignments of `update` that survive `selection` -- for comparing stored results under

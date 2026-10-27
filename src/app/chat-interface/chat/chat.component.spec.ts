@@ -226,8 +226,9 @@ describe('ChatComponent', () => {
       semanticOrigin,
     }));
 
-    /** Which readings Vampire accepts; every other is consistent but uninformative. */
+    /** Which readings Vampire finds informative, and which consistent. */
     let accepts: (readingId: string) => boolean;
+    let consistent: (readingId: string) => boolean;
 
     const startTurn = (sentence: any, selection: any = { criteria: [], filters: [], k: null }) => {
       component.chatDocument.sentences.push(JSON.parse(JSON.stringify(sentence)));
@@ -246,6 +247,7 @@ describe('ChatComponent', () => {
       component.activeIndices = [];
       component.context = [priorReading('sem-1a', 'P1'), priorReading('sem-1b', 'P2')] as any;
       accepts = () => true;
+      consistent = () => true;
       dataServiceSpy.lmRankAnaphora.and.returnValue(throwError(() => ({ status: 0 })));
       // One parse per sentence supplied, S<n> positionally, each part offset by 7 constructors.
       dataServiceSpy.ligerSequence.and.callFake((request: any) => {
@@ -278,7 +280,7 @@ describe('ChatComponent', () => {
       }));
       dataServiceSpy.callVampire.and.callFake((request: any) => of({
         context_checks_mapping: Object.fromEntries((request.tptp_checks ?? []).map((bundle: any, index: number) => [index, {
-          assignment_id: bundle.assignmentId, consistent: true, informative: accepts(bundle.mappingId), relevant: false, glyph: '<svg/>',
+          assignment_id: bundle.assignmentId, consistent: consistent(bundle.mappingId), informative: accepts(bundle.mappingId), relevant: false, glyph: '<svg/>',
         }])),
       }));
     });
@@ -338,8 +340,8 @@ describe('ChatComponent', () => {
       expect(component.loading).toBeFalse();
     });
 
-    it('carries one context entry per merged reading with an accepted reading', () => {
-      accepts = id => id.includes('sem-1a') && id.endsWith('-pcdrs-2');
+    it('carries one context entry per merged reading with a neutral reading', () => {
+      consistent = id => id.includes('sem-1a') && id.endsWith('-pcdrs-2');
 
       startTurn(newSentence('sentence-3', 1));
 
@@ -348,8 +350,8 @@ describe('ChatComponent', () => {
       expect(component.context[0].tptp).toContain('-pcdrs-2');
     });
 
-    it('lets the latest message pick among the accepted readings only', () => {
-      accepts = id => id.endsWith('-pcdrs-2');
+    it('lets the latest message pick among the consistent readings only', () => {
+      consistent = id => id.endsWith('-pcdrs-2');
 
       startTurn(newSentence('sentence-3', 1));
 
@@ -375,13 +377,13 @@ describe('ChatComponent', () => {
       expect(component.priorSummary).toBe('1 of 2 readings');
     });
 
-    it('keeps a merged reading out of the prior when none of its accepted readings survives', () => {
-      accepts = id => id.includes('sem-1a') || id.endsWith('-pcdrs-2');
+    it('keeps a merged reading out of the prior when none of its consistent readings survives', () => {
+      consistent = id => id.includes('sem-1a') || id.endsWith('-pcdrs-2');
 
       startTurn(newSentence('sentence-3', 1));
       expect(component.priorContextIndices()).toEqual([0, 1]);
 
-      // sem-1b's only accepted reading leaves its pronoun unbound.
+      // sem-1b's only consistent reading leaves its pronoun unbound.
       component.onReadingSelectionChange(lastMessage(), { criteria: [], filters: ['unbound'], k: null });
       expect(component.priorContextIndices()).toEqual([0]);
     });
@@ -426,8 +428,8 @@ describe('ChatComponent', () => {
       const second = (component as any).pushChatMessage({ text: 'next', sender: 'Bot', branchSolutions: first.branchSolutions });
 
       (component as any).setLatestTurn(second, {
-        updateId: 'du-sentence-1+sentence-3', sentenceId: 'sentence-3', defaultSelection: { criteria: [], filters: [], k: null },
-        sent: null, accepted: null,
+        updateIds: ['du-sentence-1+sentence-3'], sentenceId: 'sentence-3', defaultSelection: { criteria: [], filters: [], k: null },
+        sent: null, selectable: null, optionOf: null,
       });
 
       expect(component.messageViews.get(first)).toEqual(jasmine.objectContaining({
@@ -439,29 +441,83 @@ describe('ChatComponent', () => {
         .toEqual({ criteria: [], filters: [], k: null });
     });
 
-    it('leaves the discourse as it was when no reading is accepted (an entailed input)', () => {
+    it('keeps the prior an entailed reading was checked against as its option', () => {
+      startTurn(newSentence('sentence-3', 1));
+      const first = lastMessage();
+      const context = [...component.context];
+      accepts = () => false;
+
+      startTurn(newSentence('sentence-4', 1));
+
+      const answer = lastMessage();
+      expect(answer.text).toBe('Your input is not informative.');
+      // Entailed information is not restated: the options are the previous discourse.
+      expect(component.context).toEqual(context);
+      expect(component.history[component.history.length - 1]).toEqual(context);
+      // The answer is the latest message; its readings stand for the priors.
+      expect(component.messageViews.get(answer)?.orderOnly).toBeFalse();
+      expect(component.messageViews.get(first)?.orderOnly).toBeTrue();
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+      expect(answer.branchLabels?.[0]).toBe('consistent, uninformative, irrelevant');
+      // Narrowing to the readings over one prior keeps that prior only.
+      component.onReadingSelectionChange(answer, { criteria: [], filters: ['unbound'], k: null });
+      expect(component.priorContextIndices()).toEqual([0, 1]);
+      component.onDiscriminantSelectionChange(answer, { scopeIds: [], mcIds: [] });
+      component.activeIndices = [1];
+      expect(component.priorContextIndices()).toEqual([1]);
+    });
+
+    it('rejects an input every reading of which is inconsistent: the discourse stays as it was', () => {
       startTurn(newSentence('sentence-3', 1));
       const first = lastMessage();
       const context = component.context;
       const rows = component.history.length;
-      accepts = () => false;
+      consistent = () => false;
 
       startTurn(newSentence('sentence-4', 1), { criteria: [], filters: [], k: 1 });
 
       const answer = lastMessage();
-      expect(answer.text).toBe('Your input is not informative.');
-      // The context, the history's last row and the latest message are the previous turn's.
+      expect(answer.text).toBe('Your input does not make sense.');
       expect(component.context).toBe(context);
       expect(component.history.length).toBe(rows + 1);
-      expect(component.history[component.history.length - 1].map(entry => entry.semanticAnalysis?.semId))
-        .toEqual(context.map(entry => entry.semanticAnalysis?.semId));
+      expect(component.history[component.history.length - 1]).toEqual(context);
+      // The previous message stays the latest, still open; the answer is for inspection.
       expect(component.messageViews.get(first)?.orderOnly).toBeFalse();
       expect(component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection).toBeUndefined();
-      expect(component.priorContextIndices()).toEqual([0, 1]);
-      // The answer shows what was checked, with its verdicts, for inspection only.
       expect(answer.branchSolutions?.length).toBe(sentReadings().length);
-      expect(answer.branchLabels?.[0]).toBe('consistent, uninformative, irrelevant');
       expect(component.messageViews.get(answer)?.orderOnly).toBeTrue();
+    });
+
+    it('counts the readings in the reply when they differ, and keeps each one\'s option', () => {
+      // After sem-1a the input is informative, after sem-1b entailed; sem-1b's unbound
+      // reading contradicts.
+      accepts = id => id.includes('sem-1a');
+      consistent = id => !(id.includes('sem-1b') && id.endsWith('-pcdrs-2'));
+
+      startTurn(newSentence('sentence-3', 1));
+
+      expect(lastMessage().text)
+        .toBe('Of 4 readings: 2 informative and consistent, 1 entailed (keeps the previous discourse), 1 inconsistent (rejected).');
+      expect(component.context.map(entry => entry.semanticAnalysis?.semId)).toEqual(['sem-1a+sentence-3-S0-s0', 'sem-1b']);
+      expect(component.context.map(entry => entry.elementId)).toEqual(['sentence-1+sentence-3', 'sentence-1']);
+      const view = component.messageViews.get(lastMessage())!;
+      expect(view.selectableIds?.length).toBe(3);
+    });
+
+    it('builds the next turn on a merged discourse and an unchanged prior side by side', () => {
+      accepts = id => id.includes('sem-1a');
+      startTurn(newSentence('sentence-3', 1));
+      accepts = () => true;
+
+      startTurn(newSentence('sentence-4', 1));
+
+      const ids = (component.chatDocument.discourseUpdates ?? []).map(du => du.id);
+      expect(ids).toContain('du-sentence-1+sentence-3+sentence-4');
+      expect(ids).toContain('du-sentence-1+sentence-4');
+      expect((component.chatDocument.reasoningUpdates ?? []).map(update => update.id))
+        .toEqual(jasmine.arrayContaining(['ru-sentence-1+sentence-3=>sentence-4', 'ru-sentence-1=>sentence-4']));
+      expect(component.context.map(entry => entry.elementId).sort())
+        .toEqual(['sentence-1+sentence-3+sentence-4', 'sentence-1+sentence-4']);
     });
 
     it('hands the pills one TPTP block and one DRS per reading sent, labelled with its verdict', () => {
