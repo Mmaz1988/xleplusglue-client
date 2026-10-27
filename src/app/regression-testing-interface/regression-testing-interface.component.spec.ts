@@ -2186,7 +2186,7 @@ describe('RegressionTestingInterfaceComponent', () => {
       component['currentVampireRunKind'] = kind;
       component['vampireCurrentRunItemCount'] = submittedIds.length;
       (component as any).submitVampireRequest(
-        submittable(submittedIds), false, Date.now(), component['vampireRunToken'], true);
+        submittable(submittedIds), Date.now(), component['vampireRunToken'], true);
     };
 
     const runRerunOver = (priorIds: string[], submittedIds: string[]) =>
@@ -2369,7 +2369,6 @@ describe('RegressionTestingInterfaceComponent', () => {
 
     beforeEach(() => {
       submitted = spyOn<any>(component, 'submitVampireRequest');
-      component['contextPruning'] = { nativeElement: { checked: false } } as any;
       component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
       component['session'].regressionTestItems = [
         { id: 'n1', premises: ['S1'], conclusion: ['S2'], gold_label: '1' },
@@ -2433,7 +2432,6 @@ describe('RegressionTestingInterfaceComponent', () => {
       submitted = spyOn<any>(component, 'submitVampireRequest');
       preparation = new Subject<any>();
       prepare = spyOn<any>(component, 'reasonOverItem').and.returnValue(preparation.asObservable());
-      component['contextPruning'] = { nativeElement: { checked: false } } as any;
       component['session'].gswbPreferences.outputstyle = 5;
       component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
       component['session'].regressionTestItems = [
@@ -2546,7 +2544,6 @@ describe('RegressionTestingInterfaceComponent', () => {
 
     beforeEach(() => {
       submitted = spyOn<any>(component, 'submitVampireRequest');
-      component['contextPruning'] = { nativeElement: { checked: false } } as any;
       component['session'].sentenceMap = { S1: 'A dog barks.', S2: 'A dog exists.' };
       component['session'].regressionTestItems = [
         { id: 'n1', premises: ['S1'], conclusion: ['S2'], gold_label: '1' },

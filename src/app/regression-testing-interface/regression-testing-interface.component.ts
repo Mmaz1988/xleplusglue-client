@@ -189,7 +189,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   @ViewChild('gswbSettings') gswbPreferences: GswbSettingsComponent;
 
   @ViewChild('vampirePrefs') vampirePreferences!: InferenceSettingsComponent;
-  @ViewChild('contextPruning') contextPruning!: ElementRef;
 
   @ViewChild('testfile') testfile: EditorComponent;
   @ViewChild('errorhandle') errorhandle: ElementRef;
@@ -2877,7 +2876,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     if (Number(this.session.gswbPreferences.outputstyle) !== 5) {
       this.submitVampireRequest(
         inference_items,
-        this.contextPruning.nativeElement.checked,
         vampireStartedAt,
         vampireRunToken,
         false
@@ -2887,7 +2885,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
     this.displayMessage("Building TPTP reasoning checks ...", "blue");
     const typed = logicType === 'tff';
-    const pruning = this.contextPruning.nativeElement.checked;
     const itemBuilds: NliItemBuild[] = Object.entries(inference_items)
       .map(([id, item]) => this.nliItemBuild(id, item.premise_sentence_ids ?? [], item.hypothesis_sentence_ids ?? []))
       .filter((build): build is NliItemBuild => !!build);
@@ -2915,7 +2912,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.nliPreparationSubscription = from(itemBuilds).pipe(
       concatMap(build => defer(() => {
         const started = Date.now();
-        return this.reasonOverItem(build, gswbOutputs, useDisambiguated, typed, pruning).pipe(
+        return this.reasonOverItem(build, gswbOutputs, useDisambiguated, typed).pipe(
           tap(() => preparationMs[build.itemId] = Date.now() - started));
       })),
       toArray()
@@ -2968,7 +2965,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         }
         this.submitVampireRequest(
           inference_items,
-          pruning,
           vampireStartedAt,
           vampireRunToken,
           true
@@ -3121,8 +3117,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     build: NliItemBuild,
     gswbOutputs: Record<string, GswbOutput>,
     useDisambiguated: boolean,
-    typed: boolean,
-    pruning: boolean
+    typed: boolean
   ): Observable<PreparedNliPair> {
     const sentenceIds = [...build.premiseSentenceIds, ...build.hypothesisSentenceIds];
     const discourseUpdateId = `du-${compositeAnalysisId(sentenceIds)}`;
@@ -3152,13 +3147,12 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         const { readings, selection, applied } = readingsForReasoning(
           document, update, fallback, this.anaphoraRankers().averager, allowed);
         this.runReadingSelectionByItem[build.itemId] = { selection, applied };
-        // In generation order, per semantic reading; pruning keeps the first of each.
+        // In generation order, per semantic reading. The selection is the only cut: what
+        // pruning did (one reading per semantic reading) is a global top k now.
         const selected = new Set(readings.map(reading => reading.id));
         const byOrigin = new Map<string, DiscourseAnalysis[]>();
         update.discourse.filter(reading => selected.has(reading.id)).forEach(reading => {
-          const group = byOrigin.get(reading.semanticOrigin) ?? [];
-          if (!pruning || !group.length) group.push(reading);
-          byOrigin.set(reading.semanticOrigin, group);
+          byOrigin.set(reading.semanticOrigin, [...(byOrigin.get(reading.semanticOrigin) ?? []), reading]);
         });
         return from([...byOrigin]).pipe(
           concatMap(([semanticOrigin, group]) => this.storedReadingChecks(build, document, semanticOrigin, group, typed)),
@@ -3552,7 +3546,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private submitVampireRequest(
     inference_items: Record<string, nliItem>,
-    pruning: boolean,
     vampireStartedAt: number,
     vampireRunToken: number,
     tptpMode: boolean
@@ -3569,7 +3562,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     const vampireRequest: vampireMultipleRequest = {
       nli_items: tptpItems,
       vampire_preferences: this.runVampirePreferences ?? this.vampirePreferences.vampirePreferences,
-      pruning,
+      // Required by the service; the reading selection decides what is reasoned over.
+      pruning: false,
       session_key: this.redisSessionKey,
       run_id: newRunId(),
     };
@@ -4066,7 +4060,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           itemId: pair.itemId,
           logicType: this.session.lastLogicType === 'tff' ? 'tff' : 'fof',
           ruleString: this.session.pragmaticsRulesText,
-          pruned: this.contextPruning?.nativeElement?.checked ?? false,
           readingSelection: this.runReadingSelectionByItem[pair.itemId]
             ? { ...this.runReadingSelectionByItem[pair.itemId].selection, applied: this.runReadingSelectionByItem[pair.itemId].applied }
             : this.runReadingSelection

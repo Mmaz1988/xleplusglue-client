@@ -175,10 +175,8 @@
   <app-inference-settings  #vampirePrefs [showReadingSelection]="true" [showAnaphoraRankers]="true"></app-inference-settings>
 
 
-    <h3>Ambiguity management:</h3>
+    <h3>Inference:</h3>
   <div class="pruning-container">
-    <input type="checkbox" #contextPruning id="contextPruning" />
-    <label for="contextPruning">Pruning</label> <br>
     <label>
       <input type="checkbox" [(ngModel)]="enableInference">
       Run inference after parsing
