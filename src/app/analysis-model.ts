@@ -698,6 +698,76 @@ export function sentenceReadingsAllowedBy(sentence: SentenceAnalysis | undefined
     new Set(discriminants[0].associatedSolutions ?? []));
 }
 
+/** The part of a composite id that marks a sentence as an empty move (N4 6d): entailed, it
+ *  contributed nothing, so the reading is its prior's. Its sentence is skipped when the
+ *  reading is appended to. */
+export const EMPTY_MOVE_MARK = '~empty';
+
+export function emptyMovePart(sentenceId: string): string {
+  return `${sentenceId}${EMPTY_MOVE_MARK}`;
+}
+
+export function isEmptyMovePart(part: string): boolean {
+  return part.endsWith(EMPTY_MOVE_MARK);
+}
+
+/** The A: and P: entries of a PCDRS (`...,A:[a(s3:x2,x1)],P:[p(s5,s0)]`), e.g. `A a(s3:x2,x1)`. */
+export function pcdrsChoices(drsString: string): string[] {
+  const choices: string[] = [];
+  let rest = drsString.trim();
+  for (;;) {
+    const match = /,([AP]):\[/.exec(rest);
+    if (!match) return choices;
+    const start = match.index + match[0].length;
+    let depth = 1;
+    let end = start;
+    for (; end < rest.length && depth > 0; end++) {
+      if (rest[end] === '[' || rest[end] === '(') depth++;
+      if (rest[end] === ']' || rest[end] === ')') depth--;
+    }
+    topLevelParts(rest.slice(start, end - 1)).forEach(entry => choices.push(`${match[1]} ${entry}`));
+    rest = rest.slice(end);
+  }
+}
+
+/** What a choice is about: the pronoun of an A: entry, the p-box of a P: entry. */
+export function choiceKey(choice: string): string {
+  const [kind, entry] = [choice.slice(0, 1), choice.slice(2)];
+  const inner = entry.slice(entry.indexOf('(') + 1, entry.lastIndexOf(')'));
+  return `${kind} ${topLevelParts(inner)[0] ?? ''}`;
+}
+
+/** Whether a reading keeps its prior's choices: its entries about what the prior's entries are
+ *  about are exactly the prior's. Names survive an append (probe_prior_binding_stability.py),
+ *  so the prior's entries keep their text. */
+export function agreesWithPrior(readingDrs: string, priorDrs: string): boolean {
+  const prior = pcdrsChoices(priorDrs);
+  const keys = new Set(prior.map(choiceKey));
+  const part = pcdrsChoices(readingDrs).filter(choice => keys.has(choiceKey(choice)));
+  return part.length === prior.length && prior.every(choice => part.includes(choice));
+}
+
+function topLevelParts(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "'") quoted = !quoted;
+    if (quoted) continue;
+    if (ch === '(' || ch === '[') depth++;
+    if (ch === ')' || ch === ']') depth--;
+    if (ch === ',' && depth === 0) {
+      parts.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  const last = text.slice(start).trim();
+  if (last) parts.push(last);
+  return parts.filter(Boolean);
+}
+
 /** The latest sentence of a discourse reading: the last part of its semanticOrigin. */
 export function latestSentenceReadingOf(reading: Pick<DiscourseAnalysis, 'semanticOrigin'>): string {
   const parts = sentenceReadingIdsOf(reading);

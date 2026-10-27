@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Subject, map, of, throwError } from 'rxjs';
 import { DocumentBuilderService } from './document-builder.service';
 import { DataService } from '../data.service';
-import { validateSequenceAnalysis } from '../analysis-model';
+import { readingOf, validateSequenceAnalysis } from '../analysis-model';
 import { GswbSolution, SentenceAnalysis, SequenceAnalysis, XlePlusGlueDocument } from '../models/models';
 
 describe('DocumentBuilderService', () => {
@@ -294,6 +294,35 @@ describe('DocumentBuilderService', () => {
           ['sentence-1/S0', 'sentence-1/S1', 'sentence-1/S2'], ['sentence-2/S0'], ['sentence-3/S0'],
         ]);
       });
+    });
+
+    it('skips an empty move\'s sentence where it merges again, and keeps it in the ids (N4 6d)', () => {
+      const kim = ownSentence('sentence-1', [{ synId: 'S0', mcs: 13, readings: 1 }]);
+      const entailed = ownSentence('sentence-2', [{ synId: 'S0', mcs: 6, readings: 1 }]);
+      const he = ownSentence('sentence-3', [{ synId: 'S0', mcs: 8, readings: 1 }]);
+      const known = [kim, entailed, he];
+      // sentence-2 was entailed: the step's reading is sentence-1's, with an empty part.
+      const prior = kim.semantics[0];
+      const step: SequenceAnalysis = {
+        id: 'sentence-1+sentence-2', text: 'x', sentenceIds: ['sentence-1', 'sentence-2'],
+        syntax: [{ synId: 'S0+sentence-2~empty', structure: {} as any, graph: { graphElements: [] } as any }],
+        semantics: [{ ...prior, semId: `${prior.semId}+sentence-2~empty`, syntacticOrigin: 'S0+sentence-2~empty' }],
+        synSemMapping: { 'S0+sentence-2~empty': [`${prior.semId}+sentence-2~empty`] },
+      };
+
+      const third = append(step, he, known);
+
+      expect(third.failures).toEqual([]);
+      const request = dataServiceMock.ligerSequence.calls.mostRecent().args[0];
+      expect(request.sentenceIds).toEqual(['sentence-1', 'sentence-3']);
+      expect(request.parsedSentences.map((structures: any[]) => structures.map(structure => structure.id)))
+        .toEqual([['sentence-1/S0'], ['sentence-3/S0']]);
+      // Offset by sentence-1's constructors alone: sentence-2 contributed none.
+      expect(mergeRequests()[0].parts[1].sourceIndexOffset).toBe(13);
+      expect(third.pairs.map(pair => readingOf(pair.merged).semId))
+        .toEqual(['sentence-1-S0-s0+sentence-2~empty+sentence-3-S0-s0']);
+      expect(third.sequenceAnalyses.map(sequence => sequence.id)).toEqual(['sentence-1+sentence-2+sentence-3']);
+      expect(third.sequenceAnalyses[0].syntax.map(syntax => syntax.synId)).toEqual(['S0+sentence-2~empty+S0']);
     });
 
     it('gives each pair its own variant\'s offset when the previous parses differ in size', () => {

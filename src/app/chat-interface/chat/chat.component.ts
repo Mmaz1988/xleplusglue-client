@@ -35,8 +35,10 @@ import {
   majorityVerdict,
   anaphoraRankerSelection,
   anaphoraRankingTable,
+  agreesWithPrior,
   carryAnaphoraRanking,
   discourseDiscriminantsOf,
+  emptyMovePart,
   needsAnaphoraRanking,
   readingDisplay,
   readingOf,
@@ -68,7 +70,7 @@ import {
 
 /** One turn's discourse as its message shows it (N4 6d). */
 interface ChatTurn {
-  /** The turn's DiscourseUpdates: one per sequence it extended. */
+  /** The turn's DiscourseUpdates (one: every branch takes one step per turn). */
   updateIds: string[];
   /** The sentence the turn added: only its discriminants narrow the message. */
   sentenceId: string;
@@ -77,8 +79,8 @@ interface ChatTurn {
   /** The readings sent to Vampire, the only ones the message shows; null on a first turn,
    *  which sends nothing and shows every reading. */
   sent: string[] | null;
-  /** The sent readings Vampire found consistent, the only ones the selection may keep; null
-   *  on a first turn. */
+  /** The sent readings Vampire found consistent, the only ones the selection may keep (one
+   *  per empty move); null on a first turn. */
   selectable: string[] | null;
   /** The context entry each selectable reading stands for: a neutral reading its merged
    *  discourse, an entailed one the prior it was checked against. Null on a first turn,
@@ -102,7 +104,11 @@ interface TurnPair {
   pair: SequenceMergePair;
   /** Scopes every id GSWB mints for the pair's readings and checks. */
   pairId: string;
+  /** The prior reading appended to (its semantic reading is the pair's premise). */
   premiseContext: context;
+  /** The prior's options over that semantic reading: its PCDRS readings the next turn may
+   *  build on. A reading of the pair is kept only when it agrees with one of them. */
+  priorOptions: context[];
   /** The merged reading's semId: its discourse readings' semanticOrigin. */
   semanticOrigin: string;
   sequenceId: string;
@@ -548,16 +554,23 @@ export class ChatComponent {
           throw new Error('No reading of the conversation so far survives its selection.');
         }
 
-        // One element per prior reading: a clone of the registered Sentence (turn 2) or
-        // Sequence (turn 3+) it extends, so appendSentence resolves its sentences and parses
-        // against the registry. Keyed by the element OBJECT, not by elementId: an ambiguous
-        // premise contributes several context entries that share one elementId (several
-        // READINGS of the same prior element), so a string-keyed map would collapse them and
-        // pair the wrong premise semantics with a pair built from a different reading.
-        // appendSentence threads the same reference back as `pair.previousElement`.
-        const premiseByElement = new Map<SentenceAnalysis | SequenceAnalysis, context>();
-        const previousContexts: SequenceMergePreviousContext[] = contextIndices.map(contextIndex => {
-          const premiseContext = this.context[contextIndex];
+        // The prior options are PCDRS readings; options over one semantic reading share its
+        // append and its readings, which are then sorted to the option they agree with.
+        const optionsByReading = new Map<string, context[]>();
+        contextIndices.map(index => this.context[index]).forEach(option => {
+          const key = `${option.elementId}|${option.semanticAnalysis?.semId}`;
+          optionsByReading.set(key, [...(optionsByReading.get(key) ?? []), option]);
+        });
+
+        // One element per prior semantic reading: a clone of the registered Sentence (turn 2)
+        // or Sequence (turn 3+) it extends, so appendSentence resolves its sentences and
+        // parses against the registry. Keyed by the element OBJECT, not by elementId: an
+        // ambiguous premise contributes several readings that share one elementId, so a
+        // string-keyed map would collapse them. appendSentence threads the same reference
+        // back as `pair.previousElement`.
+        const premiseByElement = new Map<SentenceAnalysis | SequenceAnalysis, context[]>();
+        const previousContexts: SequenceMergePreviousContext[] = [...optionsByReading.values()].map(options => {
+          const premiseContext = options[0];
           const semanticAnalysis = premiseContext?.semanticAnalysis;
           if (!premiseContext?.elementId || !semanticAnalysis) {
             throw new Error('Accepted context reading and document element id are required for appending a sentence.');
@@ -569,7 +582,7 @@ export class ChatComponent {
             throw new Error(`Accepted context element ${premiseContext.elementId} is not registered in the chat document.`);
           }
           const element = { ...registered };
-          premiseByElement.set(element, premiseContext);
+          premiseByElement.set(element, options);
           return { semantic: semanticAnalysis, element };
         });
 
@@ -583,7 +596,8 @@ export class ChatComponent {
         }).pipe(map(result => {
           mergeFailures = result.failures;
           return result.pairs.map(pair => {
-            const premiseContext = premiseByElement.get(pair.previousElement);
+            const priorOptions = premiseByElement.get(pair.previousElement);
+            const premiseContext = priorOptions?.[0];
             if (!premiseContext) {
               throw new Error(`Merged pair references unknown prior element ${pair.previousElement.id}.`);
             }
@@ -600,6 +614,7 @@ export class ChatComponent {
               pair,
               pairId,
               premiseContext,
+              priorOptions,
               semanticOrigin: readingOf(pair.merged).semId,
               sequenceId: compositeAnalysisId([pair.previousElement.id, newSentenceId]),
             } as TurnPair;
@@ -676,13 +691,16 @@ export class ChatComponent {
   }
 
   /** Step 1 of a later turn: every pair's PCDRS readings (the post-processing rules over its
-   *  merged syntax and semantics, then /generate_pcdrs), stored before Vampire: per sequence
-   *  the turn extended (one per prior element: an entailed sentence earlier leaves some
-   *  priors without it), the sequence with every merged reading and its DiscourseUpdate with
-   *  every reading, which is then ranked. A pair that fails is reported, not dropped
-   *  silently. `mappings`: GSWB's solution per reading id, for the message's DRS pill. */
+   *  merged syntax and semantics, then /generate_pcdrs), kept when they agree with a prior
+   *  option, and stored before Vampire: the turn's sequence with every merged reading and its
+   *  DiscourseUpdate with every kept reading, which is then ranked. Empty moves keep every
+   *  branch on the same sentences, so there is one sequence per turn; the grouping below
+   *  does not rely on it. A pair that fails is reported, not dropped silently. `mappings`:
+   *  GSWB's solution per reading id, for the message's DRS pill; `originOf`: the prior
+   *  option each kept reading agrees with. */
   private storeTurnDiscourse(userMessage: string, turnPairs: TurnPair[]): Observable<{
     updates: DiscourseUpdate[]; mappings: Map<string, GswbSolution>; failures: string[];
+    originOf: Map<string, context>;
   }> {
     return from(turnPairs).pipe(
       concatMap(turnPair => defer(() => this.reasoningPipeline.generateDiscourseMappings({
@@ -710,8 +728,18 @@ export class ChatComponent {
         const mappings = new Map<string, GswbSolution>();
         const readingsBySequence = new Map<string, PcdrsReading[]>();
         const failuresBySequence = new Map<string, string[]>();
-        results.forEach(({ turnPair, mappings: pairMappings, failure }) => {
+        // The earlier sentences' choices are the prior's: a reading that binds an earlier
+        // pronoun or places an earlier p-box otherwise belongs to no option and is dropped.
+        const originOf = new Map<string, context>();
+        let disagreeing = 0;
+        results.forEach(({ turnPair, mappings: generated, failure }) => {
           if (failure) failuresBySequence.set(turnPair.sequenceId, [...(failuresBySequence.get(turnPair.sequenceId) ?? []), failure]);
+          const pairMappings = generated.filter(mapping => {
+            const origin = this.originOption(turnPair.priorOptions, mapping.mapping?.semantic ?? '');
+            if (origin && mapping.mapping?.id) originOf.set(mapping.mapping.id, origin);
+            if (!origin) disagreeing++;
+            return !!origin;
+          });
           readingsBySequence.set(turnPair.sequenceId, [
             ...(readingsBySequence.get(turnPair.sequenceId) ?? []),
             ...pairMappings.map(mapping => {
@@ -731,7 +759,10 @@ export class ChatComponent {
           this.upsertDiscourseUpdate(update);
           updates.push(this.storedDiscourseUpdate(update.id) ?? update);
         });
-        return { updates, mappings, failures };
+        console.info('[Chat] readings kept by the prior\'s choices', {
+          kept: originOf.size, dropped: disagreeing,
+        });
+        return { updates, mappings, failures, originOf };
       }),
     );
   }
@@ -793,7 +824,9 @@ export class ChatComponent {
 
   /** A pair's merged reading as a context entry: what the turn's sequence registers, and --
    *  when Vampire accepts one of its readings -- the next turn's prior. */
-  private contextEntryOf(turnPair: TurnPair, userMessage: string, tptp = ''): context {
+  private contextEntryOf(
+    turnPair: TurnPair, userMessage: string, tptp = '', discourse?: GswbSolution,
+  ): context {
     const reading = readingOf(turnPair.pair.merged);
     return {
       original: `${turnPair.premiseContext.original ?? ''} ${userMessage}`.trim(),
@@ -802,7 +835,9 @@ export class ChatComponent {
       // The whole merged sequence, display only: the next turn's context axiom is built
       // from `semantic`.
       tptp,
-      box: reading.svg ?? '',
+      // The PCDRS reading the entry stands for, when it is one: its DRS with A: and P:.
+      box: discourse?.solution ?? reading.svg ?? '',
+      ...(discourse ? { discourseReading: { id: discourse.id, drsString: discourse.semantic ?? '' } } : {}),
       semantic: reading.semString,
       semanticGraph: reading.graph,
       syntax: turnPair.pair.sequenceStructure,
@@ -1077,6 +1112,28 @@ export class ChatComponent {
           message.semanticText = '';
         }
 
+        // The options turn 2 can build on are the PCDRS readings, with their A: and P:; a
+        // reading without any keeps its semantic entry.
+        const optionOf = new Map<string, context>();
+        const options = contexts.flatMap(entry => {
+          const own = readings.filter(reading => reading.semanticOrigin === entry.semanticAnalysis?.semId && reading.mapping?.id);
+          if (!own.length) return [entry];
+          return own.map(({ mapping }) => {
+            const option: context = {
+              ...entry,
+              box: mapping.solution ?? entry.box,
+              discourseReading: { id: mapping.id, drsString: mapping.semantic ?? '' },
+            };
+            optionOf.set(mapping.id, option);
+            return option;
+          });
+        });
+        if (optionOf.size) {
+          this.context = options;
+          this.history[this.history.length - 1] = options;
+          this.historyChange.emit(this.history);
+        }
+
         if (update.discourse.length) {
           console.info('[Chat] turn 1 post-processing complete', {
             sentenceId,
@@ -1089,7 +1146,8 @@ export class ChatComponent {
           // Nothing is sent on turn 1: every reading shows and can be selected.
           if (message) {
             this.setLatestTurn(message, {
-              updateIds: [update.id], sentenceId, defaultSelection: this.turnSelection, sent: null, selectable: null, optionOf: null,
+              updateIds: [update.id], sentenceId, defaultSelection: this.turnSelection, sent: null, selectable: null,
+              optionOf: optionOf.size ? optionOf : null,
             });
           }
         }
@@ -1108,7 +1166,7 @@ export class ChatComponent {
     userMessage: string,
     newSentenceId: string,
     turn: {
-      updates: DiscourseUpdate[]; mappings: Map<string, GswbSolution>; selected: string[];
+      updates: DiscourseUpdate[]; mappings: Map<string, GswbSolution>; originOf: Map<string, context>; selected: string[];
       assignments: TurnAssignment[]; selection: ReadingSelection; applied: boolean;
     },
   ): void {
@@ -1140,26 +1198,41 @@ export class ChatComponent {
     // (priorContextIndices).
     const options: context[] = [];
     const optionOf = new Map<string, context>();
-    const mergedOption = new Map<TurnPair, context>();
+    const emptyMoves = new Map<context, context>();
+    // The readings the message shows and its selection picks from: every neutral reading, and
+    // one entailed reading per empty move (the new sentence's choices are not restated, so
+    // the others would show the same prior again).
+    const shown = new Set<string>();
     let neutral = 0;
     let entailed = 0;
     turn.assignments.forEach((item, index) => {
       const check = verdictFor(item, index);
       if (!check?.consistent) return;
+      const readingId = item.assignment.mappingId;
       let option: context;
       if (check.informative) {
         neutral++;
-        option = mergedOption.get(item.turnPair)
-          ?? this.contextEntryOf(item.turnPair, userMessage, item.assignment.sequenceTptp ?? '');
-        mergedOption.set(item.turnPair, option);
+        option = this.contextEntryOf(item.turnPair, userMessage, item.assignment.sequenceTptp ?? '', turn.mappings.get(readingId));
       } else {
+        // An empty move: the turn's step over the prior it agrees with is that prior
+        // unchanged, once per prior however many readings were entailed over it.
         entailed++;
-        option = item.turnPair.premiseContext;
+        const origin = turn.originOf.get(readingId) ?? item.turnPair.premiseContext;
+        const known = emptyMoves.get(origin);
+        option = known ?? this.emptyMove(origin, item.turnPair.sequenceId, newSentenceId);
+        emptyMoves.set(origin, option);
+        if (known) {
+          optionOf.set(readingId, option);
+          return;
+        }
       }
-      optionOf.set(item.assignment.mappingId, option);
+      shown.add(readingId);
+      optionOf.set(readingId, option);
       if (!options.includes(option)) options.push(option);
     });
     const inconsistent = turn.assignments.length - neutral - entailed;
+    // The empty moves extended the turn's sequence and discourse.
+    if (emptyMoves.size) this.emitChatDocument();
     // Every reading inconsistent: the input is rejected, the discourse stays as it was. The
     // history repeats its readings for this turn, and the previous message stays the one
     // that decides what the next turn builds on.
@@ -1175,7 +1248,14 @@ export class ChatComponent {
 
     // The pill shows the readings this turn sent, by the selection's order; the readings not
     // sent stay in the document but would only clutter it.
-    const branches = this.branchDetail(turn.assignments, turn.mappings, verdictFor);
+    // An entailed reading shows what it stands for: its prior, unchanged.
+    const branches = this.branchDetail(turn.assignments, turn.mappings, verdictFor, (item, index) => {
+      const check = verdictFor(item, index);
+      return check?.consistent && !check.informative ? optionOf.get(item.assignment.mappingId)?.box : undefined;
+    }, item => {
+      const check = verdictByAssignment.get(item.assignment.assignmentId ?? '');
+      return !(check?.consistent && !check.informative) || shown.has(item.assignment.mappingId);
+    });
     if (this.lastTurn) {
       this.lastTurn.branches = turn.assignments.length;
       this.lastTurn.survivingReadings = this.context.length;
@@ -1197,7 +1277,7 @@ export class ChatComponent {
         sentenceId: newSentenceId,
         defaultSelection: turn.selection,
         sent: turn.assignments.map(item => item.assignment.mappingId),
-        selectable: [...optionOf.keys()],
+        selectable: [...shown],
         optionOf,
       };
       if (!rejected) {
@@ -1226,6 +1306,68 @@ export class ChatComponent {
     return `Of ${total} readings: ${parts.join(', ')}.`;
   }
 
+  /** The option an entailed reading leaves (N4 6d): its prior unchanged, as a step of this
+   *  turn's sequence -- the prior's semantics with an empty part for the new sentence, its
+   *  PCDRS with A: and P: as an identity reading (`identityOf`) of this turn's discourse --
+   *  so every branch takes one step per turn. */
+  private emptyMove(origin: context, sequenceId: string, newSentenceId: string): context {
+    const prior = origin.semanticAnalysis!;
+    const empty = emptyMovePart(newSentenceId);
+    const semantic: SemanticAnalysis = {
+      ...prior,
+      semId: compositeAnalysisId([prior.semId, empty]),
+      syntacticOrigin: compositeAnalysisId([prior.syntacticOrigin, empty]),
+    };
+    const sequence = this.chatDocument.sequences.find(candidate => candidate.id === sequenceId);
+    if (sequence && !sequence.semantics.some(candidate => candidate.semId === semantic.semId)) {
+      if (!sequence.syntax.some(candidate => candidate.synId === semantic.syntacticOrigin)) {
+        sequence.syntax = [...sequence.syntax, {
+          synId: semantic.syntacticOrigin, structure: origin.syntax, graph: origin.syntax,
+        } as unknown as SyntacticAnalysis];
+      }
+      sequence.semantics = [...sequence.semantics, semantic];
+      sequence.synSemMapping = { ...sequence.synSemMapping, [semantic.syntacticOrigin]: [semantic.semId] };
+    }
+    let discourseReading = origin.discourseReading;
+    const update = this.storedDiscourseUpdate(`du-${sequenceId}`);
+    if (origin.discourseReading && update) {
+      const id = compositeAnalysisId([origin.discourseReading.id, empty]);
+      const priorReading = (this.chatDocument.discourseUpdates ?? []).flatMap(candidate => candidate.discourse)
+        .find(candidate => candidate.id === origin.discourseReading!.id);
+      if (!update.discourse.some(candidate => candidate.id === id)) {
+        const identity: DiscourseAnalysis = {
+          ...(priorReading ?? {
+            drsString: origin.discourseReading.drsString, ruleBranch: 1,
+            anaphoraMapping: { relations: [] }, collapsed: false,
+          } as DiscourseAnalysis),
+          id,
+          semanticOrigin: semantic.semId,
+          identityOf: origin.discourseReading.id,
+        };
+        this.storeDiscourseUpdate({
+          ...update,
+          discourse: [...update.discourse, identity],
+          semDiscourseMapping: { ...update.semDiscourseMapping, [semantic.semId]: [id] },
+        });
+      }
+      discourseReading = { id, drsString: origin.discourseReading.drsString };
+    }
+    return {
+      ...origin,
+      elementId: sequenceId,
+      semanticAnalysis: semantic,
+      synSemMapping: { [semantic.syntacticOrigin]: [semantic.semId] },
+      ...(discourseReading ? { discourseReading } : {}),
+    };
+  }
+
+  /** The option of the prior a reading agrees with on the earlier sentences' choices (A: and
+   *  P:); an option that is not a PCDRS reading admits any. */
+  private originOption(options: context[], readingDrs: string): context | undefined {
+    return options.find(option => !option.discourseReading
+      || agreesWithPrior(readingDrs, option.discourseReading.drsString));
+  }
+
   /** The turn's readings sent to Vampire, for the TPTP and DRS pills.
    *
    *  Every sent reading appears, rejected ones included: they are the ones most worth
@@ -1234,7 +1376,9 @@ export class ChatComponent {
   private branchDetail(
     assignments: TurnAssignment[],
     mappings: Map<string, GswbSolution>,
-    verdictFor: (item: TurnAssignment, index: number) => any
+    verdictFor: (item: TurnAssignment, index: number) => any,
+    shownAs: (item: TurnAssignment, index: number) => string | undefined = () => undefined,
+    inPill: (item: TurnAssignment) => boolean = () => true,
   ): { tptp: string; solutions: GswbSolution[]; labels: string[] } {
     const solutions: GswbSolution[] = [];
     const labels: string[] = [];
@@ -1255,8 +1399,9 @@ export class ChatComponent {
       blocks.push(`% ${id} — ${marks}\n${item.assignment.sequenceTptp || '% (no TPTP produced for this branch)'}`);
 
       const mapping = mappings.get(item.assignment.mappingId);
-      if (mapping?.solution) {
-        solutions.push(mapping);
+      if (mapping?.solution && inPill(item)) {
+        const shown = shownAs(item, index);
+        solutions.push(shown ? { ...mapping, solution: shown } : mapping);
         labels.push(label);
       }
     });
@@ -1309,8 +1454,10 @@ export class ChatComponent {
         this.anaphoraRankers().averager, turn.selectable ? new Set(turn.selectable) : null,
         sentenceReadingsAllowedBy(sentence));
       if (turn.optionOf) {
+        // An entry no reading stands for (a reading without PCDRS) stays.
         const options = new Set(readings.map(reading => turn.optionOf!.get(reading.id)));
-        indices = indices.filter(index => options.has(this.context[index]));
+        const standing = new Set(turn.optionOf.values());
+        indices = indices.filter(index => options.has(this.context[index]) || !standing.has(this.context[index]));
       } else {
         const origins = new Set(readings.map(reading => reading.semanticOrigin));
         indices = indices.filter(index => origins.has(this.context[index].semanticAnalysis?.semId ?? ''));

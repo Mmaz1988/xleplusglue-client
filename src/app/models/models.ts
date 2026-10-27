@@ -254,6 +254,9 @@ export interface DiscourseAnalysis {
   anaphoraMapping: AnaphoraMappingModel;  // structured, mirrors LFGxDRT's AnaphoraMapping
   collapsed: boolean;                // true once /collapse_anaphora has resolved this branch
   pragmaticProfile?: PragmaticProfile; // GSWB's count of the reading's choices; absent on old documents
+  // An empty move (chat, N4 6d): the sentence was entailed, so this reading is the prior reading
+  // with that id, unchanged -- its DRS with its A: and P:. Its semanticOrigin ends in an empty part.
+  identityOf?: string;
 }
 
 /** A PCDRS reading's pragmatic profile (GSWB `PragmaticProfileDto`, N4): how many of its choices
@@ -1707,6 +1710,9 @@ export interface context {
   /** Sentence.id/Sequence.id in the chat's XlePlusGlueDocument this context entry
    *  corresponds to -- lets the next turn build a composite Sequence id from it. */
   elementId?: string;
+  /** The PCDRS reading this entry stands for (chat, N4 6d): its DRS with A: and P:, which the
+   *  next turn's readings must agree with on the earlier sentences. */
+  discourseReading?: { id: string; drsString: string };
 }
 
 

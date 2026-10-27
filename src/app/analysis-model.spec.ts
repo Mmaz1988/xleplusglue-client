@@ -1,5 +1,10 @@
 import {
+  agreesWithPrior,
+  choiceKey,
   compositeAnalysisId,
+  emptyMovePart,
+  isEmptyMovePart,
+  pcdrsChoices,
   findElementById,
   inferenceResultsFromDocument,
   majorityVerdict,
@@ -624,6 +629,31 @@ describe('analysis model helpers', () => {
         .toEqual({ solution: 'drs', semantic: undefined });
       expect(semVisDisplay({ id: 'pcdrs-1', solution: '<svg>p</svg>', semantic: 'A:[]' }))
         .toEqual({ solution: '<svg>p</svg>', semantic: 'A:[]' });
+    });
+  });
+
+  describe('a PCDRS\'s choices (N4 6d)', () => {
+    const prior = 'drs([x1],[man(x1)]),A:[a(s3:y1,x1),a(s5:y2,x1)],P:[p(s3,s3),p(s5,s0)]';
+
+    it('reads the A: and P: entries, keyed by pronoun and p-box', () => {
+      expect(pcdrsChoices(prior)).toEqual(['A a(s3:y1,x1)', 'A a(s5:y2,x1)', 'P p(s3,s3)', 'P p(s5,s0)']);
+      expect(pcdrsChoices(prior).map(choiceKey)).toEqual(['A s3:y1', 'A s5:y2', 'P s3', 'P s5']);
+      expect(pcdrsChoices('drs([x1],[man(x1)])')).toEqual([]);
+    });
+
+    it('keeps a reading that makes the prior\'s choices and new ones of its own', () => {
+      expect(agreesWithPrior('drs(...),A:[a(s3:y1,x1),a(s5:y2,x1),a(s7:x2,/)],P:[p(s3,s3),p(s5,s0)]', prior)).toBeTrue();
+    });
+
+    it('drops a reading that binds an earlier pronoun or places an earlier p-box otherwise', () => {
+      expect(agreesWithPrior('drs(...),A:[a(s3:y1,x1),a(s5:y2,x2)],P:[p(s3,s3),p(s5,s0)]', prior)).toBeFalse();
+      expect(agreesWithPrior('drs(...),A:[a(s3:y1,x1),a(s5:y2,x1)],P:[p(s3,s0),p(s5,s0)]', prior)).toBeFalse();
+    });
+
+    it('marks an empty move\'s part', () => {
+      expect(emptyMovePart('sentence-3')).toBe('sentence-3~empty');
+      expect(isEmptyMovePart('sentence-3~empty')).toBeTrue();
+      expect(isEmptyMovePart('sentence-3-s0')).toBeFalse();
     });
   });
 });

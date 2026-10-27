@@ -215,16 +215,30 @@ describe('ChatComponent', () => {
       elementId,
     });
 
-    /** Each pair yields two readings: `-pcdrs-1` binds its pronoun, `-pcdrs-2` leaves it unbound. */
-    const readingsOf = (scopeId: string, semanticOrigin: string) => [1, 2].map(n => ({
-      mapping: {
-        id: `${scopeId}-pcdrs-${n}`, semantic: `drs-${n}`, solution: `<svg>${scopeId}-${n}</svg>`,
-        anaphoraRelations: n === 1 ? [{ pronounReferentId: 's1:4', pronounDisplay: 'x4', antecedent: 'x1' }] : [],
-        pragmaticProfile: n === 1 ? bound : unbound,
-      },
-      ruleBranchIndex: 1,
-      semanticOrigin,
-    }));
+    /** Each sentence after the first has a pronoun (`s<k>:x9`, k its position) that the rules
+     *  bind (`x1`) or leave unbound (`/`); a reading makes one choice for each, so a pair's
+     *  readings are every combination, as GSWB enumerates them again each turn. An empty
+     *  move's sentence has none. For the new sentence: `-pcdrs-1` binds, `-pcdrs-2` does not. */
+    const readingsOf = (scopeId: string, semanticOrigin: string) => {
+      const keys = semanticOrigin.split('+').map((part, index) => part.endsWith('~empty') ? null : `s${index + 2}:x9`)
+        .slice(1).filter((key): key is string => !!key);
+      const combinations = keys.reduce((acc, key) => acc.flatMap(choices => [[...choices, `a(${key},x1)`], [...choices, `a(${key},/)`]]),
+        [[]] as string[][]);
+      // The new sentence's choice varies fastest: its bound reading is `-pcdrs-1` of each prior choice.
+      return combinations.map((choices, index) => {
+        const n = index % 2 === 0 ? 1 : 2;
+        const id = `${scopeId}-pcdrs-${combinations.length === 2 ? n : `${index + 1}`}`;
+        return {
+          mapping: {
+            id, semantic: `drs,A:[${choices.join(',')}]`, solution: `<svg>${id}</svg>`,
+            anaphoraRelations: n === 1 ? [{ pronounReferentId: keys[keys.length - 1], pronounDisplay: 'x9', antecedent: 'x1' }] : [],
+            pragmaticProfile: n === 1 ? bound : unbound,
+          },
+          ruleBranchIndex: 1,
+          semanticOrigin,
+        };
+      });
+    };
 
     /** Which readings Vampire finds informative, and which consistent. */
     let accepts: (readingId: string) => boolean;
@@ -363,25 +377,27 @@ describe('ChatComponent', () => {
 
     it('builds the next turn on what survives the latest message', () => {
       startTurn(newSentence('sentence-3', 1));
-      expect(component.priorContextIndices()).toEqual([0, 1]);
+      // One option per reading: two merged readings, two PCDRS readings each.
+      expect(component.priorContextIndices()).toEqual([0, 1, 2, 3]);
 
-      // Without unbound pronouns, top 1: both merged readings keep their bound reading, tied.
+      // Without unbound pronouns, top 1: each merged reading keeps its bound reading, tied.
       component.onReadingSelectionChange(lastMessage(), { criteria: ['pronouns'], filters: ['unbound'], k: 1 });
       expect(component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3')?.readingSelection)
         .toEqual({ criteria: ['pronouns'], filters: ['unbound'], k: 1 });
-      expect(component.priorContextIndices()).toEqual([0, 1]);
+      expect(component.priorContextIndices()).toEqual([0, 2]);
+      expect(component.context[0].discourseReading?.drsString).toContain('a(s3:x9,x1)');
 
       // The history's selection narrows on top of it.
-      component.activeIndices = [1];
-      expect(component.priorContextIndices()).toEqual([1]);
-      expect(component.priorSummary).toBe('1 of 2 readings');
+      component.activeIndices = [2];
+      expect(component.priorContextIndices()).toEqual([2]);
+      expect(component.priorSummary).toBe('1 of 4 readings');
     });
 
     it('keeps a merged reading out of the prior when none of its consistent readings survives', () => {
       consistent = id => id.includes('sem-1a') || id.endsWith('-pcdrs-2');
 
       startTurn(newSentence('sentence-3', 1));
-      expect(component.priorContextIndices()).toEqual([0, 1]);
+      expect(component.priorContextIndices()).toEqual([0, 1, 2]);
 
       // sem-1b's only consistent reading leaves its pronoun unbound.
       component.onReadingSelectionChange(lastMessage(), { criteria: [], filters: ['unbound'], k: null });
@@ -393,7 +409,7 @@ describe('ChatComponent', () => {
       const discriminant = { id: 'd1', type: 'scope', identifier: 'd1', associatedSolutions: ['sentence-3-S0-s1'] };
 
       startTurn(newSentence('sentence-3', 2, [discriminant]));
-      expect(component.priorContextIndices()).toEqual([0, 1]);
+      expect(component.priorContextIndices()).toEqual([0, 1, 2, 3]);
       const view = component.messageViews.get(lastMessage())!;
       // The view narrows the discourse readings built from the sentence readings it names.
       expect(view.discriminants?.[0].associatedSolutions?.length).toBe(2);
@@ -402,8 +418,8 @@ describe('ChatComponent', () => {
       component.onDiscriminantSelectionChange(lastMessage(), { scopeIds: ['d1'], mcIds: [] });
 
       expect(component.chatDocument.sentences.find(sentence => sentence.id === 'sentence-3')?.selectedScopeIds).toEqual(['d1']);
-      expect(component.context[component.priorContextIndices()[0]].semanticAnalysis?.semId).toBe('sem-1a+sentence-3-S0-s1');
-      expect(component.priorContextIndices().length).toBe(1);
+      expect(component.priorContextIndices().map(index => component.context[index].semanticAnalysis?.semId))
+        .toEqual(['sem-1a+sentence-3-S0-s1', 'sem-1a+sentence-3-S0-s1']);
     });
 
     it('keeps the message\'s selection as it is during a turn', () => {
@@ -441,30 +457,40 @@ describe('ChatComponent', () => {
         .toEqual({ criteria: [], filters: [], k: null });
     });
 
-    it('keeps the prior an entailed reading was checked against as its option', () => {
+    it('makes an entailed reading an empty move: its prior PCDRS unchanged, one step on', () => {
       startTurn(newSentence('sentence-3', 1));
       const first = lastMessage();
-      const context = [...component.context];
+      const priors = [...component.context];
       accepts = () => false;
 
       startTurn(newSentence('sentence-4', 1));
 
       const answer = lastMessage();
       expect(answer.text).toBe('Your input is not informative.');
-      // Entailed information is not restated: the options are the previous discourse.
-      expect(component.context).toEqual(context);
-      expect(component.history[component.history.length - 1]).toEqual(context);
-      // The answer is the latest message; its readings stand for the priors.
+      // One option per prior, each its prior's DRS with its A: (not restated).
+      expect(component.context.length).toBe(4);
+      component.context.forEach((option, index) => {
+        expect(option.elementId).toBe('sentence-1+sentence-3+sentence-4');
+        expect(option.semanticAnalysis?.semId).toBe(`${priors[index].semanticAnalysis?.semId}+sentence-4~empty`);
+        expect(option.semantic).toBe(priors[index].semantic);
+        expect(option.discourseReading?.drsString).toBe(priors[index].discourseReading?.drsString);
+        expect(option.box).toBe(priors[index].box);
+      });
+      expect(component.history[component.history.length - 1]).toEqual(component.context);
+      // The document records the step: the sequence's empty-move reading and the identity reading.
+      const sequence = component.chatDocument.sequences.find(candidate => candidate.id === 'sentence-1+sentence-3+sentence-4');
+      expect(sequence?.semantics.some(semantic => semantic.semId === 'sem-1a+sentence-3-S0-s0+sentence-4~empty')).toBeTrue();
+      const identities = component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3+sentence-4')
+        ?.discourse.filter(reading => reading.identityOf) ?? [];
+      expect(identities.map(reading => reading.identityOf).sort()).toEqual(priors.map(prior => prior.discourseReading!.id).sort());
+      // The answer is the latest message and shows each entailed reading as its prior.
       expect(component.messageViews.get(answer)?.orderOnly).toBeFalse();
       expect(component.messageViews.get(first)?.orderOnly).toBeTrue();
-      expect(component.priorContextIndices()).toEqual([0, 1]);
+      // One entry per empty move: the new sentence's two choices are not restated.
+      expect(answer.branchSolutions?.map(solution => solution.solution).sort()).toEqual(priors.map(prior => prior.box).sort());
+      expect(component.messageViews.get(answer)?.selectableIds?.length).toBe(4);
       expect(answer.branchLabels?.[0]).toBe('consistent, uninformative, irrelevant');
-      // Narrowing to the readings over one prior keeps that prior only.
-      component.onReadingSelectionChange(answer, { criteria: [], filters: ['unbound'], k: null });
-      expect(component.priorContextIndices()).toEqual([0, 1]);
-      component.onDiscriminantSelectionChange(answer, { scopeIds: [], mcIds: [] });
-      component.activeIndices = [1];
-      expect(component.priorContextIndices()).toEqual([1]);
+      expect(component.priorContextIndices()).toEqual([0, 1, 2, 3]);
     });
 
     it('rejects an input every reading of which is inconsistent: the discourse stays as it was', () => {
@@ -498,26 +524,45 @@ describe('ChatComponent', () => {
 
       expect(lastMessage().text)
         .toBe('Of 4 readings: 2 informative and consistent, 1 entailed (keeps the previous discourse), 1 inconsistent (rejected).');
-      expect(component.context.map(entry => entry.semanticAnalysis?.semId)).toEqual(['sem-1a+sentence-3-S0-s0', 'sem-1b']);
-      expect(component.context.map(entry => entry.elementId)).toEqual(['sentence-1+sentence-3', 'sentence-1']);
+      // One option per reading: sem-1a's two readings extend it; sem-1b's entailed reading is
+      // an empty move -- its prior unchanged, as a step of the same sequence.
+      expect(component.context.map(entry => entry.semanticAnalysis?.semId))
+        .toEqual(['sem-1a+sentence-3-S0-s0', 'sem-1a+sentence-3-S0-s0', 'sem-1b+sentence-3~empty']);
+      expect(component.context.every(entry => entry.elementId === 'sentence-1+sentence-3')).toBeTrue();
+      expect(component.context[2].semantic).toBe('P2');
       const view = component.messageViews.get(lastMessage())!;
       expect(view.selectableIds?.length).toBe(3);
     });
 
-    it('builds the next turn on a merged discourse and an unchanged prior side by side', () => {
+    it('builds the next turn on a merged discourse and an empty move alike', () => {
       accepts = id => id.includes('sem-1a');
       startTurn(newSentence('sentence-3', 1));
       accepts = () => true;
 
       startTurn(newSentence('sentence-4', 1));
 
-      const ids = (component.chatDocument.discourseUpdates ?? []).map(du => du.id);
-      expect(ids).toContain('du-sentence-1+sentence-3+sentence-4');
-      expect(ids).toContain('du-sentence-1+sentence-4');
-      expect((component.chatDocument.reasoningUpdates ?? []).map(update => update.id))
-        .toEqual(jasmine.arrayContaining(['ru-sentence-1+sentence-3=>sentence-4', 'ru-sentence-1=>sentence-4']));
-      expect(component.context.map(entry => entry.elementId).sort())
-        .toEqual(['sentence-1+sentence-3+sentence-4', 'sentence-1+sentence-4']);
+      // One sequence per turn: the empty move's sentence is skipped where it is merged again.
+      const calls = dataServiceSpy.ligerSequence.calls.allArgs().map(([request]: any[]) => request.sentenceIds);
+      expect(calls).toContain(['sentence-1', 'sentence-3', 'sentence-4']);
+      expect(calls).toContain(['sentence-1', 'sentence-4']);
+      const ids = (component.chatDocument.discourseUpdates ?? []).map(du => du.id).sort();
+      expect(ids).toEqual(['du-sentence-1+sentence-3', 'du-sentence-1+sentence-3+sentence-4']);
+      expect(component.chatDocument.reasoningUpdates?.map(update => update.id))
+        .toEqual(['ru-sentence-1=>sentence-3', 'ru-sentence-1+sentence-3=>sentence-4']);
+      expect(component.context.every(entry => entry.elementId === 'sentence-1+sentence-3+sentence-4')).toBeTrue();
+      expect(component.context.some(entry => entry.semanticAnalysis?.semId === 'sem-1b+sentence-3~empty+sentence-4-S0-s0')).toBeTrue();
+    });
+
+    it('keeps of the next turn\'s readings those that agree with their prior on the earlier choices', () => {
+      startTurn(newSentence('sentence-3', 1));
+      component.onReadingSelectionChange(lastMessage(), { criteria: [], filters: ['unbound'], k: null });
+
+      startTurn(newSentence('sentence-4', 1));
+
+      // Only the options binding sentence-3's pronoun were built on; every reading kept binds it.
+      const update = component.chatDocument.discourseUpdates?.find(du => du.id === 'du-sentence-1+sentence-3+sentence-4');
+      expect(update?.discourse.length).toBe(4);
+      expect(update?.discourse.every(reading => reading.drsString.includes('a(s3:x9,x1)'))).toBeTrue();
     });
 
     it('hands the pills one TPTP block and one DRS per reading sent, labelled with its verdict', () => {

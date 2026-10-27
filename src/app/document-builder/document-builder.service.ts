@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, defer, forkJoin, from, map, of, toArray } from 'rxjs';
 import { DataService } from '../data.service';
-import { compositeAnalysisId, readingOf } from '../analysis-model';
+import { compositeAnalysisId, isEmptyMovePart, readingOf } from '../analysis-model';
 import { proofInputsFrom } from './proof-inputs';
 import { MappingWithStructure, PcdrsRuleBranch, distinctPcdrsMappings } from './pcdrs-readings';
 import {
@@ -86,8 +86,14 @@ export interface DerivedSentence {
 interface ResolvedContext {
   context: SequenceMergePreviousContext;
   index: number;
+  /** The sentences that contributed to the context's reading, each with its parse: an empty
+   *  move (an entailed sentence, N4 6d) contributed nothing and is not among them. */
   sentences: SentenceAnalysis[];
   parses: SyntacticAnalysis[];
+  /** Every sentence of the context's element, and its reading's parse id for each (an empty
+   *  move's part as it stands). */
+  allSentenceIds: string[];
+  parseIds: string[];
 }
 
 /**
@@ -352,7 +358,8 @@ export class DocumentBuilderService {
 
       const groups = new Map<string, ResolvedContext[]>();
       resolved.forEach(entry => {
-        const key = JSON.stringify(entry.sentences.map(previous => previous.id));
+        // Contexts over the same sentences with the same empty moves share one LiGER call.
+        const key = JSON.stringify([entry.allSentenceIds, entry.parseIds.map(isEmptyMovePart)]);
         groups.set(key, [...(groups.get(key) ?? []), entry]);
       });
 
@@ -440,11 +447,12 @@ export class DocumentBuilderService {
             throw new Error(`Sequence variant ${variant.solutionKey} reports no sourceIndexOffset for ${sentence.id}.`);
           }
           const prefix = parses.slice(0, -1).map(item => item.parse.synId);
-          const syntaxId = compositeAnalysisId([...prefix, last.parse.synId]);
           group
             .filter(entry => entry.parses.every((parse, position) => parse.synId === prefix[position]))
             .forEach(entry => {
               placed.add(entry);
+              // With the empty moves' parts where they stand.
+              const syntaxId = compositeAnalysisId([...entry.parseIds, last.parse.synId]);
               readings
                 .filter(reading => reading.syntacticOrigin === last.parse.synId)
                 .forEach(reading => specs.push({
@@ -473,7 +481,7 @@ export class DocumentBuilderService {
               merged.sequenceAnalysis = {
                 id: merged.id,
                 text: spec.variant.sequenceAnalysis!.text,
-                sentenceIds: sentences.map(item => item.id),
+                sentenceIds: [...spec.entry.allSentenceIds, sentence.id],
                 syntax: [{ ...mergedSyntax, synId: spec.syntaxId }],
                 semantics: [semantic],
                 synSemMapping: { [spec.syntaxId]: [semantic.semId] },
@@ -514,12 +522,13 @@ export class DocumentBuilderService {
     element: SentenceAnalysis | SequenceAnalysis,
     semantic: SemanticAnalysis,
     knownSentences: SentenceAnalysis[],
-  ): { sentences: SentenceAnalysis[]; parses: SyntacticAnalysis[] } | { failure: string } {
+  ): { sentences: SentenceAnalysis[]; parses: SyntacticAnalysis[]; allSentenceIds: string[]; parseIds: string[] }
+    | { failure: string } {
     if (!('sentenceIds' in element)) {
       const sentence = knownSentences.find(candidate => candidate.id === element.id) ?? element;
       const parse = this.parseOfReading(sentence, semantic);
       return parse
-        ? { sentences: [sentence], parses: [parse] }
+        ? { sentences: [sentence], parses: [parse], allSentenceIds: [sentence.id], parseIds: [parse.synId] }
         : { failure: `its reading names syntax ${semantic.syntacticOrigin}, which is none of ${element.id}'s parses` };
     }
     const sentences = element.sentenceIds.map(id => knownSentences.find(candidate => candidate.id === id));
@@ -534,15 +543,19 @@ export class DocumentBuilderService {
           + `${sentences.length} sentences`,
       };
     }
+    const contributing: SentenceAnalysis[] = [];
     const parses: SyntacticAnalysis[] = [];
     for (let position = 0; position < parseIds.length; position++) {
+      // An empty move contributed nothing to the reading: nothing of it is merged again.
+      if (isEmptyMovePart(parseIds[position])) continue;
       const parse = sentences[position]!.syntax.find(syntax => syntax.synId === parseIds[position]);
       if (!parse) {
         return { failure: `its syntax ${semantic.syntacticOrigin} names parse ${parseIds[position]}, which ${sentences[position]!.id} does not have` };
       }
+      contributing.push(sentences[position]!);
       parses.push(parse);
     }
-    return { sentences: sentences as SentenceAnalysis[], parses };
+    return { sentences: contributing, parses, allSentenceIds: element.sentenceIds, parseIds };
   }
 
   /** Best-effort one-line rendering of whatever an HttpClient/derivation failure carried,
