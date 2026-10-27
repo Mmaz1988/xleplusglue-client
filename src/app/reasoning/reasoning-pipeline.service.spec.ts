@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
-import { ReasoningPipelineService, ReasoningPairRequest } from './reasoning-pipeline.service';
+import {
+  ReasoningPairRequest, ReasoningPipelineService, StoredReadingChecksRequest,
+} from './reasoning-pipeline.service';
 import { DataService } from '../data.service';
 import { REASONING_CHECK_NAMES } from '../models/models';
 
@@ -474,5 +476,99 @@ describe('ReasoningPipelineService', () => {
     gates[1].next({ structureJson: structure, graph });
     gates[1].complete();
     expect(emitted).toEqual(['pair-1', 'pair-2']);
+  });
+
+  describe('over stored readings', () => {
+    const stored = (readings = [{ id: 'S0-s0+S1-s0-pcdrs-1', drsString: 'P & Q', ruleBranch: 2 }])
+      : StoredReadingChecksRequest => ({
+      scopeId: 'pxq-item-1',
+      readings,
+      premiseSemantic: 'Q',
+      premiseAsts: [structure],
+      hypothesisAsts: [structure],
+      typed: false,
+    });
+
+    it('reasons over the given readings without rules or PCDRS generation', done => {
+      service.prepareStoredReadingChecks(stored()).subscribe(pair => {
+        expect(dataService.ligerMergeStructure).not.toHaveBeenCalled();
+        expect(dataService.ligerApplyRulesToStructure).not.toHaveBeenCalled();
+        expect(dataService.gswbGeneratePcdrs).not.toHaveBeenCalled();
+        expect(pair.assignments.length).toBe(1);
+        expect(Object.keys(pair.assignments[0].checks).sort()).toEqual([...REASONING_CHECK_NAMES].sort());
+        done();
+      });
+    });
+
+    it('collapses each reading under its own id with the prior as the context', done => {
+      service.prepareStoredReadingChecks(stored()).subscribe(pair => {
+        const sent = dataService.gswbCollapseAndTptpBatch.calls.mostRecent().args[0] as any;
+        const byName = Object.fromEntries(sent.items.map((item: any) => [item.name, item.semantic]));
+        expect(sent.parentSolutionId).toBe('S0-s0+S1-s0-pcdrs-1');
+        expect(byName['context']).toBe('Q');
+        expect(byName['sequence']).toBe('P & Q');
+        expect(pair.assignments[0].mappingId).toBe('S0-s0+S1-s0-pcdrs-1');
+        expect(pair.assignments[0].ruleBranchIndex).toBe(2);
+        expect((pair.assignments[0] as any).mapping).toBeUndefined();
+        done();
+      });
+    });
+
+    it('fetches the check ASTs once for all readings', done => {
+      const readings = [
+        { id: 'r1', drsString: 'a', ruleBranch: 1 },
+        { id: 'r2', drsString: 'b', ruleBranch: 1 },
+      ];
+      service.prepareStoredReadingChecks(stored(readings)).subscribe(pair => {
+        expect(dataService.gswbReasoningCheckAsts).toHaveBeenCalledTimes(1);
+        expect(dataService.gswbCollapseAndTptpBatch).toHaveBeenCalledTimes(2);
+        expect(pair.assignments.map(a => a.mappingId)).toEqual(['r1', 'r2']);
+        done();
+      });
+    });
+
+    it('mints the same assignment id as the full pipeline for the same reading', done => {
+      const scope = { updateId: 'ru-1', premiseSemanticIds: ['S0-s0'], hypothesisSemanticIds: ['S1-s0'] };
+      dataService.gswbGeneratePcdrs.and.returnValue(
+        of({ solutions: [{ id: 'm1', semantic: 'P & Q', anaphoraRelations: [] }] }) as any);
+      service.prepareReasoningChecks({ ...request(), scope }).subscribe(full => {
+        service.prepareStoredReadingChecks({
+          ...stored([{ id: 'm1', drsString: 'P & Q', ruleBranch: 1 }]), scope,
+        }).subscribe(fromStored => {
+          expect(fromStored.assignments[0].assignmentId).toBe(full.assignments[0].assignmentId!);
+          expect(fromStored.assignments[0].checks).toEqual(full.assignments[0].checks);
+          done();
+        });
+      });
+    });
+
+    it('emits an empty pair for an empty selection and asks GSWB nothing', done => {
+      service.prepareStoredReadingChecks(stored([])).subscribe(pair => {
+        expect(pair).toEqual({ scopeId: 'pxq-item-1', assignments: [], failures: [], degradations: [] });
+        expect(dataService.gswbReasoningCheckAsts).not.toHaveBeenCalled();
+        expect(dataService.gswbCollapseAndTptpBatch).not.toHaveBeenCalled();
+        done();
+      });
+    });
+
+    it('keeps the other readings when one reading\'s collapse fails', done => {
+      dataService.gswbCollapseAndTptpBatch.and.callFake((payload: any) =>
+        (payload.parentSolutionId === 'bad'
+          ? throwError(() => new Error('collapse exploded'))
+          : of(tptpBatch())) as any);
+      service.prepareStoredReadingChecks(stored([
+        { id: 'bad', drsString: 'a', ruleBranch: 1 },
+        { id: 'good', drsString: 'b', ruleBranch: 1 },
+      ])).subscribe(pair => {
+        expect(pair.assignments.map(a => a.mappingId)).toEqual(['good']);
+        expect(pair.failures).toEqual(['bad: collapse exploded']);
+        done();
+      });
+    });
+
+    it('requires the sentence readings\' graphs', () => {
+      expect(() => service.prepareStoredReadingChecks({ ...stored(), hypothesisAsts: [] }))
+        .toThrowError(/semantic graphs are missing/);
+    });
   });
 });

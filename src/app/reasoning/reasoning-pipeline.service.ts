@@ -5,6 +5,7 @@ import { reasoningAssignmentId } from '../analysis-model';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 import { MappingWithStructure } from '../document-builder/pcdrs-readings';
 import {
+  DiscourseAnalysis,
   LigerStructure,
   LigerWebGraph,
   REASONING_CHECK_NAMES,
@@ -73,18 +74,40 @@ export interface ReasoningPairRequest {
   ruleString: string;
 }
 
-/** One reading-assignment x rule-branch x anaphora-branch, with everything needed to
- *  send it to Vampire and to record it in the document. */
-export interface PreparedAssignment {
+/** A stored PCDRS reading to reason over: what the reasoning half reads off a
+ *  DiscourseAnalysis. Its id becomes the parentSolutionId of its collapse/TPTP batch, so a
+ *  verdict names the reading it was computed for. */
+export type StoredReading = Pick<DiscourseAnalysis, 'id' | 'drsString' | 'ruleBranch'>;
+
+/** The reasoning half alone (N4 6d step 2): the four checks over readings that are already
+ *  stored, with no rules and no /generate_pcdrs. The caller has made the selection: every
+ *  reading given is reasoned over. */
+export interface StoredReadingChecksRequest {
+  /** See ReasoningPairRequest.scopeId. */
+  scopeId: string;
+  /** See ReasoningPairRequest.scope. */
+  scope?: ReasoningScope;
+  readings: StoredReading[];
+  /** The prior (Q). See ReasoningPairRequest.premiseSemantic. */
+  premiseSemantic?: string;
+  /** The premise sentence readings' semantic graphs, in order. */
+  premiseAsts: LigerStructure[];
+  /** The hypothesis sentence readings' semantic graphs, in order. */
+  hypothesisAsts: LigerStructure[];
+  typed: boolean;
+}
+
+/** One reading x the four checks, with everything needed to send it to Vampire and to
+ *  record it in the document. */
+export interface ReadingAssignment {
   pairId: string;
   /** The document-level `ReasoningAssignment.id`, set when the request carried a scope.
    *  Sent to Vampire in the bundle and echoed back on the verdict, so a verdict is paired
    *  with its assignment by id rather than by position in an array that gets filtered. */
   assignmentId?: string;
+  /** The reading's id (DiscourseAnalysis.id). */
   mappingId: string;
-  /** GSWB's PCDRS solution: carries `semantic`, `graph` and `anaphoraRelations`. */
-  mapping: any;
-  /** Which post-processing rule branch this mapping came from, 1-based, matching the
+  /** Which post-processing rule branch the reading came from, 1-based, matching the
    *  parentSolutionId sent to GSWB -- and the value recorded as DiscourseAnalysis.ruleBranch.
    *  The tier-A and tier-B structures the branch was derived from are deliberately not
    *  carried here: nothing consumed them but the document writers, which no longer persist
@@ -92,27 +115,34 @@ export interface PreparedAssignment {
    *  for the length of a run. */
   ruleBranchIndex: number;
   checks: Record<string, ReasoningCheck>;
-  /** TPTP for the PRIOR alone (`Q`), collapsed against this branch's mapping. Sent to
+  /** TPTP for the PRIOR alone (`Q`), collapsed against this reading. Sent to
    *  Vampire as `contextTptp` and emitted there as `fof(context, axiom, ...)`. */
   contextTptp: string;
   /** TPTP for the whole merged premise+conclusion sequence. NOT sent to Vampire -- it is
    *  what the caller displays and carries forward as the next turn's prior, which is why
    *  it stayed available when `contextTptp` narrowed to the prior alone. */
   sequenceTptp: string;
-  /** Pronouns this branch's reading does not bind, read as new referents, as
+  /** Pronouns this reading does not bind, read as new referents, as
    *  human-readable notes. Non-empty means the bundle below is usable but NOT fully
    *  resolved. Must be shown to the user rather than treated as a clean result. */
   degradations: string[];
 }
 
+/** A reading assignment of a freshly generated PCDRS reading, which still carries GSWB's
+ *  solution for the callers that store it after Vampire. */
+export interface PreparedAssignment extends ReadingAssignment {
+  /** GSWB's PCDRS solution: carries `semantic`, `graph` and `anaphoraRelations`. */
+  mapping: any;
+}
+
 /** Either a usable assignment or the reason its branch could not be prepared. */
 type PreparedBranch =
-  | { assignment: PreparedAssignment; failure?: undefined }
+  | { assignment: ReadingAssignment; failure?: undefined }
   | { assignment?: undefined; failure: string };
 
-export interface PreparedReasoningPair {
+export interface PreparedReasoningPair<A extends ReadingAssignment = PreparedAssignment> {
   scopeId: string;
-  assignments: PreparedAssignment[];
+  assignments: A[];
   /** Branches that could not be prepared, as human-readable reasons. Kept rather than
    *  silently dropped -- a mapping whose collapse failed is evidence, not noise. */
   failures: string[];
@@ -270,101 +300,148 @@ export class ReasoningPipelineService {
       mappingsWithStructure: mappingsWithStructure$
     }).pipe(
       switchMap(({ reasoningChecksResponse, mappingsWithStructure }) => {
-        // Shared across every reading below -- each varies only in the reading (A: and P:)
-        // these same four check ASTs are collapsed with.
-        const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
-        return forkJoin(mappingsWithStructure.map(({ mapping, ruleBranchIndex }) => {
-          // The reading is the PCDRS's own, A: and P: inline in `sequence`; GSWB rebases it
-          // into each check and gives the context Q's part of it (I11). One batched request
-          // for the context plus all four checks keeps GSWB from being overwhelmed.
-          //
-          // Two non-check items, and they are not interchangeable:
-          //   context  -- the PRIOR alone (Q). Reattached as the TPTP context axiom.
-          //   sequence -- the merged premise+conclusion. Display/carry-forward only.
-          const items = [
-            { name: 'context', semantic: request.premiseSemantic || '' },
-            { name: 'sequence', semantic: mapping.semantic || '' },
-            ...checkEntries.map(([name, check]: [string, any]) => ({ name, semantic: check.semantic }))
-          ].filter(item => !!item.semantic);
-          return this.dataService.gswbCollapseAndTptpBatch({
-            items,
-            typed,
-            parentSolutionId: mapping.id
-          }).pipe(
-            map(result => {
-              const contextTptp = result.results?.['context']?.tptp ?? '';
-              const sequenceTptp = result.results?.['sequence']?.tptp ?? '';
-              const checks: Record<string, ReasoningCheck> = {};
-              const missing: string[] = [];
-              // An item whose collapse rejects the reading has no TPTP (I7): the branch
-              // cannot be reasoned over, and says why.
-              const rejections = Object.entries(result.results ?? {})
-                .filter(([, item]) => !!item?.rejection)
-                .map(([name, item]) => `${name}: ${item.rejection}`);
-              if (rejections.length) {
-                return <PreparedBranch>{
-                  failure: `${mapping.id}: collapse rejects the reading (${rejections.join('; ')})`
-                };
-              }
-              // A pronoun the mapping did not bind is read as a new referent. Named once per
-              // branch, from the whole sequence.
-              const degradations: string[] = [];
-              const unresolved = result.results?.['sequence']?.unresolvedPronouns ?? [];
-              if (unresolved.length) {
-                degradations.push(`${mapping.id}: unresolved pronoun(s) ${unresolved.join(', ')}`
-                  + ' read as new referent(s)');
-              }
-              for (const name of REASONING_CHECK_NAMES) {
-                const item = result.results?.[name];
-                if (item?.tptp) {
-                  checks[name] = {
-                    tptp: item.tptp,
-                    ...(item.anaphoraMapping ? { anaphoraMapping: item.anaphoraMapping } : {}),
-                    ...(item.presuppositionMapping ? { presuppositionMapping: item.presuppositionMapping } : {}),
-                    ...(item.stateMap ? { stateMap: item.stateMap } : {}),
-                    ...(item.collapseReport ? { collapseReport: item.collapseReport } : {}),
-                  };
-                } else {
-                  missing.push(name);
-                }
-              }
-              // The four checks are fixed and may never be reduced: a bundle missing any
-              // of them cannot be reasoned over, so it is reported rather than sent on.
-              if (missing.length) {
-                return <PreparedBranch>{
-                  failure: `${mapping.id}: missing check(s) ${missing.join(', ')}`
-                };
-              }
-              return <PreparedBranch>{
-                assignment: {
-                  pairId: scopeId,
-                  assignmentId: request.scope && reasoningAssignmentId({
-                    updateId: request.scope.updateId,
-                    premiseSemanticIds: request.scope.premiseSemanticIds,
-                    hypothesisSemanticIds: request.scope.hypothesisSemanticIds,
-                    ruleBranchIndex,
-                    anaphoraBranchId: mapping.id,
-                  }),
-                  mappingId: mapping.id,
-                  mapping,
-                  ruleBranchIndex,
-                  checks,
-                  contextTptp,
-                  sequenceTptp,
-                  degradations,
-                }
+        const mappingById = new Map(mappingsWithStructure.map(({ mapping }) => [mapping.id, mapping]));
+        return this.checksOverReadings(
+          request,
+          reasoningChecksResponse,
+          mappingsWithStructure.map(({ mapping, ruleBranchIndex }) =>
+            ({ id: mapping.id, drsString: mapping.semantic || '', ruleBranch: ruleBranchIndex })),
+        ).pipe(map(pair => ({
+          ...pair,
+          assignments: pair.assignments.map(assignment =>
+            ({ ...assignment, mapping: mappingById.get(assignment.mappingId) })),
+        })));
+      })
+    );
+  }
+
+  /** The reasoning half over stored readings: the check ASTs from the sentence readings'
+   *  graphs, then one collapse/TPTP batch per reading. Nothing is merged, no rule is
+   *  applied and no PCDRS is generated -- the readings are the document's. */
+  prepareStoredReadingChecks(
+    request: StoredReadingChecksRequest
+  ): Observable<PreparedReasoningPair<ReadingAssignment>> {
+    const { premiseAsts, hypothesisAsts, typed } = request;
+    if (!premiseAsts?.length || !hypothesisAsts?.length) {
+      throw new Error('NLI sequence semantic graphs are missing.');
+    }
+    if (!request.premiseSemantic) {
+      console.warn('[Reasoning] no prior semantics supplied; no context axiom will be emitted',
+        { scopeId: request.scopeId });
+    }
+    // Nothing selected, nothing to ask GSWB for.
+    if (!request.readings.length) {
+      return this.checksOverReadings(request, undefined, []);
+    }
+    return this.dataService.gswbReasoningCheckAsts({ premiseAsts, hypothesisAsts, typed }).pipe(
+      switchMap(response => this.checksOverReadings(request, response, request.readings))
+    );
+  }
+
+  /** The four checks of every reading, from the pair's check ASTs: one batched
+   *  collapse/TPTP request per reading. A reading that cannot be prepared is a failure of
+   *  that reading alone. */
+  private checksOverReadings(
+    request: Pick<StoredReadingChecksRequest, 'scopeId' | 'scope' | 'premiseSemantic' | 'typed'>,
+    reasoningChecksResponse: any,
+    readings: StoredReading[],
+  ): Observable<PreparedReasoningPair<ReadingAssignment>> {
+    const { scopeId, typed } = request;
+    // Shared across every reading below -- each varies only in the reading (A: and P:)
+    // these same four check ASTs are collapsed with.
+    const checkEntries = Object.entries(reasoningChecksResponse?.checks ?? {});
+    // forkJoin over no readings completes without emitting, which would drop the pair.
+    const branches$: Observable<PreparedBranch[]> = !readings.length ? of([]) : forkJoin(readings.map(reading => {
+      // The reading is the PCDRS's own, A: and P: inline in `sequence`; GSWB rebases it
+      // into each check and gives the context Q's part of it (I11). One batched request
+      // for the context plus all four checks keeps GSWB from being overwhelmed.
+      //
+      // Two non-check items, and they are not interchangeable:
+      //   context  -- the PRIOR alone (Q). Reattached as the TPTP context axiom.
+      //   sequence -- the merged premise+conclusion. Display/carry-forward only.
+      const items = [
+        { name: 'context', semantic: request.premiseSemantic || '' },
+        { name: 'sequence', semantic: reading.drsString || '' },
+        ...checkEntries.map(([name, check]: [string, any]) => ({ name, semantic: check.semantic }))
+      ].filter(item => !!item.semantic);
+      return this.dataService.gswbCollapseAndTptpBatch({
+        items,
+        typed,
+        parentSolutionId: reading.id
+      }).pipe(
+        map(result => {
+          const contextTptp = result.results?.['context']?.tptp ?? '';
+          const sequenceTptp = result.results?.['sequence']?.tptp ?? '';
+          const checks: Record<string, ReasoningCheck> = {};
+          const missing: string[] = [];
+          // An item whose collapse rejects the reading has no TPTP (I7): the branch
+          // cannot be reasoned over, and says why.
+          const rejections = Object.entries(result.results ?? {})
+            .filter(([, item]) => !!item?.rejection)
+            .map(([name, item]) => `${name}: ${item.rejection}`);
+          if (rejections.length) {
+            return <PreparedBranch>{
+              failure: `${reading.id}: collapse rejects the reading (${rejections.join('; ')})`
+            };
+          }
+          // A pronoun the mapping did not bind is read as a new referent. Named once per
+          // branch, from the whole sequence.
+          const degradations: string[] = [];
+          const unresolved = result.results?.['sequence']?.unresolvedPronouns ?? [];
+          if (unresolved.length) {
+            degradations.push(`${reading.id}: unresolved pronoun(s) ${unresolved.join(', ')}`
+              + ' read as new referent(s)');
+          }
+          for (const name of REASONING_CHECK_NAMES) {
+            const item = result.results?.[name];
+            if (item?.tptp) {
+              checks[name] = {
+                tptp: item.tptp,
+                ...(item.anaphoraMapping ? { anaphoraMapping: item.anaphoraMapping } : {}),
+                ...(item.presuppositionMapping ? { presuppositionMapping: item.presuppositionMapping } : {}),
+                ...(item.stateMap ? { stateMap: item.stateMap } : {}),
+                ...(item.collapseReport ? { collapseReport: item.collapseReport } : {}),
               };
-            }),
-            catchError(error => of(<PreparedBranch>{
-              failure: `${mapping.id}: ${error?.message ?? String(error)}`
-            }))
-          );
-        }));
-      }),
+            } else {
+              missing.push(name);
+            }
+          }
+          // The four checks are fixed and may never be reduced: a bundle missing any
+          // of them cannot be reasoned over, so it is reported rather than sent on.
+          if (missing.length) {
+            return <PreparedBranch>{
+              failure: `${reading.id}: missing check(s) ${missing.join(', ')}`
+            };
+          }
+          return <PreparedBranch>{
+            assignment: {
+              pairId: scopeId,
+              assignmentId: request.scope && reasoningAssignmentId({
+                updateId: request.scope.updateId,
+                premiseSemanticIds: request.scope.premiseSemanticIds,
+                hypothesisSemanticIds: request.scope.hypothesisSemanticIds,
+                ruleBranchIndex: reading.ruleBranch,
+                anaphoraBranchId: reading.id,
+              }),
+              mappingId: reading.id,
+              ruleBranchIndex: reading.ruleBranch,
+              checks,
+              contextTptp,
+              sequenceTptp,
+              degradations,
+            }
+          };
+        }),
+        catchError(error => of(<PreparedBranch>{
+          failure: `${reading.id}: ${error?.message ?? String(error)}`
+        }))
+      );
+    }));
+    return branches$.pipe(
       map((results: PreparedBranch[]) => {
         const assignments = results
           .map(result => result.assignment)
-          .filter((value): value is PreparedAssignment => !!value);
+          .filter((value): value is ReadingAssignment => !!value);
         const failures = results
           .map(result => result.failure)
           .filter((value): value is string => !!value);
