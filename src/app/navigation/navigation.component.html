@@ -2,11 +2,13 @@
      [class.expanded]="isNavigationVisible"
      (mouseenter)="showNavigation()"
      (mouseleave)="hideNavigation()">
-  LiGER:
-  <label class="switch">
-    <input type="checkbox" (change)="toggleAll()">
+  <span class="parser-toggle-label" [title]="toggleTitle">UD:</span>
+  <label class="switch" [class.disabled]="toggleDisabled" [title]="toggleTitle">
+    <input #udToggle type="checkbox" class="ud-toggle" [checked]="syntaxSource.isUd" [disabled]="toggleDisabled"
+           (change)="onToggle(udToggle)">
     <span class="slider"></span>
   </label>
+  <div class="parser-notice" *ngIf="isNavigationVisible && notice">{{ notice }}</div>
 
   <div class="navigation-content" *ngIf="isNavigationVisible">
     <ul>

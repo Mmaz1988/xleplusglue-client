@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, timeout } from 'rxjs';
+import { Observable, throwError, timeout } from 'rxjs';
 import {
   AnaphoraRanking,
   RegressionStoreCleanupReport,
@@ -46,8 +46,10 @@ import {
   VampireProgress,
   RegressionSessionSummary,
   RegressionSessionDocument,
-  XlePlusGlueDocument
+  XlePlusGlueDocument,
+  LigerUdModelList
 } from './models/models';
+import { SyntaxSourceService } from './syntax-source/syntax-source.service';
 
 @Injectable({
   providedIn: 'root'
@@ -88,7 +90,20 @@ export class DataService {
   private gswbpage = 'http://localhost:8081';
   private ligerpage = 'http://localhost:8080';
   private lmpage = 'http://localhost:8084';
-  constructor(private http: HttpClient) { }
+  constructor(private http: HttpClient, private syntaxSource: SyntaxSourceService) { }
+
+  /** A parse request with the session's parser; XLE requests stay as they were. */
+  private withParser<T extends object>(request: T): T {
+    const parser = this.syntaxSource.parserSelection();
+    return parser ? { ...request, parser } : request;
+  }
+
+  /** Multistage extraction reads XLE's own output: there is none for a UD parse. */
+  private xleOnly<T>(feature: string, call: () => Observable<T>): Observable<T> {
+    return this.syntaxSource.isUd
+      ? throwError(() => new Error(`${feature} needs XLE; this session parses with UD.`))
+      : call();
+  }
 
   //gswb models
 
@@ -152,16 +167,17 @@ export class DataService {
 
   //Currently used for parse and rewrite
   ligerAnnotate(ligerRequest): Observable<LigerSolutionAnnotationResponse> {
-    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/apply_rules_xle`, ligerRequest);
+    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/apply_rules_xle`, this.withParser(ligerRequest));
   }
 
   //currently used for multistage
   ligerMulti(ligerRequest): Observable<LigerSolutionAnnotationResponse> {
-    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/parse_xle`, ligerRequest);
+    return this.xleOnly('Multistage parsing', () =>
+      this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/parse_xle`, ligerRequest));
   }
 
   ligerSequence(request: LigerSequenceRequest): Observable<LigerSolutionAnnotationResponse> {
-    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/apply_rules_xle_sequence`, request);
+    return this.http.post<LigerSolutionAnnotationResponse>(`${this.ligerpage}/apply_rules_xle_sequence`, this.withParser(request));
   }
 
   ligerUploadStructure(uploadRequest: LigerStructureUploadRequest): Observable<LigerRuleAnnotation> {
@@ -185,11 +201,12 @@ export class DataService {
   }
 
   ligerBatchAnnotate(ligerMultipleRequest): Observable<any> {
-    return this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/apply_rules_to_batch`, ligerMultipleRequest);
+    return this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/apply_rules_to_batch`, this.withParser(ligerMultipleRequest));
   }
 
   ligerBatchMultistage(ligerMultipleRequest): Observable<any> {
-    return this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/multistage_to_batch`, ligerMultipleRequest);
+    return this.xleOnly('Multistage parsing', () =>
+      this.http.post<LigerBatchParsingAnalysis>(`${this.ligerpage}/multistage_to_batch`, ligerMultipleRequest));
   }
 
   //display and change grammars
@@ -222,6 +239,11 @@ export class DataService {
   /** The files of a config or single rule file, per field; leaves LiGER's active lexica alone. */
   configTree(path: { grammar: string }): Observable<LigerConfigTree> {
     return this.http.post<LigerConfigTree>(`${this.ligerpage}/config_tree`, path);
+  }
+
+  /** The installed Stanza (UD) models; none, with the reason, when Stanza does not answer. */
+  listUdModels(): Observable<LigerUdModelList> {
+    return this.withSessionTimeout(this.http.get<LigerUdModelList>(`${this.ligerpage}/list_ud_models`));
   }
 
   /** The LiGER configs (*.liger.yaml) under a grammar's directory. */

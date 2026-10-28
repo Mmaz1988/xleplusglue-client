@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core';
+import { skip } from 'rxjs';
+import { SyntaxSourceService } from './syntax-source/syntax-source.service';
 
 export interface LigerWorkspaceState {
   sentence: string;
@@ -34,6 +36,11 @@ export class AnalysisWorkspaceStateService {
     liger: null,
     gswb: null,
   };
+
+  /** The saved analysis was parsed with one parser: another one starts afresh. */
+  constructor(syntaxSource: SyntaxSourceService) {
+    syntaxSource.kind$.pipe(skip(1)).subscribe(() => this.clear());
+  }
 
   saveLiger(state: LigerWorkspaceState): void {
     this.state = {

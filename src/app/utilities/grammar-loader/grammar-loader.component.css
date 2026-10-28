@@ -2,3 +2,16 @@
   color: red;
 }
 
+
+.ud-models ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.ud-model.selected {
+  font-weight: bold;
+}
+
+.ud-hint {
+  color: #555;
+}

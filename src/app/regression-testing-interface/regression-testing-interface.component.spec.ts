@@ -16,6 +16,8 @@ import { LigerFileSource } from '../liger-workspace/liger-file-source.service';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { FILES, RULE_SET, TREE, fileSourceSpy } from '../liger-workspace/liger-workspace.testing';
 import { ALL_READINGS } from '../reading-order';
+import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
+import { regressionDocumentToSession, regressionSessionToDocument } from '../models/models';
 
 /** A derived reading as GSWB sends it: everything about the reading in semanticAnalysis.
  *  `solution` is its SVG in LFGxDRT mode, its text in prolog-drt mode. */
@@ -151,6 +153,56 @@ describe('RegressionTestingInterfaceComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  describe('the parser, XLE or UD', () => {
+    let syntaxSource: SyntaxSourceService;
+
+    beforeEach(() => syntaxSource = TestBed.inject(SyntaxSourceService));
+
+    it('switching starts a new session that records the parser; the old one stays stored', () => {
+      const before = component.redisSessionKey;
+      component.session.testsuiteText = 'old items';
+
+      syntaxSource.select({ kind: 'ud', model: 'en' });
+
+      expect(component.redisSessionKey).not.toBe(before);
+      expect(component.session.testsuiteText).toBe('');
+      expect(component.session.parser).toEqual({ kind: 'ud', model: 'en' });
+      expect((component as any).buildSessionSnapshot().inputs.parser).toEqual({ kind: 'ud', model: 'en' });
+      expect((TestBed.inject(DataService) as jasmine.SpyObj<DataService>).deleteRegressionSession).not.toHaveBeenCalled();
+    });
+
+    it('refuses the switch while a run is in progress', () => {
+      component.loading = true;
+      const before = component.redisSessionKey;
+
+      expect(syntaxSource.select({ kind: 'ud', model: 'en' })).toContain('regression run');
+
+      expect(syntaxSource.isUd).toBeFalse();
+      expect(component.redisSessionKey).toBe(before);
+    });
+
+    it('restoring a UD session sets the parser, without starting another session', () => {
+      const stored = regressionSessionToDocument({ ...component.session, redisSessionKey: 'session-ud', id: 'session-ud',
+        parser: { kind: 'ud', model: 'en' } });
+      const switched: unknown[] = [];
+      syntaxSource.switched$.subscribe(source => switched.push(source));
+
+      (component as any).hydrateSession(regressionDocumentToSession(stored));
+
+      expect(syntaxSource.source).toEqual({ kind: 'ud', model: 'en' });
+      expect(component.redisSessionKey).toBe('session-ud');
+      expect(switched).toEqual([]);
+
+      // A session stored without a parser is an XLE session.
+      const { parser, ...xle } = regressionSessionToDocument({ ...component.session, redisSessionKey: 'session-xle',
+        id: 'session-xle' }).inputs;
+      (component as any).hydrateSession(regressionDocumentToSession({ ...stored, inputs: xle,
+        metadata: { ...stored.metadata, id: 'session-xle', redisSessionKey: 'session-xle' } }));
+      expect(syntaxSource.isUd).toBeFalse();
+      expect(component.redisSessionKey).toBe('session-xle');
+    });
   });
 
   /** One sentence's GSWB output, in the shape the selection helpers read. */

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { ChatInterfaceComponent } from './chat-interface.component';
+import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
 
 /** Chat writes its defaults into both settings forms after view init. */
 @Component({ selector: 'app-gswb-settings', template: '' })
@@ -36,5 +37,20 @@ describe('ChatInterfaceComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('switching between XLE and UD starts a new conversation whose document records the parser', () => {
+    const before = component.chatDocumentSessionKey;
+    // Shallow: the template refs are elements, not the child components.
+    component.chatComponent = jasmine.createSpyObj('ChatComponent', ['resetConversationState']);
+    component.historyComponent = jasmine.createSpyObj('HistoryComponent', ['clearSelection']);
+    spyOn(component, 'startNewConversation').and.callThrough();
+
+    TestBed.inject(SyntaxSourceService).select({ kind: 'ud', model: 'en' });
+
+    expect(component.startNewConversation).toHaveBeenCalledTimes(1);
+    expect(component.chatDocumentSessionKey).not.toBe(before);
+    expect(component.chatDocument.parser).toEqual({ kind: 'ud', model: 'en' });
+    expect(component.chatComponent.resetConversationState).toHaveBeenCalled();
   });
 });

@@ -5,6 +5,8 @@ import { sameFile, serverRelative } from '../../liger-workspace/liger-paths';
 import { LigerFileSource } from '../../liger-workspace/liger-file-source.service';
 import { LigerWorkspaceService } from '../../liger-workspace/liger-workspace.service';
 import { FILES, RULE_SET, TREE, fileSourceSpy } from '../../liger-workspace/liger-workspace.testing';
+import { SyntaxSourceService } from '../../syntax-source/syntax-source.service';
+import { XLE_SOURCE } from '../../models/models';
 
 /**
  * Loading a grammar opens its LiGER config, unless one was picked by hand or a session's is
@@ -17,6 +19,8 @@ describe('GrammarLoaderComponent, the grammar\'s LiGER config', () => {
   let files: jasmine.SpyObj<LigerFileSource>;
   let workspace: LigerWorkspaceService;
   let loader: GrammarLoaderComponent;
+  let syntaxSource: SyntaxSourceService;
+  let dataService: { getFileTree: jasmine.Spy; changeGrammar: jasmine.Spy };
 
   beforeEach(() => {
     files = fileSourceSpy();
@@ -24,7 +28,13 @@ describe('GrammarLoaderComponent, the grammar\'s LiGER config', () => {
     TestBed.configureTestingModule({ providers: [{ provide: LigerFileSource, useValue: files }] });
     workspace = TestBed.inject(LigerWorkspaceService);
     spyOn(workspace, 'open').and.callThrough();
-    loader = new GrammarLoaderComponent({} as any, { detectChanges: () => {} } as any, files, workspace);
+    syntaxSource = TestBed.inject(SyntaxSourceService);
+    dataService = {
+      getFileTree: jasmine.createSpy('getFileTree').and.returnValue(of({ children: [] })),
+      changeGrammar: jasmine.createSpy('changeGrammar').and.returnValue(of({ grammar: 'success' })),
+    };
+    loader = new GrammarLoaderComponent(dataService as any, { detectChanges: () => {} } as any, files, workspace,
+      syntaxSource);
     loader.loadedPath = './grammars/dev/g/g.lfg';
   });
 
@@ -116,5 +126,53 @@ describe('GrammarLoaderComponent, the grammar\'s LiGER config', () => {
     late.next([PREFIXED]);
 
     expect(workspace.open).not.toHaveBeenCalled();
+  });
+
+  describe('in a UD session', () => {
+    const UD_CONFIG = '/Users/me/liger/./grammars/ud/en/liger/ud-lfgxdrt.liger.yaml';
+    let loaded: string[];
+
+    beforeEach(() => {
+      files.listConfigsForGrammar.and.callFake((path: string) =>
+        of(path === './grammars/ud/en' ? [UD_CONFIG] : [PREFIXED]));
+      syntaxSource.setUdModels([{ id: 'en', language: 'English', package: 'combined' }]);
+      loaded = [];
+      loader.grammarLoaded.subscribe(path => loaded.push(path));
+      loader.ngOnInit();
+    });
+
+    afterEach(() => loader.ngOnDestroy());
+
+    it('switching to UD opens the model\'s config and reports its folder as the grammar', () => {
+      syntaxSource.select({ kind: 'ud', model: 'en' });
+
+      expect(loaded).toEqual(['./grammars/ud/en']);
+      expect(workspace.open).toHaveBeenCalledWith('./grammars/ud/en/liger/ud-lfgxdrt.liger.yaml', undefined, 'grammar');
+      expect(loader.currentStatusMessage).toContain('Stanza model en');
+      expect(dataService.changeGrammar).not.toHaveBeenCalled();
+    });
+
+    it('picking a model from the list makes the session UD', () => {
+      loader.selectUdModel('en');
+
+      expect(syntaxSource.source).toEqual({ kind: 'ud', model: 'en' });
+      expect(loader.isLoadedUdModel('en')).toBeTrue();
+      expect(loaded).toEqual(['./grammars/ud/en']);
+    });
+
+    it('switching back to XLE loads the XLE grammar it had before', () => {
+      syntaxSource.select({ kind: 'ud', model: 'en' });
+      syntaxSource.select(XLE_SOURCE);
+
+      expect(dataService.changeGrammar).toHaveBeenCalledWith({ grammar: './grammars/dev/g/g.lfg' });
+      expect(loaded).toEqual(['./grammars/ud/en', './grammars/dev/g/g.lfg']);
+    });
+
+    it('a restored UD session changes nothing on the grammar side', () => {
+      syntaxSource.restore({ kind: 'ud', model: 'en' });
+
+      expect(loaded).toEqual([]);
+      expect(workspace.open).not.toHaveBeenCalled();
+    });
   });
 });

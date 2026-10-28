@@ -5,6 +5,8 @@ import { of, Subject, throwError } from 'rxjs';
 import { DataService } from '../data.service';
 import { MISSING_PRAGMATICS_MESSAGE, SentenceAnalysis, SequenceAnalysis } from '../models/models';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
+import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
+import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 
 import { GlueInterfaceComponent } from './glue-interface.component';
 
@@ -74,6 +76,29 @@ describe('GlueInterfaceComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('switching between XLE and UD starts a new discourse whose document records the parser', () => {
+    const syntaxSource = TestBed.inject(SyntaxSourceService);
+    const workspaceState = TestBed.inject(AnalysisWorkspaceStateService);
+    workspaceState.saveLiger({ sentence: 'A dog barked.' } as any);
+    const before = component.analysisDocumentSessionId;
+    dataServiceMock.clearAnalysisDocument.calls.reset();
+    component.liger = jasmine.createSpyObj('LigerVisComponent', ['resetForNewDiscourse']);
+    component.glue = jasmine.createSpyObj('GswbVisComponent', ['resetForNewDiscourse']);
+
+    syntaxSource.select({ kind: 'ud', model: 'en' });
+
+    expect(component.analysisDocumentSessionId).not.toBe(before);
+    expect(dataServiceMock.clearAnalysisDocument).toHaveBeenCalledWith(before);
+    expect((component as any).analysisDocument.parser).toEqual({ kind: 'ud', model: 'en' });
+    // The saved view state was parsed with XLE: a later visit starts afresh too.
+    expect(workspaceState.getState().liger).toBeNull();
+
+    syntaxSource.select({ kind: 'ud', model: 'de' });
+    expect((component as any).analysisDocument.parser).toEqual({ kind: 'ud', model: 'en' });
+    syntaxSource.select({ kind: 'xle' });
+    expect((component as any).analysisDocument.parser).toBeUndefined();
   });
 
   it('blocks post-processing, and says why, while the rule set has no pragmatics rules', () => {

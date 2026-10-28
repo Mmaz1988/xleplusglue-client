@@ -2,8 +2,23 @@
 <div #statusMessage class="status-message">
   {{currentStatusMessage}}
 </div>
-<app-toggle-display #toggleDisplayComponent type="fileTree" showText="Select grammar" hideText="Hide grammar selection">
-<div>
+<app-toggle-display #toggleDisplayComponent type="fileTree"
+                    [showText]="syntaxSource.isUd ? 'Select UD model' : 'Select grammar'"
+                    [hideText]="syntaxSource.isUd ? 'Hide UD model selection' : 'Hide grammar selection'">
+<div *ngIf="syntaxSource.isUd" class="ud-models">
+  <ul *ngIf="syntaxSource.udModels.length; else noUdModels">
+    <li *ngFor="let model of syntaxSource.udModels">
+      <button type="button" class="ud-model" [class.selected]="isLoadedUdModel(model.id)"
+              (click)="selectUdModel(model.id)">{{ model.language }} ({{ model.id }}{{ model.package ? ', ' + model.package : '' }})</button>
+    </li>
+  </ul>
+  <ng-template #noUdModels>
+    <p class="ud-hint">No Stanza model answers{{ syntaxSource.udError ? ': ' + syntaxSource.udError : '.' }}
+      Install one with <code>Stanza/setup_stanza.sh</code> and start the stanza service
+      (<code>docker compose up stanza</code>).</p>
+  </ng-template>
+</div>
+<div *ngIf="!syntaxSource.isUd">
   <app-file-tree [fileTree]="grammarFileTree"
                  (nodeSelected)="onFileSelected($event)"
                  (nodeDoubleClicked)="updateGrammar()"></app-file-tree>

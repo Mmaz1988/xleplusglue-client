@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable, catchError, concatMap, defer, forkJoin, from, map, of, toArray } from 'rxjs';
 import { DataService } from '../data.service';
+import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
 import { compositeAnalysisId, isEmptyMovePart, readingOf } from '../analysis-model';
 import { proofInputsFrom } from './proof-inputs';
 import { MappingWithStructure, PcdrsRuleBranch, distinctPcdrsMappings } from './pcdrs-readings';
@@ -116,7 +117,7 @@ interface ResolvedContext {
  */
 @Injectable({ providedIn: 'root' })
 export class DocumentBuilderService {
-  constructor(private dataService: DataService) {}
+  constructor(private dataService: DataService, private syntaxSource: SyntaxSourceService) {}
 
   /** The PCDRS readings of post-processing rule branches: GSWB /generate_pcdrs per branch,
    *  duplicates dropped (`distinctPcdrsMappings`). The one procedure analysis, chat and
@@ -169,9 +170,13 @@ export class DocumentBuilderService {
   }
 
   newDocument(sessionKey: string, semanticType: string): XlePlusGlueDocument {
+    // Every sentence of the document is parsed with the session's parser; switching the
+    // parser starts a new document.
+    const parser = this.syntaxSource.recorded();
     return {
       id: sessionKey,
       semanticType,
+      ...(parser ? { parser } : {}),
       sentences: [],
       sequences: [],
       elements: [],

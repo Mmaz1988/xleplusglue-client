@@ -27,6 +27,40 @@ export interface LigerRuleAnnotationBatchAnalysis {
 
 //Unify Liger and Stanza models
 
+/** The parser a session parses with (xleplusglue docs/plans/UD_PARSING_PLAN.md): XLE with the
+ *  loaded grammar, or a Stanza (UD) model. Sessions and documents record it only for UD;
+ *  absent means XLE. */
+export type SyntaxSource = { kind: 'xle' } | { kind: 'ud'; model: string };
+
+export const XLE_SOURCE: SyntaxSource = { kind: 'xle' };
+
+/** A recorded parser as read back from storage: a UD one with a model, or none (XLE). */
+export function recordedSyntaxSource(value: any): SyntaxSource | undefined {
+  return value?.kind === 'ud' && typeof value.model === 'string' && value.model
+    ? { kind: 'ud', model: value.model }
+    : undefined;
+}
+
+/** `parser` of LiGER's parse requests (/apply_rules_xle, /apply_rules_xle_sequence,
+ *  /apply_rules_to_batch); absent means XLE. */
+export interface LigerParserSelection {
+  kind: 'xle' | 'ud';
+  model?: string;
+}
+
+/** One installed Stanza model, as `/list_ud_models` reports it. */
+export interface LigerUdModel {
+  id: string;
+  language: string;
+  package: string | null;
+}
+
+/** `/list_ud_models`: the installed models, or why the Stanza service gave none. */
+export interface LigerUdModelList {
+  models: LigerUdModel[];
+  error: string | null;
+}
+
 export interface LigerRule {
   rule: string;
   index: number;
@@ -211,6 +245,8 @@ export type XlePlusGlueElementRef =
 export interface XlePlusGlueDocument {
   id: string;
   semanticType: string;
+  /** The parser every sentence of the document is parsed with; absent means XLE. */
+  parser?: SyntaxSource;
   sentences: SentenceAnalysis[];
   sequences: SequenceAnalysis[];      // canonical sequence registry, mirrors `sentences`
   elements: XlePlusGlueElementRef[];  // ordered {kind,id} refs, not embedded objects
@@ -587,6 +623,8 @@ export interface LigerSequenceRequest {
   ruleString?: string;
   parsedLastSentence?: LigerStructure[];
   parsedSentences?: LigerStructure[][];
+  /** Absent means XLE; DataService adds it from the session's parser. */
+  parser?: LigerParserSelection;
 }
 
 export interface LigerStructureUploadRequest {
@@ -982,6 +1020,8 @@ export interface RegressionSessionMetadata {
 
 export interface RegressionSessionInputs {
   grammarPath: string;
+  /** The session's parser; absent means XLE (sessions saved before UD parsing). */
+  parser?: SyntaxSource;
   testsuite: RegressionSessionFilePart;
   rules: RegressionSessionFilePart;
   /** Post-processing rules of the loaded LiGER rule set. Missing in sessions saved before
@@ -1071,6 +1111,8 @@ export interface RegressionTestingSession {
   createdAt: string;
   updatedAt: string;
   grammarPath: string;
+  /** The session's parser; absent means XLE. */
+  parser?: SyntaxSource;
   testsuiteUpdateMode: 'write' | 'append';
   testsuiteText: string;
   rulesText: string;
@@ -1324,6 +1366,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
     },
     inputs: {
       grammarPath: String(session?.grammarPath ?? ''),
+      ...(recordedSyntaxSource(session?.parser) ? { parser: recordedSyntaxSource(session?.parser) } : {}),
       testsuite: createRegressionSessionFilePart(
         String(session?.testsuiteFilename ?? ''),
         String(session?.testsuiteText ?? ''),
@@ -1422,6 +1465,7 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     createdAt: String(metadata?.createdAt ?? document?.createdAt ?? base.createdAt),
     updatedAt: String(metadata?.updatedAt ?? document?.updatedAt ?? base.updatedAt),
     grammarPath: String(inputs?.grammarPath ?? document?.grammarPath ?? ''),
+    parser: recordedSyntaxSource(inputs?.parser ?? document?.parser),
     testsuiteUpdateMode: metadata?.testsuiteUpdateMode === 'append' ? 'append' : (document?.testsuiteUpdateMode === 'append' ? 'append' : 'write'),
     testsuiteText: String(testsuite?.text ?? document?.testsuiteText ?? ''),
     rulesText: String(rules?.text ?? document?.rulesText ?? ''),

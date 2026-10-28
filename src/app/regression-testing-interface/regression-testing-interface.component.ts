@@ -1,5 +1,6 @@
 import { Component, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { DataService } from "../data.service";
+import { SyntaxSourceService } from "../syntax-source/syntax-source.service";
 import { proofInputsFrom } from '../document-builder/proof-inputs';
 import { PcdrsReading, discourseUpdateOf } from '../document-builder/pcdrs-readings';
 import { GraphVisComponent } from "../liger-vis/liger-graph-vis/graph-vis.component";
@@ -163,12 +164,27 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     /** The rule set a run uses; its texts are mirrored into the session (see
      *  `onWorkspaceChange`). Read by the template. */
     public ligerWorkspace: LigerWorkspaceService,
+    private syntaxSource: SyntaxSourceService,
   ) {
     this.lastSavedSessionFingerprint = this.buildSessionFingerprint(regressionSessionToDocument(this.session));
     // Deliberately no per-path baseline here: nothing is stored yet, so the first save
     // must be a full PUT rather than a patch against a session that does not exist.
     this.lastSavedSectionFingerprints = {};
+    // A session parses with one parser: switching between XLE and UD starts a new one, the
+    // same as "New" (the old one stays stored). Subscribed here, before the grammar loader
+    // reacts to the same switch, so the UD folder it reports lands in the new session.
+    this.parserSwitchGuard = this.syntaxSource.addSwitchGuard(() => this.isSessionActionLocked
+      ? 'Finish or cancel the regression run (or wait for the session to save) before switching between XLE and UD.'
+      : null);
+    this.parserSwitch = this.syntaxSource.switched$.subscribe(source => {
+      this.initializeBlankSession();
+      this.setSessionLoadStatus('success', `Started new session ${this.redisSessionKey} with ${source.kind === 'ud' ? 'UD' : 'XLE'}`,
+        `Session key: ${this.redisSessionKey}`);
+    });
   }
+
+  private parserSwitch?: Subscription;
+  private parserSwitchGuard?: () => void;
 
   session: RegressionTestingSession = this.createInitialSession();
 
@@ -446,6 +462,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private createInitialSession(): RegressionTestingSession {
     const session = createRegressionTestingSession();
+    session.parser = this.syntaxSource.recorded();
     const persistedSessionKey = this.getPersistedActiveSessionKey();
 
     if (persistedSessionKey) {
@@ -1186,6 +1203,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     this.activeSaveAction = null;
 
     this.session = createRegressionTestingSession();
+    this.session.parser = this.syntaxSource.recorded();
     this.selectedSessionKey = this.redisSessionKey;
     this.recentSessions = this.recentSessions.filter(session => session.sessionKey !== this.redisSessionKey);
     this.testsuiteUpdateMode = this.session.testsuiteUpdateMode;
@@ -1259,6 +1277,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     };
 
     this.selectedSessionKey = this.redisSessionKey;
+    // The session's parser comes back with it; this is the restore, not a switch.
+    this.syntaxSource.restore(this.session.parser);
     this.gswbPreferences.gswbPreferences = { ...this.session.gswbPreferences };
     this.gswbPreferences.updateFormFromPreferences(this.session.gswbPreferences);
     this.vampirePreferences.vampirePreferences = { ...this.session.vampirePreferences };
@@ -1757,6 +1777,8 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   }
 
   ngOnDestroy(): void {
+    this.parserSwitch?.unsubscribe();
+    this.parserSwitchGuard?.();
     this.stopSessionLease();
     this.workspaceSubscription?.unsubscribe();
     this.stopGswbSummaryPolling();

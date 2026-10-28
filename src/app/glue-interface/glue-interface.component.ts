@@ -1,12 +1,13 @@
 import { Component, ViewChild, AfterViewInit, OnDestroy, ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
+import { Subscription, forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
 import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRankerSelection, AnaphoraRanking, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SentenceAnalysis, SequenceAnalysis, VampirePreferences, XlePlusGlueDocument } from '../models/models';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
+import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
 import { GraphInspectorComponent } from '../graph-inspector/graph-inspector.component';
 import { APP_DEFAULTS } from '../app-defaults';
 import { AnaphoraRankingTable, anaphoraRankerSelection, anaphoraRankingCaption, anaphoraRankingTable, carryAnaphoraRanking, needsAnaphoraRanking, validateAnalysisDocument } from '../analysis-model';
@@ -91,7 +92,11 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
     private documentBuilder: DocumentBuilderService,
     private anaphoraRanking: AnaphoraRankingService,
     private ligerWorkspace: LigerWorkspaceService,
+    private syntaxSource: SyntaxSourceService,
   ) {}
+
+  /** Switching between XLE and UD starts a new discourse: a document has one parser. */
+  private parserSwitch?: Subscription;
 
   get analysisDocumentSessionId(): string {
     return this.analysisDocumentSessionKey;
@@ -104,6 +109,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit() {
+    this.parserSwitch = this.syntaxSource.switched$.subscribe(() => this.startNewDiscourse());
     this.dataService.clearAnalysisDocument(this.analysisDocumentSessionKey).subscribe({
       next: () => console.info('[Analysis] cleared volatile Redis document for new session'),
       error: error => console.warn('[Analysis] could not clear volatile Redis document', error),
@@ -407,6 +413,7 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.parserSwitch?.unsubscribe();
     this.saveWorkspaceState();
   }
 

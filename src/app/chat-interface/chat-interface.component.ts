@@ -10,6 +10,8 @@ import { DataService } from '../data.service';
 import { validateAnalysisDocument } from '../analysis-model';
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
+import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-inference-vis',
@@ -45,12 +47,17 @@ export class ChatInterfaceComponent implements OnInit, AfterViewInit, OnDestroy 
     private documentBuilder: DocumentBuilderService,
     /** The rule set chat runs on: rules and axioms, edits included. Read by the template. */
     public workspace: LigerWorkspaceService,
+    private syntaxSource: SyntaxSourceService,
   ) {}
+
+  /** Switching between XLE and UD starts a new conversation: a document has one parser. */
+  private parserSwitch?: Subscription;
 
   /** Opens the startup config unless one is open already (e.g. from the analysis page), so
    *  chat has rules before its Config tab is ever shown. */
   ngOnInit(): void {
     this.workspace.ensureOpen(APP_DEFAULTS.grammar.ligerRulesPath);
+    this.parserSwitch = this.syntaxSource.switched$.subscribe(() => this.startNewConversation());
   }
 
   ngAfterViewInit() {
@@ -194,6 +201,7 @@ export class ChatInterfaceComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   ngOnDestroy(): void {
+    this.parserSwitch?.unsubscribe();
     this.dataService.clearChatDocument(this.chatDocumentSessionKey).subscribe({
       error: error => console.warn('[Chat] could not clear volatile chat document on destroy', error),
     });

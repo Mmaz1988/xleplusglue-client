@@ -1,5 +1,6 @@
 import { ChatInterfaceComponent } from './chat-interface.component';
 import { APP_DEFAULTS } from '../app-defaults';
+import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
 
 /**
  * Where the chat view gets its rule set: the shared LiGER workspace. The component is built
@@ -10,7 +11,8 @@ describe('ChatInterfaceComponent, its rule set', () => {
   function build() {
     const documentBuilder = { newDocument: () => ({ id: 'doc', semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [] }) };
     const workspace = jasmine.createSpyObj('LigerWorkspaceService', ['ensureOpen']);
-    const host = new ChatInterfaceComponent({ detectChanges: () => {} } as any, {} as any, documentBuilder as any, workspace);
+    const host = new ChatInterfaceComponent({ detectChanges: () => {} } as any, {} as any, documentBuilder as any, workspace,
+      new SyntaxSourceService());
     return { host, workspace };
   }
 

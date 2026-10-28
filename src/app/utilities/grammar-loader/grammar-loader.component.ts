@@ -1,4 +1,5 @@
-import { Component, ElementRef, ViewChild, OnInit, AfterViewInit, ChangeDetectorRef, OnChanges, SimpleChanges, Input } from '@angular/core';
+import { Component, ElementRef, ViewChild, OnInit, AfterViewInit, ChangeDetectorRef, OnChanges, OnDestroy, SimpleChanges, Input } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { DataService } from "../../data.service";
 import { FileTree } from "../../models/models";
 import { tap } from 'rxjs/operators';
@@ -8,13 +9,14 @@ import { APP_DEFAULTS } from '../../app-defaults';
 import { LigerFileSource } from '../../liger-workspace/liger-file-source.service';
 import { LigerWorkspaceService } from '../../liger-workspace/liger-workspace.service';
 import { sameFile, serverRelative } from '../../liger-workspace/liger-paths';
+import { SyntaxSourceService, udGrammarPath } from '../../syntax-source/syntax-source.service';
 
 @Component({
   selector: 'app-grammar-loader',
   templateUrl: './grammar-loader.component.html',
   styleUrls: ['./grammar-loader.component.css']
 })
-export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
+export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, OnDestroy {
 
   @ViewChild('grammarListSelector') grammarListSelector: ElementRef;
   @ViewChild('statusMessage') statusMessageDiv: ElementRef;
@@ -35,20 +37,72 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
   configNote = '';
   /** The grammar the config lookup is for, so a late answer for another one is dropped. */
   private configsFor = '';
+  /** The XLE grammar to go back to when the session switches from UD to XLE. */
+  private lastXlePath = '';
+  private switchSubscription?: Subscription;
 
   constructor(private dataService: DataService, private cd: ChangeDetectorRef,
-              private ligerFiles: LigerFileSource, readonly workspace: LigerWorkspaceService) {}
+              private ligerFiles: LigerFileSource, readonly workspace: LigerWorkspaceService,
+              readonly syntaxSource: SyntaxSourceService) {}
 
   ngOnInit() {
     this.getGrammars(this.grammarsDirectory);
     console.log("Initial file tree:", this.grammarFileTree);
     this.selectedPath = this.loadedPath || this.defaultGrammar;
+    // The user switching between XLE and UD: the grammar side follows, its config included.
+    this.switchSubscription = this.syntaxSource.switched$.subscribe(source =>
+      source.kind === 'ud' ? this.loadUdModel(source.model) : this.reloadXleGrammar());
 
     if (this.loadedPath) {
       this.refreshStatusMessage();
+    } else if (this.syntaxSource.source.kind === 'ud') {
+      this.loadUdModel(this.syntaxSource.source.model);
     } else {
       this.updateGrammar();
     }
+  }
+
+  ngOnDestroy(): void {
+    this.switchSubscription?.unsubscribe();
+  }
+
+  /** A UD model picked from the list: the session parses with it, and its config opens. */
+  selectUdModel(model: string): void {
+    const wasUd = this.syntaxSource.isUd;
+    const refused = this.syntaxSource.select({ kind: 'ud', model });
+    if (refused) {
+      this.currentStatusMessage = refused;
+    } else if (wasUd) {
+      // From XLE, the switch itself loads the model (ngOnInit's subscription).
+      this.loadUdModel(model);
+    }
+  }
+
+  isLoadedUdModel(model: string): boolean {
+    const source = this.syntaxSource.source;
+    return source.kind === 'ud' && source.model === model;
+  }
+
+  /** In UD mode the "grammar" is the model's folder, grammars/ud/<model>: LiGER's UD rules
+   *  and their config live there. XLE keeps its grammar loaded; UD parses do not use it. */
+  private loadUdModel(model: string): void {
+    if (this.loadedPath && !this.loadedPath.startsWith(udGrammarPath(''))) {
+      this.lastXlePath = this.loadedPath;
+    }
+    const path = udGrammarPath(model);
+    this.selectedPath = path;
+    this.loadedPath = path;
+    if (this.toggleDisplayComponent) {
+      this.toggleDisplayComponent.isHidden = true;
+    }
+    this.grammarLoaded.emit(path);
+    this.refreshStatusMessage();
+    this.openGrammarConfig(path);
+  }
+
+  private reloadXleGrammar(): void {
+    this.selectedPath = this.lastXlePath || this.defaultGrammar;
+    this.updateGrammar();
   }
 
   ngAfterViewInit() {
@@ -96,7 +150,9 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
           // this.grammarListSelector.nativeElement.value = this.selectedPath;
           this.currentStatusMessage = "Currently loaded grammar: " + this.selectedPath;
           this.cd.detectChanges();
-          this.toggleDisplayComponent.isHidden = true;
+          if (this.toggleDisplayComponent) {
+            this.toggleDisplayComponent.isHidden = true;
+          }
           this.loadedPath = this.selectedPath;
           this.grammarLoaded.emit(this.selectedPath);
           this.refreshStatusMessage();
@@ -164,7 +220,10 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges {
 
     const modified = this.selectedPath !== this.loadedPath;
     const note = this.configNote ? ` · ${this.configNote}` : '';
-    this.currentStatusMessage = `Currently loaded grammar: ${this.loadedPath}${modified ? ' (modified)' : ''}${note}`;
+    const source = this.syntaxSource.source;
+    this.currentStatusMessage = source.kind === 'ud'
+      ? `Parsing with UD: Stanza model ${source.model} (${this.loadedPath})${note}`
+      : `Currently loaded grammar: ${this.loadedPath}${modified ? ' (modified)' : ''}${note}`;
   }
 
   captureState(): { loadedPath: string; selectedPath: string; currentStatusMessage: string } {
