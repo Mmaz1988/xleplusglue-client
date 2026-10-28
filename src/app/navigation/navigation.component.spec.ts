@@ -7,21 +7,27 @@ import { NavigationComponent } from './navigation.component';
 import { DataService } from '../data.service';
 import { LigerUdModelList, XLE_SOURCE } from '../models/models';
 import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 
 describe('NavigationComponent', () => {
   let component: NavigationComponent;
   let fixture: ComponentFixture<NavigationComponent>;
   let syntaxSource: SyntaxSourceService;
   let models: LigerUdModelList;
+  let workspace: { hasEdits: boolean };
 
   const toggle = (): HTMLInputElement => fixture.nativeElement.querySelector('input.ud-toggle');
 
   beforeEach(() => {
     models = { models: [], error: 'The Stanza service is not reachable' };
+    workspace = { hasEdits: false };
     TestBed.configureTestingModule({
       imports: [RouterTestingModule],
       declarations: [NavigationComponent],
-      providers: [{ provide: DataService, useValue: { listUdModels: () => of(models) } }],
+      providers: [
+        { provide: DataService, useValue: { listUdModels: () => of(models) } },
+        { provide: LigerWorkspaceService, useValue: workspace },
+      ],
       // Shallow: the child components are not under test here.
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -63,6 +69,19 @@ describe('NavigationComponent', () => {
     toggle().click();
     fixture.detectChanges();
     expect(syntaxSource.source).toEqual(XLE_SOURCE);
+  });
+
+  it('refuses a switch while the LiGER rule set has unsaved edits: the other config would drop them', () => {
+    models = { models: [{ id: 'en', language: 'English', package: null }], error: null };
+    workspace.hasEdits = true;
+    component.showNavigation();
+    fixture.detectChanges();
+
+    toggle().click();
+    fixture.detectChanges();
+
+    expect(syntaxSource.isUd).toBeFalse();
+    expect(component.notice).toContain('unsaved edits');
   });
 
   it('a refused switch leaves the toggle as it was and shows why', () => {

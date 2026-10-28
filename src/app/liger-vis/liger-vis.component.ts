@@ -399,6 +399,8 @@ export class LigerVisComponent implements AfterViewInit {
     this.solutions = [];
     this.selectedSolutionIndex = 0;
     this.meaningConstructors = '';
+    // The graph is drawn, not bound: clearing graphElements leaves the old drawing.
+    this.cy1?.renderGraph([]);
     if (this.textarea) {
       this.textarea.nativeElement.value = this.defaultValue;
     }

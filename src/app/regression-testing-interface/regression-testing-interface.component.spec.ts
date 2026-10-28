@@ -161,6 +161,8 @@ describe('RegressionTestingInterfaceComponent', () => {
     beforeEach(() => syntaxSource = TestBed.inject(SyntaxSourceService));
 
     it('switching starts a new session that records the parser; the old one stays stored', () => {
+      // Keys are timestamps: name the old one, or a switch within the same millisecond keeps it.
+      component.session.id = component.session.redisSessionKey = 'session-old';
       const before = component.redisSessionKey;
       component.session.testsuiteText = 'old items';
 

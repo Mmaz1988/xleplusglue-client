@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { DataService } from '../data.service';
 import { XLE_SOURCE } from '../models/models';
 import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
+import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 
 @Component({
   selector: 'app-navigation',
@@ -9,15 +10,26 @@ import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
   styleUrls: ['./navigation.component.css']
 })
 
-export class NavigationComponent implements OnInit {
+export class NavigationComponent implements OnInit, OnDestroy {
   isNavigationVisible: boolean = false;
   /** Why the last switch was refused; cleared by the next one. */
   notice = '';
 
-  constructor(private dataService: DataService, readonly syntaxSource: SyntaxSourceService) {}
+  private removeEditsGuard?: () => void;
+
+  constructor(private dataService: DataService, readonly syntaxSource: SyntaxSourceService,
+              private workspace: LigerWorkspaceService) {}
 
   ngOnInit(): void {
     this.refreshUdModels();
+    // A switch opens the other parser's LiGER config, which would drop the open one's edits.
+    this.removeEditsGuard = this.syntaxSource.addSwitchGuard(() => this.workspace.hasEdits
+      ? 'The LiGER rule set has unsaved edits: save or discard them before switching between XLE and UD.'
+      : null);
+  }
+
+  ngOnDestroy(): void {
+    this.removeEditsGuard?.();
   }
 
   /** Off in a UD session is always possible; on only while Stanza offers a model. */

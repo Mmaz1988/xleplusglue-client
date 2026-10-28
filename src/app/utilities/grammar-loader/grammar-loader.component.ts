@@ -49,16 +49,20 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, 
     this.getGrammars(this.grammarsDirectory);
     console.log("Initial file tree:", this.grammarFileTree);
     this.selectedPath = this.loadedPath || this.defaultGrammar;
-    // The user switching between XLE and UD: the grammar side follows, its config included.
+    // The user switching between XLE and UD: the grammar side follows, its config included,
+    // even over a config picked by hand -- an XLE config is no use to UD parses, nor the
+    // reverse. (A switch with unsaved rule edits is refused: see NavigationComponent.)
     this.switchSubscription = this.syntaxSource.switched$.subscribe(source =>
-      source.kind === 'ud' ? this.loadUdModel(source.model) : this.reloadXleGrammar());
+      source.kind === 'ud' ? this.loadUdModel(source.model, true) : this.reloadXleGrammar());
 
+    // Shown after a switch made elsewhere: the open config may still be the other parser's.
+    const forceConfig = !this.openConfigFitsParser();
     if (this.loadedPath) {
       this.refreshStatusMessage();
     } else if (this.syntaxSource.source.kind === 'ud') {
-      this.loadUdModel(this.syntaxSource.source.model);
+      this.loadUdModel(this.syntaxSource.source.model, forceConfig);
     } else {
-      this.updateGrammar();
+      this.updateGrammar(forceConfig);
     }
   }
 
@@ -85,7 +89,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, 
 
   /** In UD mode the "grammar" is the model's folder, grammars/ud/<model>: LiGER's UD rules
    *  and their config live there. XLE keeps its grammar loaded; UD parses do not use it. */
-  private loadUdModel(model: string): void {
+  private loadUdModel(model: string, forceConfig = false): void {
     if (this.loadedPath && !this.loadedPath.startsWith(udGrammarPath(''))) {
       this.lastXlePath = this.loadedPath;
     }
@@ -97,12 +101,19 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, 
     }
     this.grammarLoaded.emit(path);
     this.refreshStatusMessage();
-    this.openGrammarConfig(path);
+    this.openGrammarConfig(path, forceConfig);
   }
 
   private reloadXleGrammar(): void {
     this.selectedPath = this.lastXlePath || this.defaultGrammar;
-    this.updateGrammar();
+    this.updateGrammar(true);
+  }
+
+  /** Whether the open (or opening) rule set is one for the session's parser: UD configs live
+   *  under grammars/ud/. Nothing open fits, since the grammar's config opens anyway. */
+  private openConfigFitsParser(): boolean {
+    const source = this.workspace.state.loading ?? this.workspace.state.ruleSet?.source;
+    return !source || /(^|\/)grammars\/ud\//.test(serverRelative(source)) === this.syntaxSource.isUd;
   }
 
   ngAfterViewInit() {
@@ -133,7 +144,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, 
   }
 
   // Method to change the grammar using the selected path
-  updateGrammar() {
+  updateGrammar(forceConfig = false) {
     if (!this.selectedPath) {
       console.error("No file or folder selected!");
       return;
@@ -156,7 +167,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, 
           this.loadedPath = this.selectedPath;
           this.grammarLoaded.emit(this.selectedPath);
           this.refreshStatusMessage();
-          this.openGrammarConfig(this.selectedPath);
+          this.openGrammarConfig(this.selectedPath, forceConfig);
         } else {
           this.currentStatusMessage = "Failed to load grammar: " + this.selectedPath;
         }
@@ -170,8 +181,9 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, 
 
   /** Opens the grammar's LiGER config (the one in its folder or its liger/ folder), unless
    *  the rule set was picked by hand or a session's is being restored. With none or several
-   *  beside the grammar, the rule set stays and the status says why. */
-  openGrammarConfig(grammarPath: string): void {
+   *  beside the grammar, the rule set stays and the status says why. `force`: a parser
+   *  switch, which opens it over a hand-picked one too. */
+  openGrammarConfig(grammarPath: string, force = false): void {
     this.configsFor = grammarPath;
     this.configNote = '';
     this.ligerFiles.listConfigsForGrammar(grammarPath).subscribe({
@@ -184,7 +196,7 @@ export class GrammarLoaderComponent implements OnInit,AfterViewInit, OnChanges, 
           this.configNote = 'no LiGER config beside it';
         } else if (configs.length > 1) {
           this.configNote = `${configs.length} LiGER configs beside it: select one under LiGER config selection`;
-        } else if (!this.workspace.yieldsToGrammar) {
+        } else if (!force && !this.workspace.yieldsToGrammar) {
           this.configNote = 'LiGER config kept (selected by hand)';
         } else {
           this.openConfig(configs[0]);

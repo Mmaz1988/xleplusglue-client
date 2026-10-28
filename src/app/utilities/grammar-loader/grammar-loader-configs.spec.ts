@@ -166,6 +166,22 @@ describe('GrammarLoaderComponent, the grammar\'s LiGER config', () => {
 
       expect(dataService.changeGrammar).toHaveBeenCalledWith({ grammar: './grammars/dev/g/g.lfg' });
       expect(loaded).toEqual(['./grammars/ud/en', './grammars/dev/g/g.lfg']);
+      expect((workspace.open as jasmine.Spy).calls.mostRecent().args[0]).toBe(RELATIVE);
+    });
+
+    it('a switch opens the other parser\'s config even over one picked by hand', () => {
+      workspace.open(RULE_SET.source);  // LiGER config selection / Open…: picked by hand
+      (workspace.open as jasmine.Spy).calls.reset();
+
+      syntaxSource.select({ kind: 'ud', model: 'en' });
+      expect((workspace.open as jasmine.Spy).calls.mostRecent().args)
+        .toEqual(['./grammars/ud/en/liger/ud-lfgxdrt.liger.yaml', undefined, 'grammar']);
+
+      // A restored session marks its config as picked by hand, too.
+      workspace.open('./grammars/ud/en/liger/ud-lfgxdrt.liger.yaml', undefined, 'selected');
+      (workspace.open as jasmine.Spy).calls.reset();
+      syntaxSource.select(XLE_SOURCE);
+      expect((workspace.open as jasmine.Spy).calls.mostRecent().args).toEqual([RELATIVE, undefined, 'grammar']);
     });
 
     it('a restored UD session changes nothing on the grammar side', () => {
@@ -173,6 +189,40 @@ describe('GrammarLoaderComponent, the grammar\'s LiGER config', () => {
 
       expect(loaded).toEqual([]);
       expect(workspace.open).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mounted after a switch made on another page', () => {
+    function mount(): GrammarLoaderComponent {
+      const fresh = new GrammarLoaderComponent(dataService as any, { detectChanges: () => {} } as any, files, workspace,
+        syntaxSource);
+      fresh.ngOnInit();
+      return fresh;
+    }
+
+    it('opens the parser\'s config when the open one is the other parser\'s, picked by hand or not', () => {
+      files.listConfigsForGrammar.and.callFake((path: string) =>
+        of(path === './grammars/ud/en' ? ['/x/./grammars/ud/en/liger/ud-lfgxdrt.liger.yaml'] : [PREFIXED]));
+      workspace.open('./grammars/dev/g/liger/g.liger.yaml', undefined, 'selected');
+      syntaxSource.restore({ kind: 'ud', model: 'en' });
+      (workspace.open as jasmine.Spy).calls.reset();
+
+      const fresh = mount();
+
+      expect((workspace.open as jasmine.Spy).calls.mostRecent().args)
+        .toEqual(['./grammars/ud/en/liger/ud-lfgxdrt.liger.yaml', undefined, 'grammar']);
+      fresh.ngOnDestroy();
+    });
+
+    it('keeps a hand-picked config that fits the parser', () => {
+      workspace.open(RULE_SET.source, undefined, 'selected');
+      (workspace.open as jasmine.Spy).calls.reset();
+
+      const fresh = mount();
+
+      expect(workspace.open).not.toHaveBeenCalled();
+      expect(fresh.configNote).toContain('selected by hand');
+      fresh.ngOnDestroy();
     });
   });
 });

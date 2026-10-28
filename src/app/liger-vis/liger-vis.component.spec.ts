@@ -190,6 +190,7 @@ describe('LigerVisComponent', () => {
       component.meaningConstructors = 'stale mcs';
       component.textarea.nativeElement.value = 'stale sentence';
       component.errorhandle.nativeElement.innerHTML = 'stale error';
+      component.cy1 = { renderGraph: jasmine.createSpy('renderGraph') } as any;
 
       const proofInputs: any[] = [];
       const changeDetectorEmissions: any[] = [];
@@ -209,6 +210,7 @@ describe('LigerVisComponent', () => {
       expect(component.errorhandle.nativeElement.innerHTML).toBe('');
       expect(proofInputs).toEqual([[]]);
       expect(changeDetectorEmissions).toEqual(['']);
+      expect(component.cy1.renderGraph).toHaveBeenCalledWith([]);
     });
   });
 });
