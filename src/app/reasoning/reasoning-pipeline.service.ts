@@ -495,7 +495,7 @@ export class ReasoningPipelineService {
           .filter(annotation => !!annotation.structureJson)
           .map(annotation => ({ structure: annotation.structureJson }));
         // A rule that matches nothing returns its input, so no branch at all means the
-        // rules deleted every reading (`?=> 0`). That is a result, not a reason to go on
+        // rules deleted every reading (`?+=> 0`). That is a result, not a reason to go on
         // with the structure before rules.
         if (!branches.length) {
           throw new Error('The post-processing rules left no reading: '

@@ -98,7 +98,7 @@ export const POST_PROCESSING_SKIPPED_NOTICE =
   'No pragmatics rules: post-processing was skipped, so no pronoun was resolved. Each '
   + 'pronoun is reasoned over as a new referent.';
 
-/** Whether `ruleString` holds at least one rule: something with a rule arrow (`==>`, `?=>`)
+/** Whether `ruleString` holds at least one rule: something with a rule arrow (`==>`, `?+=>`, `?*=>`)
  *  once `//` comments are removed. Empty, blank and comment-only strings hold none. */
 export function hasPostProcessingRules(ruleString: string | null | undefined): boolean {
   return !!ruleString && ruleString
@@ -579,7 +579,7 @@ export interface LigerSequencePart {
 export interface LigerRuleAnnotationResponse {
   sentence?: string;
   annotations: LigerRuleAnnotation[];
-  /** Set when rules (`?=> 0`) deleted every branch: why there is no annotation. */
+  /** Set when rules (`?+=> 0`) deleted every branch: why there is no annotation. */
   failureMessage?: string;
 }
 

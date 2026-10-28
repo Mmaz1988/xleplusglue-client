@@ -320,7 +320,7 @@ describe('ReasoningPipelineService', () => {
   });
 
   it('fails with the rules\' reason when they delete every reading', done => {
-    // `?=> 0` can delete every branch; going on with the structure before rules would bring
+    // `?+=> 0` can delete every branch; going on with the structure before rules would bring
     // the deleted reading back.
     dataService.ligerApplyRulesToStructure.and.returnValue(of({
       annotations: [],

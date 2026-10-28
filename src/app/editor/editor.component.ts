@@ -68,7 +68,9 @@ CodeMirror.defineMode("liger", function() {
         return 'liger_builtin_function';
       }
 
-      if (stream.match("==>") ) {
+      // The rule arrows: ==>, =-> (rewrite), ?+=> / ?*=> (additive / multiplicative branching,
+      // ?=> the additive one's old spelling) and ?-> (branch deletion).
+      if (stream.match(/^(==>|=->|\?[+*]?=>|\?->)/)) {
         return "rule_separator";
       }
 

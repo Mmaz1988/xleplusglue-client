@@ -323,7 +323,7 @@ describe('GraphInspectorComponent', () => {
     component.uploadedContent = '{"id":"original","constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
-    workspace.pragmatics = '#a SUBJ #b ?=> #a TOP #b';
+    workspace.pragmatics = '#a SUBJ #b ?+=> #a TOP #b';
 
     component.applyRules();
     component.selectRuleAnnotation(1);
@@ -339,7 +339,7 @@ describe('GraphInspectorComponent', () => {
     component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
-    workspace.pragmatics = '#a SUBJ #b ?=> #a TOP #b';
+    workspace.pragmatics = '#a SUBJ #b ?+=> #a TOP #b';
 
     component.applyRules();
     fixture.detectChanges();
@@ -362,7 +362,7 @@ describe('GraphInspectorComponent', () => {
     component.uploadedContent = '{"constraints":[],"annotations":[],"choiceSpace":{}}';
     component.uploadedFormat = 'json';
     component.uploadedFileName = 'merged-graph.json';
-    workspace.pragmatics = '#a SUBJ #b ?=> #a TOP #b';
+    workspace.pragmatics = '#a SUBJ #b ?+=> #a TOP #b';
 
     component.applyRules();
 
