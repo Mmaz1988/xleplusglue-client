@@ -312,3 +312,9 @@ button.chip.selected.current-hit{
   margin: 4px 0;
   font-size: 0.9em;
 }
+
+/* A chip standing for several alternatives that say the same over the survivors. */
+.chip-merged {
+  font-size: 0.85em;
+  color: #666;
+}

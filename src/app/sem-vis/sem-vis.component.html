@@ -258,18 +258,18 @@
           <!-- One row per choice point: the anaphor, an arrow, then its alternatives. -->
           <div class="disc-point" *ngFor="let point of block.points">
             <span class="disc-point-label">{{ point.label }} <span class="disc-point-arrow">⟶</span></span>
-            <div class="disc-item" *ngFor="let alternative of point.alternatives">
+            <div class="disc-item" *ngFor="let chip of point.chips">
               <button
                 type="button"
                 class="chip"
-                [class.refinement]="!!alternative.refines"
-                [class.selected]="isChoiceSelected(alternative)"
-                [class.inactive]="!isChoiceActive(alternative)"
-                [class.current-hit]="highlightCurrent && isCurrentReadingIn(alternative)"
-                [disabled]="!isChoiceActive(alternative)"
-                (click)="toggleChoice(alternative)"
-                [title]="alternative.id">
-                {{ alternative.label }}
+                [class.refinement]="chip.refinement"
+                [class.selected]="isChoiceSelected(chip)"
+                [class.inactive]="!isChoiceActive(chip)"
+                [class.current-hit]="highlightCurrent && isCurrentReadingIn(chip)"
+                [disabled]="!isChoiceActive(chip)"
+                (click)="toggleChoice(chip)"
+                [title]="chip.title">
+                {{ chip.label }}<span class="chip-merged" *ngIf="chip.ids.length > 1"> +{{ chip.ids.length - 1 }}</span>
               </button>
             </div>
           </div>

@@ -176,3 +176,73 @@ function compareSpans(a: string, b: string): number {
   };
   return start(a) - start(b) || a.localeCompare(b);
 }
+
+/** A choice point's alternatives as shown: those picking out the same survivors are one chip
+ *  (`ids` all of them), labelled by the nearest antecedent, the shortest link (D10). */
+export interface PragmaticChip {
+  ids: string[];
+  label: string;
+  /** Every member's label, for the tooltip. */
+  title: string;
+  /** The readings selecting the chip keeps: those holding every member. */
+  associatedSolutions: string[];
+  refinement: boolean;
+}
+
+/**
+ * The chips of a choice point over `survivors`. Referent alternatives that the survivors hold
+ * alike say the same there ("It -> dog" and "It -> The dog" once the dog is bound to a dog: one
+ * coreference chain); they become one chip, named by the target nearest before the anaphor (else
+ * nearest after it). Display only: membership and the stored ids stay as they are. Alternatives
+ * no survivor holds are never merged, nor are unbound, sites or refinements (they exclude each
+ * other).
+ */
+export function chipsOf(point: PragmaticChoicePoint, survivors: Set<string>): PragmaticChip[] {
+  const kept = (alternative: PragmaticAlternative) =>
+    alternative.associatedSolutions.filter(id => survivors.has(id)).sort().join(',');
+  const anaphor = spanStart(point.point);
+  const distance = (alternative: PragmaticAlternative) => {
+    const start = spanStart(lastKey(targetOf(alternative)));
+    return start < anaphor ? anaphor - start : Number.MAX_SAFE_INTEGER / 2 + start - anaphor;
+  };
+  const groups = new Map<string, PragmaticAlternative[]>();
+  const chips: (PragmaticAlternative[])[] = [];
+  point.alternatives.forEach(alternative => {
+    const key = kept(alternative);
+    const referent = !alternative.refines && /^\d/.test(targetOf(alternative));
+    if (!referent || !key) {
+      chips.push([alternative]);
+      return;
+    }
+    const group = groups.get(key);
+    if (group) {
+      group.push(alternative);
+    } else {
+      const members = [alternative];
+      groups.set(key, members);
+      chips.push(members);
+    }
+  });
+  return chips.map(members => {
+    const named = [...members].sort((a, b) => distance(a) - distance(b))[0];
+    const others = members.filter(member => member !== named);
+    return {
+      ids: members.map(member => member.id),
+      label: named.label,
+      title: others.length ? `${named.label} = ${others.map(member => member.label).join(' = ')}` : named.id,
+      associatedSolutions: members.slice(1).reduce(
+        (held, member) => held.filter(id => member.associatedSolutions.includes(id)), [...members[0].associatedSolutions]),
+      refinement: !!named.refines,
+    };
+  });
+}
+
+/** The binder's key of a several-referent binding ("bind>binder"), else the key itself. */
+function lastKey(key: string): string {
+  return key.includes('>') ? key.slice(key.indexOf('>') + 1) : key;
+}
+
+function spanStart(key: string): number {
+  const match = /^(\d+)-/.exec(key);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}

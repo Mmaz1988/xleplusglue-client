@@ -1,5 +1,6 @@
 import { DiscourseAnalysis, PragmaticChoice } from './models/models';
 import {
+  chipsOf,
   listedChoicePoints,
   narrowedByPragmatics,
   pragmaticAlternatives,
@@ -99,5 +100,40 @@ describe('Pragmatic discriminants', () => {
     expect(pragmaticSurvivors(update, EVERY_NOT.filter(r => r.semanticOrigin === 'sem-b')).map(r => r.id))
       .toEqual(['b3', 'b4']);
     expect(pragmaticSurvivors({ discourse: EVERY_NOT })).toBe(EVERY_NOT);
+  });
+
+  describe('chips', () => {
+    // "A man saw a dog. The dog barked. It smiled." (chain1): It at 33-35, the dog's p-box 17-24.
+    const pronoun = (target: string, label: string) => choice('ANAPHORA', '33-35', target === '/' ? 'UNBOUND' : 'ANTECEDENT', target,
+      { targetLabel: label });
+    const dog = (target: string) => choice('PRESUPPOSITION', '17-24', target === 'GLOBAL' ? 'ACCOMMODATED' : 'BOUND', target);
+    const CHAIN1 = [
+      reading('R2', 'sem', [pronoun('2-5', 'man'), dog('12-15')]),
+      reading('R3', 'sem', [pronoun('12-15', 'dog'), dog('GLOBAL')]),
+      reading('R5', 'sem', [pronoun('12-15', 'dog'), pronoun('17-24', 'The dog'), dog('12-15')]),
+      reading('R6', 'sem', [pronoun('17-24', 'The dog'), dog('GLOBAL')]),
+      reading('R9', 'sem', [pronoun('/', '/'), dog('12-15')]),
+    ];
+    const alternatives = pragmaticAlternatives(CHAIN1);
+    const itPoint = (survivors: string[]) => listedChoicePoints(CHAIN1, alternatives, survivors.map(id => ({ id })))
+      .find(point => point.kind === 'ANAPHORA')!;
+
+    it('merge alternatives the survivors hold alike, named by the nearest antecedent (D10)', () => {
+      // The dog bound to a dog: R2, R5, R9 survive; dog and The dog both pick R5.
+      const survivors = new Set(['R2', 'R5', 'R9']);
+      const chips = chipsOf(itPoint([...survivors]), survivors);
+      expect(chips.map(chip => chip.label)).toEqual(['man', 'The dog', 'unbound']);
+      expect(chips[1].ids).toEqual(['ANAPHORA@33-35=12-15', 'ANAPHORA@33-35=17-24']);
+      expect(chips[1].title).toBe('The dog = dog');
+      expect(chips[1].associatedSolutions).toEqual(['R5']);
+    });
+
+    it('split them again where the survivors tell them apart, and never merge what no survivor holds', () => {
+      const all = new Set(CHAIN1.map(r => r.id));
+      expect(chipsOf(itPoint([...all]), all).map(chip => chip.label)).toEqual(['man', 'dog', 'The dog', 'unbound']);
+      // Only R9 left: man, dog and The dog are held by none; they stay apart (inactive).
+      const r9 = new Set(['R9']);
+      expect(chipsOf(itPoint(['R9']), r9).map(chip => chip.ids.length)).toEqual([1, 1, 1, 1]);
+    });
   });
 });

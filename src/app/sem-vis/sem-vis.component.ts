@@ -6,7 +6,8 @@ import { DataService } from '../data.service';
 import {DiscourseAnalysis, GswbDiscriminant, GswbSolution, PragmaticSelection} from "../models/models";
 import {
   PragmaticAlternative,
-  PragmaticChoicePoint,
+  PragmaticChip,
+  chipsOf,
   listedChoicePoints,
   narrowedByPragmatics,
   pragmaticAlternatives,
@@ -37,6 +38,8 @@ const COLLAPSIBLE_DRS = /\bp\(\(|\bant\(|\bA:\[|\bP:\[/;
 type DiscStateBucket = 0 | 1 | 2; // 0=selected, 1=active, 2=inactive
 type DiscView = GswbDiscriminant & { _order: number; _stateBucket: DiscStateBucket };
 type DiscRow = { kind: 'item'; disc: DiscView } | { kind: 'separator'; key: string };
+/** A pragmatic choice point as shown: its label and its chips over the current survivors. */
+type ChoicePointView = { kind: 'ANAPHORA' | 'PRESUPPOSITION'; point: string; label: string; chips: PragmaticChip[] };
 
 @Component({
   selector: 'app-sem-vis',
@@ -199,8 +202,8 @@ export class SemVisComponent implements AfterViewInit {
   hiddenIds: string[] = [];
   /** Shows the hidden readings the discriminants keep, to restore them. */
   showHidden = false;
-  anaphora_points: PragmaticChoicePoint[] = [];
-  presupposition_points: PragmaticChoicePoint[] = [];
+  anaphora_points: ChoicePointView[] = [];
+  presupposition_points: ChoicePointView[] = [];
   /** The alternatives of the items' readings, over all of them (D7: a selection keeps its
    *  meaning whatever else narrows); null: no reading carries choices. */
   private pragmaticAlternativesCache: PragmaticAlternative[] | null = null;
@@ -842,27 +845,31 @@ export class SemVisComponent implements AfterViewInit {
     this.scope_rows = decorate(this.scope_discriminants);
     this.mc_rows = decorate(this.mc_discriminants);
 
+    const survivors = this.getCurrentAllowedIds();
     const points = listedChoicePoints(this.pragmaticReadings(), this.pragmaticAlternativesCache,
-      [...this.getCurrentAllowedIds()].map(id => ({ id })), this.selectedChoiceIds);
+      [...survivors].map(id => ({ id })), this.selectedChoiceIds)
+      .map(point => ({ kind: point.kind, point: point.point, label: point.label, chips: chipsOf(point, survivors) }));
     this.anaphora_points = points.filter(point => point.kind === 'ANAPHORA');
     this.presupposition_points = points.filter(point => point.kind === 'PRESUPPOSITION');
   }
 
   // ---- Pragmatic discriminants (D6-D8) and hiding by hand ----
-  isChoiceSelected(alternative: PragmaticAlternative): boolean {
-    return this.selectedChoiceIds.includes(alternative.id);
+  /** A chip is selected when one of the alternatives it stands for is. */
+  isChoiceSelected(chip: PragmaticChip): boolean {
+    return chip.ids.some(id => this.selectedChoiceIds.includes(id));
   }
 
   /** Selected, or would narrow the current survivors without emptying them (D7). */
-  isChoiceActive(alternative: PragmaticAlternative): boolean {
-    return this.isChoiceSelected(alternative) || this.furtherReducesSolutions(alternative);
+  isChoiceActive(chip: PragmaticChip): boolean {
+    return this.isChoiceSelected(chip) || this.furtherReducesSolutions(chip);
   }
 
-  toggleChoice(alternative: PragmaticAlternative): void {
-    if (!this.isChoiceActive(alternative)) return;
-    this.selectedChoiceIds = this.isChoiceSelected(alternative)
-      ? this.selectedChoiceIds.filter(id => id !== alternative.id)
-      : [...this.selectedChoiceIds, alternative.id];
+  /** Selects every alternative the chip stands for, or deselects them all. */
+  toggleChoice(chip: PragmaticChip): void {
+    if (!this.isChoiceActive(chip)) return;
+    this.selectedChoiceIds = this.isChoiceSelected(chip)
+      ? this.selectedChoiceIds.filter(id => !chip.ids.includes(id))
+      : [...this.selectedChoiceIds, ...chip.ids.filter(id => !this.selectedChoiceIds.includes(id))];
     this.applyFiltersAndResetIndex(0, true);
     this.emitPragmaticSelection();
   }
@@ -875,22 +882,23 @@ export class SemVisComponent implements AfterViewInit {
     this.emitPragmaticSelection();
   }
 
+  /** The selected chips of a kind: a merged chip counts once. */
   selectedChoiceCount(kind: 'ANAPHORA' | 'PRESUPPOSITION'): number {
-    return (this.pragmaticAlternativesCache ?? [])
-      .filter(alternative => alternative.kind === kind && this.selectedChoiceIds.includes(alternative.id)).length;
+    const points = kind === 'ANAPHORA' ? this.anaphora_points : this.presupposition_points;
+    return points.flatMap(point => point.chips).filter(chip => this.isChoiceSelected(chip)).length;
   }
 
-  activeChoiceCount(points: PragmaticChoicePoint[]): number {
-    return points.flatMap(point => point.alternatives).filter(alternative => this.furtherReducesSolutions(alternative)).length;
+  activeChoiceCount(points: ChoicePointView[]): number {
+    return points.flatMap(point => point.chips).filter(chip => this.furtherReducesSolutions(chip)).length;
   }
 
-  choiceCount(points: PragmaticChoicePoint[]): number {
-    return points.reduce((sum, point) => sum + point.alternatives.length, 0);
+  choiceCount(points: ChoicePointView[]): number {
+    return points.reduce((sum, point) => sum + point.chips.length, 0);
   }
 
-  isCurrentReadingIn(alternative: PragmaticAlternative): boolean {
+  isCurrentReadingIn(chip: PragmaticChip): boolean {
     const current = this.items?.[this.index];
-    return !!current && alternative.associatedSolutions.includes(current.id);
+    return !!current && chip.associatedSolutions.includes(current.id);
   }
 
   get currentHidden(): boolean {
