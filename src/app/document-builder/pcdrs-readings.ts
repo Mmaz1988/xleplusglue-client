@@ -65,7 +65,9 @@ export function distinctPcdrsMappings<T extends { mapping: any }>(mappings: T[])
 
 /** The stored discourse analyses of PCDRS readings, in order, each id once, and the
  *  semantics -> pragmatics mapping over them. One procedure for analysis, chat and
- *  regression, so their documents are comparable. */
+ *  regression, so their documents are comparable. The same reading listed twice is kept
+ *  once; two different readings with one id are an error, never one dropped silently: the
+ *  discriminant selection and the hidden readings name readings by id. */
 export function discourseAnalysesOf(readings: PcdrsReading[]): {
   discourse: DiscourseAnalysis[];
   semDiscourseMapping: SemDiscourseMapping;
@@ -74,13 +76,18 @@ export function discourseAnalysesOf(readings: PcdrsReading[]): {
   const semDiscourseMapping: SemDiscourseMapping = {};
   readings.forEach(({ mapping, ruleBranchIndex, semanticOrigin, semString }) => {
     const id = mapping?.id ?? `${semanticOrigin}-pcdrs-${ruleBranchIndex}`;
-    if (discourse.some(entry => entry.id === id)) return;
+    const drsString = mapping?.semantic ?? semString ?? '';
+    const same = discourse.find(entry => entry.id === id);
+    if (same) {
+      if (same.semanticOrigin === semanticOrigin && same.drsString === drsString) return;
+      throw new Error(`Two different PCDRS readings have the id ${id} (from ${same.semanticOrigin} and ${semanticOrigin}).`);
+    }
     semDiscourseMapping[semanticOrigin] = [...(semDiscourseMapping[semanticOrigin] ?? []), id];
     const relations = mapping?.anaphoraRelations ?? [];
     discourse.push({
       id,
       semanticOrigin,
-      drsString: mapping?.semantic ?? semString ?? '',
+      drsString,
       drsGraph: mapping?.graph,
       ruleBranch: ruleBranchIndex,
       // GSWB renders a reading to SVG (`solution`) only when asked to.
@@ -88,6 +95,7 @@ export function discourseAnalysesOf(readings: PcdrsReading[]): {
       anaphoraMapping: { relations } as AnaphoraMappingModel,
       collapsed: relations.length > 0,
       ...(mapping?.pragmaticProfile ? { pragmaticProfile: mapping.pragmaticProfile } : {}),
+      ...(Array.isArray(mapping?.choices) ? { choices: mapping.choices } : {}),
     });
   });
   return { discourse, semDiscourseMapping };

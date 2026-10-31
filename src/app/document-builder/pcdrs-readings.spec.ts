@@ -47,6 +47,24 @@ describe('PCDRS readings', () => {
     expect('pragmaticProfile' in discourse[1]).toBeFalse();
   });
 
+  it('fails on two different readings with one id rather than drop one', () => {
+    expect(() => discourseAnalysesOf([
+      { mapping: { id: 'p1', semantic: 'drs-1' }, ruleBranchIndex: 1, semanticOrigin: 'sem-1' },
+      { mapping: { id: 'p1', semantic: 'drs-2' }, ruleBranchIndex: 1, semanticOrigin: 'sem-2' },
+    ])).toThrowError(/p1/);
+  });
+
+  it('stores GSWB\'s pragmatic choices with the reading, where it has them', () => {
+    const choice = { kind: 'ANAPHORA', point: '6-8', pointLabel: 'he', resolution: 'UNBOUND', target: '/',
+      targetLabel: '/', id: 'ANAPHORA@6-8=/', direct: true };
+    const { discourse } = discourseAnalysesOf([
+      { mapping: { id: 'p1', semantic: 'drs-1', choices: [choice] }, ruleBranchIndex: 1, semanticOrigin: 'sem-1' },
+      { mapping: { id: 'p2', semantic: 'drs-2', choices: null }, ruleBranchIndex: 1, semanticOrigin: 'sem-1' },
+    ]);
+    expect(discourse[0].choices).toEqual([choice as any]);
+    expect('choices' in discourse[1]).toBeFalse();
+  });
+
   it('builds the element\'s update, with a rule string only when one is given', () => {
     const readings = [{ mapping: { id: 'p1', semantic: 'drs' }, ruleBranchIndex: 1, semanticOrigin: 'sem-1' }];
     const update = discourseUpdateOf({ id: 'sentence-1+sentence-2', kind: 'sequence' }, readings, 'rules');

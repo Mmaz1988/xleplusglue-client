@@ -3,7 +3,7 @@ import { SafeHtml } from '@angular/platform-browser';
 import { OverlayModule } from '@angular/cdk/overlay';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 import {EditorComponent} from "../../editor/editor.component";
-import {GswbDiscriminant, GswbSolution} from "../../models/models";
+import {GswbDiscriminant, GswbSolution, PragmaticSelection} from "../../models/models";
 import { AnaphoraRankingTable } from '../../analysis-model';
 import { ReadingOrderContext, ReadingSelection } from '../../reading-order';
 
@@ -50,6 +50,9 @@ export class PillComponent {
   @Input() discriminants: GswbDiscriminant[] | null = null;
   @Input() selectedDiscriminants: { scopeIds: string[]; mcIds: string[] } | null = null;
   @Input() orderOnly = false;
+  /** sem-vis variant: the discourse's pragmatic selection and hidden readings (see app-sem-vis). */
+  @Input() pragmaticSelection: PragmaticSelection | null = null;
+  @Output() pragmaticSelectionChange = new EventEmitter<PragmaticSelection>();
   @Output() readingSelectionChange = new EventEmitter<ReadingSelection | null>();
   @Output() discriminantSelectionChange = new EventEmitter<{ scopeIds: string[]; mcIds: string[] }>();
 

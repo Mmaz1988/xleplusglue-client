@@ -35,6 +35,8 @@
             [discriminants]="messageViews.get(message)?.discriminants ?? null"
             [selectedDiscriminants]="messageViews.get(message)?.selectedDiscriminants ?? null"
             [orderOnly]="messageViews.get(message)?.orderOnly ?? false"
+            [pragmaticSelection]="messageViews.get(message)?.pragmaticSelection ?? null"
+            (pragmaticSelectionChange)="onPragmaticSelectionChange(message, $event)"
             (readingSelectionChange)="onReadingSelectionChange(message, $event)"
             (discriminantSelectionChange)="onDiscriminantSelectionChange(message, $event)"
             [collapsible]="true"

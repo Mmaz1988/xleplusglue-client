@@ -290,9 +290,44 @@ export interface DiscourseAnalysis {
   anaphoraMapping: AnaphoraMappingModel;  // structured, mirrors LFGxDRT's AnaphoraMapping
   collapsed: boolean;                // true once /collapse_anaphora has resolved this branch
   pragmaticProfile?: PragmaticProfile; // GSWB's count of the reading's choices; absent on old documents
+  // The alternatives the reading holds (pragmatic discriminants, D1); absent on old documents,
+  // whose updates then list no pragmatic discriminants.
+  choices?: PragmaticChoice[];
   // An empty move (chat, N4 6d): the sentence was entailed, so this reading is the prior reading
   // with that id, unchanged -- its DRS with its A: and P:. Its semanticOrigin ends in an empty part.
   identityOf?: string;
+}
+
+/** One alternative a PCDRS reading holds at one choice point (GSWB `PragmaticChoiceDto`; D1-D4,
+ *  D2a in xleplusglue's docs/plans/PRAGMATIC_DISCRIMINANTS_PLAN.md). Keys are character spans
+ *  of heads in the update's text, an identity within one update only; labels are display. */
+export interface PragmaticChoice {
+  /** A pronoun (ANAPHORA) or a p-box (PRESUPPOSITION): the anaphor decides. */
+  kind: 'ANAPHORA' | 'PRESUPPOSITION';
+  /** The choice point's key: the anaphor's head spans (a p-box without bind referents: its trigger's). */
+  point: string;
+  pointLabel: string;
+  resolution: 'ANTECEDENT' | 'UNBOUND' | 'BOUND' | 'ACCOMMODATED';
+  /** A referent's key, '/', or a site's depth: GLOBAL, LOCAL, INTERMEDIATE. */
+  target: string;
+  targetLabel: string;
+  /** kind@point=target: the alternative across the update's readings. */
+  id: string;
+  /** Whether the reading's own link names the target, not its coreference chain (D4). */
+  direct: boolean;
+  /** An intermediate site's box by its first state ("s1"): an identity only among the readings
+   *  of one semantic reading (D2a). */
+  site?: string | null;
+  /** The box's role: antecedent, consequent, negation, disjunct, embedding. */
+  siteLabel?: string | null;
+}
+
+/** What a discourse's pragmatic discriminants and the user's own hiding keep (D7, hiding):
+ *  the selected alternatives' ids and the readings hidden by hand. Hidden readings stay out of
+ *  the inference as the discriminants' excluded ones do; recomputing the update drops both. */
+export interface PragmaticSelection {
+  choiceIds: string[];
+  hiddenReadingIds: string[];
 }
 
 /** A PCDRS reading's pragmatic profile (GSWB `PragmaticProfileDto`, N4): how many of its choices
@@ -345,6 +380,9 @@ export interface DiscourseUpdate {
   // Which readings of this discourse go to Vampire, when it was changed for this discourse in
   // its sem view (N4 6d); absent: the session's VampirePreferences.reading_selection.
   readingSelection?: ReadingSelection;
+  // The pragmatic discriminant selection and the readings hidden by hand, when set in its sem
+  // view; they narrow the readings before the reading selection, in every view.
+  pragmaticSelection?: PragmaticSelection;
   // Readings of this discourse that could not be generated (a rule branch whose
   // /generate_pcdrs failed), as human-readable reasons. Kept rather than dropped: the
   // discourse is stored without them, and a run over it reports them.
@@ -778,6 +816,8 @@ export interface GswbSolution {
   anaphoraRelations?: AnaphoraRelation[];
   /** A PCDRS reading's pragmatic profile. */
   pragmaticProfile?: PragmaticProfile;
+  /** The alternatives a PCDRS reading holds (pragmatic discriminants). */
+  choices?: PragmaticChoice[] | null;
   /** A PCDRS reading's P:[p(s2,s1),...], an entry for every p-box: s2 resolved at s1. */
   presuppositionMapping?: string;
   /** What collapsing the reading does, e.g. "s1 accommodated at s0; s3 bound at s0 (x3 ↦ x1)". */

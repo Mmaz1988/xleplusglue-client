@@ -490,4 +490,84 @@ describe('SemVisComponent', () => {
       });
     });
   });
+
+  describe('pragmatic discriminants and hiding by hand', () => {
+    const choice = (kind: string, point: string, resolution: string, target: string, label = target) => ({
+      kind, point, pointLabel: kind === 'ANAPHORA' ? 'It' : 'The dog', resolution, target, targetLabel: label,
+      id: `${kind}@${point}=${target}`, direct: true,
+    });
+    const reading = (id: string, semanticOrigin: string, choices: any[]) => ({
+      id, semanticOrigin, drsString: id, ruleBranch: 1, anaphoraMapping: { relations: [] }, collapsed: false, choices,
+    });
+    // It -> a man or a dog; the dog accommodated or bound to a man.
+    const discourse = [
+      reading('r1', 'wide', [choice('ANAPHORA', '33-35', 'ANTECEDENT', '2-5', 'man'), choice('PRESUPPOSITION', '17-24', 'ACCOMMODATED', 'GLOBAL', 'global')]),
+      reading('r2', 'wide', [choice('ANAPHORA', '33-35', 'ANTECEDENT', '12-15', 'dog'), choice('PRESUPPOSITION', '17-24', 'ACCOMMODATED', 'GLOBAL', 'global')]),
+      reading('r3', 'narrow', [choice('ANAPHORA', '33-35', 'ANTECEDENT', '2-5', 'man'), choice('PRESUPPOSITION', '17-24', 'BOUND', '2-5', 'man')]),
+    ];
+    const items = discourse.map(r => ({ id: r.id, solution: `<svg>${r.id}</svg>`, semantic: r.id } as any));
+    let emitted: any[];
+    const visible = () => component.items.map(item => item.id);
+    const chips = () => Array.from(fixture.nativeElement.querySelectorAll('.discriminants.pragmatic .chip')) as HTMLButtonElement[];
+    const chip = (text: string) => chips().find(button => button.textContent!.trim() === text)!;
+
+    beforeEach(() => {
+      emitted = [];
+      component.pragmaticSelectionChange.subscribe((selection: any) => emitted.push(selection));
+      component.svgSolutions = true;
+      component.items = items;
+      component.readingOrder = { updates: [{ id: 'du', sourceElementId: 's', sourceElementKind: 'sequence', semDiscourseMapping: {},
+        discourse }], discriminants: [], averager: 'borda' } as any;
+      component.pragmaticSelection = { choiceIds: [], hiddenReadingIds: [] };
+      fixture.detectChanges();
+    });
+
+    it('lists anaphora and presupposition in a row of their own, by choice point', () => {
+      const blocks = fixture.nativeElement.querySelectorAll('.discriminants.pragmatic .disc-block');
+      expect(blocks.length).toBe(2);
+      expect(blocks[0].textContent).toContain('Anaphora discriminants');
+      expect(chips().map(button => button.textContent!.trim())).toEqual(['man', 'dog', 'bound to man', 'global']);
+    });
+
+    it('narrows by a selected alternative and emits it for the owner to store', () => {
+      chip('man').click();
+      fixture.detectChanges();
+      expect(visible()).toEqual(['r1', 'r3']);
+      expect(emitted.pop()).toEqual({ choiceIds: ['ANAPHORA@33-35=man'.replace('man', '2-5')], hiddenReadingIds: [] });
+      // Within the survivors, "dog" would leave nothing: inactive (D7).
+      expect(chip('dog').disabled).toBeTrue();
+    });
+
+    it('narrows the scope discriminants by the pragmatic selection too (D8)', () => {
+      component.discriminants = [{ id: 'd', type: 'scope', identifier: 'd', associatedSolutions: ['r3'] } as any];
+      chip('global').click();
+      fixture.detectChanges();
+      expect(component.wouldFurtherFilter(component.scope_discriminants[0])).toBeFalse();
+    });
+
+    it('hides a reading by hand, out of the shown readings, and restores it', () => {
+      component.index = 0;
+      fixture.detectChanges();
+      (Array.from(fixture.nativeElement.querySelectorAll('.controls button')) as HTMLButtonElement[])
+        .find(button => button.textContent!.trim() === 'Hide')!.click();
+      fixture.detectChanges();
+      expect(visible()).toEqual(['r2', 'r3']);
+      expect(emitted.pop()).toEqual({ choiceIds: [], hiddenReadingIds: ['r1'] });
+      component.restoreAll();
+      expect(visible()).toEqual(['r1', 'r2', 'r3']);
+      expect(emitted.pop()).toEqual({ choiceIds: [], hiddenReadingIds: [] });
+    });
+
+    it('never shows a hidden reading the discriminants exclude, and hiding leaves them as they are', () => {
+      component.pragmaticSelection = { choiceIds: [], hiddenReadingIds: ['r2'] };
+      fixture.detectChanges();
+      // Hiding r2 does not make "dog" inactive: the discriminants decide, hiding refines.
+      expect(chip('dog').disabled).toBeFalse();
+      chip('man').click();
+      component.toggleShowHidden(true);
+      fixture.detectChanges();
+      expect(visible()).toEqual(['r1', 'r3']);
+      expect(fixture.nativeElement.querySelector('.hidden-readings').textContent).toContain('0/1 kept by the discriminants');
+    });
+  });
 });

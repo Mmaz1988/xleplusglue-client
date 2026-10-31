@@ -52,6 +52,7 @@
         <app-sem-vis [items]="items" [itemLabels]="itemLabels" [itemRankings]="itemRankings" [svgSolutions]="true" [collapsible]="collapsible" [readingOrder]="readingOrder"
                      [orderOnly]="orderOnly" [discriminants]="discriminants" [selectableIds]="selectableIds"
                      [readingSelection]="readingSelection" [selectedDiscriminants]="selectedDiscriminants"
+                     [pragmaticSelection]="pragmaticSelection" (pragmaticSelectionChange)="pragmaticSelectionChange.emit($event)"
                      (readingSelectionChange)="readingSelectionChange.emit($event)"
                      (selectionChange)="discriminantSelectionChange.emit({ scopeIds: $event.selectedScopeIds, mcIds: $event.selectedMcIds })"></app-sem-vis>
       </div>

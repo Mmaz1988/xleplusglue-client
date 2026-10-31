@@ -60,6 +60,16 @@
       </span>
       <span class="status-label" *ngIf="currentLabel">{{ currentLabel }}</span>
 
+      <!-- Hiding by hand: refines what the discriminants keep, never brings back what they exclude. -->
+      <ng-container *ngIf="pragmaticEditable && !orderOnly">
+        <button type="button" *ngIf="!currentHidden" (click)="hideCurrent()"
+                title="Hide this reading: it is not shown and not reasoned over, as if a discriminant excluded it.">Hide</button>
+        <ng-container *ngIf="currentHidden">
+          <span class="last-run-badge not-sent">hidden</span>
+          <button type="button" (click)="restoreCurrent()">Restore</button>
+        </ng-container>
+      </ng-container>
+
       <app-pill *ngIf="collapseTables as tables" badge="collapse" variant="content" [minimizedColor]="'#8a5a00'">
         <table class="ranking-table" *ngIf="tables.resolutions.length">
           <thead><tr><th>p-box</th><th>resolution</th><th>site</th><th>depth</th><th>bindings</th></tr></thead>
@@ -78,9 +88,17 @@
 
     <ng-template #noItems>
       <div class="controls">
-        <span>No items.</span>
+        <span>{{ hiddenIds.length && !showHidden && allItems.length ? 'Every reading left is hidden.' : 'No items.' }}</span>
       </div>
     </ng-template>
+
+    <div class="hidden-readings" *ngIf="pragmaticEditable && !orderOnly && hiddenIds.length">
+      <label title="Shows the hidden readings the discriminants keep, to restore them.">
+        <input type="checkbox" [checked]="showHidden" (change)="toggleShowHidden($any($event.target).checked)">
+        show hidden readings ({{ restorableCount }}/{{ hiddenIds.length }} kept by the discriminants)
+      </label>
+      <button type="button" class="link-button" (click)="restoreAll()">restore all</button>
+    </div>
 
     <app-editor *ngIf="!svgSolutions" #sem [mode]="'glue'"></app-editor>
     <div *ngIf="svgSolutions" class="sem-svg" [innerHTML]="currentSvg"></div>
@@ -222,6 +240,45 @@
 
     </div>
 
+  </div>
+
+  <!-- Pragmatic discriminants (D6): their own row, anaphora | presupposition, grouped by choice point. -->
+  <div class="discriminants pragmatic" *ngIf="!orderOnly && pragmaticEditable && (anaphora_points.length || presupposition_points.length || selectedChoiceIds.length)">
+    <ng-container *ngFor="let block of [
+        { kind: 'ANAPHORA', title: 'Anaphora discriminants', points: anaphora_points, empty: 'No anaphora discriminants.' },
+        { kind: 'PRESUPPOSITION', title: 'Presupposition discriminants', points: presupposition_points, empty: 'No presupposition discriminants.' }]">
+      <div class="disc-block">
+        <div class="disc-header">
+          <h4>{{ block.title }} <br> ({{ activeChoiceCount(block.points) }}/{{ choiceCount(block.points) }} active, {{ block.points.length }} choice point{{ block.points.length === 1 ? '' : 's' }})</h4>
+          <button type="button" (click)="clearChoices($any(block.kind))" [disabled]="!selectedChoiceCount($any(block.kind))">
+            Clear
+          </button>
+        </div>
+        <div class="disc-list" *ngIf="block.points.length; else noPoints">
+          <ng-container *ngFor="let point of block.points; let first = first">
+            <div class="disc-separator" *ngIf="!first" aria-hidden="true"></div>
+            <div class="disc-point-label">{{ point.label }}</div>
+            <div class="disc-item" *ngFor="let alternative of point.alternatives">
+              <button
+                type="button"
+                class="chip"
+                [class.refinement]="!!alternative.refines"
+                [class.selected]="isChoiceSelected(alternative)"
+                [class.inactive]="!isChoiceActive(alternative)"
+                [class.current-hit]="highlightCurrent && isCurrentReadingIn(alternative)"
+                [disabled]="!isChoiceActive(alternative)"
+                (click)="toggleChoice(alternative)"
+                [title]="alternative.id">
+                {{ alternative.label }}
+              </button>
+            </div>
+          </ng-container>
+        </div>
+        <ng-template #noPoints>
+          <div class="disc-empty">{{ block.empty }}</div>
+        </ng-template>
+      </div>
+    </ng-container>
   </div>
 
 </div>

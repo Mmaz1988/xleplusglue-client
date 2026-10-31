@@ -4,7 +4,7 @@ import { Subscription, forkJoin, of } from 'rxjs';
 import {LigerVisComponent} from "../liger-vis/liger-vis.component";
 import {GswbVisComponent} from "../gswb-vis/gswb-vis.component";
 import { DataService } from '../data.service';
-import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRankerSelection, AnaphoraRanking, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, SentenceAnalysis, SequenceAnalysis, VampirePreferences, XlePlusGlueDocument } from '../models/models';
+import { MISSING_PRAGMATICS_MESSAGE, AnaphoraRankerSelection, AnaphoraRanking, DiscourseUpdate, GswbProofInput, GswbSolution, LigerRuleAnnotation, LigerRuleAnnotationResponse, LigerStructure, persistedAnalysisDocument, PragmaticSelection, SentenceAnalysis, SequenceAnalysis, VampirePreferences, XlePlusGlueDocument } from '../models/models';
 import { LigerWorkspaceService } from '../liger-workspace/liger-workspace.service';
 import { AnalysisWorkspaceStateService } from '../analysis-workspace-state.service';
 import { SyntaxSourceService } from '../syntax-source/syntax-source.service';
@@ -15,6 +15,7 @@ import { AnaphoraRankingResult, AnaphoraRankingService } from '../reasoning/anap
 import { DocumentBuilderService } from '../document-builder/document-builder.service';
 import { discourseUpdateOf } from '../document-builder/pcdrs-readings';
 import { DEFAULT_READING_SELECTION, ReadingOrderContext, ReadingSelection, normalizedReadingSelection } from '../reading-order';
+import { NO_PRAGMATIC_SELECTION } from '../pragmatic-discriminants';
 
 interface PostProcessingResult {
   semanticSolution: GswbSolution;
@@ -67,6 +68,8 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
   /** The shown discourse's reading selection (N4 6d): its own, else the built-in default.
    *  Display and storage only, analysis has no Vampire. */
   pcdrsReadingSelection: { selection: ReadingSelection; own: boolean } | null = null;
+  /** The shown discourse's pragmatic discriminant selection and hidden readings. */
+  pcdrsPragmaticSelection: PragmaticSelection | null = null;
   /** Latest ranking outcome per discourse update id; 'pending' while lm is working. */
   anaphoraRankingStatus: Record<string, AnaphoraRankingResult | { status: 'pending' }> = {};
   /** The anaphora rankers this view ranks with: the same preferences fields as regression's and
@@ -847,6 +850,20 @@ export class GlueInterfaceComponent implements AfterViewInit, OnDestroy {
       averager: this.anaphoraRankers().averager,
     } : null;
     this.pcdrsReadingSelection = update ? this.readingSelectionOf(update) : null;
+    this.pcdrsPragmaticSelection = update ? update.pragmaticSelection ?? { ...NO_PRAGMATIC_SELECTION } : null;
+  }
+
+  /** Stores the sem view's pragmatic selection and hidden readings with the shown discourse. */
+  onPcdrsPragmaticSelectionChange(selection: PragmaticSelection): void {
+    const update = this.pcdrsUpdateId ? this.discourseUpdateById(this.pcdrsUpdateId) : undefined;
+    if (!update) return;
+    if (selection.choiceIds.length || selection.hiddenReadingIds.length) {
+      update.pragmaticSelection = selection;
+    } else {
+      delete update.pragmaticSelection;
+    }
+    this.pcdrsPragmaticSelection = update.pragmaticSelection ?? { ...NO_PRAGMATIC_SELECTION };
+    this.persistAnalysisDocument();
   }
 
   private readingSelectionOf(update: DiscourseUpdate): { selection: ReadingSelection; own: boolean } {

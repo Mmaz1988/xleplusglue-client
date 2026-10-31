@@ -3,7 +3,14 @@ import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import {catchError, concatMap, from, of, toArray} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
-import {DiscourseAnalysis, GswbDiscriminant, GswbSolution} from "../models/models";
+import {DiscourseAnalysis, GswbDiscriminant, GswbSolution, PragmaticSelection} from "../models/models";
+import {
+  PragmaticAlternative,
+  PragmaticChoicePoint,
+  listedChoicePoints,
+  narrowedByPragmatics,
+  pragmaticAlternatives,
+} from '../pragmatic-discriminants';
 import { AnaphoraRankingTable, semVisDisplay } from '../analysis-model';
 import {
   ReadingCriterion,
@@ -169,6 +176,35 @@ export class SemVisComponent implements AfterViewInit {
     this.setSelectedDiscriminants(value.scopeIds, value.mcIds);
   }
 
+  /** The discourse's pragmatic discriminant selection and hidden readings, from an owner that
+   *  stores them with the discourse; every change is emitted (`pragmaticSelectionChange`) for
+   *  the owner to store and pass back. Null: no pragmatic discriminants and no hiding. */
+  @Input()
+  set pragmaticSelection(value: PragmaticSelection | null) {
+    const same = (a: string[], b: string[]) => a.length === b.length && a.every(id => b.includes(id));
+    const editable = !!value;
+    const choiceIds = value?.choiceIds ?? [];
+    const hiddenIds = value?.hiddenReadingIds ?? [];
+    if (editable === this.pragmaticEditable && same(choiceIds, this.selectedChoiceIds) && same(hiddenIds, this.hiddenIds)) return;
+    this.pragmaticEditable = editable;
+    this.selectedChoiceIds = [...choiceIds];
+    this.hiddenIds = [...hiddenIds];
+    this.refreshPragmaticAlternatives();
+    this.applyFiltersAndResetIndex(0, true, false);
+  }
+  @Output() pragmaticSelectionChange = new EventEmitter<PragmaticSelection>();
+  pragmaticEditable = false;
+  selectedChoiceIds: string[] = [];
+  /** Readings hidden by hand: they refine what the discriminants keep, never replace it. */
+  hiddenIds: string[] = [];
+  /** Shows the hidden readings the discriminants keep, to restore them. */
+  showHidden = false;
+  anaphora_points: PragmaticChoicePoint[] = [];
+  presupposition_points: PragmaticChoicePoint[] = [];
+  /** The alternatives of the items' readings, over all of them (D7: a selection keeps its
+   *  meaning whatever else narrows); null: no reading carries choices. */
+  private pragmaticAlternativesCache: PragmaticAlternative[] | null = null;
+
   /** For the current reading, whether the last run sent it; null when the selection keeps
    *  what that run sent, or there was no run. */
   get currentSentByLastRun(): boolean | null {
@@ -279,6 +315,7 @@ export class SemVisComponent implements AfterViewInit {
     this.orderOptions = context ? applicableReadingOptions(context) : { criteria: [], filters: [] };
     this.readingById = new Map((context?.updates ?? []).flatMap(update => update.discourse)
       .map(reading => [reading.id, reading]));
+    this.refreshPragmaticAlternatives(items);
     if (!context) return items;
     const places = globalReadingOrder({
       ...context,
@@ -290,6 +327,16 @@ export class SemVisComponent implements AfterViewInit {
       .map((item, index) => ({ item, index }))
       .sort((a, b) => (position.get(a.item.id) ?? unknown) - (position.get(b.item.id) ?? unknown) || a.index - b.index)
       .map(({ item }) => item);
+  }
+
+  /** The PCDRS readings behind the items, in the owner's order. */
+  private pragmaticReadings(): DiscourseAnalysis[] {
+    return this.inputItems.map(item => this.readingById.get(item.id)).filter((reading): reading is DiscourseAnalysis => !!reading);
+  }
+
+  private refreshPragmaticAlternatives(items: GswbSolution[] = this.inputItems): void {
+    const readings = items.map(item => this.readingById.get(item.id)).filter((reading): reading is DiscourseAnalysis => !!reading);
+    this.pragmaticAlternativesCache = this.pragmaticEditable && !this.orderOnly ? pragmaticAlternatives(readings) : null;
   }
 
   /** Orders the items again, showing the first or keeping the current one. */
@@ -641,6 +688,8 @@ export class SemVisComponent implements AfterViewInit {
     const idFilter = this.itemIdFilter;
     if (idFilter) items = items.filter(item => idFilter.has(item.id));
     items = this.narrowBySelectedDiscriminants(items);
+    // Hidden by hand: on top of the discriminants, shown again only on request.
+    if (!this.showHidden && this.hiddenIds.length) items = items.filter(item => !this.hiddenIds.includes(item.id));
     this.keptBySelection = null;
     // A discourse's selection, over what the narrowing left, as a run takes it
     // (`readingsForReasoning`): filters, then the top k places.
@@ -668,8 +717,10 @@ export class SemVisComponent implements AfterViewInit {
     });
   }
 
-  /** AND logic: an item must be in every selected discriminant's associatedSolutions. */
+  /** AND logic: an item must be in every selected discriminant's associatedSolutions, scope,
+   *  MC and pragmatic alike (D8). */
   private narrowBySelectedDiscriminants(items: GswbSolution[]): GswbSolution[] {
+    items = this.narrowByPragmatics(items);
     const selectedDiscriminants = this.getSelectedDiscriminants();
     if (selectedDiscriminants.length === 0) return items;
 
@@ -703,25 +754,33 @@ export class SemVisComponent implements AfterViewInit {
     return out;
   }
 
+  /** The items the pragmatic selection keeps; hidden readings are not its business. */
+  private narrowByPragmatics<T extends { id: string }>(items: T[]): T[] {
+    if (!this.pragmaticEditable || !this.selectedChoiceIds.length) return items;
+    const kept = new Set(narrowedByPragmatics(this.pragmaticReadings(), this.pragmaticAlternativesCache, this.selectedChoiceIds)
+      .map(reading => reading.id));
+    return items.filter(item => kept.has(item.id));
+  }
+
   private getCurrentAllowedIds(): Set<string> {
-    // Base universe: all current items (unfiltered source-of-truth!)
-    const universe = new Set(this.allItems.map(s => s.id));
+    // Base universe: all current items (unfiltered source-of-truth!), as the pragmatic
+    // selection narrows them; hiding by hand never changes which discriminants are active.
+    const universe = new Set(this.narrowByPragmatics(this.allItems).map(s => s.id));
 
     const selected = this.getSelectedDiscriminants();
     if (selected.length === 0) return universe;
 
-    let allowed: Set<string> | null = null;
+    let allowed: Set<string> = universe;
 
     for (const d of selected) {
-      const ids = new Set(d.associatedSolutions ?? []);
-      allowed = allowed === null ? ids : this.intersect(allowed, ids);
+      allowed = this.intersect(allowed, new Set(d.associatedSolutions ?? []));
       if (allowed.size === 0) break;
     }
 
-    return allowed ?? new Set<string>();
+    return allowed;
   }
 
-  private furtherReducesSolutions(d: GswbDiscriminant): boolean {
+  private furtherReducesSolutions(d: { associatedSolutions?: string[] }): boolean {
     const currentAllowed = this.getCurrentAllowedIds();
     const candidate = new Set(d.associatedSolutions ?? []);
     const nextAllowed = this.intersect(currentAllowed, candidate);
@@ -782,6 +841,102 @@ export class SemVisComponent implements AfterViewInit {
 
     this.scope_rows = decorate(this.scope_discriminants);
     this.mc_rows = decorate(this.mc_discriminants);
+
+    const points = listedChoicePoints(this.pragmaticReadings(), this.pragmaticAlternativesCache,
+      [...this.getCurrentAllowedIds()].map(id => ({ id })), this.selectedChoiceIds);
+    this.anaphora_points = points.filter(point => point.kind === 'ANAPHORA');
+    this.presupposition_points = points.filter(point => point.kind === 'PRESUPPOSITION');
+  }
+
+  // ---- Pragmatic discriminants (D6-D8) and hiding by hand ----
+  isChoiceSelected(alternative: PragmaticAlternative): boolean {
+    return this.selectedChoiceIds.includes(alternative.id);
+  }
+
+  /** Selected, or would narrow the current survivors without emptying them (D7). */
+  isChoiceActive(alternative: PragmaticAlternative): boolean {
+    return this.isChoiceSelected(alternative) || this.furtherReducesSolutions(alternative);
+  }
+
+  toggleChoice(alternative: PragmaticAlternative): void {
+    if (!this.isChoiceActive(alternative)) return;
+    this.selectedChoiceIds = this.isChoiceSelected(alternative)
+      ? this.selectedChoiceIds.filter(id => id !== alternative.id)
+      : [...this.selectedChoiceIds, alternative.id];
+    this.applyFiltersAndResetIndex(0, true);
+    this.emitPragmaticSelection();
+  }
+
+  clearChoices(kind: 'ANAPHORA' | 'PRESUPPOSITION'): void {
+    const ofKind = new Set((this.pragmaticAlternativesCache ?? []).filter(alternative => alternative.kind === kind)
+      .map(alternative => alternative.id));
+    this.selectedChoiceIds = this.selectedChoiceIds.filter(id => !ofKind.has(id));
+    this.applyFiltersAndResetIndex(0, true);
+    this.emitPragmaticSelection();
+  }
+
+  selectedChoiceCount(kind: 'ANAPHORA' | 'PRESUPPOSITION'): number {
+    return (this.pragmaticAlternativesCache ?? [])
+      .filter(alternative => alternative.kind === kind && this.selectedChoiceIds.includes(alternative.id)).length;
+  }
+
+  activeChoiceCount(points: PragmaticChoicePoint[]): number {
+    return points.flatMap(point => point.alternatives).filter(alternative => this.furtherReducesSolutions(alternative)).length;
+  }
+
+  choiceCount(points: PragmaticChoicePoint[]): number {
+    return points.reduce((sum, point) => sum + point.alternatives.length, 0);
+  }
+
+  isCurrentReadingIn(alternative: PragmaticAlternative): boolean {
+    const current = this.items?.[this.index];
+    return !!current && alternative.associatedSolutions.includes(current.id);
+  }
+
+  get currentHidden(): boolean {
+    const current = this.items[this.index];
+    return !!current && this.hiddenIds.includes(current.id);
+  }
+
+  /** The hidden readings the discriminants keep: those "show hidden" can bring back. */
+  get restorableCount(): number {
+    const kept = this.getCurrentAllowedIds();
+    return this.hiddenIds.filter(id => kept.has(id)).length;
+  }
+
+  hideCurrent(): void {
+    const current = this.items[this.index];
+    if (!current || this.hiddenIds.includes(current.id)) return;
+    this.hiddenIds = [...this.hiddenIds, current.id];
+    this.applyFiltersAndResetIndex(this.index, false);
+    this.emitPragmaticSelection();
+  }
+
+  restoreCurrent(): void {
+    const current = this.items[this.index];
+    if (!current) return;
+    this.hiddenIds = this.hiddenIds.filter(id => id !== current.id);
+    this.applyFiltersAndResetIndex(this.index, true);
+    this.emitPragmaticSelection();
+  }
+
+  /** Restores every hidden reading; the discriminants still decide what is shown. */
+  restoreAll(): void {
+    if (!this.hiddenIds.length) return;
+    this.hiddenIds = [];
+    this.applyFiltersAndResetIndex(0, true);
+    this.emitPragmaticSelection();
+  }
+
+  toggleShowHidden(show: boolean): void {
+    this.showHidden = show;
+    this.applyFiltersAndResetIndex(0, true, false);
+  }
+
+  private emitPragmaticSelection(): void {
+    if (this.pragmaticEditable) {
+      this.pragmaticSelectionChange.emit({ choiceIds: [...this.selectedChoiceIds], hiddenReadingIds: [...this.hiddenIds] });
+    }
   }
 
   private static compareBySurface(a: DiscView, b: DiscView): number {

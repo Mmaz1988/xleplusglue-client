@@ -269,3 +269,23 @@ button.chip.selected.current-hit{
   background: #fff3e0;
   color: #e65100;
 }
+
+/* Pragmatic discriminants: a choice point's label starts its group of alternatives. */
+.disc-point-label {
+  flex-basis: 100%;
+  font-size: 0.85em;
+  color: #555;
+}
+
+/* An intermediate site's box within one semantic reading (D2a). */
+.chip.refinement {
+  border-style: dashed;
+}
+
+.hidden-readings {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  font-size: 0.9em;
+}

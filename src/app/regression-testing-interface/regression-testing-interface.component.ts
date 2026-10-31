@@ -48,7 +48,9 @@ import {
   GrammarAxioms,
   VampirePreferences,
   isDefaultSessionKey,
+  PragmaticSelection,
 } from '../models/models';
+import { NO_PRAGMATIC_SELECTION } from '../pragmatic-discriminants';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
 import { EditorComponent } from "../editor/editor.component";
 import { catchError, defer, EMPTY, Observable, ReplaySubject, Subscription, concatMap, filter, forkJoin, finalize, from, repeat, take, timeout, map, of, switchMap, throwError, toArray } from "rxjs";
@@ -4979,6 +4981,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       // The item's selection, which the next "Run inference" sends; what the last run sent is
       // marked while they differ.
       ...(update ? { readingSelection: this.discourseReadingSelection(update) } : {}),
+      ...(update ? { pragmaticSelection: update.pragmaticSelection ?? { ...NO_PRAGMATIC_SELECTION } } : {}),
       ...(counted ? { sentByLastRun: counted } : {}),
       // Hidden as a sentence's discriminants hide its readings; the counter keeps the total.
       ...(narrowTo ? { narrowTo } : {}),
@@ -5031,6 +5034,20 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       delete update.readingSelection;
     }
     this.discourseDialog?.setReadingSelection(this.discourseReadingSelection(update));
+    this.scheduleSessionSave();
+  }
+
+  /** Stores the pragmatic selection and hidden readings made in an item's discourse dialog
+   *  with its discourse, for the next "Run inference". */
+  onDiscoursePragmaticSelectionChange(change: { sentenceId: string; selection: PragmaticSelection }): void {
+    const update = this.itemDiscourseUpdate(change.sentenceId);
+    if (!update) return;
+    if (change.selection.choiceIds.length || change.selection.hiddenReadingIds.length) {
+      update.pragmaticSelection = change.selection;
+    } else {
+      delete update.pragmaticSelection;
+    }
+    this.discourseDialog?.setPragmaticSelection(update.pragmaticSelection ?? { ...NO_PRAGMATIC_SELECTION });
     this.scheduleSessionSave();
   }
 

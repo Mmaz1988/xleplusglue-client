@@ -2,6 +2,7 @@ import {Component, ElementRef, EventEmitter, Output, ViewChild} from '@angular/c
 import {SemVisComponent} from "../../sem-vis/sem-vis.component";
 import { AnaphoraRankingTable } from "../../analysis-model";
 import { ReadingOrderContext, ReadingSelection } from "../../reading-order";
+import { PragmaticSelection } from "../../models/models";
 
 @Component({
   selector: 'app-semvis-dialog',
@@ -22,6 +23,10 @@ export class SemvisDialogComponent {
   /** A changed discourse selection (N4 6d), null for the default; the owner stores it and
    *  passes it back (`setReadingSelection`). */
   @Output() readingSelectionChange = new EventEmitter<{ sentenceId: string; selection: ReadingSelection | null }>();
+
+  /** A changed pragmatic selection or hidden readings; the owner stores them and passes them
+   *  back (`setPragmaticSelection`). */
+  @Output() pragmaticSelectionChange = new EventEmitter<{ sentenceId: string; selection: PragmaticSelection }>();
 
   private activeSentenceId: string | null = null;
   title = 'Solutions';
@@ -56,6 +61,8 @@ export class SemvisDialogComponent {
     readingSelection?: { selection: ReadingSelection; own: boolean };
     /** The readings the last run sent to Vampire, marked while the selection keeps others. */
     sentByLastRun?: string[];
+    /** The discourse's pragmatic selection and hidden readings, which the view applies and edits. */
+    pragmaticSelection?: PragmaticSelection;
   }): void {
     this.activeSentenceId = payload.sentenceId;
     this.title = payload.title ?? 'Solutions';
@@ -93,6 +100,7 @@ export class SemvisDialogComponent {
         // Through null, so a reused view starts from this discourse's selection.
         this.semVis.readingSelection = null;
         this.semVis.readingSelection = payload.readingSelection ?? null;
+        this.semVis.pragmaticSelection = payload.pragmaticSelection ?? null;
         this.semVis.sentByLastRun = payload.sentByLastRun ?? null;
         this.semVis.setDiscriminants(discriminants);
         this.semVis.meaningConstructors = meaningConstructors;
@@ -119,6 +127,15 @@ export class SemvisDialogComponent {
 
   onReadingSelectionChange(selection: ReadingSelection | null): void {
     if (this.activeSentenceId) this.readingSelectionChange.emit({ sentenceId: this.activeSentenceId, selection });
+  }
+
+  onPragmaticSelectionChange(selection: PragmaticSelection): void {
+    if (this.activeSentenceId) this.pragmaticSelectionChange.emit({ sentenceId: this.activeSentenceId, selection });
+  }
+
+  /** The pragmatic selection as the owner stored it. */
+  setPragmaticSelection(value: PragmaticSelection): void {
+    if (this.semVis) this.semVis.pragmaticSelection = value;
   }
 
   /** The selection as the owner stored it. */

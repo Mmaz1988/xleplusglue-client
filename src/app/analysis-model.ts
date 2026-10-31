@@ -38,6 +38,7 @@ import {
   selectedReadingIds,
   selectionNeedsRanking,
 } from './reading-order';
+import { pragmaticSurvivors } from './pragmatic-discriminants';
 
 /** Resolves a thin element ref against the document's canonical sentences/sequences
  *  registries. Both SentenceAnalysis and SequenceAnalysis share the syntax/semantics/
@@ -321,6 +322,16 @@ export function validateDiscourseUpdate(document: XlePlusGlueDocument, update: D
   (update.anaphoraRanking?.branches ?? []).forEach(branch => {
     if (!discourseIds.has(branch.discourseId)) {
       throw new Error(`Anaphora ranking of ${update.id} ranks unknown discourse analysis ${branch.discourseId}.`);
+    }
+  });
+
+  // The pragmatic selection and the hidden readings name readings by id.
+  if (discourseIds.size !== update.discourse.length) {
+    throw new Error(`Discourse update ${update.id} has two readings with one id.`);
+  }
+  (update.pragmaticSelection?.hiddenReadingIds ?? []).forEach(id => {
+    if (!discourseIds.has(id)) {
+      throw new Error(`Discourse update ${update.id} hides unknown discourse analysis ${id}.`);
     }
   });
 }
@@ -653,7 +664,8 @@ export function readingsAllowedByDiscriminants(
 
 /** The readings of `update` a run reasons over (N4 6d step 2), best first. First the
  *  discriminant selection: a reading survives when each of its sentence readings is in
- *  `allowedSentenceReadings` (absent: no narrowing). Then the discourse's own selection, or
+ *  `allowedSentenceReadings` (absent: no narrowing), and when it holds the discourse's
+ *  selected pragmatic alternatives and is not hidden by hand. Then the discourse's own selection, or
  *  `fallback` (the session default), over what survived: order, filters, top k places.
  *  `applied` is false when the selection needed the LM ranking and the update has none, in
  *  which case every surviving reading is reasoned over. */
@@ -664,7 +676,10 @@ export function readingsForReasoning(
   averager: AnaphoraAverager,
   allowedSentenceReadings?: Set<string>,
 ): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
-  const narrowed: DiscourseUpdate = { ...update, discourse: readingsAllowedByDiscriminants(update, allowedSentenceReadings) };
+  const narrowed: DiscourseUpdate = {
+    ...update,
+    discourse: pragmaticSurvivors(update, readingsAllowedByDiscriminants(update, allowedSentenceReadings)),
+  };
   return readingsSelectedAcross(document, [narrowed], update.readingSelection ?? fallback, averager);
 }
 
@@ -794,8 +809,9 @@ export function discourseDiscriminantsOf(
 /** What survives a chat turn's message (N4 6d), best first, over the turn's discourse
  *  updates (one per sequence it extended): of the `selectable` readings (sent and consistent;
  *  null: all, a first turn), those whose latest sentence reading is in `allowedLatest` (the
- *  latest sentence's discriminant selection; absent: all), then `selection`. Only the latest
- *  sentence is narrowed: the earlier ones were fixed by the turns before. */
+ *  latest sentence's discriminant selection; absent: all) and that the update's pragmatic
+ *  selection and hidden readings keep, then `selection`. Only the latest sentence is narrowed:
+ *  the earlier ones were fixed by the turns before. */
 export function turnSurvivors(
   document: XlePlusGlueDocument,
   updates: DiscourseUpdate[],
@@ -806,8 +822,8 @@ export function turnSurvivors(
 ): { readings: DiscourseAnalysis[]; selection: ReadingSelection; applied: boolean } {
   const narrowed = updates.map(update => ({
     ...update,
-    discourse: update.discourse.filter(reading => (!selectable || selectable.has(reading.id))
-      && (!allowedLatest || allowedLatest.has(latestSentenceReadingOf(reading)))),
+    discourse: pragmaticSurvivors(update, update.discourse.filter(reading => (!selectable || selectable.has(reading.id))
+      && (!allowedLatest || allowedLatest.has(latestSentenceReadingOf(reading))))),
   }));
   return readingsSelectedAcross(document, narrowed, selection, averager);
 }

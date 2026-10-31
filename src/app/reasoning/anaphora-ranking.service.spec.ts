@@ -349,6 +349,20 @@ describe('anaphora branch selection for verdicts', () => {
     expect(readingsForReasoning(documentWith(discourse), discourse, ALL_READINGS, 'borda').readings.length).toBe(5);
   });
 
+  it('reasons only over what the pragmatic selection keeps, without the readings hidden by hand', () => {
+    const held = (id: string) => [{ kind: 'ANAPHORA', point: '1-2', pointLabel: 'it', resolution: 'ANTECEDENT',
+      target: id, targetLabel: id, id: `ANAPHORA@1-2=${id}`, direct: true }] as any;
+    const base = ranked();
+    const discourse: DiscourseUpdate = {
+      ...base,
+      discourse: base.discourse.map(reading => ({ ...reading, choices: held(reading.id.endsWith('cat') ? 'cat' : 'other') })),
+      pragmaticSelection: { choiceIds: ['ANAPHORA@1-2=cat'], hiddenReadingIds: ['b2-cat'] },
+    };
+    // Discriminants first, the reading selection over what they leave.
+    expect(idsOf(readingsForReasoning(documentWith(discourse), discourse, ALL_READINGS, 'borda'))).toEqual(['b-cat']);
+    expect(idsOf(readingsForReasoning(documentWith(discourse), discourse, lmTop(1), 'borda'))).toEqual(['b-cat']);
+  });
+
   it('keeps tied readings together: k counts places', () => {
     const tied = { ...update([branch('a', [['x4', 'x1']]), branch('b', [['x4', 'x1']]), branch('c', [['x4', 'x2']])]),
       anaphoraRanking: ranking([['a', 1, 0.9], ['b', 1, 0.9], ['c', 3, 0.1]]) };

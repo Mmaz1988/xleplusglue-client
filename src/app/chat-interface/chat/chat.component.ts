@@ -24,6 +24,7 @@ import {
   grammarAxiomCount,
   mergeGrammarAxioms,
   VampirePreferences,
+  PragmaticSelection,
 } from '../../models/models';
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -96,6 +97,8 @@ export interface ChatMessageView {
   selectableIds: string[] | null;
   discriminants: GswbDiscriminant[] | null;
   selectedDiscriminants: { scopeIds: string[]; mcIds: string[] } | null;
+  /** The latest message's pragmatic selection and hidden readings; null on older messages. */
+  pragmaticSelection: PragmaticSelection | null;
   orderOnly: boolean;
 }
 
@@ -1505,6 +1508,28 @@ export class ChatComponent {
     this.refreshBranchRanking(message);
   }
 
+  /** The latest message's pragmatic selection and hidden readings, stored with each of its
+   *  discourses: they narrow the latest message's readings only (chat narrows the latest turn).
+   *  Ignored on older messages and during a turn. */
+  onPragmaticSelectionChange(message: ChatMessage, selection: PragmaticSelection): void {
+    const turn = this.turns.get(message);
+    const updates = turn ? this.turnUpdates(turn) : [];
+    if (!turn || !updates.length || message !== this.latestTurnMessage || this.loading) return;
+    const empty = !selection.choiceIds.length && !selection.hiddenReadingIds.length;
+    updates.forEach(update => {
+      const next: DiscourseUpdate = { ...update };
+      // A reading id names a reading of one discourse only.
+      const own = new Set(update.discourse.map(reading => reading.id));
+      if (empty) {
+        delete next.pragmaticSelection;
+      } else {
+        next.pragmaticSelection = { choiceIds: [...selection.choiceIds],
+          hiddenReadingIds: selection.hiddenReadingIds.filter(id => own.has(id)) };
+      }
+      this.storeDiscourseUpdate(next);
+    });
+  }
+
   /** The latest message's discriminant selection, stored with its sentence: it narrows the
    *  latest sentence only, as a sentence's own view does. */
   onDiscriminantSelectionChange(message: ChatMessage, change: { scopeIds: string[]; mcIds: string[] }): void {
@@ -1684,7 +1709,8 @@ export class ChatComponent {
     const turnUpdates = turn ? updates.filter(candidate => turn.updateIds.includes(candidate.id)) : [];
     const sentence = turn ? this.chatDocument.sentences.find(candidate => candidate.id === turn.sentenceId) : undefined;
     if (!turn || !turnUpdates.length || message !== this.latestTurnMessage || this.loading) {
-      return { readingOrder, readingSelection: null, selectableIds: null, discriminants: null, selectedDiscriminants: null, orderOnly: true };
+      return { readingOrder, readingSelection: null, selectableIds: null, discriminants: null, selectedDiscriminants: null,
+        pragmaticSelection: null, orderOnly: true };
     }
     const previous = this.messageViews.get(message);
     const selection = this.turnReadingSelection(turn, turnUpdates);
@@ -1696,6 +1722,12 @@ export class ChatComponent {
       selectableIds: turn.selectable,
       discriminants: discourseDiscriminantsOf(sentence?.discriminants ?? [], turnUpdates.flatMap(update => update.discourse)),
       selectedDiscriminants: { scopeIds: [...(sentence?.selectedScopeIds ?? [])], mcIds: [...(sentence?.selectedMcIds ?? [])] },
+      // The choices stored with each of the turn's discourses alike, as the reading selection
+      // is; the hidden readings each with its own discourse.
+      pragmaticSelection: {
+        choiceIds: [...(turnUpdates.find(update => update.pragmaticSelection)?.pragmaticSelection?.choiceIds ?? [])],
+        hiddenReadingIds: turnUpdates.flatMap(update => update.pragmaticSelection?.hiddenReadingIds ?? []),
+      },
       orderOnly: false,
     };
   }
