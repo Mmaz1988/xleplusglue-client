@@ -249,15 +249,15 @@
         { kind: 'PRESUPPOSITION', title: 'Presupposition discriminants', points: presupposition_points, empty: 'No presupposition discriminants.' }]">
       <div class="disc-block">
         <div class="disc-header">
-          <h4>{{ block.title }} <br> ({{ activeChoiceCount(block.points) }}/{{ choiceCount(block.points) }} active, {{ block.points.length }} choice point{{ block.points.length === 1 ? '' : 's' }})</h4>
+          <h4>{{ block.title }} <br> ({{ selectedChoiceCount($any(block.kind)) }} selected, {{ activeChoiceCount(block.points) }}/{{ choiceCount(block.points) }} active, {{ block.points.length }} choice point{{ block.points.length === 1 ? '' : 's' }})</h4>
           <button type="button" (click)="clearChoices($any(block.kind))" [disabled]="!selectedChoiceCount($any(block.kind))">
             Clear
           </button>
         </div>
-        <div class="disc-list" *ngIf="block.points.length; else noPoints">
-          <ng-container *ngFor="let point of block.points; let first = first">
-            <div class="disc-separator" *ngIf="!first" aria-hidden="true"></div>
-            <div class="disc-point-label">{{ point.label }}</div>
+        <div class="disc-points" *ngIf="block.points.length; else noPoints">
+          <!-- One row per choice point: the anaphor, an arrow, then its alternatives. -->
+          <div class="disc-point" *ngFor="let point of block.points">
+            <span class="disc-point-label">{{ point.label }} <span class="disc-point-arrow">⟶</span></span>
             <div class="disc-item" *ngFor="let alternative of point.alternatives">
               <button
                 type="button"
@@ -272,7 +272,7 @@
                 {{ alternative.label }}
               </button>
             </div>
-          </ng-container>
+          </div>
         </div>
         <ng-template #noPoints>
           <div class="disc-empty">{{ block.empty }}</div>

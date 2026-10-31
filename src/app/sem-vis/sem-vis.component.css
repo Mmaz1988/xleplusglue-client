@@ -270,10 +270,33 @@ button.chip.selected.current-hit{
   color: #e65100;
 }
 
-/* Pragmatic discriminants: a choice point's label starts its group of alternatives. */
+/* Pragmatic discriminants: a row per choice point, the anaphor first. */
+.disc-points {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.disc-point {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.disc-point + .disc-point {
+  border-top: 1px solid #ddd;
+  padding-top: 8px;
+}
+
 .disc-point-label {
-  flex-basis: 100%;
-  font-size: 0.85em;
+  font-weight: 700;
+  font-size: 1.1em;
+  white-space: nowrap;
+}
+
+.disc-point-arrow {
+  font-weight: 400;
   color: #555;
 }
 

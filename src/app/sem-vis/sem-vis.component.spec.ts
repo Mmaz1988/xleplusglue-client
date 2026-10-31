@@ -536,6 +536,9 @@ describe('SemVisComponent', () => {
       expect(emitted.pop()).toEqual({ choiceIds: ['ANAPHORA@33-35=man'.replace('man', '2-5')], hiddenReadingIds: [] });
       // Within the survivors, "dog" would leave nothing: inactive (D7).
       expect(chip('dog').disabled).toBeTrue();
+      // The header says what is selected, not only what would narrow further.
+      expect(fixture.nativeElement.querySelector('.discriminants.pragmatic h4').textContent).toContain('1 selected');
+      expect(fixture.nativeElement.querySelector('.disc-point-label').textContent).toContain('It ⟶');
     });
 
     it('narrows the scope discriminants by the pragmatic selection too (D8)', () => {
