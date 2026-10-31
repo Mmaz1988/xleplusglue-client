@@ -765,9 +765,19 @@ export class SemVisComponent implements AfterViewInit {
     return items.filter(item => kept.has(item.id));
   }
 
+  /** The readings every discriminant can still choose among: what the discriminants keep,
+   *  without the readings hidden by hand -- a hidden reading counts as filtered out, so an
+   *  alternative only hidden readings hold is inactive, like one that would leave nothing. */
   private getCurrentAllowedIds(): Set<string> {
+    const kept = this.keptByDiscriminants();
+    if (!this.hiddenIds.length) return kept;
+    return new Set([...kept].filter(id => !this.hiddenIds.includes(id)));
+  }
+
+  /** What the discriminants alone keep: scope, MC and pragmatic selections over all items. */
+  private keptByDiscriminants(): Set<string> {
     // Base universe: all current items (unfiltered source-of-truth!), as the pragmatic
-    // selection narrows them; hiding by hand never changes which discriminants are active.
+    // selection narrows them.
     const universe = new Set(this.narrowByPragmatics(this.allItems).map(s => s.id));
 
     const selected = this.getSelectedDiscriminants();
@@ -908,7 +918,7 @@ export class SemVisComponent implements AfterViewInit {
 
   /** The hidden readings the discriminants keep: those "show hidden" can bring back. */
   get restorableCount(): number {
-    const kept = this.getCurrentAllowedIds();
+    const kept = this.keptByDiscriminants();
     return this.hiddenIds.filter(id => kept.has(id)).length;
   }
 

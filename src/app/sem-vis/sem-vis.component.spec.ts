@@ -561,15 +561,23 @@ describe('SemVisComponent', () => {
       expect(emitted.pop()).toEqual({ choiceIds: [], hiddenReadingIds: [] });
     });
 
-    it('never shows a hidden reading the discriminants exclude, and hiding leaves them as they are', () => {
+    it('makes an alternative only hidden readings hold inactive: it would leave nothing shown', () => {
+      // r2 is the only reading with It -> dog.
       component.pragmaticSelection = { choiceIds: [], hiddenReadingIds: ['r2'] };
       fixture.detectChanges();
-      // Hiding r2 does not make "dog" inactive: the discriminants decide, hiding refines.
+      expect(chip('dog').disabled).toBeTrue();
+      component.restoreAll();
+      fixture.detectChanges();
       expect(chip('dog').disabled).toBeFalse();
-      chip('man').click();
+    });
+
+    it('never shows a hidden reading the discriminants exclude', () => {
+      component.pragmaticSelection = { choiceIds: [], hiddenReadingIds: ['r1'] };
+      fixture.detectChanges();
+      chip('dog').click();
       component.toggleShowHidden(true);
       fixture.detectChanges();
-      expect(visible()).toEqual(['r1', 'r3']);
+      expect(visible()).toEqual(['r2']);
       expect(fixture.nativeElement.querySelector('.hidden-readings').textContent).toContain('0/1 kept by the discriminants');
     });
   });
