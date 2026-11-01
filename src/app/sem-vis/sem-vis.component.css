@@ -147,10 +147,34 @@ button.chip.selected.current-hit{
   opacity: 0.65;
 }
 
-.sem-svg svg {
+/* The SVG comes in through innerHTML, so it has no _ngcontent attribute: these need ::ng-deep. */
+.sem-svg ::ng-deep svg {
   display: block;
   max-width: 100%;
   height: auto;
+}
+
+/* Zoomed, the canvas has the zoomed width and the SVG fills it; the box scrolls. */
+.sem-svg.zoomed ::ng-deep svg {
+  width: 100%;
+  max-width: none;
+}
+
+.svg-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  font-size: 0.8rem;
+}
+
+.svg-zoom button.active {
+  font-weight: 600;
+}
+
+.svg-zoom-level {
+  min-width: 3.2em;
+  text-align: center;
 }
 
 /* Optional per-item caption next to the counter (branch id + verdict in chat). */

@@ -101,7 +101,18 @@
     </div>
 
     <app-editor *ngIf="!svgSolutions" #sem [mode]="'glue'"></app-editor>
-    <div *ngIf="svgSolutions" class="sem-svg" [innerHTML]="currentSvg"></div>
+    <!-- Zoom: fit (the default) shrinks a wide DRS to the box; Ctrl/Cmd + wheel or a pinch also zoom. -->
+    <div class="svg-zoom" *ngIf="svgSolutions && svgWidth">
+      <button type="button" (click)="zoomSvgBy(1 / 1.25)" title="Zoom out">−</button>
+      <span class="svg-zoom-level">{{ svgZoomLabel }}</span>
+      <button type="button" (click)="zoomSvgBy(1.25)" title="Zoom in">+</button>
+      <button type="button" [class.active]="svgZoom === null" (click)="setSvgZoom(null)"
+              title="Fit the drawing to the box's width">fit</button>
+      <button type="button" [class.active]="svgZoom === 1" (click)="setSvgZoom(1)" title="The drawing's own size">100%</button>
+    </div>
+    <div *ngIf="svgSolutions" #svgBox class="sem-svg" [class.zoomed]="svgCanvasWidth !== null" (wheel)="onSvgWheel($event)">
+      <div class="sem-svg-canvas" [style.width.px]="svgCanvasWidth" [innerHTML]="currentSvg"></div>
+    </div>
   </div>
 
   <div class="highlight-toggle">

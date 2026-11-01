@@ -104,6 +104,66 @@ describe('SemVisComponent', () => {
     expect(rows).toEqual([['it', 'the cat', '0.900'], ['he', 'Bill', '0.800']]);
   });
 
+  describe('the SVG zoom', () => {
+    const wide = '<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="200" viewBox="0 0 4000 200"><rect width="4000" height="200"/></svg>';
+    const svgOf = (element: HTMLElement) => element.querySelector('.sem-svg svg') as SVGSVGElement;
+
+    beforeEach(() => {
+      component.svgSolutions = true;
+      component.items = [{ id: 'a', solution: wide }, { id: 'b', solution: wide }] as any;
+      fixture.detectChanges();
+    });
+
+    it('fits a wide DRS to the box by default', () => {
+      const element: HTMLElement = fixture.nativeElement;
+      const box = element.querySelector('.sem-svg') as HTMLElement;
+      expect(component.svgZoom).toBeNull();
+      expect(svgOf(element).getBoundingClientRect().width).toBeLessThanOrEqual(box.clientWidth);
+      expect(element.querySelector('.svg-zoom-level')!.textContent!.trim()).toBe('fit');
+    });
+
+    it('draws it at the zoomed size, kept across readings, and fits it again', () => {
+      const element: HTMLElement = fixture.nativeElement;
+      component.setSvgZoom(1);
+      fixture.detectChanges();
+      expect(svgOf(element).getBoundingClientRect().width).toBeCloseTo(4000, 0);
+
+      component.zoomSvgBy(0.5);
+      component.next();
+      fixture.detectChanges();
+      expect(element.querySelector('.svg-zoom-level')!.textContent!.trim()).toBe('50%');
+      expect(svgOf(element).getBoundingClientRect().width).toBeCloseTo(2000, 0);
+
+      component.setSvgZoom(null);
+      fixture.detectChanges();
+      expect(element.querySelector('.sem-svg-canvas')!.getAttribute('style') ?? '').not.toContain('width');
+    });
+
+    it('zooms with Ctrl + wheel only, within bounds', () => {
+      component.setSvgZoom(1);
+      const plain = new WheelEvent('wheel', { deltaY: -100, cancelable: true });
+      component.onSvgWheel(plain);
+      expect(component.svgZoom).toBe(1);
+      expect(plain.defaultPrevented).toBeFalse();
+
+      const pinch = new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, cancelable: true });
+      component.onSvgWheel(pinch);
+      expect(component.svgZoom!).toBeGreaterThan(1);
+      expect(pinch.defaultPrevented).toBeTrue();
+
+      component.zoomSvgBy(1000);
+      expect(component.svgZoom).toBe(8);
+      component.zoomSvgBy(0);
+      expect(component.svgZoom).toBe(0.1);
+    });
+
+    it('offers no zoom for an SVG without a width', () => {
+      component.items = [{ id: 'c', solution: '<svg>c</svg>' }] as any;
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('.svg-zoom')).toBeNull();
+    });
+  });
+
   describe('the collapsed view', () => {
     const pcdrs = (id: string, semantic: string) => ({ id, solution: `<svg>${id}</svg>`, semantic });
     const shown = () => String((component.currentSvg as any)?.changingThisBreaksApplicationSecurity ?? '');

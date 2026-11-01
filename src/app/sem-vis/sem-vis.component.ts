@@ -1,4 +1,4 @@
-import {ChangeDetectorRef, Component, ViewChild, AfterViewInit, Output, Input, EventEmitter, Injector} from '@angular/core';
+import {ChangeDetectorRef, Component, ElementRef, ViewChild, AfterViewInit, Output, Input, EventEmitter, Injector} from '@angular/core';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import {catchError, concatMap, from, of, toArray} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
@@ -35,6 +35,11 @@ import {
  *  anaphor marker or an A:/P: mapping. Anything else has nothing to collapse. */
 const COLLAPSIBLE_DRS = /\bp\(\(|\bant\(|\bA:\[|\bP:\[/;
 
+/** The drawn width LFGxDRT gives a DRS's SVG (its root's `width`). */
+const SVG_WIDTH = /<svg\b[^>]*?\swidth="([\d.]+)"/;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 8;
+
 type DiscStateBucket = 0 | 1 | 2; // 0=selected, 1=active, 2=inactive
 type DiscView = GswbDiscriminant & { _order: number; _stateBucket: DiscStateBucket };
 type DiscRow = { kind: 'item'; disc: DiscView } | { kind: 'separator'; key: string };
@@ -50,6 +55,7 @@ type ChoicePointView = { kind: 'ANAPHORA' | 'PRESUPPOSITION'; point: string; lab
 
 export class SemVisComponent implements AfterViewInit {
   @ViewChild('sem') sem!: EditorComponent;
+  @ViewChild('svgBox') svgBox?: ElementRef<HTMLElement>;
 
   @Input() meaningConstructors: string = '';
   @Input() svgSolutions = false;
@@ -385,6 +391,11 @@ export class SemVisComponent implements AfterViewInit {
     return this._items;
   }
   currentSvg: SafeHtml | null = null;
+  /** The shown SVG's drawn width, 0 if it states none. */
+  svgWidth = 0;
+  /** The SVG's zoom: a factor of its drawn size, or null to fit it to the box's width. Kept
+   *  across readings, so they can be compared at one size. */
+  svgZoom: number | null = null;
 
   scope_discriminants: GswbDiscriminant[] = [];
   mc_discriminants: GswbDiscriminant[] = [];
@@ -582,6 +593,41 @@ export class SemVisComponent implements AfterViewInit {
     this.applyCurrent();
   }
 
+  /** The factor that fits the SVG to the box's width, never above its drawn size: read from
+   *  the layout, so only on a zoom step, never while the view is checked. */
+  private fitZoom(): number {
+    const box = this.svgBox?.nativeElement;
+    if (!box || !this.svgWidth) return 1;
+    const style = getComputedStyle(box);
+    const available = box.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+    return available > 0 ? Math.min(1, available / this.svgWidth) : 1;
+  }
+
+  /** The zoom as shown; fitting has none, as it depends on the box's layout. */
+  get svgZoomLabel(): string {
+    return this.svgZoom === null ? 'fit' : `${Math.round(100 * this.svgZoom)}%`;
+  }
+
+  /** The canvas width the zoom asks for; null lets the SVG fit the box. */
+  get svgCanvasWidth(): number | null {
+    return this.svgZoom === null || !this.svgWidth ? null : this.svgWidth * this.svgZoom;
+  }
+
+  setSvgZoom(zoom: number | null): void {
+    this.svgZoom = zoom === null ? null : Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+  }
+
+  zoomSvgBy(factor: number): void {
+    this.setSvgZoom((this.svgZoom ?? this.fitZoom()) * factor);
+  }
+
+  /** Ctrl/Cmd + wheel, and a trackpad pinch (which the browser sends as one), zoom the drawing. */
+  onSvgWheel(event: WheelEvent): void {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    this.zoomSvgBy(Math.exp(-event.deltaY * 0.01));
+  }
+
   private applyCurrent(): void {
     if (!this.items.length) {
       this.currentSvg = null;
@@ -594,6 +640,7 @@ export class SemVisComponent implements AfterViewInit {
     const value = (collapsed ? (this.svgSolutions ? collapsed.solution : collapsed.semantic) : semVisDisplay(current).solution) ?? '';
 
     if (this.svgSolutions) {
+      this.svgWidth = Number(SVG_WIDTH.exec(value)?.[1] ?? 0);
       this.currentSvg = this.sanitizer.bypassSecurityTrustHtml(value);
       return;
     }
