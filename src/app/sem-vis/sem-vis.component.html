@@ -132,11 +132,17 @@
         {{ criterionLabel(criterion) }}
       </label>
     </div>
-    <div class="reading-order-group" *ngIf="orderOptions.filters.length && !orderOnly">
+    <div class="reading-order-group" *ngIf="hideFilters.length && !orderOnly">
       <span class="reading-order-title">Hide</span>
-      <label *ngFor="let filter of orderOptions.filters" [title]="filterHint(filter)">
+      <label *ngFor="let filter of hideFilters" [title]="filterHint(filter)">
         <input type="checkbox" [checked]="isFilterChecked(filter)" (change)="toggleFilter(filter)">
         {{ filterLabel(filter) }}
+      </label>
+    </div>
+    <div class="reading-order-group" *ngIf="orderOptions.filters.includes('names') && !orderOnly">
+      <label [title]="filterHint('names')">
+        <input type="checkbox" [checked]="isFilterChecked('names')" (change)="toggleFilter('names')">
+        {{ filterLabel('names') }}
       </label>
     </div>
     <!-- A discourse's selection (N4 6d): stored with it by the owner. -->

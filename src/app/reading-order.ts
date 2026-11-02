@@ -29,6 +29,9 @@ export interface ReadingOrderContext {
  *  (`selectedReadingIds`). */
 export const READING_FILTERS = ['unbound', 'accommodated', 'names'] as const;
 export type ReadingFilter = typeof READING_FILTERS[number];
+/** The filters the menus list under "Hide"; names is offered as an option of its own, since
+ *  checking it resolves names rather than naming what it hides. */
+export const HIDE_FILTERS: ReadingFilter[] = ['unbound', 'accommodated'];
 
 /** Whether a reading is hidden by a filter: an unbound pronoun, an accommodated presupposition,
  *  a proper name not resolved automatically. A reading without a profile (without choices, for
@@ -112,9 +115,9 @@ export const FILTER_HINTS: Record<ReadingFilter, string> = {
   unbound: 'Hides readings that leave a pronoun unbound, a(x,/).',
   accommodated: 'Hides readings that accommodate a presupposition. Proper names are usually '
     + 'accommodated.',
-  names: 'Keeps only the readings that resolve every proper name automatically: its first mention '
-    + 'accommodated in the top box, every later mention of the same name bound to it. Hides the '
-    + 'rest: a name bound to another referent, two mentions kept apart, a name accommodated lower.',
+  names: 'Every proper name is resolved globally: its first mention is accommodated in the top '
+    + 'box (s0), every later mention of the same name is bound to it. The other readings (a name '
+    + 'bound to another referent, two mentions kept apart, a name accommodated lower) are hidden.',
 };
 
 /** How the checked orderings combine, for the panel's heading. */
@@ -129,14 +132,14 @@ export const TOP_K_HINT = 'Keeps the readings on the first k places of the order
 export const FILTER_LABELS: Record<ReadingFilter, string> = {
   unbound: 'readings with an unbound pronoun',
   accommodated: 'readings with an accommodated presupposition',
-  names: 'names not resolved automatically',
+  names: 'resolve names automatically',
 };
 
 /** A filter in a selection's description: "without ..." */
 const SHORT_FILTERS: Record<ReadingFilter, string> = {
   unbound: 'unbound pronouns',
   accommodated: 'accommodation',
-  names: 'names not resolved automatically',
+  names: 'other name resolutions',
 };
 
 /** A reading's place in the global order: 1 is best, tied readings share a place, and places

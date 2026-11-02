@@ -265,7 +265,7 @@ describe('reading order', () => {
 
     it('is named in a selection\'s description', () => {
       expect(describeReadingSelection({ criteria: [], filters: ['unbound', 'names'], k: null }))
-        .toBe('all readings, without unbound pronouns or names not resolved automatically');
+        .toBe('all readings, without unbound pronouns or other name resolutions');
     });
   });
 

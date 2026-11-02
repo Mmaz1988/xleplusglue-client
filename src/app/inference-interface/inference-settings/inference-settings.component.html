@@ -58,9 +58,15 @@
     </div>
     <div class="reading-selection-group">
       <span>Hide:</span>
-      <label *ngFor="let filter of filters" [title]="filterHints[filter]">
+      <label *ngFor="let filter of hideFilters" [title]="filterHints[filter]">
         <input type="checkbox" [checked]="readingSelection.filters.includes(filter)" (change)="toggleFilter(filter)">
         {{ filterLabels[filter] }}
+      </label>
+    </div>
+    <div class="reading-selection-group">
+      <label [title]="filterHints.names">
+        <input type="checkbox" [checked]="readingSelection.filters.includes('names')" (change)="toggleFilter('names')">
+        {{ filterLabels.names }}
       </label>
     </div>
     <div class="reading-selection-group">

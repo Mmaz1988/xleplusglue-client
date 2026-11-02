@@ -21,6 +21,7 @@ import {
   CRITERION_LABELS,
   FILTER_HINTS,
   FILTER_LABELS,
+  HIDE_FILTERS,
   ORDER_HINT,
   ReadingSelection,
   TOP_K_HINT,
@@ -259,6 +260,11 @@ export class SemVisComponent implements AfterViewInit {
 
   criterionLabel(criterion: ReadingCriterion): string {
     return CRITERION_LABELS[criterion];
+  }
+
+  /** The applicable filters listed under "Hide" (names has a checkbox of its own). */
+  get hideFilters(): ReadingFilter[] {
+    return this.orderOptions.filters.filter(filter => HIDE_FILTERS.includes(filter));
   }
 
   filterLabel(filter: ReadingFilter): string {

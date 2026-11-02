@@ -11,7 +11,7 @@ import {
   FILTER_LABELS,
   ORDER_HINT,
   READING_CRITERIA,
-  READING_FILTERS,
+  HIDE_FILTERS,
   ReadingCriterion,
   ReadingFilter,
   ReadingSelection,
@@ -30,7 +30,7 @@ export class InferenceSettingsComponent {
   @Input() showReadingSelection = false;
 
   readonly criteria = READING_CRITERIA;
-  readonly filters = READING_FILTERS;
+  readonly hideFilters = HIDE_FILTERS;
   readonly criterionLabels = CRITERION_LABELS;
   readonly criterionHints = CRITERION_HINTS;
   readonly filterLabels = FILTER_LABELS;
