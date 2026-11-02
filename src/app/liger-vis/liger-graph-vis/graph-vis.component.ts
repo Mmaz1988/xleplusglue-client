@@ -1,9 +1,10 @@
-import {AfterViewInit, ChangeDetectorRef, Component, Input, OnDestroy, OnInit, ViewChild, ElementRef} from '@angular/core';
+import {AfterViewInit, ChangeDetectorRef, Component, Input, NgZone, OnDestroy, OnInit, ViewChild, ElementRef} from '@angular/core';
 import cytoscape, {Core} from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import popper from 'cytoscape-popper';
 import tippy from 'tippy.js';
 import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
+import {cytoscapeOutsideAngular} from '../../utilities/cytoscape-zone';
 
 type StructureType = 'c' | 'f' | 'd' | 'g' | 'annotation';
 
@@ -195,7 +196,7 @@ const style = [
 })
 export class GraphVisComponent implements OnInit, AfterViewInit, OnDestroy {
 
-  constructor(private changeDetector: ChangeDetectorRef) {}
+  constructor(private changeDetector: ChangeDetectorRef, private zone: NgZone) {}
 
   @ViewChild('graphContainer') graphContainer: ElementRef;
   @ViewChild('subgraphDialog') subgraphDialog: SubGraphDialogComponent;
@@ -244,6 +245,7 @@ export class GraphVisComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.resizes?.disconnect();
+    this.cy?.destroy();
   }
 
   makePopper(ele: any): void {
@@ -304,43 +306,43 @@ export class GraphVisComponent implements OnInit, AfterViewInit, OnDestroy {
       } else {
         this.lastNodePositions.clear();
       }
-      this.cy.destroy();
     }
 
     const normalizedElements = this.normalizeGraphElements(this.visibleGraphElements(this.lastGraphData));
     const elements = this.applyPresetPositions(normalizedElements, canPreserveLayout);
 
-    this.cy = cytoscape({
+    this.cy = cytoscapeOutsideAngular(this.zone, {
         container,
         elements: elements,
         style: style as cytoscape.Stylesheet[]
-      }
-    );
+      }, this.cy);
 
-    if (canPreserveLayout) {
-      this.createAndBindPoppers();
-      this.cy.fit(undefined, 24);
-    } else {
-      const layoutOptions: any = {
-        name: 'dagre',
-        rankDir: 'TB',
-        rankSep: 70,
-        nodeSep: 40,
-        edgeSep: 12,
-        ranker: 'network-simplex'
-      };
-
-      const layout = this.cy.layout(layoutOptions);
-
-      layout.on('layoutstop', () => {
-        this.compactByNodeType();
+    this.zone.runOutsideAngular(() => {
+      if (canPreserveLayout) {
         this.createAndBindPoppers();
         this.cy.fit(undefined, 24);
-        this.captureCurrentPositions();
-      });
+      } else {
+        const layoutOptions: any = {
+          name: 'dagre',
+          rankDir: 'TB',
+          rankSep: 70,
+          nodeSep: 40,
+          edgeSep: 12,
+          ranker: 'network-simplex'
+        };
 
-      layout.run();
-    }
+        const layout = this.cy.layout(layoutOptions);
+
+        layout.on('layoutstop', () => {
+          this.compactByNodeType();
+          this.createAndBindPoppers();
+          this.cy.fit(undefined, 24);
+          this.captureCurrentPositions();
+        });
+
+        layout.run();
+      }
+    });
     console.log("Container of the subgraph: ",this.cy.container().id);
     console.log("Cy element with data:", this.cy)
   }

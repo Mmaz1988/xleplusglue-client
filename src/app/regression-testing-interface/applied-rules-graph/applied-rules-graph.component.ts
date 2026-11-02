@@ -1,10 +1,11 @@
-import {AfterViewInit, Component, ElementRef, Input, OnDestroy, ViewChild} from '@angular/core';
+import {AfterViewInit, Component, ElementRef, Input, NgZone, OnDestroy, ViewChild} from '@angular/core';
 import dagre from 'cytoscape-dagre';
 import popper from 'cytoscape-popper';
 import tippy from 'tippy.js';
 import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.component";
 import cytoscape, {Core} from "cytoscape";
 import { LigerBatchParsingAnalysis, LigerRule, LigerRuleAnnotation, LigerWebGraph, LigerGraphComponent } from '../../models/models';
+import { cytoscapeOutsideAngular } from '../../utilities/cytoscape-zone';
 
 
 
@@ -59,12 +60,14 @@ export class AppliedRulesGraphComponent implements AfterViewInit, OnDestroy {
   defaultWidth = '800px';
   defaultHeight = '600px';
 
+  constructor(private zone: NgZone) {}
+
   ngOnInit(): void {
 
     // Headless until renderGraph draws into this component's own container. No element has
     // the id 'cy', and cytoscape treats a null container (unlike an absent one) as one to
     // render into, so looking it up threw.
-    this.cy = cytoscape({
+    this.cy = cytoscapeOutsideAngular(this.zone, {
       style: this.style as cytoscape.Stylesheet[],
       layout: {
         name: 'dagre'
@@ -85,6 +88,7 @@ export class AppliedRulesGraphComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.resizes?.disconnect();
+    this.cy?.destroy();
   }
 
   makePopper(ele: any): void {
@@ -188,17 +192,16 @@ export class AppliedRulesGraphComponent implements AfterViewInit, OnDestroy {
   }
 
   renderGraph(graphData): void {
-    this.cy = cytoscape({
+    this.cy = cytoscapeOutsideAngular(this.zone, {
         container: document.getElementById(this.graphID), // Use the appropriate container element ID
         elements: graphData,
          style: this.calculateStyle(graphData),
         layout: {
           name: 'dagre'
         }
-      }
-    );
+      }, this.cy);
 
-    this.createAndBindPoppers();
+    this.zone.runOutsideAngular(() => this.createAndBindPoppers());
 
     console.log("Container of the subgraph: ",this.cy.container().id);
     console.log("Cy element with data:", this.cy)

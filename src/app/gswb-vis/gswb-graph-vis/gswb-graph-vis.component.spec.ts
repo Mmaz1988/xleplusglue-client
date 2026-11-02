@@ -85,7 +85,7 @@ describe('GswbGraphVisComponent', () => {
     const box: HTMLElement = fixture.nativeElement.querySelector('div.cy');
     box.style.width = '300px';
     const resize = jasmine.createSpy('resize');
-    (component as any).cy = { resize };
+    (component as any).cy = { resize, destroy: () => {} };
     const frames = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 20)));
     await frames();
     resize.calls.reset();

@@ -1,8 +1,11 @@
 import { GraphVisComponent } from './graph-vis.component';
 
+/** Runs everything in place: these tests draw no graph. */
+const ZONE = { run: (f: () => any) => f(), runOutsideAngular: (f: () => any) => f() } as any;
+
 describe('GraphVisComponent', () => {
   it('keeps parallel same-direction edges distinct when normalizing ids', () => {
-    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any, ZONE);
     const normalized = (component as any).normalizeGraphElements([
       { data: { id: 'edge-1', source: 'a', target: 'b', label: 'A' } },
       { data: { id: 'edge-1', source: 'a', target: 'b', label: 'B' } },
@@ -17,7 +20,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('generates fallback ids for elements without ids', () => {
-    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any, ZONE);
     const normalized = (component as any).normalizeGraphElements([
       { data: { source: 'a', target: 'b', label: 'A' } },
       { data: { source: 'a', target: 'b', label: 'A' } },
@@ -28,7 +31,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('classifies canonical f and d structure node types', () => {
-    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any, ZONE);
 
     expect((component as any).structureType({ data: { node_type: 'input' } })).toBe('f');
     expect((component as any).structureType({ data: { node_type: 'dnode' } })).toBe('d');
@@ -36,7 +39,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('only exposes categories present in the graph', () => {
-    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any, ZONE);
 
     (component as any).updateAvailableStructureFilters([
       { data: { id: 'c1', node_type: 'cnode' } },
@@ -47,7 +50,7 @@ describe('GraphVisComponent', () => {
   });
 
   it('filters hidden structure nodes and their connected edges', () => {
-    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any, ZONE);
     (component as any).structureVisibility.f = false;
 
     const visible = (component as any).visibleGraphElements([
@@ -60,14 +63,14 @@ describe('GraphVisComponent', () => {
   });
 
   it('tells cytoscape when its box changes size, not only on window resizes', async () => {
-    const component = new GraphVisComponent({ detectChanges: () => {} } as any);
+    const component = new GraphVisComponent({ detectChanges: () => {} } as any, ZONE);
     const box = document.createElement('div');
     box.style.width = '300px';
     box.style.height = '200px';
     document.body.appendChild(box);
     component.graphContainer = { nativeElement: box } as any;
     const resize = jasmine.createSpy('resize');
-    (component as any).cy = { resize };
+    (component as any).cy = { resize, destroy: () => {} };
     const frames = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 20)));
 
     component.ngAfterViewInit();

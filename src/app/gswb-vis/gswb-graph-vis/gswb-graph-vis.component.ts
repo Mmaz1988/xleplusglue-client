@@ -1,4 +1,4 @@
-import {Component, Input, OnChanges, AfterViewInit, OnDestroy, ViewChild, ElementRef} from '@angular/core';
+import {Component, Input, OnChanges, AfterViewInit, OnDestroy, ViewChild, ElementRef, NgZone} from '@angular/core';
 import cytoscape, {Core} from 'cytoscape';
 import popper from 'cytoscape-popper';
 import dagre from 'cytoscape-dagre';
@@ -6,6 +6,7 @@ import {SubGraphDialogComponent} from "../../sub-graph-dialog/sub-graph-dialog.c
 import tippy from "tippy.js";
 import {labelHeight, labelWidth} from '../../utilities/cytoscape-label-size';
 import {isScc, withLabels} from '../../utilities/gswb-graph-labels';
+import {cytoscapeOutsideAngular} from '../../utilities/cytoscape-zone';
 
 cytoscape.use(dagre);
 // Its tooltips use popperRef(); registered here, not only by the LiGER graph, so this view
@@ -131,10 +132,11 @@ export class GswbGraphVisComponent implements AfterViewInit, OnDestroy {
   defaultWidth = '800px';
   defaultHeight = '600px';
 
+  constructor(private zone: NgZone) {}
 
   ngAfterViewInit(): void {
 
-      this.cy = cytoscape({
+      this.cy = cytoscapeOutsideAngular(this.zone, {
         container: document.getElementById(this.graphID),
         style: styleArray as cytoscape.Stylesheet[],
         layout: {
@@ -153,6 +155,7 @@ export class GswbGraphVisComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.resizes?.disconnect();
+    this.cy?.destroy();
   }
 
 
@@ -174,7 +177,7 @@ export class GswbGraphVisComponent implements AfterViewInit, OnDestroy {
 
 
   renderGraph(graphData): void {
-    this.cy = cytoscape({
+    this.cy = cytoscapeOutsideAngular(this.zone, {
       container: document.getElementById(this.graphID), // Use the appropriate container element ID
       elements: withLabels(graphData),
       style: styleArray as cytoscape.Stylesheet[],
@@ -183,9 +186,9 @@ export class GswbGraphVisComponent implements AfterViewInit, OnDestroy {
       }
       // Additional Cytoscape configuration options
 
-    });
+    }, this.cy);
 
-    this.createAndBindPoppers()
+    this.zone.runOutsideAngular(() => this.createAndBindPoppers());
 
     this.cy.on('dblclick', 'node', (event) => {
       let node = event.target;
@@ -195,7 +198,8 @@ export class GswbGraphVisComponent implements AfterViewInit, OnDestroy {
       console.log(nodeData);
       // Check if the double-clicked node has a specific property value
       if (nodeData.hasOwnProperty('subgraph')) {
-        this.handleNodeDoubleClick(nodeId, nodeData.subgraph);
+        // Opens the dialog: back in the zone, so the view shows it
+        this.zone.run(() => this.handleNodeDoubleClick(nodeId, nodeData.subgraph));
       }
     });
   }

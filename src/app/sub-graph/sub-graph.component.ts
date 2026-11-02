@@ -1,4 +1,4 @@
-import {Component, Input} from '@angular/core';
+import {AfterViewInit, Component, Input, NgZone, OnDestroy} from '@angular/core';
 import cytoscape, {Core} from "cytoscape";
 import cise from "cytoscape-cise";
 import popper from 'cytoscape-popper';
@@ -6,6 +6,7 @@ import dagre from "cytoscape-dagre";
 import tippy from "tippy.js";
 import {labelHeight, labelWidth} from '../utilities/cytoscape-label-size';
 import {withLabels} from '../utilities/gswb-graph-labels';
+import {cytoscapeOutsideAngular} from '../utilities/cytoscape-zone';
 
 cytoscape.use(cise);
 // Its tooltips use popperRef(); registered here, not only by the LiGER graph, so this view
@@ -287,12 +288,18 @@ const gswbStyle = [
   templateUrl: './sub-graph.component.html',
   styleUrls: ['./sub-graph.component.css']
 })
-export class SubGraphComponent {
+export class SubGraphComponent implements AfterViewInit, OnDestroy {
   @Input() graphStyle: 'liger' | 'glue' = 'liger';
   @Input() graphID!: string;
   private cy: Core;
   private styleArray = ligerStyle;
   private layout = 'dagre';
+
+  constructor(private zone: NgZone) {}
+
+  ngOnDestroy(): void {
+    this.cy?.destroy();
+  }
 
     ngAfterViewInit(): void {
       if (this.graphStyle == 'liger')
@@ -308,7 +315,7 @@ export class SubGraphComponent {
 
 
 
-    this.cy = cytoscape({
+    this.cy = cytoscapeOutsideAngular(this.zone, {
       container: document.getElementById(this.graphID),
       style: this.styleArray as cytoscape.Stylesheet[],
       layout: {
@@ -319,7 +326,7 @@ export class SubGraphComponent {
 
 
   renderGraph(graphData): void {
-    this.cy = cytoscape({
+    this.cy = cytoscapeOutsideAngular(this.zone, {
         container: document.getElementById(this.graphID), // Use the appropriate container element ID
         // A GSWB subgraph draws GSWB's pretty-printed labels; LiGER data brings its own.
         elements: this.graphStyle === 'glue' ? withLabels(graphData) : graphData,
@@ -327,16 +334,17 @@ export class SubGraphComponent {
         layout: {
           name: this.layout
         }
-      }
-    );
+      }, this.cy);
     console.log("Container of the subgraph: ",this.cy.container().id);
     console.log("Cy element with data:", this.cy)
 
-    if (this.graphStyle == 'liger'){
-      this.createAndBindLigerPoppers()
-    } else if (this.graphStyle == 'glue'){
-      this.createAndBindGswbPoppers()
-    }
+    this.zone.runOutsideAngular(() => {
+      if (this.graphStyle == 'liger'){
+        this.createAndBindLigerPoppers()
+      } else if (this.graphStyle == 'glue'){
+        this.createAndBindGswbPoppers()
+      }
+    });
 
   }
 
