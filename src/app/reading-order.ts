@@ -4,6 +4,7 @@ import {
   DiscourseAnalysis,
   DiscourseUpdate,
   GswbDiscriminant,
+  PragmaticChoice,
   PragmaticProfile,
 } from './models/models';
 
@@ -26,17 +27,44 @@ export interface ReadingOrderContext {
 
 /** The reading filters (N4): they hide readings; a hidden reading is never in the top k
  *  (`selectedReadingIds`). */
-export const READING_FILTERS = ['unbound', 'accommodated'] as const;
+export const READING_FILTERS = ['unbound', 'accommodated', 'names'] as const;
 export type ReadingFilter = typeof READING_FILTERS[number];
 
-/** Whether a reading is hidden by a filter: an unbound pronoun, an accommodated presupposition.
- *  A reading without a profile is never hidden. */
+/** Whether a reading is hidden by a filter: an unbound pronoun, an accommodated presupposition,
+ *  a proper name not resolved automatically. A reading without a profile (without choices, for
+ *  names) is never hidden. */
 export function hiddenByFilter(reading: DiscourseAnalysis, filter: ReadingFilter): boolean {
+  if (filter === 'names') return !!reading.choices && !namesResolvedAutomatically(reading.choices);
   const profile = reading.pragmaticProfile;
   if (!profile) return false;
   return filter === 'unbound'
     ? (profile.pronouns?.[2] ?? 0) > 0
     : (profile.accommodation ?? []).some(count => count > 0);
+}
+
+/** Whether every proper name is resolved automatically: its first mention accommodated globally,
+ *  every later one bound to the mention before it. Mentions are one name by their constant
+ *  (GSWB's `name`). Membership is by coreference chain (D4), so bound to the mention before and
+ *  bound to the first are the same test; a direct link would miss the readings in which a later
+ *  mention's own link names a pronoun of the chain, or (D10) the nearest mention only. */
+export function namesResolvedAutomatically(choices: PragmaticChoice[]): boolean {
+  const names = choices.filter(choice => choice.kind === 'PRESUPPOSITION' && !!choice.name);
+  const mentions = new Map<string, string[]>();
+  for (const choice of names) {
+    const points = mentions.get(choice.name!) ?? [];
+    if (!points.includes(choice.point)) points.push(choice.point);
+    mentions.set(choice.name!, points);
+  }
+  const holds = (point: string, target: string) =>
+    names.some(choice => choice.point === point && choice.target === target);
+  return [...mentions.values()].every(points => points
+    .sort((a, b) => pointStart(a) - pointStart(b))
+    .every((point, i) => holds(point, i === 0 ? 'GLOBAL' : points[i - 1])));
+}
+
+/** Where a choice point's first span starts ("12-15,20-23": 12). */
+function pointStart(point: string): number {
+  return Number.parseInt(point, 10);
 }
 
 /** The criteria and filters that apply to these readings, for a context-sensitive panel:
@@ -84,6 +112,9 @@ export const FILTER_HINTS: Record<ReadingFilter, string> = {
   unbound: 'Hides readings that leave a pronoun unbound, a(x,/).',
   accommodated: 'Hides readings that accommodate a presupposition. Proper names are usually '
     + 'accommodated.',
+  names: 'Keeps only the readings that resolve every proper name automatically: its first mention '
+    + 'accommodated in the top box, every later mention of the same name bound to it. Hides the '
+    + 'rest: a name bound to another referent, two mentions kept apart, a name accommodated lower.',
 };
 
 /** How the checked orderings combine, for the panel's heading. */
@@ -98,6 +129,14 @@ export const TOP_K_HINT = 'Keeps the readings on the first k places of the order
 export const FILTER_LABELS: Record<ReadingFilter, string> = {
   unbound: 'readings with an unbound pronoun',
   accommodated: 'readings with an accommodated presupposition',
+  names: 'names not resolved automatically',
+};
+
+/** A filter in a selection's description: "without ..." */
+const SHORT_FILTERS: Record<ReadingFilter, string> = {
+  unbound: 'unbound pronouns',
+  accommodated: 'accommodation',
+  names: 'names not resolved automatically',
 };
 
 /** A reading's place in the global order: 1 is best, tied readings share a place, and places
@@ -297,7 +336,7 @@ export function describeReadingSelection(selection: Partial<ReadingSelection>): 
   const normalized = normalizedReadingSelection(selection);
   const by = normalized.criteria.length ? ` by ${normalized.criteria.map(criterion => SHORT_CRITERIA[criterion]).join(' + ')}` : '';
   const without = normalized.filters.length
-    ? `, without ${normalized.filters.map(filter => filter === 'unbound' ? 'unbound pronouns' : 'accommodation').join(' or ')}`
+    ? `, without ${normalized.filters.map(filter => SHORT_FILTERS[filter]).join(' or ')}`
     : '';
   return normalized.k === null ? `all readings${without}` : `top ${normalized.k}${by}${without}`;
 }

@@ -1,7 +1,10 @@
-import { AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbDiscriminant, PragmaticProfile } from './models/models';
+import { AnaphoraRanking, DiscourseAnalysis, DiscourseUpdate, GswbDiscriminant, PragmaticChoice, PragmaticProfile } from './models/models';
 import {
   ReadingCriterion,
+  applicableReadingOptions,
   compareProfiles,
+  describeReadingSelection,
+  hiddenByFilter,
   globalLmScores,
   globalReadingOrder,
   normalizedReadingSelection,
@@ -194,6 +197,75 @@ describe('reading order', () => {
       const borda = order(discourse, ['surface', 'pronouns'], { discriminants, averager: 'borda' });
       expect(weighted).toEqual(borda);
       expect(weighted.map(entry => entry.place)).toEqual([1, 1]);
+    });
+  });
+
+  describe('names filter', () => {
+    /** A choice as GSWB writes it: "point=target", a trailing ~ for a chain-only one, :name. */
+    const choice = (text: string): PragmaticChoice => {
+      const [body, name] = text.split(':');
+      const direct = !body.endsWith('~');
+      const [point, target] = body.replace('~', '').split('=');
+      const anaphora = !name;
+      return {
+        kind: anaphora ? 'ANAPHORA' : 'PRESUPPOSITION', point, pointLabel: '', target, targetLabel: '',
+        resolution: anaphora ? (target === '/' ? 'UNBOUND' : 'ANTECEDENT') : (/^[A-Z]/.test(target) ? 'ACCOMMODATED' : 'BOUND'),
+        id: `${anaphora ? 'ANAPHORA' : 'PRESUPPOSITION'}@${point}=${target}`, direct, ...(name ? { name } : {}),
+      };
+    };
+    const withChoices = (id: string, ...choices: string[]): DiscourseAnalysis =>
+      ({ ...reading(id, 's0', profile([0, 0, 0])), choices: choices.map(choice) });
+    const kept = (readings: DiscourseAnalysis[]) =>
+      readings.filter(r => !hiddenByFilter(r, 'names')).map(r => r.id);
+
+    it('keeps the one reading of three mentions of a name in which all are the first, accommodated globally', () => {
+      // "Kim smiled. Kim laughed. Kim smiled.": its five readings; GSWB keeps the third Kim's
+      // nearest link (D10), the first holds by the chain only.
+      const readings = [
+        withChoices('apart', '0-3=GLOBAL:kim', '12-15=GLOBAL:kim', '25-28=GLOBAL:kim'),
+        withChoices('third-first', '0-3=GLOBAL:kim', '12-15=GLOBAL:kim', '25-28=0-3:kim'),
+        withChoices('third-second', '0-3=GLOBAL:kim', '12-15=GLOBAL:kim', '25-28=12-15:kim'),
+        withChoices('second-first', '0-3=GLOBAL:kim', '12-15=0-3:kim', '25-28=GLOBAL:kim'),
+        withChoices('one', '0-3=GLOBAL:kim', '12-15=0-3:kim', '25-28=0-3~:kim', '25-28=12-15:kim'),
+      ];
+      expect(kept(readings)).toEqual(['one']);
+    });
+
+    it('reads the chain, so a later mention whose own link names a pronoun is bound to the name too', () => {
+      // "Kim smiled. He laughed. Kim smiled.": he -> Kim; the second Kim -> he, or -> Kim.
+      const readings = [
+        withChoices('via-he', '12-14=0-3', '0-3=GLOBAL:kim', '24-27=0-3~:kim', '24-27=12-14:kim'),
+        withChoices('direct', '12-14=0-3', '0-3=GLOBAL:kim', '24-27=0-3:kim', '24-27=12-14~:kim'),
+        withChoices('he-only', '12-14=/', '0-3=GLOBAL:kim', '24-27=12-14:kim'),
+        withChoices('apart', '12-14=0-3', '0-3=GLOBAL:kim', '24-27=GLOBAL:kim'),
+      ];
+      expect(kept(readings)).toEqual(['via-he', 'direct']);
+    });
+
+    it('hides a name bound to another referent, a first mention not global, and leaves other names apart', () => {
+      expect(kept([
+        // "Kim smiled. A man laughed. Kim smiled.": the second Kim bound to the man
+        withChoices('to-man', '0-3=GLOBAL:kim', '27-30=14-17:kim'),
+        withChoices('local', '0-3=LOCAL:kim'),
+        // "Kim smiled. Sandy laughed.": two names, each its own first mention
+        withChoices('two-names', '0-3=GLOBAL:kim', '12-17=GLOBAL:sandy'),
+        // a definite is no name: the filter leaves it to the others
+        withChoices('the-dog', '0-3=GLOBAL:kim', '8-15=LOCAL'),
+      ])).toEqual(['two-names', 'the-dog']);
+    });
+
+    it('never hides a reading without choices, and is offered only where it would hide one', () => {
+      const old = reading('old', 's0', profile([0, 0, 0]));
+      expect(hiddenByFilter(old, 'names')).toBeFalse();
+      const offered = (discourse: DiscourseAnalysis[]) => applicableReadingOptions(
+        { updates: [update(discourse)], discriminants: [], averager: 'borda' }).filters.includes('names');
+      expect(offered([old, withChoices('one', '0-3=GLOBAL:kim')])).toBeFalse();
+      expect(offered([withChoices('one', '0-3=GLOBAL:kim'), withChoices('local', '0-3=LOCAL:kim')])).toBeTrue();
+    });
+
+    it('is named in a selection\'s description', () => {
+      expect(describeReadingSelection({ criteria: [], filters: ['unbound', 'names'], k: null }))
+        .toBe('all readings, without unbound pronouns or names not resolved automatically');
     });
   });
 

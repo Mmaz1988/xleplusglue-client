@@ -320,6 +320,9 @@ export interface PragmaticChoice {
   site?: string | null;
   /** The box's role: antecedent, consequent, negation, disjunct, embedding. */
   siteLabel?: string | null;
+  /** A proper name's p-box: the constant it equals ("kim"); mentions with one constant are one
+   *  name. Absent on any other choice point and on older documents. */
+  name?: string | null;
 }
 
 /** What a discourse's pragmatic discriminants and the user's own hiding keep (D7, hiding):
