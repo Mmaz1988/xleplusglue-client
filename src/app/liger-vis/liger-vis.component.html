@@ -2,37 +2,54 @@
 
 <textarea [value]="defaultValue" #textareaElement></textarea> <br>
 <div class="errorhandling" #errorhandle></div>
-<button (click)="analyzeSentence(textareaElement.value, edit1.getContent())">
+<button (click)="analyzeSentence(textareaElement.value, ligerRules.getContent())">
   <span *ngIf="!loading">Parse and rewrite</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
 </button>
-<button class="button beta" (click)="parseSentence(textareaElement.value, edit1.getContent())">
+<button class="button beta" (click)="parseSentence(textareaElement.value, ligerRules.getContent())">
   <span *ngIf="!loading">Extract multi-stage</span>
   <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
   <span *ngIf="loading">Loading...</span>
 </button>
 <br>
-<app-grammar-loader></app-grammar-loader>
-
+<app-grammar-loader
+  #grammarLoader
+  [loadedPath]="loadedGrammarPath"
+  (grammarLoaded)="onGrammarLoaded($event)">
+</app-grammar-loader>
+<app-rule-loader (dataEmitter)="updateRules($event)"></app-rule-loader>
 
 <app-toggle-display type="liger" showText="Show input rules" hideText="Hide input rules">
   <h3> Input rules: </h3>
   <div class="editor-restr">
-  <app-editor #edit1 [mode]="'liger'" ></app-editor>
+  <app-editor #ligerRules [mode]="'liger'" ></app-editor>
 </div>
 </app-toggle-display>
 
 <app-toggle-display showText="Show graph vis" hideText="Hide graph vis">
 <h3> Graph visualization: </h3>
 
+<div *ngIf="solutions.length > 0" class="solution-nav">
+  <button type="button" (click)="previousSolution()" [disabled]="solutions.length < 2">◀ Prev solution</button>
+  <span>
+    Solution {{ selectedSolutionIndex + 1 }} / {{ solutions.length }}
+    <span *ngIf="solutions[selectedSolutionIndex]?.solutionKey"> ({{ solutions[selectedSolutionIndex]?.solutionKey }})</span>
+    <span *ngIf="solutions[selectedSolutionIndex]?.numberOfMCsets !== undefined"> - MC sets: {{ solutions[selectedSolutionIndex]?.numberOfMCsets }}</span>
+  </span>
+  <button type="button" (click)="nextSolution()" [disabled]="solutions.length < 2">Next solution ▶</button>
+  <button type="button" (click)="collectAllMeaningConstructors()">Use all solution MCs</button>
+</div>
+
 <div class="ligergraphcontainer">
-<app-graph-vis #cy1></app-graph-vis>
-<button (click)="showDialog()">Show dialog</button>
+  <app-graph-vis #cy1 [graphID]="'liger-graph'"></app-graph-vis>
+  <div class="graph-actions">
+    <button (click)="showDialog()">Show dialog</button>
+  </div>
 </div><br>
 </app-toggle-display>
 
 <app-toggle-display type="liger" showText="Show applied rules" hideText="Hide applied rules">
-<h3> Rule list: </h3>
-<app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>
+  <h3> Rule list: </h3>
+  <app-rule-list #rl1 (calculateFromRule)="calculateFromRuleList($event)" > </app-rule-list>
 </app-toggle-display>

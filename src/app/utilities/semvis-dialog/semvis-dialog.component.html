@@ -1,0 +1,9 @@
+<dialog class="center-dialog" #dialog>
+  <h3>Solutions</h3>
+
+  <div class="dialog-body semvis-wrapper">
+    <app-sem-vis #semVis (selectionChange)="onSemVisSelection($event)"></app-sem-vis>
+  </div>
+
+  <button type="button" (click)="close()">OK</button>
+</dialog>

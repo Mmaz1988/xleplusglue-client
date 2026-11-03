@@ -6,9 +6,11 @@ import { GswbVisComponent } from './gswb-vis/gswb-vis.component';
 import { SemComponent } from './gswb-vis/sem/sem.component';
 import { EditorComponent } from './editor/editor.component';
 import { LogComponent } from './gswb-vis/log/log.component';
+import { McTableComponent } from './gswb-vis/mc-table/mc-table.component';
 import { ReactiveFormsModule } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
 import { LigerVisComponent } from './liger-vis/liger-vis.component';
+import { GraphInspectorComponent } from './graph-inspector/graph-inspector.component';
 import { GlueInterfaceComponent } from './glue-interface/glue-interface.component';
 import { RuleListComponent } from './liger-vis/rule-list/rule-list.component';
 import { RuleListElementComponent } from './liger-vis/rule-list-element/rule-list-element.component';
@@ -18,7 +20,7 @@ import {CommonModule} from "@angular/common";
 import { GswbGraphVisComponent } from './gswb-vis/gswb-graph-vis/gswb-graph-vis.component';
 import { DerivationContainerComponent } from './gswb-vis/derivation-container/derivation-container.component';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { DialogComponent } from './dialog/dialog.component';
+import { DialogComponent } from './utilities/dialog/dialog.component';
 import { SubGraphDialogComponent } from './sub-graph-dialog/sub-graph-dialog.component';
 import { SubGraphComponent } from './sub-graph/sub-graph.component';
 import { NavigationComponent } from './navigation/navigation.component';
@@ -26,14 +28,35 @@ import { RegressionTestingInterfaceComponent } from './regression-testing-interf
 import {AppRoutingModule} from "./app-routing.module";
 import { AppliedRulesGraphComponent } from './regression-testing-interface/applied-rules-graph/applied-rules-graph.component';
 import { HomeComponent } from './home/home.component';
-import { ToggleDisplayComponent } from './toggle-display/toggle-display.component';
+import { RegressionDashboardComponent } from './regression-dashboard/regression-dashboard.component';
+import { ToggleDisplayComponent } from './utilities/toggle-display/toggle-display.component';
 import { GswbSettingsComponent } from './gswb-vis/gswb-settings/gswb-settings.component';
-import { GrammarLoaderComponent } from './liger-vis/grammar-loader/grammar-loader.component';
-import { FileTreeComponent } from './liger-vis/grammar-loader/file-tree/file-tree.component';
+import { GrammarLoaderComponent } from './utilities/grammar-loader/grammar-loader.component';
+import { FileTreeComponent } from './utilities/file-tree/file-tree.component';
 
 import { MatTreeModule } from '@angular/material/tree';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { ChatInterfaceComponent } from './chat-interface/chat-interface.component';
+import { ChatTabsComponent } from './chat-interface/chat-tabs/chat-tabs.component';
+import {MatTabsModule} from "@angular/material/tabs";
+import { ChatComponent } from './chat-interface/chat/chat.component';
+import { RuleLoaderComponent } from './utilities/rule-loader/rule-loader.component';
+import { HistoryComponent } from './chat-interface/history/history.component';
+import { TestResultComponent } from './regression-testing-interface/parse-result/test-result.component';
+import { InferenceInterfaceComponent } from './inference-interface/inference-interface.component';
+import { InferenceSettingsComponent } from './inference-interface/inference-settings/inference-settings.component';
+import { GswbVisContainerComponent } from './center-container/gswb-vis-container/gswb-vis-container.component';
+import { CenterContainerComponent } from './center-container/center-container/center-container.component';
+import { LigerVisContainerComponent } from './center-container/liger-vis-container/liger-vis-container.component';
+import { TestItemComponent } from './regression-testing-interface/test-item/test-item.component';
+import { InferenceResultComponent } from './regression-testing-interface/inference-result/inference-result.component';
+import { FileLoaderComponent } from './utilities/file-loader/file-loader.component';
+import { SemVisComponent } from './sem-vis/sem-vis.component';
+import { PillComponent } from './utilities/pill/pill.component';
+import {OverlayModule} from "@angular/cdk/overlay";
+import { ScrollingModule } from '@angular/cdk/scrolling';
+import { SemvisDialogComponent } from './utilities/semvis-dialog/semvis-dialog.component';
 
 @NgModule({
   declarations: [
@@ -42,7 +65,9 @@ import { MatButtonModule } from '@angular/material/button';
     SemComponent,
     EditorComponent,
     LogComponent,
+    McTableComponent,
     LigerVisComponent,
+    GraphInspectorComponent,
     GlueInterfaceComponent,
     RuleListComponent,
     RuleListElementComponent,
@@ -54,13 +79,30 @@ import { MatButtonModule } from '@angular/material/button';
     SubGraphComponent,
     NavigationComponent,
     RegressionTestingInterfaceComponent,
+    RegressionDashboardComponent,
     AppliedRulesGraphComponent,
     HomeComponent,
     ToggleDisplayComponent,
     GswbSettingsComponent,
     GrammarLoaderComponent,
-    FileTreeComponent
-
+    FileTreeComponent,
+    ChatInterfaceComponent,
+    ChatTabsComponent,
+    ChatComponent,
+    RuleLoaderComponent,
+    HistoryComponent,
+    TestResultComponent,
+    InferenceInterfaceComponent,
+    InferenceSettingsComponent,
+    GswbVisContainerComponent,
+    CenterContainerComponent,
+    LigerVisContainerComponent,
+    TestItemComponent,
+    InferenceResultComponent,
+    FileLoaderComponent,
+    SemVisComponent,
+    PillComponent,
+    SemvisDialogComponent
   ],
   imports: [
     BrowserModule,
@@ -71,8 +113,12 @@ import { MatButtonModule } from '@angular/material/button';
     AppRoutingModule,
     MatTreeModule,
     MatIconModule,
-    MatButtonModule],
+    MatButtonModule,
+    MatTabsModule,
+    BrowserAnimationsModule,
+    OverlayModule,
+    ScrollingModule],
   providers: [],
-  bootstrap: [AppComponent]
+  bootstrap: [AppComponent],
 })
 export class AppModule { }

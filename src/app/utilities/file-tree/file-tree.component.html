@@ -1,0 +1,49 @@
+<div class="filetreecontainer">
+  <mat-tree [dataSource]="dataSource" [treeControl]="treeControl">
+    <!-- Folder nodes (expandable) -->
+    <mat-nested-tree-node *matTreeNodeDef="let node; when: isDirectory">
+      <li class="tree-node-wrapper folder-node"
+          [ngStyle]="{
+            'border': '2px solid #00a9e0',
+            'border-radius': '5px',
+            'padding-left': '10px',
+            'margin-bottom': '10px',
+            'width': '100%'
+          }">
+        <div class="mat-tree-node">
+          <button mat-icon-button matTreeNodeToggle>
+            <mat-icon>
+              {{ treeControl.isExpanded(node) ? 'expand_more' : 'chevron_right' }}
+            </mat-icon>
+          </button>
+          {{ node.name }}
+        </div>
+
+        <ul *ngIf="treeControl.isExpanded(node)" class="folder-contents"
+            [ngStyle]="{ 'border': 'none', 'padding-left': '10px' }">
+          <ng-container matTreeNodeOutlet></ng-container>
+        </ul>
+      </li>
+    </mat-nested-tree-node>
+
+    <!-- File nodes (non-expandable) -->
+    <mat-tree-node *matTreeNodeDef="let node; when: isFile">
+      <li class="tree-node-wrapper file-node"
+          [ngClass]="{'selected': node === selectedNode}"
+          [style.background-color]="node === selectedNode ? '#00a9e0' : 'transparent'"
+          [style.color]="node === selectedNode ? 'white' : 'black'"
+          [ngStyle]="{
+        'padding-left': '10px',
+        'padding-right': '10px',
+        'width': '100%'
+      }"
+          (dblclick)="onNodeDoubleClick(node)">
+        <div (click)="onNodeSelect(node)">
+          <button mat-icon-button disabled></button>
+          {{ node.name }}
+        </div>
+      </li>
+    </mat-tree-node>
+
+  </mat-tree>
+</div>

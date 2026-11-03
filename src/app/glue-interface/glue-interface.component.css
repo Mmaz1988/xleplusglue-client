@@ -34,3 +34,44 @@
   color: white;
   border-radius: 10px;
 }
+
+.graph-inspector-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.post-processing-section {
+  margin: 1.5rem 15px 0;
+  scroll-margin-top: 1rem;
+  border-top: 2px solid #00a9e0;
+  padding-top: 0.75rem;
+}
+
+.post-processing-section h2 {
+  margin: 0 0 0.75rem;
+}
+
+.pcdrs-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.pcdrs-results {
+  margin-top: 1.5rem;
+  border-top: 1px solid #bbb;
+  padding-top: 0.75rem;
+}
+
+.pcdrs-results h3 {
+  margin: 0 0 0.75rem;
+}
+
+.pcdrs-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}

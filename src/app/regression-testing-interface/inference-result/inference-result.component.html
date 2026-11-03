@@ -1,0 +1,77 @@
+<div class="inf-block" [ngClass]="{ 'highlight-block': mismatch }">
+  <span *ngIf="displayIndex !== null" class="index-badge">{{ displayIndex }}</span>
+  <div class="row">
+    <span class="title">Premises:</span>
+  </div>
+
+  <div *ngIf="premises?.length; else noPremises">
+    <ol class="premises">
+      <li *ngFor="let p of premises">{{ p }}</li>
+    </ol>
+  </div>
+  <ng-template #noPremises>
+    <div class="empty">(none)</div>
+  </ng-template>
+
+  <div class="row">
+    <span class="title">Conclusion:</span>
+  </div>
+  <div class="conclusion">{{ conclusion }}</div>
+
+  <div class="labels">
+    <div class="label-row">
+      <span class="title">Gold:</span>
+      <span [ngClass]="[labelClass(goldLabel), mismatch ? 'mismatch' : '']">
+        {{ labelName(goldLabel) }} ({{ goldLabel }})
+      </span>
+    </div>
+
+    <div class="label-row">
+      <span class="title">Pred:</span>
+      <span [ngClass]="[labelClass(predictedLabel), mismatch ? 'mismatch' : '']">
+        {{ labelName(predictedLabel) }} ({{ predictedLabel }})
+      </span>
+
+      <span *ngIf="mismatch" class="mismatch-note">— mismatch</span>
+    </div>
+  </div>
+
+  <div class="pill-container">
+    <app-pill
+      badge="V"
+      variant="glyph-grid"
+      [glyphs]="safeGlyphs"
+      [gridSize]="glyphGridSize"
+      [minimizedColor]="'#2e7d32'">
+    </app-pill>
+  </div>
+
+  <!-- Glyph pills bottom-right
+  <div class="pill-container" *ngIf="glyphs?.length">
+    <div class="message-glyph"
+         [ngClass]="{ 'minimized': !showGlyph }"
+         (click)="toggleGlyphVisibility()">
+
+      <ng-container *ngIf="showGlyph; else collapsed">
+        <button class="pill-close"
+                type="button"
+                (click)="closeGlyph($event)"
+                aria-label="Close">
+          ×
+        </button>
+        <div class="glyph-grid"
+             [style.gridTemplateColumns]="'repeat(' + glyphGridSize + ', 1fr)'">
+          <div class="glyph-cell"
+               *ngFor="let g of glyphs"
+               [innerHTML]="sanitizeSvg(g)">
+          </div>
+        </div>
+      </ng-container>
+
+      <ng-template #collapsed>
+        <div>V</div>
+      </ng-template>
+
+    </div>
+  </div> -->
+</div>

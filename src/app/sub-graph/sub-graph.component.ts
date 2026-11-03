@@ -51,6 +51,86 @@ const ligerStyle = [
     }
   },
   {
+    selector: 'node[node_type="root"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#4b0082 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="state"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#7b2cbf white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="referent"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#0b3d91 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="value"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#455a64 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
+    selector: 'node[node_type="condition"]',
+    style: {
+      'content': 'data(id)',
+      'color': 'white',
+      'shape': 'rectangle',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'background-fill': 'linear-gradient',
+      'background-gradient-stop-colors': '#2e7d32 white',
+      'background-gradient-stop-positions': '0 30 60',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px'
+    }
+  },
+  {
     selector: 'edge[edge_type="edge"]',
     style: {
       'width': 3,
@@ -202,11 +282,11 @@ const gswbStyle = [
   styleUrls: ['./sub-graph.component.css']
 })
 export class SubGraphComponent {
-  @Input() graphStyle!: string;
+  @Input() graphStyle: 'liger' | 'glue' = 'liger';
   @Input() graphID!: string;
   private cy: Core;
-  private styleArray;
-  private layout;
+  private styleArray = ligerStyle;
+  private layout = 'dagre';
 
     ngAfterViewInit(): void {
       if (this.graphStyle == 'liger')

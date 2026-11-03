@@ -8,7 +8,24 @@ textarea {
 
 div.ligergraphcontainer{
   max-width: 800px;
-  height: 650px;
+  width: 800px;
+  height: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+}
+
+div.ligergraphcontainer app-graph-vis {
+  display: block;
+  width: 100%;
+}
+
+.graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 div.errorhandling {
@@ -22,3 +39,9 @@ div.errorhandling {
   border-width: 0.2em;
 }
 
+.solution-nav {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0 12px;
+}

@@ -10,6 +10,7 @@
   border-style: solid;
   border-color: #00a9e0;
   overflow: hidden;
+  min-width: 780px; /* Minimum width for the editor */
   max-width: 100%; /* Ensure the div doesn't exceed parent's width */
   max-height: 100%; /* Ensure the div doesn't exceed parent's height */
   background-color: lightblue;
@@ -18,6 +19,25 @@
 .cm-rule_separator {
   color: #0900ff;
   font-weight: bold;
+}
+
+.cm-nli-brace {
+  color: #0b57d0;
+  font-weight: bold;
+}
+
+.cm-nli-separator {
+  color: #7b1fa2;
+  font-weight: bold;
+}
+
+.cm-nli-label {
+  color: #c62828;
+  font-weight: bold;
+}
+
+.cm-nli-sentence {
+  color: #1b5e20;
 }
 
 .cm-liger_node_var
@@ -35,9 +55,37 @@
   color: #ff0000;
 }
 
+.cm-liger_template_definition,
+.cm-liger_template_call {
+  font-weight: bold;
+}
+
+.cm-liger_template_definition {
+  color: #ff9d00;
+}
+
+.cm-liger_template_call {
+  color: #f062ff;
+}
+
+.cm-liger_builtin_function {
+  color: #ff6f00;
+}
+
 .cm-angular_brackets
 {
   color: #d100ff;
 }
 
 
+/* Highlight matching brackets with a background */
+.CodeMirror-matchingbracket {
+  background-color: rgba(255, 165, 0, 0.5) !important; /* Light orange background */
+  border-radius: 3px;
+}
+
+/* Highlight unmatched brackets with a stronger background */
+.CodeMirror-nonmatchingbracket {
+  background-color: rgba(255, 0, 0, 0.7) !important; /* Strong red background */
+  border-radius: 3px;
+}

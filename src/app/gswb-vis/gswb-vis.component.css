@@ -4,3 +4,30 @@
   border-width: 0.2em;
 }
 
+div.errorhandling {
+  color: red;
+  padding-bottom: 10px;
+}
+
+.mc-solution-nav {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.mc-solution-nav button {
+  background: none;
+  border: none;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.mc-solution-nav button.active {
+  background-color: #1976d2;
+  color: white;
+}

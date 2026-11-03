@@ -1,0 +1,46 @@
+<div class="mc-table-wrapper" *ngIf="blocks.length; else emptyState">
+  <table class="mc-table" *ngFor="let block of blocks; let blockIndex = index">
+    <caption *ngIf="blocks.length > 1">Reading {{ blockIndex + 1 }}</caption>
+    <thead>
+      <tr>
+        <th>Index</th>
+        <th>Semantic term</th>
+        <th>Glue formula</th>
+        <th>Resources</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let row of block.rows">
+        <td class="mc-index">{{ row.index ?? '' }}</td>
+        <td class="mc-meaning">
+          <code *ngIf="!row.editingMeaning" class="mc-meaning-text" title="Click to edit"
+                (click)="startEditMeaning(row)">{{ row.meaning }}</code>
+          <input *ngIf="row.editingMeaning" class="mc-meaning-input" type="text" autofocus
+                 [(ngModel)]="row.meaningEditDraft" (blur)="commitEditMeaning(row)"
+                 (keydown)="onMeaningKeydown($event, row)" />
+        </td>
+        <td class="mc-formula">
+          <span *ngIf="!row.editingFormula"
+                class="mc-formula-latex"
+                title="Click to edit"
+                (click)="startEdit(row)"
+                [innerHTML]="row.formulaHtml"></span>
+          <input *ngIf="row.editingFormula"
+                 class="mc-formula-input"
+                 type="text"
+                 autofocus
+                 [(ngModel)]="row.editDraft"
+                 (blur)="commitEdit(row)"
+                 (keydown)="onFormulaKeydown($event, row)" />
+          <span class="mc-params" *ngIf="row.params">|| {{ row.params }}</span>
+        </td>
+        <td class="mc-resources">
+          <span class="mc-badge" *ngFor="let token of row.resourceTokens">{{ resourceLabel(token) }}</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<ng-template #emptyState>
+  <p class="mc-empty">No meaning constructors to show.</p>
+</ng-template>

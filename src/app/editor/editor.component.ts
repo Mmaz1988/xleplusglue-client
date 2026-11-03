@@ -1,10 +1,73 @@
-import { Component, ViewChild, ElementRef, AfterViewInit, Input, ViewEncapsulation } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewInit, Input, ViewEncapsulation, Output, EventEmitter, OnChanges, SimpleChanges } from '@angular/core';
 import * as CodeMirror from 'codemirror';
+import 'codemirror/addon/edit/matchbrackets.js';
+import 'codemirror/mode/javascript/javascript';
 
+const LIGER_TEMPLATE_NAME = /[A-Za-z][A-Za-z0-9_-]*/;
+const LIGER_BUILTIN_FUNCTIONS = ['id', 'lex', 'strip', 'superior'];
+const LIGER_TEMPLATE_DEFINITION_REGEX = new RegExp(
+  `^\\s*(${LIGER_TEMPLATE_NAME.source})(?=\\s*(?:\\([^\\n)]*\\))?\\s*:=)`
+);
+const LIGER_BUILTIN_FUNCTIONS_REGEX = new RegExp(
+  `\\b(?:${LIGER_BUILTIN_FUNCTIONS.join('|')})\\b(?=\\s*\\()`
+);
+
+CodeMirror.defineMode('nli', function() {
+  return {
+    token: function(stream) {
+      if (stream.sol()) {
+        if (stream.match(/\s*\{/)) {
+          stream.skipToEnd();
+          return 'nli-brace';
+        }
+
+        if (stream.match(/\s*\}/)) {
+          stream.skipToEnd();
+          return 'nli-brace';
+        }
+
+        if (stream.match(/\s*====\s*/)) {
+          stream.skipToEnd();
+          return 'nli-separator';
+        }
+
+        if (stream.match(/\s*>>>\s*/)) {
+          stream.skipToEnd();
+          return 'nli-label';
+        }
+
+        if (stream.match(/\s*#/)) {
+          stream.skipToEnd();
+          return 'comment';
+        }
+
+        stream.skipToEnd();
+        return 'nli-sentence';
+      }
+
+      stream.next();
+      return null;
+    }
+  };
+});
 
 CodeMirror.defineMode("liger", function() {
   return {
     token: function(stream,state) {
+      if (stream.sol()) {
+        if (stream.match(LIGER_TEMPLATE_DEFINITION_REGEX)) {
+          return 'liger_template_definition';
+        }
+      }
+
+      if (stream.match(/^@([A-Za-z][A-Za-z0-9_-]*)/)) {
+        return 'liger_template_call';
+      }
+
+      if (stream.match(LIGER_BUILTIN_FUNCTIONS_REGEX)) {
+        return 'liger_builtin_function';
+      }
+
       if (stream.match("==>") ) {
         return "rule_separator";
       }
@@ -70,146 +133,107 @@ CodeMirror.defineMode("glue", function() {
   };
 });
 
-const DEFAULT_TEST_SUITE = "John loves Mary.\n\n" +
-                            "Every man loved a woman.\n\n" +
-                            "Mary said that Susan was sick.\n\n" +
-                            "If Mary was sick, she would be sleeping.\n\n" +
-                            "Mary married a man who smiled.\n\n" +
-                            "Mary was dancing.\n\n" +
-                            "Mary seems to smile.\n\n" +
-                            "If Mary trained, she is sleeping.\n\n" +
-                            "A man saw the monkey with the telescope.\n\n" +
-                            "A woman will visit the cinema.\n\n" +
-                            "Peter had visited the cinema.\n\n" +
-                            "Peter wanted to visit Mary.\n\n" +
-                            "Mary gave Peter a letter.\n\n";
+const DEFAULT_TEST_SUITE = "{\n" +
+  "A Swede won a Nobel prize.\n" +
+  "Every Swede is a Scandinavian.  \n" +
+  "====\n" +
+  "A Scandinavian won a Nobel prize.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "{\n" +
+  "A dog appeared.\n" +
+  "====\n" +
+  "No dog appeared.\n" +
+  ">>> -1\n" +
+  "}\n" +
+  "{\n" +
+  "A dog appeared.\n" +
+  "====\n" +
+  "No cat appeared.\n" +
+  ">>> 0\n" +
+  "}\n" +
+  "{\n" +
+  "Vincent knows every boxer.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Vincent knows Butch.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "If Mia snorts, then Vincent smokes.\n" +
+  "Vincent smokes.\n" +
+  "====\n" +
+  "Mia snorts.\n" +
+  ">>> 0\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "A woman loves every man.\n" +
+  "Every boxer is a man.\n" +
+  "====\n" +
+  "A woman loves every boxer.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are crazy.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch is crazy.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are slow.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch is not slow.\n" +
+  ">>> -1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are slow.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Mia likes Butch.\n" +
+  ">>> 0\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are crazy.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch is crazy.\n" +
+  ">>> 1\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are crazy.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Butch loves Fabian.\n" +
+  ">>> 0\n" +
+  "}\n" +
+  "\n" +
+  "{\n" +
+  "All boxers are slow.\n" +
+  "Butch is a boxer.\n" +
+  "====\n" +
+  "Mia likes Butch.\n" +
+  ">>> 0\n" +
+  "}"
 
 
 
 
 const LIGER_DEFAULT_RULES = "--replace(true);\n" +
   "\n" +
-  "#a TNS-ASP #b & #a s:: #c SIT #d & #c TEMP-REF #e ==> & #e T-REF 'undefined'.\n" +
-  "\n" +
-  "//Tier 1 rules\n" +
-  "#a TNS-ASP #b TENSE 'past' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'past'.\n" +
-  "#a TNS-ASP #b TENSE 'pres' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'pres'.\n" +
-  "#a TNS-ASP #b TENSE 'fut' & #a s:: #c TEMP-REF #d & #d T-REF 'undefined' ==>  #d T-REF 'fut'.\n" +
-  "\n" +
-  "//#a TNS-ASP #b TENSE 'pres' & #a s:: #c ==> #c TEMP-REF #d & #d T-REF 'pres' & #d EVAL #e & #e TIME 'now'.\n" +
-  "//#a TNS-ASP #b TENSE 'fut' & #a s:: #c ==> #c TEMP-REF #d & #d T-REF 'fut' & #d EVAL #e & #e TIME 'now'.\n" +
-  "\n" +
-  "//Tier 2 rules\n" +
-  "//SOT rule\n" +
-  "#a T-REF 'past' &\n" +
-  "#a ^(TEMP-REF>s::>COMP) #b & #b !(s::>TEMP-REF) #c T-REF 'past' ==> #a T-REF 'non-future'.\n" +
-  "\n" +
-  "//Present counterfactual\n" +
-  "#a T-REF 'past' &\n" +
-  "#a ^(TEMP-REF>s::>OBJ>in_set>ADJUNCT) #b & #b VTYPE 'modal' &\n" +
-  "#b !(>TEMP-REF) #c T-REF 'pres' \n" +
-  "==> #a T-REF 'non-past'.\n" +
-  "\n" +
-  "//Aspect rules\n" +
-  "#a TNS-ASP #b PROG '+_' & #a s:: #c ==> #c VIEWPOINT #d & #d ASPECT 'impv' & #d A-RESTR 'ongoing'.\n" +
-  "#a TNS-ASP #b PROG '-_' & #a s:: #c ==> #c VIEWPOINT #d & #d ASPECT 'undefined'.\n" +
-  "#a TNS-ASP #b TENSE %x & #b PROG '-_' & #a s:: #c VIEWPOINT #d ASPECT 'undefined' ==> #d ASPECT 'prv' & #d A-RESTR 'bounded'.\n" +
-  "#a TNS-ASP #b PERF '+_' & #a s:: #c ==> #c ASP-TENSE #d & #d A-REF 'past'.\n" +
-  "\n" +
-  "//Tier 2 aspect example\n" +
-  "#a T-REF 'undefined' &\n" +
-  "#a ^(TEMP-REF) #b ^(s::>XCOMP) #c & #c !(s::>TEMP-REF) #d EVAL #e &\n" +
-  "#b VIEWPOINT #f ASPECT 'prv'\n" +
-  "==>  #a T-REF 'future' & #a EVAL #d.\n" +
-  "\n" +
-  "//Semantic interpretation\n" +
-  "\n" +
-  "//Rules for interpreting grammatical aspect\n" +
-  "#a s:: #b VIEWPOINT #c ==>\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f.\n" +
-  "\n" +
-  "#a s:: #b VIEWPOINT #c A-RESTR 'ongoing' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f ==>\n" +
-  "#f GLUE lam(S,lam(T,drs([],[rel(ongoing,T,S)]))) : (#d_s -o (#e_s -o #c_t)).\n" +
-  "\n" +
-  "#a s:: #b VIEWPOINT #c A-RESTR 'bounded' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#c ASP-RESTR' #f ==>\n" +
-  "#f GLUE lam(S,lam(T,drs([],[rel(bounded,T,S)]))) : (#d_s -o (#e_s -o #c_t)).\n" +
-  "\n" +
-  "\n" +
-  "#a s:: #b VIEWPOINT #c ASPECT 'impv' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE lam(M,lam(P,lam(S,drs([],[imp(merge(drs([Z],[]),app(app(M,S),Z)),app(P,Z))])))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #g_t) -o (#f_s -o #f_t))).\n" +
-  "\n" +
-  "//prv closure -- fixed \n" +
-  "#a s:: #b VIEWPOINT #c ASPECT 'prv' &\n" +
-  "#c VAR #d & #c RESTR #e &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE lam(M,lam(P,lam(S,merge(drs([Z],[]),merge(app(app(M,S),Z),app(P,Z)))))) : ((#d_s -o (#e_s -o #c_t)) -o ((#g_s -o #g_t) -o (#f_s -o #f_t))).\n" +
-  "\n" +
-  "#a s:: #b VIEWPOINT #c ASPECT 'undefined' &\n" +
-  "#b TEMP-REF #f &\n" +
-  "#b SIT #g\n" +
-  " ==>  #c GLUE lam(P,lam(S,merge(drs([],[]),app(P,S)))) : ((#g_s -o #b_t) -o (#f_s -o #b_t)).\n" +
-  "\n" +
-  "//Tense values\n" +
-  "\n" +
-  "//Past reference\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'past' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(before,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "//Aspectual tense\n" +
-  "#a s:: #b TEMP-REF #c EVAL #d &\n" +
-  "#b ASP-TENSE #e A-REF 'past' &\n" +
-  " ==>\n" +
-  "#e A-REF' #f & #f GLUE lam(T,lam(T2,drs([],[rel(before,T,T2)]))) :(#e_s -o (#c_s -o #e_t)) .\n" +
-  "\n" +
-  "//Present reference\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'pres' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(overlap,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "//Non-future\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'non-future' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(nonfut,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "\n" +
-  "//Non-past\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'non-past' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(nonpast,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "//Future reference\n" +
-  "#a s:: #b TEMP-REF #c T-REF 'future' & #c EVAL #d ==>\n" +
-  "#c T-REF' #e & #e GLUE lam(T,lam(T2,drs([],[rel(after,T,T2)]))) : (#c_s -o (#d_s -o #c_t)).\n" +
-  "\n" +
-  "\n" +
-  "//absolute tense closure -- fixed \n" +
-  "#a s:: #b TEMP-REF #c T-REF %a & %a != 'undefined' & #c EVAL #d \n" +
-  "==> #c GLUE lam(T,lam(P,lam(S,merge(drs([R],[]),merge(app(app(T,R),S),app(P,R)))))) : ((#c_s -o (#d_s -o #c_t)) -o ((#c_s -o #c_t) -o (#d_s -o #d_t))).\n" +
-  "\n" +
-  "//aspectual tense closure\n" +
-  "#a s:: #b ASP-TENSE #c A-REF %a &\n" +
-  "#b TEMP-REF #e &\n" +
-  " %a != 'undefined'\n" +
-  "==> #c GLUE lam(T,lam(P,lam(S,merge(drs([R],[]),merge(app(app(T,R),S),app(P,R)))))) : ((#c_s -o (#e_s -o #c_t)) -o ((#e_s -o #b_t) -o (#e_s -o #b_t))).\n" +
-  "\n" +
-  "//unspec absolute closure\n" +
-  "#a s:: #b TEMP-REF #c T-REF %a & %a == 'undefined' & #c EVAL #d\n" +
-  "==> #c GLUE lam(P,lam(S,merge(app(P,S),drs([],[])))) : ((#c_s -o #b_t) -o (#d_s -o #b_t)).\n" +
-  "\n" +
-  "\n" +
-  "\n" +
-  "//#a s:: #b TEMP-REF #c T-REF 'pres' & #c EVAL #d ==> #c GLUE [/P_<s,t>.[/s_s.Er_s[equals(r,s) \\& P(r)]]] : ((#c -o #b) -o (#d -o #b)).\n" +
-  "\n" +
-  "// #a s:: #b ASP-TENSE #c A-REF 'past' & #b TEMP-REF #d ==>  #c GLUE [/P_<s,t>.[/s_s.Er_s[before(r,s) \\& P(r)]]] : ((#d -o #b) -o (#d -o #b)).\n" +
-  "\n" +
-  "//#a s:: #b ASP-TENSE #c A-REF 'undefined' & #b TEMP-REF #d ==>  #c GLUE [/P_<s,t>.[/s_s.P(s)]] : ((#d -o #b) -o (#d -o #b)).\n" +
-  "#a s:: #b ASP-TENSE #c A-REF 'undefined' & #b TEMP-REF #d ==>  #c GLUE lam(P,lam(S,merge(app(P,S),drs([],[])))) : ((#d_s -o #b_t) -o (#d_s -o #b_t)).\n";
+  "//Be equality axiom\n" +
+  "#p PRED %p & strip(%p) == 'be' & #p PREDLINK #c s:: #s TYPE 'entity' ==>\n" +
+  "#p AXIOM all(X,all(Y,all(Z,imp(and(be(X),and(arg1(X,Y),arg2(X,Z))),eq(Y,Z))))).\n"
+
+const VAMPIRE_DEFAULT_AXIOMS = ""
 
 @Component({
   selector: 'app-editor',
@@ -220,11 +244,14 @@ const LIGER_DEFAULT_RULES = "--replace(true);\n" +
     ],
   encapsulation: ViewEncapsulation.None
 })
-export class EditorComponent implements AfterViewInit {
+export class EditorComponent implements AfterViewInit, OnChanges {
   @ViewChild('host') host: ElementRef;
 
   @Input() id: string;
   @Input() mode: string;
+  @Input() showControls = true;
+  @Input() initialContent: string | null = null;
+  @Output() contentChange = new EventEmitter<string>();
 
   defaultWidth = '800px';
   defaultHeight = '300px';
@@ -233,42 +260,59 @@ export class EditorComponent implements AfterViewInit {
 
   filename: string; // to hold the input filename
 
-
   ngAfterViewInit() {
-    console.log("mode is " + this.mode);
-
     this.codeMirror = CodeMirror.fromTextArea(this.host.nativeElement, {
-      mode: this.mode,
-      viewPortMargin: Infinity
+      mode: this.resolveMode(this.mode),
+      viewportMargin: Infinity,
+      lineNumbers: true,
+      matchBrackets: true,  // Enables bracket matching
+      autoCloseBrackets: true  // Auto-closes brackets
     });
 
-    if (this.mode == "liger" ) {
+    this.codeMirror.on('change', () => {
+      this.contentChange.emit(this.codeMirror.getValue());
+    });
+
+    if (this.initialContent !== null && this.initialContent !== undefined) {
+      this.codeMirror.setValue(this.initialContent);
+    } else if (this.mode === "liger") {
       this.codeMirror.setValue(LIGER_DEFAULT_RULES);
-
-    }
-
-    if (this.mode == "text")  {
+    } else if (this.mode === "text") {
       this.codeMirror.setValue(DEFAULT_TEST_SUITE);
+    } else if (this.mode === "vampire") {
+      this.codeMirror.setValue(VAMPIRE_DEFAULT_AXIOMS);
     }
-
-
-      this.codeMirror.setOption("lineNumbers", true);
-
-
-
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['mode'] && this.codeMirror) {
+      this.codeMirror.setOption('mode', this.resolveMode(this.mode));
+    }
+  }
 
   updateContent(value: string): void {
     if (this.codeMirror) {
-      this.codeMirror.setValue("");
-      this.codeMirror.clearHistory();
-      this.codeMirror.setValue(value);
+      this.codeMirror.setValue("");        // optional: clear first
+      this.codeMirror.clearHistory();      // optional: reset undo stack
+      this.codeMirror.setValue(value);     // set new content
+      this.codeMirror.refresh();
     }
   }
 
   public getContent(): string {
     return this.codeMirror.getValue();
+  }
+
+  private resolveMode(mode: string): string | { name: string; json: boolean } {
+    if (mode === 'json') {
+      return { name: 'javascript', json: true };
+    }
+
+    if (mode === 'nli') {
+      return 'nli';
+    }
+
+    return mode || 'text';
   }
 
   resizeToDefault(): void {
@@ -290,6 +334,8 @@ export class EditorComponent implements AfterViewInit {
     setTimeout(() => window.URL.revokeObjectURL(url), 10000);
   }
 
-
+  //Getter function for codemirror
+  get codeMirrorInstance(): CodeMirror.EditorFromTextArea {
+    return this.codeMirror;
   }
-
+  }
