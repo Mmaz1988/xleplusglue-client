@@ -640,5 +640,31 @@ describe('SemVisComponent', () => {
       expect(visible()).toEqual(['r2']);
       expect(fixture.nativeElement.querySelector('.hidden-readings').textContent).toContain('0/1 kept by the discriminants');
     });
+
+    it('selects an alternative among thousands of readings without recomputing the survivors per chip', () => {
+      // Six definites, each accommodated globally or locally: every combination, repeated. The
+      // template asks every chip whether it is active on every change detection; each answer
+      // used to recompute the survivors with an array search per reading (a frozen page for
+      // the 36,836 readings of a long conditional).
+      const points = ['0-3', '10-13', '20-23', '30-33', '40-43', '50-53'];
+      const many = Array.from({ length: 8000 }, (_, n) => reading(`m${n}`, 'wide', points.map((point, bit) =>
+        choice('PRESUPPOSITION', point, 'ACCOMMODATED', (n >> bit) & 1 ? 'LOCAL' : 'GLOBAL', (n >> bit) & 1 ? 'local' : 'global'))));
+      component.items = many.map(r => ({ id: r.id, solution: `<svg>${r.id}</svg>`, semantic: r.id } as any));
+      component.readingOrder = { updates: [{ id: 'du', sourceElementId: 's', sourceElementKind: 'sequence', semDiscourseMapping: {},
+        discourse: many }], discriminants: [], averager: 'borda' } as any;
+      fixture.detectChanges();
+      expect(chips().length).toBe(12);
+
+      const start = performance.now();
+      chips()[0].click();
+      fixture.detectChanges();
+      chips()[2].click();
+      fixture.detectChanges();
+      const elapsed = performance.now() - start;
+
+      expect(component.items.length).toBe(2000);
+      expect(chips().filter(button => !button.disabled).length).toBe(2 + 8);
+      expect(elapsed).toBeLessThan(1500);
+    });
   });
 });

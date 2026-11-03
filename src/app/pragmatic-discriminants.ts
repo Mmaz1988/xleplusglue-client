@@ -34,15 +34,37 @@ export interface PragmaticChoicePoint {
 
 export const NO_PRAGMATIC_SELECTION: PragmaticSelection = { choiceIds: [], hiddenReadingIds: [] };
 
+/** The readings an alternative (or a chip) holds, as a set: membership is tested for every
+ *  reading of a discourse, and a discourse can have tens of thousands of them. Computed once
+ *  per object; `associatedSolutions` is never changed after it is built. */
+const HELD = new WeakMap<object, Set<string>>();
+
+export function heldBy(holder: { associatedSolutions?: string[] }): Set<string> {
+  let held = HELD.get(holder);
+  if (!held) {
+    held = new Set(holder.associatedSolutions ?? []);
+    HELD.set(holder, held);
+  }
+  return held;
+}
+
 /** Every alternative the readings hold, with the readings holding it; null when a reading has
  *  no choices (stored before them, or GSWB could not key them): then none is listed (D1). */
 export function pragmaticAlternatives(readings: DiscourseAnalysis[]): PragmaticAlternative[] | null {
   if (!readings.length || readings.some(reading => !Array.isArray(reading.choices))) return null;
   const byId = new Map<string, PragmaticAlternative>();
   const hold = (id: string, make: () => Omit<PragmaticAlternative, 'associatedSolutions'>, reading: string) => {
-    const alternative = byId.get(id) ?? { ...make(), associatedSolutions: [] };
-    if (!alternative.associatedSolutions.includes(reading)) alternative.associatedSolutions.push(reading);
-    byId.set(id, alternative);
+    let alternative = byId.get(id);
+    if (!alternative) {
+      alternative = { ...make(), associatedSolutions: [] };
+      byId.set(id, alternative);
+      HELD.set(alternative, new Set());
+    }
+    const held = HELD.get(alternative)!;
+    if (!held.has(reading)) {
+      held.add(reading);
+      alternative.associatedSolutions.push(reading);
+    }
   };
   readings.forEach(reading => reading.choices!.forEach(choice => {
     hold(choice.id, () => ({ id: choice.id, kind: choice.kind, point: choice.point, label: alternativeLabel(choice) }), reading.id);
@@ -80,7 +102,10 @@ export function narrowedByPragmatics(
 ): DiscourseAnalysis[] {
   if (!choiceIds.length) return readings;
   const byId = new Map((alternatives ?? []).map(alternative => [alternative.id, alternative]));
-  return readings.filter(reading => choiceIds.every(id => byId.get(id)?.associatedSolutions.includes(reading.id)));
+  const held = choiceIds.map(id => byId.get(id));
+  if (held.some(alternative => !alternative)) return [];
+  const sets = held.map(alternative => heldBy(alternative!));
+  return readings.filter(reading => sets.every(set => set.has(reading.id)));
 }
 
 export function withoutHidden<T extends { id: string }>(readings: T[], selection: PragmaticSelection | undefined): T[] {
@@ -231,7 +256,8 @@ export function chipsOf(point: PragmaticChoicePoint, survivors: Set<string>): Pr
       label: named.label,
       title: others.length ? `${named.label} = ${others.map(member => member.label).join(' = ')}` : named.id,
       associatedSolutions: members.slice(1).reduce(
-        (held, member) => held.filter(id => member.associatedSolutions.includes(id)), [...members[0].associatedSolutions]),
+        (held, member) => { const set = heldBy(member); return held.filter(id => set.has(id)); },
+        [...members[0].associatedSolutions]),
       refinement: !!named.refines,
     };
   });

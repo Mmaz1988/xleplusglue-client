@@ -8,6 +8,7 @@ import {
   PragmaticAlternative,
   PragmaticChip,
   chipsOf,
+  heldBy,
   listedChoicePoints,
   narrowedByPragmatics,
   pragmaticAlternatives,
@@ -694,6 +695,7 @@ export class SemVisComponent implements AfterViewInit {
 
 
   applyFiltersAndResetIndex(startIndex = 0, preserveCurrent = true, notify = true): void {
+    this.forgetDiscriminantState();
     const currentId = preserveCurrent ? this.items[this.index]?.id ?? null : null;
     const filtered = this.filterItemsBySelectedDiscriminants(this.allItems);
 
@@ -745,7 +747,10 @@ export class SemVisComponent implements AfterViewInit {
     if (idFilter) items = items.filter(item => idFilter.has(item.id));
     items = this.narrowBySelectedDiscriminants(items);
     // Hidden by hand: on top of the discriminants, shown again only on request.
-    if (!this.showHidden && this.hiddenIds.length) items = items.filter(item => !this.hiddenIds.includes(item.id));
+    if (!this.showHidden && this.hiddenIds.length) {
+      const hidden = new Set(this.hiddenIds);
+      items = items.filter(item => !hidden.has(item.id));
+    }
     this.keptBySelection = null;
     // A discourse's selection, over what the narrowing left, as a run takes it
     // (`readingsForReasoning`): filters, then the top k places.
@@ -822,9 +827,24 @@ export class SemVisComponent implements AfterViewInit {
    *  without the readings hidden by hand -- a hidden reading counts as filtered out, so an
    *  alternative only hidden readings hold is inactive, like one that would leave nothing. */
   private getCurrentAllowedIds(): Set<string> {
+    if (this.allowedIdsMemo) return this.allowedIdsMemo;
     const kept = this.keptByDiscriminants();
-    if (!this.hiddenIds.length) return kept;
-    return new Set([...kept].filter(id => !this.hiddenIds.includes(id)));
+    const hidden = new Set(this.hiddenIds);
+    this.allowedIdsMemo = hidden.size ? new Set([...kept].filter(id => !hidden.has(id))) : kept;
+    return this.allowedIdsMemo;
+  }
+
+  /** The template asks, on every change detection, whether each discriminant and chip would
+   *  narrow the survivors; with tens of thousands of readings, computing the survivors anew for
+   *  each made a single selection freeze the page. The survivors and the answers are kept
+   *  until the state changes: every change goes through `applyFiltersAndResetIndex` or
+   *  `rebuildDiscriminantViews`, which forget them. */
+  private allowedIdsMemo: Set<string> | null = null;
+  private reducesMemo = new WeakMap<object, boolean>();
+
+  private forgetDiscriminantState(): void {
+    this.allowedIdsMemo = null;
+    this.reducesMemo = new WeakMap();
   }
 
   /** What the discriminants alone keep: scope, MC and pragmatic selections over all items. */
@@ -847,10 +867,13 @@ export class SemVisComponent implements AfterViewInit {
   }
 
   private furtherReducesSolutions(d: { associatedSolutions?: string[] }): boolean {
+    const known = this.reducesMemo.get(d);
+    if (known !== undefined) return known;
     const currentAllowed = this.getCurrentAllowedIds();
-    const candidate = new Set(d.associatedSolutions ?? []);
-    const nextAllowed = this.intersect(currentAllowed, candidate);
-    return nextAllowed.size !== currentAllowed.size && nextAllowed.size > 0;
+    const nextAllowed = this.intersect(currentAllowed, heldBy(d));
+    const reduces = nextAllowed.size !== currentAllowed.size && nextAllowed.size > 0;
+    this.reducesMemo.set(d, reduces);
+    return reduces;
   }
 
   wouldFurtherFilter(d: GswbDiscriminant): boolean {
@@ -863,6 +886,7 @@ export class SemVisComponent implements AfterViewInit {
   }
 
   private rebuildDiscriminantViews(): void {
+    this.forgetDiscriminantState();
     const decorate = (arr: GswbDiscriminant[]): DiscRow[] => {
       const views: DiscView[] = arr.map((d, i) => {
         const selected =
@@ -961,7 +985,7 @@ export class SemVisComponent implements AfterViewInit {
 
   isCurrentReadingIn(chip: PragmaticChip): boolean {
     const current = this.items?.[this.index];
-    return !!current && chip.associatedSolutions.includes(current.id);
+    return !!current && heldBy(chip).has(current.id);
   }
 
   get currentHidden(): boolean {
@@ -1120,7 +1144,6 @@ export class SemVisComponent implements AfterViewInit {
     const cur = this.items?.[this.index];
     if (!cur?.id) return false;
 
-    const assoc = d.associatedSolutions ?? [];
-    return Array.isArray(assoc) && assoc.includes(cur.id);
+    return heldBy(d).has(cur.id);
   }
 }
