@@ -6,7 +6,7 @@ import { EditorComponent } from '../editor/editor.component';
 import { DataService } from '../data.service';
 import {DerivationContainerComponent} from "./derivation-container/derivation-container.component";
 import {DialogComponent} from "../utilities/dialog/dialog.component";
-import {GswbRequest,GswbPreferences, LigerStructure} from "../models/models";
+import {GswbRequest,GswbPreferences, LigerStructure, LigerSolutionAnnotation} from "../models/models";
 import {GswbSettingsComponent} from "./gswb-settings/gswb-settings.component";
 import {SemVisComponent} from "../sem-vis/sem-vis.component";
 import { GswbWorkspaceState } from "../analysis-workspace-state.service";
@@ -40,6 +40,8 @@ export class GswbVisComponent implements AfterViewInit {
   structuredView = true;
   mcText = '';
   mcStructureJson: LigerStructure | null = null;
+  mcSolutions: LigerSolutionAnnotation[] = [];
+  mcSelectedIndex = 0;
 
   private pendingState: GswbWorkspaceState | null = null;
 
@@ -61,7 +63,7 @@ export class GswbVisComponent implements AfterViewInit {
   }
   loading: boolean = false;
 
-  calculateSemantics(){
+  calculateSemantics(premisesOverride?: string){
     this.loading = true;
 
     this.updateMeaningConstructors();
@@ -69,7 +71,7 @@ export class GswbVisComponent implements AfterViewInit {
     this.gswbPreferences.onSubmit();
 
     const gswbRequest: GswbRequest = {
-      premises: this.editor1.getContent(),
+      premises: premisesOverride ?? this.editor1.getContent(),
       gswbPreferences: this.gswbPreferences.gswbPreferences
     }
 
@@ -177,10 +179,27 @@ export class GswbVisComponent implements AfterViewInit {
     this.meaningConstructors = this.editor1?.getContent() ?? '';
   }
 
-  receiveMeaningConstructors(text: string, structureJson: LigerStructure | null): void {
+  receiveMeaningConstructors(
+    text: string,
+    structureJson: LigerStructure | null,
+    solutions?: LigerSolutionAnnotation[]
+  ): void {
     this.editor1?.updateContent(text);
     this.mcText = text;
     this.mcStructureJson = structureJson;
+    this.mcSolutions = solutions ?? [];
+    this.mcSelectedIndex = this.mcSolutions.findIndex(s => s.meaningConstructors === text);
+  }
+
+  selectMcSolution(index: number): void {
+    const solution = this.mcSolutions[index];
+    if (!solution) {
+      return;
+    }
+    this.mcSelectedIndex = index;
+    this.mcText = solution.meaningConstructors ?? '';
+    this.mcStructureJson = solution.structureJson ?? null;
+    this.editor1?.updateContent(this.mcText);
   }
 
   captureState(): GswbWorkspaceState | null {

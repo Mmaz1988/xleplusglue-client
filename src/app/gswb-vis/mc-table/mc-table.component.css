@@ -23,6 +23,10 @@
   width: 50%;
 }
 
+.mc-resources {
+  min-width: 160px;
+}
+
 .mc-table caption {
   text-align: left;
   font-weight: bold;
@@ -54,22 +58,6 @@
   font-size: 0.85em;
 }
 
-.mc-resources {
-  min-width: 160px;
-}
-
-.mc-badge {
-  display: inline-block;
-  background-color: lightblue;
-  border: 1px solid rgb(190, 190, 255);
-  border-radius: 2px;
-  padding: 3px 8px;
-  margin: 2px 4px 2px 0;
-  font-family: monospace;
-  font-size: 1.05em;
-  white-space: nowrap;
-}
-
 .mc-empty {
   color: #607d8b;
   font-style: italic;
@@ -80,7 +68,7 @@
   padding: 4px 6px;
   border-radius: 2px;
   cursor: pointer;
-  font-size: 1.5em;
+  font-size: 1.1em;
 }
 
 .mc-formula-latex:hover {
@@ -114,4 +102,14 @@
   padding: 2px 4px;
   border: 1px solid #cfd8dc;
   box-sizing: border-box;
+}
+
+.mc-badge {
+  display: inline-block;
+  margin: 2px 8px 4px 0;
+  font-family: monospace;
+  font-size: 1.15em;
+  line-height: 1.3;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }

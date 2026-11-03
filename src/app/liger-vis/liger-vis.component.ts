@@ -229,7 +229,7 @@ export class LigerVisComponent implements AfterViewInit {
     this.meaningConstructors = allMeaningConstructors;
     // Combines MCs across solutions, each with its own structureJson, so source-span
     // hover lookup (which needs a single structure) is not supported for this combined view.
-    this.changeDetector.emit({ text: allMeaningConstructors, structureJson: null });
+    this.changeDetector.emit({ text: allMeaningConstructors, structureJson: null, solutions: this.solutions });
   }
 
   private renderSelectedSolution(index: number): void {
@@ -256,7 +256,7 @@ export class LigerVisComponent implements AfterViewInit {
     }
 
     this.meaningConstructors = solution.meaningConstructors ?? '';
-    this.changeDetector.emit({ text: this.meaningConstructors, structureJson: this.structureJson });
+    this.changeDetector.emit({ text: this.meaningConstructors, structureJson: this.structureJson, solutions: this.solutions });
   }
 
   displayMessage(message: string, color: string) {

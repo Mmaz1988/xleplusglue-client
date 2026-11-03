@@ -4,6 +4,13 @@
     {{ structuredView ? 'Show raw text' : 'Show structured view' }}
   </button>
 </h3>
+<div class="mc-solution-nav" *ngIf="mcSolutions.length > 1">
+  <button type="button" *ngFor="let solution of mcSolutions; let i = index"
+          [class.active]="i === mcSelectedIndex"
+          (click)="selectMcSolution(i)">
+    {{ i + 1 }}
+  </button>
+</div>
 <div class="editor-restr" [hidden]="structuredView">
 <app-editor #edit1 [mode]="'glue'" >
 </app-editor>

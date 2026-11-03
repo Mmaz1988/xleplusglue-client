@@ -2,11 +2,11 @@ import { GswbPreferences } from './models/models';
 
 export const APP_DEFAULTS = {
   grammar: {
-    ligerPath: './grammars/dev/glue-basic-drt.lfg.glue',
+    ligerPath: './grammars/demo/fracas_inference_grammar/main_fracas_grammar.lfg.glue',
     ligerRulesPath: './liger_resources/rules/basic_axiom_rules.txt',
   },
   liger: {
-    sentence: 'Kim told a man about himself',
+    sentence: 'The man saw a man with a telescope.',
   },
   graphInspector: {
     rulesText: "// HIERARCHIES\n" +
