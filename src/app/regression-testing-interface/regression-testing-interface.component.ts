@@ -1296,6 +1296,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     // session silently narrowed the next session's run to the two items that happened to
     // share their ids, and the other fourteen came back "Never attempted". 2026-09-08.
     this.selectedNliItemIds.clear();
+    this.nliSelectionVersion++;
     this.selectedParseSentenceIds.clear();
     this.clearVampireProgressIndicator();
     this.pendingVampireFinalSnapshot = null;
@@ -2323,11 +2324,33 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     } else {
       this.selectedNliItemIds.delete(id);
     }
+    this.nliSelectionVersion++;
   }
+
+  /** Whether a sentence is a premise or the conclusion of an item ticked for the next run:
+   *  the parsing report marks those, so the sentences a run will reason over can be seen
+   *  (and disambiguated) together. */
+  isSentenceOfSelectedNliItem(sentenceId: string): boolean {
+    const cache = this.selectedItemSentences;
+    if (!cache || cache.version !== this.nliSelectionVersion || cache.items !== this.regressionTestItems) {
+      const ids = new Set<string>();
+      for (const item of this.regressionTestItems ?? []) {
+        if (!this.selectedNliItemIds.has(String(item?.id ?? ''))) continue;
+        [...(item?.premises ?? []), ...(item?.conclusion ?? [])].forEach((id: any) => ids.add(String(id ?? '')));
+      }
+      this.selectedItemSentences = { version: this.nliSelectionVersion, items: this.regressionTestItems, ids };
+    }
+    return this.selectedItemSentences!.ids.has(String(sentenceId ?? ''));
+  }
+
+  /** Bumped whenever `selectedNliItemIds` changes, for `isSentenceOfSelectedNliItem`'s cache. */
+  private nliSelectionVersion = 0;
+  private selectedItemSentences: { version: number; items: unknown; ids: Set<string> } | null = null;
 
   /** Select every item that could run, or clear the selection. Unparsed items are skipped:
    *  selecting one would narrow a run down to items that cannot produce anything. */
   toggleAllNliItems(): void {
+    this.nliSelectionVersion++;
     if (this.allSelectableNliItemsSelected) {
       this.selectedNliItemIds.clear();
       return;
@@ -2400,6 +2423,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     for (const id of [...this.selectedNliItemIds]) {
       if (!known.has(id)) this.selectedNliItemIds.delete(id);
     }
+    this.nliSelectionVersion++;
   }
 
   /** Closes the inference report once its run is over: duration, results over the whole
@@ -2744,6 +2768,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
                 const sentenceIds: string[] = [...(item?.premises ?? []), ...(item?.conclusion ?? [])];
                 if (sentenceIds.some(id => reparsed.has(id))) this.selectedNliItemIds.add(String(item.id));
               }
+              this.nliSelectionVersion++;
               this.selectedParseSentenceIds.clear();
             }
             this.continueAfterParse(discourseNote);

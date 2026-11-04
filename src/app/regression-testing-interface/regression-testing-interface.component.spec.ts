@@ -1126,6 +1126,28 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.canRunInference).toBeTrue();
   });
 
+  it('marks in the parsing report the sentences of the items ticked for the next run', () => {
+    component['regressionTestItems'] = [
+      { id: 'n0', premises: ['S0', 'S1'], conclusion: ['S2'] },
+      { id: 'n1', premises: ['S3'], conclusion: ['S4'] },
+    ];
+    expect(component.isSentenceOfSelectedNliItem('S0')).toBeFalse();
+
+    component.setNliItemSelected('n0', true);
+    expect(['S0', 'S1', 'S2', 'S3', 'S4'].map(id => component.isSentenceOfSelectedNliItem(id)))
+      .toEqual([true, true, true, false, false]);
+
+    component.setNliItemSelected('n1', true);
+    component.setNliItemSelected('n0', false);
+    expect(['S0', 'S2', 'S3', 'S4'].map(id => component.isSentenceOfSelectedNliItem(id)))
+      .toEqual([false, false, true, true]);
+
+    // New items (a new testsuite) are read again, not answered from the old ones.
+    component['regressionTestItems'] = [{ id: 'n1', premises: ['S9'], conclusion: ['S8'] }];
+    expect(component.isSentenceOfSelectedNliItem('S3')).toBeFalse();
+    expect(component.isSentenceOfSelectedNliItem('S9')).toBeTrue();
+  });
+
   describe('session lease', () => {
     it('holds the open session, moves the lease when the session changes and releases it on destroy', () => {
       const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;

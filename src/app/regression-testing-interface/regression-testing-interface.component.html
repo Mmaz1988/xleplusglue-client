@@ -310,7 +310,9 @@
           </div>
           <div class="results-list">
              <div class="result-container"
-                 *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId">
+                 *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId"
+                 [class.in-selected-item]="isSentenceOfSelectedNliItem(element.sentence_id)"
+                 [attr.title]="isSentenceOfSelectedNliItem(element.sentence_id) ? 'Part of an inference item selected for the next run' : null">
               <label class="report-row-select" title="Reparse this sentence with the next Parse">
                 <input type="checkbox" [checked]="isParseSentenceSelected(element.sentence_id)" [disabled]="runLocked"
                        (change)="setParseSentenceSelected(element.sentence_id, $any($event.target).checked)">

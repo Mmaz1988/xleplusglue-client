@@ -389,6 +389,13 @@ div.errorhandling {
 .hm-cell { cursor: pointer; }
 
 
+/* A sentence of an inference item ticked for the next run: a thick edge, so it shows over
+   the parsing report's own tints (red: no parse, yellow: several parses selected). */
+.result-container.in-selected-item {
+  border-color: #1565c0;
+  box-shadow: inset 6px 0 0 #1565c0;
+}
+
 .result-container.highlight {
   background-color: rgba(33, 150, 243, 0.08);
   border: 1px solid rgba(33, 150, 243, 0.25);
