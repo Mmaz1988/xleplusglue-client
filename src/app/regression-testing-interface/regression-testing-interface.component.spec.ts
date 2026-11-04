@@ -1435,20 +1435,23 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(component.session.lastAnnotations!['S0'].solutions[0].sentenceAnalysis).toBeTruthy();
     });
 
-    it('fingerprints by section, each the JSON a patch sends, stable across unchanged snapshots', () => {
+    it('fingerprints by section as short hashes, stable across unchanged snapshots', () => {
       const snapshot = (component as any).buildSessionSnapshot();
       const fingerprints = (component as any).buildSessionFingerprint(snapshot);
 
-      expect(JSON.parse(fingerprints['inputs'])).toEqual(JSON.parse(JSON.stringify(snapshot.inputs)));
+      // A hash, not the section's JSON: the session's text is not kept twice.
+      expect(fingerprints['inputs'].length).toBeLessThan(40);
       // updatedAt is excluded so the fingerprint is stable across snapshots of unchanged
       // state -- otherwise every autosave would see a change and re-save forever.
-      expect(fingerprints['metadata']).not.toContain('"updatedAt"');
-      expect(JSON.parse(fingerprints['metadata']).createdAt).toBeDefined();
       expect((component as any).buildSessionFingerprint((component as any).buildSessionSnapshot())).toEqual(fingerprints);
+      component.session.axiomsFilename = 'other.txt';
+      expect((component as any).buildSessionFingerprint((component as any).buildSessionSnapshot())['inputs'])
+        .not.toBe(fingerprints['inputs']);
 
-      const serialized = (component as any).serializeSessionSnapshot(snapshot);
-      expect(serialized).not.toContain('"updatedAt"');
-      expect(JSON.parse(serialized).metadata.createdAt).toBeDefined();
+      const skeleton = (component as any).serializeSessionSkeleton(snapshot);
+      expect(skeleton).not.toContain('"updatedAt"');
+      expect(JSON.parse(skeleton).metadata.createdAt).toBeDefined();
+      expect(JSON.parse(skeleton).analysis.documents).toEqual({});
     });
   });
 
@@ -1981,10 +1984,71 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(paths['analysis.documents.n1'].discourseUpdates[0].choiceTable[0].id).toBe('ANAPHORA@0-2=5-8');
       expect(paths['analysis.documents.n1'].discourseUpdates[0].discourse[0].choices).toEqual([0]);
 
-      // An item gone: only a full save removes its document from the store.
+      // An item gone: its document is patched away, the rest of the session is not resent.
       delete component.session.analysisDocuments['n1'];
       save();
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+      paths = JSON.parse(dataServiceSpy.patchRegressionSession.calls.mostRecent().args[1]).paths;
+      expect(paths).toEqual({ 'analysis.documents.n1': null });
+
+      // A new item: its document is patched in.
+      component.session.analysisDocuments['n2'] = doc('n2');
+      save();
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+      paths = JSON.parse(dataServiceSpy.patchRegressionSession.calls.mostRecent().args[1]).paths;
+      expect(Object.keys(paths)).toEqual(['analysis.documents.n2']);
+    });
+
+    it('writes a session in parts, never as one body: the session without its documents, then the documents in batches', () => {
+      component.createNewSession();
+      const doc = (id: string): any => ({
+        id, semanticType: 'lfgxdrt', sentences: [{ id: `S-${id}`, text: 'x'.repeat(400) }], sequences: [], elements: [],
+        reasoningUpdates: [], discourseUpdates: [],
+      });
+      component.session.analysisDocuments = { n0: doc('n0'), n1: doc('n1'), n2: doc('n2') };
+      // Two documents fit a batch, three do not.
+      const stored = component['sessionSectionPaths'](component['buildSessionSnapshot']())['analysis.documents.n0'];
+      component['sessionPatchBatchLength'] = 2 * (JSON.stringify(stored).length + 30) + 10;
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.calls.reset();
+      dirtyTheSession();
+      save();
+
       expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
+      const skeleton = JSON.parse(dataServiceSpy.saveRegressionSession.calls.mostRecent().args[1] as string);
+      expect(skeleton.analysis.documents).toEqual({});
+      const batches = dataServiceSpy.patchRegressionSession.calls.allArgs()
+        .map(([, body]) => Object.keys(JSON.parse(body).paths));
+      expect(batches).toEqual([['analysis.documents.n0', 'analysis.documents.n1'], ['analysis.documents.n2']]);
+      expect(component['lastSavedSectionFingerprints']['analysis.documents.n2']).toBeDefined();
+
+      // Stored: nothing more to send until something changes.
+      dataServiceSpy.patchRegressionSession.calls.reset();
+      save();
+      expect(dataServiceSpy.patchRegressionSession).not.toHaveBeenCalled();
+    });
+
+    it('resends only what a failed write did not store', () => {
+      component.createNewSession();
+      const doc = (id: string): any => ({
+        id, semanticType: 'lfgxdrt', sentences: [{ id: `S-${id}`, text: 'x'.repeat(400) }], sequences: [], elements: [],
+        reasoningUpdates: [], discourseUpdates: [],
+      });
+      component.session.analysisDocuments = { n0: doc('n0'), n1: doc('n1') };
+      component['sessionPatchBatchLength'] = 500;
+      dataServiceSpy.patchRegressionSession.and.returnValues(of({} as any), throwError(() => ({ status: 500 })) as any);
+      dirtyTheSession();
+      save();
+      expect(component['lastSavedSectionFingerprints']['analysis.documents.n0']).toBeDefined();
+      expect(component['lastSavedSectionFingerprints']['analysis.documents.n1']).toBeUndefined();
+
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.and.returnValue(of({} as any));
+      save();
+      expect(dataServiceSpy.saveRegressionSession).not.toHaveBeenCalled();
+      expect(dataServiceSpy.patchRegressionSession.calls.allArgs().map(([, body]) => Object.keys(JSON.parse(body).paths)))
+        .toEqual([['analysis.documents.n1']]);
     });
 
     it('re-saves in full when the store says the patched session is not there', () => {

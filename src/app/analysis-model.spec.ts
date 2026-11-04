@@ -34,6 +34,7 @@ import {
   regressionSessionToDocument,
   ReasoningUpdate,
   sameReasoningUpdate,
+  storageFingerprint,
   storageJson,
 } from './models/models';
 
@@ -499,6 +500,17 @@ describe('analysis model helpers', () => {
         expect(storageJson(stored)).toBe(JSON.stringify(stored));
         expect(storageJson(regressionSessionToDocument(session))).toBe(JSON.stringify(stored));
         expect(storageJson(undefined)).toBe('null');
+      });
+
+      it('fingerprints a stored session without keeping its text: equal for equal JSON, different for a change', () => {
+        const session: RegressionTestingSession = { ...createRegressionTestingSession(), analysisDocuments: { n3: withDiscourse() } };
+        const stored: any = regressionSessionToDocument(session);
+        expect(storageFingerprint(stored)).toBe(storageFingerprint(regressionSessionToDocument(session)));
+        const changed = JSON.parse(JSON.stringify(stored));
+        changed.analysis.documents.n3.discourseUpdates[0].discourse[0].drsString += ' ';
+        expect(storageFingerprint(changed)).not.toBe(storageFingerprint(stored));
+        expect(storageFingerprint({ a: 1 })).not.toBe(storageFingerprint({ a: 2 }));
+        expect(storageFingerprint(undefined)).toBe(storageFingerprint(null));
       });
     });
 

@@ -1340,12 +1340,11 @@ function persistedAnnotation(annotation: LigerSolutionAnnotationResponse): Liger
  * expands them again (`expandedDiscourseUpdate`).
  *
  * Cached by the readings' array, which is never changed once built (pcdrs-readings), so a
- * save does not compact again, and the compacted array is what `storageJson` caches the text
- * of.
+ * save does not compact again, and the compacted array is what `storageFingerprint` caches
+ * the fingerprint of.
  */
 const COMPACTED_DISCOURSE = new WeakMap<DiscourseAnalysis[], { discourse: unknown[]; choiceTable?: PragmaticChoice[] }>();
 const STORAGE_JSON_CACHEABLE = new WeakSet<object>();
-const STORAGE_JSON = new WeakMap<object, string>();
 
 function compactedDiscourse(discourse: DiscourseAnalysis[]): { discourse: unknown[]; choiceTable?: PragmaticChoice[] } {
   const cached = COMPACTED_DISCOURSE.get(discourse);
@@ -1398,27 +1397,58 @@ export function expandedDiscourseUpdate(update: DiscourseUpdate): DiscourseUpdat
 }
 
 /**
- * JSON.stringify for a stored session or a part of it, reusing the text of every compacted
- * readings array it has written before: autosave serializes the session to see what changed,
- * and the readings, the bulk of it, never change once built. Same text as JSON.stringify.
+ * The JSON of a stored session or a part of it: what a save sends. Built only for what is
+ * sent, one part at a time: a full bank is ~500 MB of JSON, past what one string or a tab's
+ * heap can hold next to the session itself (the tab crashed saving it, 2026-11-04). What is
+ * unchanged is told by `storageFingerprint`, which keeps no text.
  */
 export function storageJson(value: unknown): string {
-  const marker = `__storage_json_${Math.random().toString(36).slice(2)}_`;
+  return JSON.stringify(value ?? null);
+}
+
+/** Each compacted readings array's fingerprint, computed once: the arrays never change once
+ *  built (`compactedDiscourse`), and they are the bulk of a session. */
+const STORAGE_FINGERPRINT = new WeakMap<object, string>();
+/** Stands for a readings array in the text a fingerprint hashes; JSON escapes the NULs, so no
+ *  serialized value can produce it. */
+const FINGERPRINT_PART = '\u0000readings\u0000';
+
+/**
+ * A short fingerprint of `value`'s storage JSON: equal for equal JSON, and (but for a
+ * 53-bit hash collision) different otherwise. Autosave compares these to find what changed,
+ * instead of keeping the session's JSON twice. Each readings array is hashed once ever, and
+ * the text hashed per call is the value without its readings.
+ */
+export function storageFingerprint(value: unknown): string {
   const parts: string[] = [];
   const text = JSON.stringify(value ?? null, (_key, entry) => {
     if (entry && typeof entry === 'object' && STORAGE_JSON_CACHEABLE.has(entry)) {
-      let json = STORAGE_JSON.get(entry);
-      if (json === undefined) {
-        json = JSON.stringify(entry);
-        STORAGE_JSON.set(entry, json);
+      let fingerprint = STORAGE_FINGERPRINT.get(entry);
+      if (fingerprint === undefined) {
+        const json = JSON.stringify(entry);
+        fingerprint = `${json.length}:${hash53(json)}`;
+        STORAGE_FINGERPRINT.set(entry, fingerprint);
       }
-      parts.push(json);
-      return `${marker}${parts.length - 1}`;
+      parts.push(fingerprint);
+      return FINGERPRINT_PART;
     }
     return entry;
   });
-  if (!parts.length) return text;
-  return text.replace(new RegExp(`"${marker}(\\d+)"`, 'g'), (_match, position) => parts[Number(position)]);
+  return parts.length ? `${text.length}:${hash53(text)}[${parts.join(',')}]` : `${text.length}:${hash53(text)}`;
+}
+
+/** cyrb53: a fast 53-bit string hash (public domain, bryc). */
+function hash53(text: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
 export function persistedAnalysisDocument(document: XlePlusGlueDocument): XlePlusGlueDocument {
