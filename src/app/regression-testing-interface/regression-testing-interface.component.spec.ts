@@ -1435,14 +1435,18 @@ describe('RegressionTestingInterfaceComponent', () => {
       expect(component.session.lastAnnotations!['S0'].solutions[0].sentenceAnalysis).toBeTruthy();
     });
 
-    it('serializes the snapshot once, and the fingerprint IS the request body', () => {
+    it('fingerprints by section, each the JSON a patch sends, stable across unchanged snapshots', () => {
       const snapshot = (component as any).buildSessionSnapshot();
-      const serialized = (component as any).serializeSessionSnapshot(snapshot);
+      const fingerprints = (component as any).buildSessionFingerprint(snapshot);
 
-      expect(typeof serialized).toBe('string');
-      expect((component as any).buildSessionFingerprint(snapshot)).toBe(serialized);
+      expect(JSON.parse(fingerprints['inputs'])).toEqual(JSON.parse(JSON.stringify(snapshot.inputs)));
       // updatedAt is excluded so the fingerprint is stable across snapshots of unchanged
       // state -- otherwise every autosave would see a change and re-save forever.
+      expect(fingerprints['metadata']).not.toContain('"updatedAt"');
+      expect(JSON.parse(fingerprints['metadata']).createdAt).toBeDefined();
+      expect((component as any).buildSessionFingerprint((component as any).buildSessionSnapshot())).toEqual(fingerprints);
+
+      const serialized = (component as any).serializeSessionSnapshot(snapshot);
       expect(serialized).not.toContain('"updatedAt"');
       expect(JSON.parse(serialized).metadata.createdAt).toBeDefined();
     });
@@ -1969,6 +1973,40 @@ describe('RegressionTestingInterfaceComponent', () => {
       // Only `inputs` moved; the immutable parse-phase bulk must not be re-sent.
       expect(Object.keys(paths)).toEqual(['inputs']);
       expect(paths.inputs.axioms.filename).toBe('degree_axioms.txt');
+    });
+
+    it('patches a pick as the selections alone, and a changed document as that document alone', () => {
+      component.createNewSession();
+      const doc = (id: string): any => ({
+        id, semanticType: 'lfgxdrt', sentences: [], sequences: [], elements: [], reasoningUpdates: [],
+        discourseUpdates: [{ id: `du-${id}`, sourceElementId: 'S1', sourceElementKind: 'sentence', semDiscourseMapping: {},
+          discourse: [{ id: 'r1', semanticOrigin: 's0', drsString: 'a', ruleBranch: 1, anaphoraMapping: { relations: [] },
+            collapsed: false, choices: [{ kind: 'ANAPHORA', point: '0-2', id: 'ANAPHORA@0-2=5-8' }] }] }],
+      });
+      component.session.analysisDocuments = { n0: doc('n0'), n1: doc('n1') };
+      dirtyTheSession();
+      save();                                   // the full PUT that creates it
+      dataServiceSpy.saveRegressionSession.calls.reset();
+      dataServiceSpy.patchRegressionSession.calls.reset();
+
+      component.session.analysisDocuments['n0'].discourseUpdates[0].pragmaticSelection =
+        { choiceIds: ['ANAPHORA@0-2=5-8'], hiddenReadingIds: [] };
+      save();
+      let paths = JSON.parse(dataServiceSpy.patchRegressionSession.calls.mostRecent().args[1]).paths;
+      expect(Object.keys(paths)).toEqual(['analysis.documentSelections']);
+      expect(paths['analysis.documentSelections'].n0['du-n0'].pragmaticSelection.choiceIds).toEqual(['ANAPHORA@0-2=5-8']);
+
+      component.session.analysisDocuments['n1'] = { ...doc('n1'), sentences: [{ id: 'S9' } as any] };
+      save();
+      paths = JSON.parse(dataServiceSpy.patchRegressionSession.calls.mostRecent().args[1]).paths;
+      expect(Object.keys(paths)).toEqual(['analysis.documents.n1']);
+      expect(paths['analysis.documents.n1'].discourseUpdates[0].choiceTable[0].id).toBe('ANAPHORA@0-2=5-8');
+      expect(paths['analysis.documents.n1'].discourseUpdates[0].discourse[0].choices).toEqual([0]);
+
+      // An item gone: only a full save removes its document from the store.
+      delete component.session.analysisDocuments['n1'];
+      save();
+      expect(dataServiceSpy.saveRegressionSession).toHaveBeenCalledTimes(1);
     });
 
     it('re-saves in full when the store says the patched session is not there', () => {

@@ -34,6 +34,7 @@ import {
   regressionSessionToDocument,
   ReasoningUpdate,
   sameReasoningUpdate,
+  storageJson,
 } from './models/models';
 
 describe('analysis model helpers', () => {
@@ -442,6 +443,63 @@ describe('analysis model helpers', () => {
       const restored = regressionDocumentToSession(stored);
       expect(restored.analysisDocuments['n3'].reasoningUpdates![0].id).toBe('ru-n3');
       expect(restored.analysisDocuments['n3'].reasoningUpdates![0].assignments.length).toBe(2);
+    });
+
+    describe('stored readings', () => {
+      const choice = (point: string, target: string) => ({
+        kind: 'PRESUPPOSITION', point, pointLabel: 'the board', resolution: 'ACCOMMODATED', target,
+        targetLabel: target, id: `PRESUPPOSITION@${point}=${target}`, direct: true, site: null, siteLabel: null, name: null,
+      } as any);
+      const withDiscourse = (): XlePlusGlueDocument => {
+        const doc = regressionDocument(true);
+        doc.discourseUpdates = [{
+          id: 'du-1', sourceElementId: 'S1', sourceElementKind: 'sentence', semDiscourseMapping: {},
+          discourse: [
+            { id: 'r1', semanticOrigin: 's0', drsString: 'a', ruleBranch: 1, anaphoraMapping: { relations: [] }, collapsed: false,
+              choices: [choice('3-12', 'GLOBAL'), choice('22-32', 'LOCAL')] },
+            { id: 'r2', semanticOrigin: 's0', drsString: 'b', ruleBranch: 1, anaphoraMapping: { relations: [] }, collapsed: false,
+              choices: [choice('3-12', 'LOCAL'), choice('22-32', 'LOCAL')] },
+            { id: 'r3', semanticOrigin: 's0', drsString: 'c', ruleBranch: 1, anaphoraMapping: { relations: [] }, collapsed: false },
+          ],
+          pragmaticSelection: { choiceIds: ['PRESUPPOSITION@3-12=LOCAL'], hiddenReadingIds: ['r3'] },
+        } as any];
+        return doc;
+      };
+
+      it('stores each choice once, the readings pointing into the table, and reads them back', () => {
+        const session: RegressionTestingSession = { ...createRegressionTestingSession(), analysisDocuments: { n3: withDiscourse() } };
+        const stored: any = regressionSessionToDocument(session);
+        const update = stored.analysis.documents['n3'].discourseUpdates[0];
+        expect(update.choiceTable.map((entry: any) => entry.id))
+          .toEqual(['PRESUPPOSITION@3-12=GLOBAL', 'PRESUPPOSITION@22-32=LOCAL', 'PRESUPPOSITION@3-12=LOCAL']);
+        expect(update.discourse.map((reading: any) => reading.choices)).toEqual([[0, 1], [2, 1], undefined]);
+
+        const restored = regressionDocumentToSession(JSON.parse(JSON.stringify(stored)));
+        expect(restored.analysisDocuments['n3'].discourseUpdates).toEqual(session.analysisDocuments['n3'].discourseUpdates);
+      });
+
+      it('stores the selections apart from the document, and an older session\'s inline ones still load', () => {
+        const session: RegressionTestingSession = { ...createRegressionTestingSession(), analysisDocuments: { n3: withDiscourse() } };
+        const stored: any = regressionSessionToDocument(session);
+        expect(stored.analysis.documents['n3'].discourseUpdates[0].pragmaticSelection).toBeUndefined();
+        expect(stored.analysis.documentSelections).toEqual({
+          n3: { 'du-1': { pragmaticSelection: { choiceIds: ['PRESUPPOSITION@3-12=LOCAL'], hiddenReadingIds: ['r3'] } } },
+        });
+
+        const older = JSON.parse(JSON.stringify(stored));
+        delete older.analysis.documentSelections;
+        older.analysis.documents['n3'].discourseUpdates[0].pragmaticSelection = { choiceIds: [], hiddenReadingIds: ['r1'] };
+        expect(regressionDocumentToSession(older).analysisDocuments['n3'].discourseUpdates[0].pragmaticSelection)
+          .toEqual({ choiceIds: [], hiddenReadingIds: ['r1'] });
+      });
+
+      it('serializes as JSON.stringify does, reusing the readings\' text', () => {
+        const session: RegressionTestingSession = { ...createRegressionTestingSession(), analysisDocuments: { n3: withDiscourse() } };
+        const stored = regressionSessionToDocument(session);
+        expect(storageJson(stored)).toBe(JSON.stringify(stored));
+        expect(storageJson(regressionSessionToDocument(session))).toBe(JSON.stringify(stored));
+        expect(storageJson(undefined)).toBe('null');
+      });
     });
 
     it('keeps each item\'s document separate, so one item cannot see another\'s readings', () => {

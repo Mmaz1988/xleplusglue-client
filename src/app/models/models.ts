@@ -1119,6 +1119,10 @@ export interface RegressionSessionAnalysis {
    *  documents are the record. `system.regressionTestItems`/`regressionTestResults` are
    *  not views: they describe the testsuite and the parse phase, not reasoning. */
   documents: Record<string, XlePlusGlueDocument>;
+  /** Each document's per-update human selections (reading selection, pragmatic selection),
+   *  keyed by item, then update id; stored apart so a pick patches a few bytes, not the
+   *  document. Absent in sessions saved before it: their selections sit in the documents. */
+  documentSelections?: Record<string, Record<string, StoredDiscourseSelections>>;
 }
 
 export interface RegressionSessionSaveState {
@@ -1327,6 +1331,96 @@ function persistedAnnotation(annotation: LigerSolutionAnnotationResponse): Liger
  *  them -- narrowing this in one place only would break exactly the parity the shared
  *  pipeline exists to keep. The in-memory document is untouched, so everything that does
  *  render a graph goes on rendering it. */
+/**
+ * The readings of a discourse update as STORED: each distinct choice once, in a `choiceTable`
+ * beside them, and each reading's `choices` as indices into it. GSWB lists every choice a
+ * reading holds with its full labels, and a long discourse has tens of thousands of readings
+ * holding the same few dozen choices: 150 of 243 MB of a stored session were choices, which
+ * took the session store down. In memory the readings stay as they are; regression's reader
+ * expands them again (`expandedDiscourseUpdate`).
+ *
+ * Cached by the readings' array, which is never changed once built (pcdrs-readings), so a
+ * save does not compact again, and the compacted array is what `storageJson` caches the text
+ * of.
+ */
+const COMPACTED_DISCOURSE = new WeakMap<DiscourseAnalysis[], { discourse: unknown[]; choiceTable?: PragmaticChoice[] }>();
+const STORAGE_JSON_CACHEABLE = new WeakSet<object>();
+const STORAGE_JSON = new WeakMap<object, string>();
+
+function compactedDiscourse(discourse: DiscourseAnalysis[]): { discourse: unknown[]; choiceTable?: PragmaticChoice[] } {
+  const cached = COMPACTED_DISCOURSE.get(discourse);
+  if (cached) return cached;
+  let compacted: { discourse: unknown[]; choiceTable?: PragmaticChoice[] };
+  if (!discourse.some(reading => Array.isArray(reading.choices))) {
+    compacted = { discourse: [...discourse] };
+  } else {
+    const index = new Map<string, number>();
+    const choiceTable: PragmaticChoice[] = [];
+    compacted = {
+      discourse: discourse.map(reading => !Array.isArray(reading.choices) ? reading : {
+        ...reading,
+        choices: reading.choices.map(choice => {
+          const key = JSON.stringify(choice);
+          let position = index.get(key);
+          if (position === undefined) {
+            position = choiceTable.length;
+            choiceTable.push(choice);
+            index.set(key, position);
+          }
+          return position;
+        }),
+      }),
+      choiceTable,
+    };
+  }
+  STORAGE_JSON_CACHEABLE.add(compacted.discourse);
+  COMPACTED_DISCOURSE.set(discourse, compacted);
+  return compacted;
+}
+
+/** A discourse update as stored: see `compactedDiscourse`. */
+function storedDiscourseUpdate(update: DiscourseUpdate): DiscourseUpdate {
+  if (!Array.isArray(update?.discourse)) return update;
+  return { ...update, ...compactedDiscourse(update.discourse) } as unknown as DiscourseUpdate;
+}
+
+/** The inverse of `storedDiscourseUpdate`; an update stored before the table is as it was. */
+export function expandedDiscourseUpdate(update: DiscourseUpdate): DiscourseUpdate {
+  const { choiceTable, ...rest } = (update ?? {}) as DiscourseUpdate & { choiceTable?: PragmaticChoice[] };
+  if (!Array.isArray(choiceTable)) return update;
+  return {
+    ...rest,
+    discourse: (rest.discourse ?? []).map(reading => !Array.isArray(reading.choices) ? reading : {
+      ...reading,
+      choices: (reading.choices as unknown as number[]).map(position => choiceTable[position]),
+    }),
+  };
+}
+
+/**
+ * JSON.stringify for a stored session or a part of it, reusing the text of every compacted
+ * readings array it has written before: autosave serializes the session to see what changed,
+ * and the readings, the bulk of it, never change once built. Same text as JSON.stringify.
+ */
+export function storageJson(value: unknown): string {
+  const marker = `__storage_json_${Math.random().toString(36).slice(2)}_`;
+  const parts: string[] = [];
+  const text = JSON.stringify(value ?? null, (_key, entry) => {
+    if (entry && typeof entry === 'object' && STORAGE_JSON_CACHEABLE.has(entry)) {
+      let json = STORAGE_JSON.get(entry);
+      if (json === undefined) {
+        json = JSON.stringify(entry);
+        STORAGE_JSON.set(entry, json);
+      }
+      parts.push(json);
+      return `${marker}${parts.length - 1}`;
+    }
+    return entry;
+  });
+  if (!parts.length) return text;
+  return text.replace(new RegExp(`"${marker}(\\d+)"`, 'g'), (_match, position) => parts[Number(position)]);
+}
+
 export function persistedAnalysisDocument(document: XlePlusGlueDocument): XlePlusGlueDocument {
   const withoutGraphs = (entries: SyntacticAnalysis[] | undefined) =>
     (entries ?? []).map(entry => {
@@ -1343,7 +1437,34 @@ export function persistedAnalysisDocument(document: XlePlusGlueDocument): XlePlu
       ...sequence,
       syntax: withoutGraphs(sequence.syntax),
     })),
+    discourseUpdates: (document?.discourseUpdates ?? []).map(update => storedDiscourseUpdate(update)),
   };
+}
+
+/** A discourse update's human selections, stored apart from its document
+ *  (`analysis.documentSelections`): a pick changes them, and the document is large. */
+export interface StoredDiscourseSelections {
+  readingSelection?: ReadingSelection;
+  pragmaticSelection?: PragmaticSelection;
+}
+
+function withoutSelections(document: XlePlusGlueDocument): XlePlusGlueDocument {
+  return {
+    ...document,
+    discourseUpdates: (document.discourseUpdates ?? []).map(update => {
+      const { readingSelection, pragmaticSelection, ...rest } = update;
+      return rest as DiscourseUpdate;
+    }),
+  };
+}
+
+function selectionsOf(document: XlePlusGlueDocument): Record<string, StoredDiscourseSelections> {
+  return Object.fromEntries((document?.discourseUpdates ?? [])
+    .filter(update => update.readingSelection || update.pragmaticSelection)
+    .map(update => [update.id, {
+      ...(update.readingSelection ? { readingSelection: update.readingSelection } : {}),
+      ...(update.pragmaticSelection ? { pragmaticSelection: update.pragmaticSelection } : {}),
+    }]));
 }
 
 /** Whether two ReasoningUpdates say the same thing, ignoring the fields that move on
@@ -1464,10 +1585,14 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
       report: JSON.parse(JSON.stringify(session?.report ?? emptyRunReport())),
       documents: Object.fromEntries(
         Object.entries(session?.analysisDocuments ?? {}).map(([key, document]) => [key, {
-          ...persistedAnalysisDocument(document),
+          ...withoutSelections(persistedAnalysisDocument(document)),
           reasoningUpdates: (document?.reasoningUpdates ?? [])
             .map(update => persistedReasoningUpdate(update)),
         }])),
+      documentSelections: Object.fromEntries(
+        Object.entries(session?.analysisDocuments ?? {})
+          .map(([key, document]) => [key, selectionsOf(document)] as const)
+          .filter(([, selections]) => Object.keys(selections).length)),
     },
   };
 }
@@ -1482,10 +1607,22 @@ function regressionDocumentsFrom(analysis: any, sessionId: string): Record<strin
   if (!documents || typeof documents !== 'object') {
     return {};
   }
-  return Object.fromEntries(Object.entries(documents).map(([key, value]) => [key, {
-    ...createRegressionAnalysisDocument(`${sessionId}-${key}`),
-    ...(value as XlePlusGlueDocument),
-  }]));
+  // Sessions stored before `documentSelections` keep the selections in their documents.
+  const selections = analysis?.documentSelections && typeof analysis.documentSelections === 'object'
+    ? analysis.documentSelections as Record<string, Record<string, StoredDiscourseSelections>>
+    : null;
+  return Object.fromEntries(Object.entries(documents).map(([key, value]) => {
+    const document = { ...createRegressionAnalysisDocument(`${sessionId}-${key}`), ...(value as XlePlusGlueDocument) };
+    return [key, {
+      ...document,
+      discourseUpdates: (document.discourseUpdates ?? []).map(stored => {
+        const update = expandedDiscourseUpdate(stored);
+        if (!selections) return update;
+        const { readingSelection, pragmaticSelection, ...rest } = update;
+        return { ...rest, ...(selections[key]?.[update.id] ?? {}) } as DiscourseUpdate;
+      }),
+    }];
+  }));
 }
 
 export function regressionDocumentToSession(document: any): RegressionTestingSession {

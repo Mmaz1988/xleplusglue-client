@@ -74,17 +74,19 @@ export function discourseAnalysesOf(readings: PcdrsReading[]): {
 } {
   const discourse: DiscourseAnalysis[] = [];
   const semDiscourseMapping: SemDiscourseMapping = {};
+  // By id: a search through the readings so far for each made a long discourse quadratic.
+  const byId = new Map<string, DiscourseAnalysis>();
   readings.forEach(({ mapping, ruleBranchIndex, semanticOrigin, semString }) => {
     const id = mapping?.id ?? `${semanticOrigin}-pcdrs-${ruleBranchIndex}`;
     const drsString = mapping?.semantic ?? semString ?? '';
-    const same = discourse.find(entry => entry.id === id);
+    const same = byId.get(id);
     if (same) {
       if (same.semanticOrigin === semanticOrigin && same.drsString === drsString) return;
       throw new Error(`Two different PCDRS readings have the id ${id} (from ${same.semanticOrigin} and ${semanticOrigin}).`);
     }
     semDiscourseMapping[semanticOrigin] = [...(semDiscourseMapping[semanticOrigin] ?? []), id];
     const relations = mapping?.anaphoraRelations ?? [];
-    discourse.push({
+    const reading: DiscourseAnalysis = {
       id,
       semanticOrigin,
       drsString,
@@ -96,7 +98,9 @@ export function discourseAnalysesOf(readings: PcdrsReading[]): {
       collapsed: relations.length > 0,
       ...(mapping?.pragmaticProfile ? { pragmaticProfile: mapping.pragmaticProfile } : {}),
       ...(Array.isArray(mapping?.choices) ? { choices: mapping.choices } : {}),
-    });
+    };
+    byId.set(id, reading);
+    discourse.push(reading);
   });
   return { discourse, semDiscourseMapping };
 }
