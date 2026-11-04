@@ -1,6 +1,26 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, throwError, timeout } from 'rxjs';
+import { Observable, from, map, of, switchMap, throwError, timeout } from 'rxjs';
+
+/** JSON bodies from this size on are sent gzipped (Content-Encoding: gzip), which the Redis
+ *  API and Vampire decompress (xleplusglue Redis/http_compression.py). A stress-test item's
+ *  document is 92 MB of JSON and ~1.7 MB gzipped; transfers that size preceded Docker
+ *  Desktop's VM network stalls. Responses come back gzipped by the same services, and the
+ *  browser decodes them by itself. */
+export const GZIP_REQUEST_MIN_LENGTH = 64 * 1024;
+
+/** A JSON body as sent: gzipped from GZIP_REQUEST_MIN_LENGTH on (where the browser can),
+ *  else the JSON text. `payload` may already be serialized. */
+export function jsonRequestBody(payload: unknown): Observable<{ body: string | Blob; headers: Record<string, string> }> {
+  const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (json.length < GZIP_REQUEST_MIN_LENGTH || typeof CompressionStream === 'undefined') {
+    return of({ body: json, headers });
+  }
+  const gzipped = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+  return from(new Response(gzipped).blob()).pipe(
+    map(body => ({ body, headers: { ...headers, 'Content-Encoding': 'gzip' } })));
+}
 import {
   AnaphoraRanking,
   RegressionStoreCleanupReport,
@@ -307,11 +327,8 @@ callVampire(vampireRequest: vampireRequest){
    *  doing it a second time here is worth avoiding -- HttpClient sends a string body
    *  as-is once the content type says JSON. */
   saveRegressionSession(sessionKey: string, payload: RegressionSessionDocument | string): Observable<any> {
-    const options = typeof payload === 'string'
-      ? { headers: { 'Content-Type': 'application/json' } }
-      : {};
-    return this.withLargeReadTimeout(
-      this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, payload, options));
+    return this.withLargeReadTimeout(jsonRequestBody(payload).pipe(switchMap(({ body, headers }) =>
+      this.http.put(`${this.vampirepage}/regression_session/${sessionKey}`, body, { headers }))));
   }
 
   /** Replace only the named paths of a stored session.
@@ -321,9 +338,8 @@ callVampire(vampireRequest: vampireRequest){
    *  phase inside it (`lastAnnotations` alone is ~5 MB) is immutable once parsing is done,
    *  so re-sending it was most of the write volume. */
   patchRegressionSession(sessionKey: string, payload: string): Observable<any> {
-    return this.withLargeReadTimeout(this.http.patch(
-      `${this.vampirepage}/regression_session/${sessionKey}/patch`, payload,
-      { headers: { 'Content-Type': 'application/json' } }));
+    return this.withLargeReadTimeout(jsonRequestBody(payload).pipe(switchMap(({ body, headers }) =>
+      this.http.patch(`${this.vampirepage}/regression_session/${sessionKey}/patch`, body, { headers }))));
   }
 
   deleteRegressionSession(sessionKey: string): Observable<any> {
@@ -364,8 +380,9 @@ callVampire(vampireRequest: vampireRequest){
   }
 
   saveAnalysisDocument(sessionKey: string, document: XlePlusGlueDocument): Observable<{ status: string; document: XlePlusGlueDocument }> {
-    return this.http.put<{ status: string; document: XlePlusGlueDocument }>(
-      `${this.redispage}/analysis_document/${sessionKey}`, document);
+    return jsonRequestBody(document).pipe(switchMap(({ body, headers }) =>
+      this.http.put<{ status: string; document: XlePlusGlueDocument }>(
+        `${this.redispage}/analysis_document/${sessionKey}`, body, { headers })));
   }
 
   clearAnalysisDocument(sessionKey: string): Observable<any> {
@@ -373,8 +390,9 @@ callVampire(vampireRequest: vampireRequest){
   }
 
   saveChatDocument(sessionKey: string, document: XlePlusGlueDocument): Observable<{ status: string; document: XlePlusGlueDocument }> {
-    return this.http.put<{ status: string; document: XlePlusGlueDocument }>(
-      `${this.redispage}/chat_document/${sessionKey}`, document);
+    return jsonRequestBody(document).pipe(switchMap(({ body, headers }) =>
+      this.http.put<{ status: string; document: XlePlusGlueDocument }>(
+        `${this.redispage}/chat_document/${sessionKey}`, body, { headers })));
   }
 
   clearChatDocument(sessionKey: string): Observable<any> {

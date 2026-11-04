@@ -1,7 +1,7 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { DataService } from './data.service';
+import { DataService, jsonRequestBody } from './data.service';
 import { SyntaxSourceService } from './syntax-source/syntax-source.service';
 
 describe('DataService', () => {
@@ -70,5 +70,28 @@ describe('DataService', () => {
     http.expectOne('http://localhost:8080/list_ud_models').flush({ models: [{ id: 'en' }], error: null });
 
     expect(models.models[0].id).toBe('en');
+  });
+});
+
+describe('jsonRequestBody', () => {
+  it('sends a small body as JSON text', done => {
+    jsonRequestBody({ a: 1 }).subscribe(({ body, headers }) => {
+      expect(body).toBe('{"a":1}');
+      expect(headers['Content-Encoding']).toBeUndefined();
+      done();
+    });
+  });
+
+  it('gzips a large body, which decompresses to the same JSON', done => {
+    const json = JSON.stringify({ readings: Array(20000).fill('([x1],[dog(x1)])') });
+    jsonRequestBody(json).subscribe(async ({ body, headers }) => {
+      expect(headers['Content-Encoding']).toBe('gzip');
+      expect(headers['Content-Type']).toBe('application/json');
+      const blob = body as Blob;
+      expect(blob.size).toBeLessThan(json.length / 20);
+      const text = await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+      expect(text).toBe(json);
+      done();
+    });
   });
 });
