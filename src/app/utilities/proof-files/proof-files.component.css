@@ -69,7 +69,8 @@
 }
 
 .proof-files .CodeMirror {
-  height: min(65vh, 600px);
+  /* The panel's height (pill .proof-files-body) less the reading and check rows. */
+  height: min(calc(80vh - 100px), 460px);
   resize: vertical;
   font-size: 12px;
 }

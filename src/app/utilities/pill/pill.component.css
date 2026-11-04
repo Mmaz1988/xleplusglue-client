@@ -94,11 +94,13 @@
   box-sizing: border-box;
 }
 
-/* Proof files: a large read-only editor; it scrolls itself, the panel does not. */
+/* Proof files: a large read-only editor; it scrolls itself, the panel does not. No taller
+   than .sem-vis-body: the overlay is centered above or below the badge only when it fits
+   there, and falls back to beside it otherwise. */
 .proof-files-body {
-  width: 1100px;
+  width: 1000px;
   max-width: 92vw;
-  max-height: 92vh;
+  max-height: min(80vh, 560px);
   overflow: hidden;
   padding: 8px 12px 12px;
   box-sizing: border-box;
