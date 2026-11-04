@@ -1588,6 +1588,24 @@ describe('RegressionTestingInterfaceComponent', () => {
         dataService = TestBed.inject(DataService);
       });
 
+      it('counts the readings the next run would send, following the discourse\'s selection', () => {
+        component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
+        component.vampirePreferences.vampirePreferences = {
+          ...component.vampirePreferences.vampirePreferences,
+          reading_selection: { criteria: [], filters: [], k: null },
+        };
+        expect(component.nextRunReadingCount('n0')).toEqual({ sent: 2, total: 2 });
+        expect(component.nextRunReadingCount('n1')).toBeNull();
+
+        // Hiding one leaves one: disambiguated.
+        document.discourseUpdates[0].pragmaticSelection = { choiceIds: [], hiddenReadingIds: ['pcdrs-1'] };
+        expect(component.nextRunReadingCount('n0')).toEqual({ sent: 1, total: 2 });
+        // A top-1 selection on the discourse itself does the same.
+        document.discourseUpdates[0].pragmaticSelection = { choiceIds: [], hiddenReadingIds: [] };
+        document.discourseUpdates[0].readingSelection = { criteria: ['lm'], filters: [], k: 1 };
+        expect(component.nextRunReadingCount('n0')).toEqual({ sent: 1, total: 2 });
+      });
+
       it('is offered only for items with discourse branches', () => {
         expect(component.hasDiscourses('n0')).toBeTrue();
         expect(component.hasDiscourses('n1')).toBeFalse();

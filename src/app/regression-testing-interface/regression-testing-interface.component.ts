@@ -2201,6 +2201,37 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   private readonly proofReadingsCache = new WeakMap<object, ProofReading[]>();
 
+  /** How many readings the item's next run would send, of how many it has: its discourse
+   *  narrowed by the sentences' selected parses, its pragmatic choices and hidden readings,
+   *  then its reading selection or the session default -- what `reasonOverItem` sends. Null
+   *  before the item has a discourse. Cached per discourse update and what the count depends
+   *  on: the template asks on every change detection, and a discourse can have tens of
+   *  thousands of readings. */
+  nextRunReadingCount(itemId: string): { sent: number; total: number } | null {
+    const update = this.itemDiscourseUpdate(itemId);
+    const document = this.session.analysisDocuments[itemId];
+    const item = this.regressionTestItems.find(candidate => String(candidate?.id ?? '') === itemId);
+    if (!update || !document || !item) return null;
+    const sentenceIds: string[] = [...(item.premises ?? []), ...(item.conclusion ?? [])].map(String);
+    const fallback = this.readingSelection();
+    const averager = this.anaphoraRankers().averager;
+    const key = JSON.stringify([
+      update.discourse.length, update.readingSelection ?? null, update.pragmaticSelection ?? null,
+      update.anaphoraRanking?.createdAt ?? null, fallback, averager,
+      sentenceIds.map(id => this.session.selectedSolutionIdsBySentence?.[id] ?? null),
+    ]);
+    const cached = this.readingCountCache.get(update);
+    if (cached?.key === key) return cached.count;
+    const outputs = this.session.lastGswbOutputs;
+    const allowed = outputs ? this.selectedSentenceReadings(sentenceIds, outputs) : undefined;
+    const { readings } = readingsForReasoning(document, update, fallback, averager, allowed);
+    const count = { sent: readings.length, total: update.discourse.length };
+    this.readingCountCache.set(update, { key, count });
+    return count;
+  }
+
+  private readonly readingCountCache = new WeakMap<object, { key: string; count: { sent: number; total: number } }>();
+
   get inferenceReportRows(): InferenceReportRow[] {
     if (!this.hasParsedExamples) return [];
 

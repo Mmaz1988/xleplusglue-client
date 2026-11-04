@@ -19,6 +19,21 @@ export class InferenceResultComponent implements OnChanges {
   @Input() status: 'unparsed' | 'pending' | 'running' | 'done' | 'failed' = 'done';
   /** Each reading's .p files as Vampire ran them, for the TPTP pill. */
   @Input() proofReadings: ProofReading[] = [];
+  /** How many readings the item's next run would send, of how many; null before it has a
+   *  discourse. More than one: the item is not disambiguated yet (tinted yellow, as a
+   *  sentence with several selected parses is in the parsing report). */
+  @Input() readingCount: { sent: number; total: number } | null = null;
+
+  get ambiguous(): boolean {
+    return (this.readingCount?.sent ?? 0) > 1;
+  }
+
+  get readingCountTitle(): string | null {
+    const count = this.readingCount;
+    if (!count) return null;
+    return `The next run sends ${count.sent} of ${count.total} reading${count.total === 1 ? '' : 's'}`
+      + (count.sent > 1 ? ': not disambiguated yet' : '');
+  }
 
   premises: string[] = [];
   conclusion = '';
