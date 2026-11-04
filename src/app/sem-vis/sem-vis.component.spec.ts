@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import { SemVisComponent } from './sem-vis.component';
 import { DataService } from '../data.service';
@@ -14,7 +14,10 @@ describe('SemVisComponent', () => {
   let dataService: jasmine.SpyObj<DataService>;
 
   beforeEach(() => {
-    dataService = jasmine.createSpyObj<DataService>('DataService', ['gswbCollapseAnaphora']);
+    dataService = jasmine.createSpyObj<DataService>('DataService', ['gswbCollapseAnaphora', 'gswbRenderPcdrs']);
+    dataService.gswbRenderPcdrs.and.callFake((request: any) => of({
+      solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>r-${item.id}</svg>` })),
+    } as any));
     dataService.gswbCollapseAnaphora.and.callFake((request: any) => of({
       id: `${request.parentSolutionId}-collapsed`, solution: `<svg>c-${request.parentSolutionId}</svg>`,
       semantic: `collapsed ${request.parentSolutionId}`,
@@ -161,6 +164,117 @@ describe('SemVisComponent', () => {
       component.items = [{ id: 'c', solution: '<svg>c</svg>' }] as any;
       fixture.detectChanges();
       expect((fixture.nativeElement as HTMLElement).querySelector('.svg-zoom')).toBeNull();
+    });
+  });
+
+  describe('readings rendered on demand', () => {
+    const text = (id: string) => ({ id, solution: `drs-${id}`, semantic: `drs-${id}` });
+    const shown = () => String((component.currentSvg as any)?.changingThisBreaksApplicationSecurity ?? '');
+    const rendered = () => dataService.gswbRenderPcdrs.calls.allArgs().flatMap(([request]) => request.items.map(item => item.id));
+
+    beforeEach(() => {
+      component.svgSolutions = true;
+      component.renderOnDemand = true;
+    });
+
+    it('renders the shown reading and a few around it, not all of them, and none twice', () => {
+      component.items = Array.from({ length: 30 }, (_, index) => text(`b${index}`));
+
+      expect(dataService.gswbRenderPcdrs).toHaveBeenCalledTimes(1);
+      // The one before (wrapping round), the shown one, eight ahead.
+      expect(rendered()).toEqual(['b29', 'b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8']);
+      expect(dataService.gswbRenderPcdrs.calls.mostRecent().args[0].items[1].semantic).toBe('drs-b0');
+      expect(shown()).toBe('<svg>r-b0</svg>');
+
+      component.next();
+      expect(shown()).toBe('<svg>r-b1</svg>');
+      // b9 comes into the window: only it is asked for.
+      expect(rendered().slice(10)).toEqual(['b9']);
+
+      // The same readings in a new item set (a reopened dialog): nothing is rendered again.
+      const before = dataService.gswbRenderPcdrs.calls.count();
+      component.items = Array.from({ length: 30 }, (_, index) => text(`b${index}`)).slice(0, 5);
+      expect(dataService.gswbRenderPcdrs.calls.count()).toBe(before);
+    });
+
+    it('says it is rendering until GSWB answers, and shows the text when GSWB renders none', () => {
+      const answer = new Subject<any>();
+      dataService.gswbRenderPcdrs.and.returnValue(answer);
+      component.items = [text('b1'), text('b2')];
+      expect(component.renderNote).toBe('rendering…');
+      expect(shown()).toBe('');
+
+      answer.next({ solutions: [{ id: 'b2', solution: '<svg>r-b2</svg>' }] });
+      answer.complete();
+      expect(shown()).toContain('drs-b1');
+      expect(component.renderNote).toBe('not rendered: shown as text');
+      component.next();
+      expect(shown()).toBe('<svg>r-b2</svg>');
+      expect(component.renderNote).toBe('');
+    });
+  });
+
+  describe('collapsing the selected readings', () => {
+    const reading = (id: string) => ({ id, solution: `<svg>${id}</svg>`, semantic: `([x1],[ant(x1)]),A:[a(${id},x1)]` });
+    const branch = (id: string) => ({
+      id, semanticOrigin: 'sem-a', drsString: `([x1],[ant(x1)]),A:[a(${id},x1)]`, ruleBranch: 1,
+      anaphoraMapping: { relations: [] }, collapsed: false,
+    });
+    const collapsedIds = () => dataService.gswbCollapseAnaphora.calls.allArgs().map(([request]) => request.parentSolutionId);
+
+    beforeEach(() => {
+      component.svgSolutions = true;
+      component.collapsible = true;
+      component.readingOrder = {
+        updates: [{ id: 'du', sourceElementId: 's', sourceElementKind: 'sequence', semDiscourseMapping: {},
+          discourse: ['p1', 'p2', 'p3', 'p4'].map(branch) } as any],
+        discriminants: [], averager: 'borda',
+      };
+      component.items = ['p1', 'p2', 'p3', 'p4'].map(reading);
+    });
+
+    it('collapses only what the selection keeps, and on a wider selection only what it adds', () => {
+      component.readingSelection = { selection: { criteria: [], filters: [], k: null }, own: true };
+      component.setItemFilter(['p1', 'p2']);
+      expect(component.collapsePending).toBe(2);
+
+      component.collapseAll();
+      expect(collapsedIds()).toEqual(['p1', 'p2']);
+      expect(component.showCollapsed).toBeTrue();
+
+      // The collapsed view is on: widening the selection collapses the readings it adds.
+      component.setItemFilter(['p1', 'p2', 'p3']);
+      expect(collapsedIds()).toEqual(['p1', 'p2', 'p3']);
+
+      // Narrowing and widening again: p3 is cached, nothing is asked for.
+      component.setItemFilter(['p1']);
+      component.setItemFilter(['p1', 'p2', 'p3']);
+      expect(collapsedIds()).toEqual(['p1', 'p2', 'p3']);
+    });
+
+    it('offers Collapse again for readings a selection adds while the PCDRS are shown', () => {
+      component.setItemFilter(['p1']);
+      component.collapseAll();
+      component.toggleCollapsed();
+      expect(component.collapseButtonLabel).toBe('Show collapsed');
+
+      component.setItemFilter(['p1', 'p2']);
+      expect(collapsedIds()).toEqual(['p1']);
+      expect(component.collapseButtonLabel).toBe('Collapse');
+      component.onCollapseButton();
+      expect(collapsedIds()).toEqual(['p1', 'p2']);
+      expect(component.showCollapsed).toBeTrue();
+    });
+
+    it('keeps collapsed readings for a reopened discourse', () => {
+      component.collapseAll();
+      expect(collapsedIds().length).toBe(4);
+
+      component.items = ['p4', 'p3', 'p2', 'p1'].map(id => ({ ...reading(id) }));
+      component.items = ['p1', 'p2'].map(reading);
+      expect(component.canCollapse).toBeFalse();
+      expect(component.collapseButtonLabel).toBe('Show collapsed');
+      expect(collapsedIds().length).toBe(4);
     });
   });
 
@@ -311,7 +425,7 @@ describe('SemVisComponent', () => {
       expect(component.showCollapsed).toBeTrue();
       expect(shown()).toBe('<svg>c-b2</svg>');
 
-      component.items = [pcdrs('b9', '([x1],[ant(x1)])')];
+      component.items = [pcdrs('b9', '([x9],[ant(x9)])')];
       expect(component.showCollapsed).toBeFalse();
       expect(component.canToggleCollapsed).toBeFalse();
       expect(shown()).toBe('<svg>b9</svg>');

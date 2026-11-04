@@ -24,9 +24,10 @@
       type="button"
       class="solution-action-tag"
       [disabled]="collapseLoading"
-      title="Accommodate presuppositions and resolve anaphora (GSWB /collapse_anaphora)"
-      (click)="canToggleCollapsed ? toggleCollapsed() : collapseAll()">
-      {{ collapseLoading ? 'Collapsing…' : canToggleCollapsed ? (showCollapsed ? 'Show PCDRS' : 'Show collapsed') : 'Collapse' }}
+      [title]="'Accommodate presuppositions and resolve anaphora (GSWB /collapse_anaphora) for the selected readings'
+        + (canCollapse ? ': ' + collapsePending + ' not collapsed yet' : '')"
+      (click)="onCollapseButton()">
+      {{ collapseButtonLabel }}
     </button>
 
     <!-- Your existing controls -->
@@ -84,6 +85,7 @@
         </ng-container>
       </app-pill>
       <span class="collapse-note" *ngIf="collapseNote">{{ collapseNote }}</span>
+      <span class="collapse-note" *ngIf="renderNote">{{ renderNote }}</span>
     </div>
 
     <ng-template #noItems>

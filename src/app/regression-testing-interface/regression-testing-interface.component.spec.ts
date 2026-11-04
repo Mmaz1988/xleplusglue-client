@@ -1591,33 +1591,25 @@ describe('RegressionTestingInterfaceComponent', () => {
         expect(component.hasDiscourses('missing')).toBeFalse();
       });
 
-      it('renders the branches to SVG from their stored PCDRS, in rank order, without touching sentence selections', () => {
-        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
-          solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
-        }));
+      it('hands the dialog the stored PCDRSs in rank order, to render as they are shown, without touching sentence selections', () => {
+        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs');
         const selectionsBefore = JSON.stringify(component.session.selectedScopeIdsBySentence);
 
         component.openDiscourseDialog('n0');
 
-        const request = dataService.gswbRenderPcdrs.calls.mostRecent().args[0];
-        expect(request.items.map((item: any) => item.id)).toEqual(['pcdrs-2', 'pcdrs-1']);
-        // The stored PCDRS, its A: and P: inline -- so P: is shown.
-        expect(request.items[0].semantic).toBe('drs-2');
-        expect(request.items[0].anaphoraRelations).toBeUndefined();
-
+        // Nothing is rendered up front: the sem view renders the readings it shows.
+        expect(dataService.gswbRenderPcdrs).not.toHaveBeenCalled();
         const payload = open.calls.mostRecent().args[0];
         expect(payload.title).toBe('Discourses — n0');
         expect(payload.svgSolutions).toBeTrue();
-        expect(payload.items.map((item: any) => item.solution)).toEqual(['<svg>pcdrs-2</svg>', '<svg>pcdrs-1</svg>']);
+        expect(payload.renderOnDemand).toBeTrue();
+        // The stored PCDRS, its A: and P: inline -- so P: is shown.
+        expect(payload.items.map((item: any) => [item.id, item.semantic])).toEqual([['pcdrs-2', 'drs-2'], ['pcdrs-1', 'drs-1']]);
         expect(payload.itemLabels[0]).toContain('rank 1');
-        expect(component.discourseDialogLoadingItemId).toBeNull();
         expect(JSON.stringify(component.session.selectedScopeIdsBySentence)).toBe(selectionsBefore);
       });
 
       it('hides the readings the discriminant selection rules out, as for a sentence', () => {
-        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
-          solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
-        }));
         document.discourseUpdates[0].discourse[0].semanticOrigin = 'S0-s0+S1-s0';
         document.discourseUpdates[0].discourse[1].semanticOrigin = 'S0-s0+S1-s1';
         component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
@@ -1641,9 +1633,6 @@ describe('RegressionTestingInterfaceComponent', () => {
       });
 
       it('opens on the item\'s selection and marks what the run sent to Vampire', () => {
-        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.callFake((request: any) => of({
-          solutions: request.items.map((item: any) => ({ id: item.id, solution: `<svg>${item.id}</svg>` })),
-        }));
         component['regressionTestItems'] = [{ id: 'n0', premises: ['S0'], conclusion: ['S1'] }];
         component.vampirePreferences.vampirePreferences = {
           ...component.vampirePreferences.vampirePreferences,
@@ -1688,17 +1677,6 @@ describe('RegressionTestingInterfaceComponent', () => {
         component.onDiscourseReadingSelectionChange({ sentenceId: 'n0', selection: null });
         expect(document.discourseUpdates[0].readingSelection).toBeUndefined();
         expect(setReadingSelection.calls.mostRecent().args[0].own).toBeFalse();
-      });
-
-      it('falls back to the text DRSs when GSWB cannot render them', () => {
-        dataService.gswbRenderPcdrs = jasmine.createSpy('gswbRenderPcdrs').and.returnValue(throwError(() => ({ status: 0 })));
-
-        component.openDiscourseDialog('n0');
-
-        const payload = open.calls.mostRecent().args[0];
-        expect(payload.svgSolutions).toBeFalse();
-        expect(payload.items.map((item: any) => item.solution)).toEqual(['drs-2', 'drs-1']);
-        expect(component.discourseDialogLoadingItemId).toBeNull();
       });
     });
 

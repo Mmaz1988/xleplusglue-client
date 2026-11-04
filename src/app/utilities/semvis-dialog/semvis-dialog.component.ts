@@ -45,6 +45,8 @@ export class SemvisDialogComponent {
     selectedScopeIds?: string[];
     selectedMcIds?: string[];
     svgSolutions?: boolean;
+    /** With svgSolutions: the items are text DRSs, rendered by GSWB as they are shown. */
+    renderOnDemand?: boolean;
     /** Caption per item, index-aligned with `items`. */
     itemLabels?: string[];
     /** Ranking table per item, index-aligned with `items`. */
@@ -105,6 +107,7 @@ export class SemvisDialogComponent {
         this.semVis.setDiscriminants(discriminants);
         this.semVis.meaningConstructors = meaningConstructors;
         this.semVis.svgSolutions = svgSolutions;
+        this.semVis.renderOnDemand = svgSolutions && Boolean(payload.renderOnDemand);
         this.semVis.collapsible = Boolean(payload.collapsible);
         this.semVis.itemLabels = payload.itemLabels ?? [];
         this.semVis.itemRankings = payload.itemRankings ?? [];

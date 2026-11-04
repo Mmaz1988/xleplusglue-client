@@ -5000,27 +5000,25 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return !!this.session.analysisDocuments[itemId]?.discourseUpdates?.some(update => update.discourse.length);
   }
 
-  /** Item whose discourses are being rendered, for the button's loading state. */
-  discourseDialogLoadingItemId: string | null = null;
-
   /** The item's full discourses -- every anaphora branch of its merged sequence, by rank, with
-   *  the verdicts reasoned over each. Rendered to SVG by GSWB on opening, like the PCDRS the
-   *  other views show; regression does not store the SVGs. If GSWB cannot render, the text DRSs
-   *  are shown instead. */
+   *  the verdicts reasoned over each. Rendered to SVG by GSWB as they are shown, like the PCDRS
+   *  the other views show (the sem view asks for the shown reading and a few ahead, and caches
+   *  them); regression does not store the SVGs. A reading GSWB cannot render is shown as text. */
   openDiscourseDialog(itemId: string): void {
     const document = this.session.analysisDocuments[itemId];
-    if (!document || this.discourseDialogLoadingItemId) return;
-    const { solutions, labels, rankings, render, counted } = discourseBranchesForDisplay(document);
+    if (!document) return;
+    const { solutions, labels, rankings, counted } = discourseBranchesForDisplay(document);
     const narrowTo = this.discriminantNarrowing(itemId, document);
     const update = this.itemDiscourseUpdate(itemId);
-    const open = (items: GswbSolution[], svgSolutions: boolean, itemLabels: string[]) => this.discourseDialog.open({
+    this.discourseDialog.open({
       sentenceId: itemId,
       title: `Discourses — ${itemId}`,
       subtitle: this.itemTextForHeader(itemId),
-      items,
-      itemLabels,
+      items: solutions,
+      itemLabels: labels,
       itemRankings: rankings,
-      svgSolutions,
+      svgSolutions: true,
+      renderOnDemand: true,
       collapsible: true,
       readingOrder: {
         updates: update ? [update] : document.discourseUpdates ?? [],
@@ -5034,26 +5032,6 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       ...(counted ? { sentByLastRun: counted } : {}),
       // Hidden as a sentence's discriminants hide its readings; the counter keeps the total.
       ...(narrowTo ? { narrowTo } : {}),
-    });
-
-    this.discourseDialogLoadingItemId = itemId;
-    this.dataService.gswbRenderPcdrs({ items: render }).pipe(
-      timeout(60_000),
-      finalize(() => this.discourseDialogLoadingItemId = null),
-    ).subscribe({
-      next: output => {
-        const svgById = new Map((output?.solutions ?? []).map(solution => [solution.id, solution.solution]));
-        if (solutions.length && solutions.every(solution => !!svgById.get(solution.id))) {
-          open(solutions.map(solution => ({ ...solution, solution: svgById.get(solution.id)! })), true, labels);
-        } else {
-          console.warn('[Regression] some discourses could not be rendered; showing text', { itemId });
-          open(solutions, false, labels);
-        }
-      },
-      error: error => {
-        console.warn('[Regression] could not render discourses; showing text', { itemId, error });
-        open(solutions, false, labels);
-      },
     });
   }
 

@@ -354,9 +354,8 @@
                                     [proofReadings]="proofReadingsFor(row.id)">
               </app-inference-result>
               <button type="button" class="report-row-discourses" *ngIf="hasDiscourses(row.id)"
-                      [disabled]="discourseDialogLoadingItemId !== null"
                       (click)="openDiscourseDialog(row.id)">
-                {{ discourseDialogLoadingItemId === row.id ? 'Rendering…' : 'Open discourses' }}
+                Open discourses
               </button>
               <div *ngIf="row.status === 'unparsed'" class="report-row-note">
                 No reading for: {{ row.unparsedSentences.join(' / ') }}

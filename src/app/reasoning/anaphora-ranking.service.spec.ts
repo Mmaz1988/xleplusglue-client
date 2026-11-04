@@ -261,10 +261,11 @@ describe('discourseBranchesForDisplay', () => {
       ] as any,
     }];
 
-    const { solutions, labels, rankings, render } = discourseBranchesForDisplay(document);
+    const { solutions, labels, rankings } = discourseBranchesForDisplay(document);
 
-    // The stored PCDRS, A: and P: inline.
-    expect(render.map(item => [item.id, item.semantic])).toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
+    // The stored PCDRS, A: and P: inline: shown, and what the dialog renders and collapses.
+    expect(solutions.map(solution => [solution.id, solution.semantic]))
+      .toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
     expect(solutions.map(solution => [solution.id, solution.solution]))
       .toEqual([['b-cat', 'drs-cat'], ['b-dog', 'drs-dog'], ['b2-cat', 'drs-2']]);
     // N4 6g: the caption is short; the ranker breakdown is the rank pill's.

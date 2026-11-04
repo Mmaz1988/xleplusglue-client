@@ -1,8 +1,8 @@
 import {ChangeDetectorRef, Component, ElementRef, ViewChild, AfterViewInit, Output, Input, EventEmitter, Injector} from '@angular/core';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
-import {catchError, concatMap, from, of, toArray} from 'rxjs';
+import {catchError, concatMap, from, of} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
-import { DataService } from '../data.service';
+import { DrsRenderCacheService } from './drs-render-cache.service';
 import {DiscourseAnalysis, GswbDiscriminant, GswbSolution, PragmaticSelection} from "../models/models";
 import {
   PragmaticAlternative,
@@ -40,6 +40,8 @@ const COLLAPSIBLE_DRS = /\bp\(\(|\bant\(|\bA:\[|\bP:\[/;
 /** The drawn width LFGxDRT gives a DRS's SVG (its root's `width`). */
 const SVG_WIDTH = /<svg\b[^>]*?\swidth="([\d.]+)"/;
 const MIN_ZOOM = 0.1;
+/** Readings rendered ahead of the one shown (and one behind), so paging rarely waits. */
+const RENDER_AHEAD = 8;
 const MAX_ZOOM = 8;
 
 type DiscStateBucket = 0 | 1 | 2; // 0=selected, 1=active, 2=inactive
@@ -69,10 +71,25 @@ export class SemVisComponent implements AfterViewInit {
   @Output() solutionToggle = new EventEmitter<void>();
 
   /** Offers "Collapse" for LFGxDRT items with presuppositions or anaphora (a PCDRS, or a
-   *  reading with p-boxes): GSWB's /collapse_anaphora, run on request for every such item,
-   *  after which the view toggles between each item and its collapsed DRS. View only: the
-   *  items, and anything their owner stores, stay as they are. */
-  @Input() collapsible = false;
+   *  reading with p-boxes): GSWB's /collapse_anaphora, run on request for the readings the
+   *  selection keeps, after which the view toggles between each item and its collapsed DRS.
+   *  View only: the items, and anything their owner stores, stay as they are. */
+  @Input()
+  set collapsible(value: boolean) {
+    this._collapsible = !!value;
+    this.refreshCollapseState();
+  }
+  get collapsible(): boolean {
+    return this._collapsible;
+  }
+  private _collapsible = false;
+
+  /** With svgSolutions: the items are text DRSs, rendered to SVG by GSWB (/render_pcdrs) as
+   *  they are shown -- the shown one and a few ahead -- and cached (DrsRenderCacheService).
+   *  A reading GSWB cannot render is shown as text. */
+  @Input() renderOnDemand = false;
+  /** Why the shown SVG is not there yet, or is text; '' otherwise. */
+  renderNote = '';
 
   @Input()
   set items(value: GswbSolution[]) {
@@ -428,17 +445,26 @@ export class SemVisComponent implements AfterViewInit {
   mc_rows: DiscRow[] = [];
 
   // ---- collapsed view ----
-  /** Collapsed DRS per item semantic: an id names a branch only within one item set. */
-  private collapsedBySemantic = new Map<string, GswbSolution>();
-  /** Semantics that GSWB could not collapse, with the reason. */
+  /** Readings GSWB could not collapse for a transport error, with the reason; a rejection is
+   *  kept with the collapsed DRSs (DrsRenderCacheService). */
   private collapseErrors = new Map<string, string>();
   showCollapsed = false;
   collapseLoading = false;
+  /** How many readings the selection keeps that could be collapsed and are not yet, and
+   *  whether any is collapsed: kept up to date when the items, the selection or the cache
+   *  change, since the template asks on every change detection and a discourse can have tens
+   *  of thousands of readings. */
+  private collapsePendingCount = 0;
+  private collapsedAny = false;
 
   constructor(private sanitizer: DomSanitizer, private changeDetector: ChangeDetectorRef,
               private injector?: Injector) {}
 
-  /** An item's text: what the collapse is keyed on and sent. */
+  private get renderCache(): DrsRenderCacheService | null {
+    return this.injector?.get(DrsRenderCacheService, null) ?? null;
+  }
+
+  /** An item's text: what the collapse and the rendering are keyed on and sent. */
   private semanticOf(item: GswbSolution | undefined): string | undefined {
     return item ? semVisDisplay(item).semantic : undefined;
   }
@@ -448,20 +474,53 @@ export class SemVisComponent implements AfterViewInit {
     return typeof semantic === 'string' && COLLAPSIBLE_DRS.test(semantic);
   }
 
-  /** The button: shown while some item could be collapsed and is not yet. */
+  /** The button: shown while a reading the selection keeps could be collapsed and is not yet. */
   get canCollapse(): boolean {
-    return this.collapsible && this.allItems.some(item =>
-      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(this.semanticOf(item)!));
+    return this.collapsible && this.collapsePendingCount > 0;
   }
 
-  /** The toggle: shown once some item has a collapsed DRS. */
+  /** How many kept readings Collapse would collapse now. */
+  get collapsePending(): number {
+    return this.collapsePendingCount;
+  }
+
+  /** The toggle: shown once some kept reading has a collapsed DRS. */
   get canToggleCollapsed(): boolean {
-    return this.collapsible && this.allItems.some(item => !!this.collapsedFor(item));
+    return this.collapsible && (this.collapsedAny || this.showCollapsed);
   }
 
   private collapsedFor(item: GswbSolution | undefined): GswbSolution | undefined {
     const semantic = this.semanticOf(item);
-    return semantic ? this.collapsedBySemantic.get(semantic) : undefined;
+    const result = semantic ? this.renderCache?.collapsedFor(semantic) : undefined;
+    return result && !('rejection' in result) ? result : undefined;
+  }
+
+  /** The readings Collapse works on: those the selection keeps (discriminants, pragmatic
+   *  choices, hidden readings, filters, top k), not every reading. */
+  private collapseTargets(): GswbSolution[] {
+    const kept = this.keptBySelection;
+    const shown = kept ? this.allItems.filter(item => kept.has(item.id)) : this._items;
+    return shown.filter(item => this.isCollapsibleItem(item));
+  }
+
+  /** The kept readings not collapsed yet; those that failed only with `retryFailed` (a click
+   *  retries them, a selection change does not). */
+  private pendingCollapseItems(retryFailed: boolean): GswbSolution[] {
+    const cache = this.renderCache;
+    return this.collapseTargets().filter(item => {
+      const semantic = this.semanticOf(item)!;
+      return !cache?.collapsedFor(semantic) && (retryFailed || !this.collapseErrors.has(semantic));
+    });
+  }
+
+  private refreshCollapseState(): void {
+    if (!this.collapsible) {
+      this.collapsePendingCount = 0;
+      this.collapsedAny = false;
+      return;
+    }
+    this.collapsePendingCount = this.pendingCollapseItems(true).length;
+    this.collapsedAny = this.collapseTargets().some(item => !!this.collapsedFor(item));
   }
 
   /** While the collapsed view is on: why the shown item is not collapsed; '' otherwise. What
@@ -472,9 +531,13 @@ export class SemVisComponent implements AfterViewInit {
     if (!current) return '';
     if (this.collapsedFor(current)) return '';
     if (!this.isCollapsibleItem(current)) return 'nothing to collapse';
-    const semantic = this.semanticOf(current);
-    const error = semantic ? this.collapseErrors.get(semantic) : undefined;
-    return error ? `not collapsed: ${error}` : 'not collapsed';
+    const semantic = this.semanticOf(current)!;
+    const known = this.renderCache?.collapsedFor(semantic);
+    if (known && 'rejection' in known) return `not collapsed: the reading is rejected: ${known.rejection}`;
+    const error = this.collapseErrors.get(semantic);
+    if (error) return `not collapsed: ${error}`;
+    if (this.keptBySelection && !this.keptBySelection.has(current.id)) return 'not collapsed: not selected';
+    return this.collapseLoading ? 'collapsing…' : 'not collapsed';
   }
 
   /** While the collapsed view shows a collapsed item: what the collapse did, as rows of the
@@ -497,38 +560,35 @@ export class SemVisComponent implements AfterViewInit {
     };
   }
 
-  /** Collapses every collapsible item that has no collapsed DRS yet, one request after
-   *  another, then shows the collapsed view. */
-  collapseAll(): void {
-    const pending = this.allItems.filter(item =>
-      this.isCollapsibleItem(item) && !this.collapsedBySemantic.has(this.semanticOf(item)!));
-    if (!pending.length || this.collapseLoading || !this.injector) return;
-    const dataService = this.injector.get(DataService);
+  /** Collapses the readings the selection keeps that are not collapsed yet, one request after
+   *  another, then shows the collapsed view. Collapsed readings are cached for the session, so
+   *  a changed selection or a reopened discourse collapses only what is new. */
+  collapseAll(retryFailed = true): void {
+    const pending = this.pendingCollapseItems(retryFailed);
+    const cache = this.renderCache;
+    if (!pending.length || this.collapseLoading || !cache) return;
+    pending.forEach(item => this.collapseErrors.delete(this.semanticOf(item)!));
     // The owner's items: reordering them is not a new item set.
     const items = this.inputItems;
     this.collapseLoading = true;
     from(pending).pipe(
-      concatMap(item => dataService.gswbCollapseAnaphora({
-        semantic: this.semanticOf(item)!, parentSolutionId: item.id,
-      }).pipe(catchError(error => {
-        this.collapseErrors.set(this.semanticOf(item)!, error?.error?.message ?? error?.message ?? 'GSWB error');
+      concatMap(item => cache.collapse({ id: item.id, semantic: this.semanticOf(item)! }).pipe(catchError(error => {
+        if (items === this.inputItems) {
+          this.collapseErrors.set(this.semanticOf(item)!, error?.error?.message ?? error?.message ?? 'GSWB error');
+        }
         return of(null);
       }))),
-      toArray(),
-    ).subscribe(responses => {
-      this.collapseLoading = false;
-      // A new item set arrived meanwhile: these belong to the old one.
-      if (items !== this.inputItems) return;
-      responses.forEach((response, index) => {
-        if (response?.rejection) {
-          this.collapseErrors.set(this.semanticOf(pending[index])!, `the reading is rejected: ${response.rejection}`);
-        } else if (response) {
-          this.collapsedBySemantic.set(this.semanticOf(pending[index])!, response);
-        }
-      });
-      this.showCollapsed = true;
-      this.applyCurrent();
-      this.changeDetector.markForCheck();
+    ).subscribe({
+      complete: () => {
+        this.collapseLoading = false;
+        // A new item set arrived meanwhile: what was collapsed is cached, the view is its own.
+        if (items === this.inputItems) this.showCollapsed = true;
+        this.refreshCollapseState();
+        // The selection changed while collapsing: collapse what it added.
+        if (this.showCollapsed) this.collapseAll(false);
+        this.applyCurrent();
+        this.changeDetector.markForCheck();
+      },
     });
   }
 
@@ -538,6 +598,22 @@ export class SemVisComponent implements AfterViewInit {
     this.applyCurrent();
   }
 
+  /** The window's one collapse button: Collapse while kept readings are not collapsed (and
+   *  the collapsed view is off), otherwise the toggle. */
+  onCollapseButton(): void {
+    if (!this.showCollapsed && this.canCollapse) {
+      this.collapseAll();
+    } else {
+      this.toggleCollapsed();
+    }
+  }
+
+  get collapseButtonLabel(): string {
+    if (this.collapseLoading) return 'Collapsing…';
+    if (this.showCollapsed) return 'Show PCDRS';
+    return this.canCollapse ? 'Collapse' : 'Show collapsed';
+  }
+
   private assignItems(items: GswbSolution[]): void {
     const next = Array.isArray(items) ? items : [];
     // The same items again (reordered, say) keep their collapsed view; others start over,
@@ -545,8 +621,8 @@ export class SemVisComponent implements AfterViewInit {
     const semantics = (list: GswbSolution[]) => new Set(list.map(item => this.semanticOf(item) ?? item.id));
     const before = semantics(this.allItems);
     const after = semantics(next);
+    // What was collapsed stays cached either way (DrsRenderCacheService).
     if (before.size !== after.size || [...after].some(key => !before.has(key))) {
-      this.collapsedBySemantic.clear();
       this.collapseErrors.clear();
       this.showCollapsed = false;
     }
@@ -556,6 +632,7 @@ export class SemVisComponent implements AfterViewInit {
     if (this.index >= this._items.length) {
       this.index = Math.max(this._items.length - 1, 0);
     }
+    this.refreshCollapseState();
   }
 
   ngAfterViewInit(): void {
@@ -635,7 +712,49 @@ export class SemVisComponent implements AfterViewInit {
     this.zoomSvgBy(Math.exp(-event.deltaY * 0.01));
   }
 
+  /** The shown reading's SVG when the items are rendered on demand: from the cache, else
+   *  nothing while GSWB renders it, or its text if GSWB rendered none. Asks for the readings
+   *  around it that are not rendered yet. */
+  private renderedSvg(current: GswbSolution): string {
+    const semantic = this.semanticOf(current) ?? '';
+    this.requestRenders();
+    const svg = this.renderCache?.svgFor(semantic);
+    if (svg) return svg;
+    if (svg === undefined && this.renderCache) {
+      this.renderNote = 'rendering…';
+      return '';
+    }
+    this.renderNote = 'not rendered: shown as text';
+    return `<pre style="white-space: pre-wrap; font-size: 12px; margin: 0">${escapeHtml(semantic)}</pre>`;
+  }
+
+  /** Renders the shown reading, the one before it and RENDER_AHEAD after it, those not
+   *  rendered yet, in one request; shows the reading again once it is. */
+  private requestRenders(): void {
+    const cache = this.renderCache;
+    const count = this.items.length;
+    if (!cache || !count) return;
+    const wanted: { id: string; semantic: string }[] = [];
+    for (let offset = -1; offset <= RENDER_AHEAD && offset < count - 1; offset++) {
+      const item = this.items[(this.index + offset + count) % count];
+      const semantic = this.semanticOf(item);
+      if (semantic && cache.svgFor(semantic) === undefined && !cache.isRendering(semantic)
+        && !wanted.some(entry => entry.semantic === semantic)) {
+        wanted.push({ id: item.id, semantic });
+      }
+    }
+    if (!wanted.length) return;
+    cache.render(wanted).subscribe(() => {
+      const shown = this.semanticOf(this.items[this.index]);
+      if (this.renderOnDemand && wanted.some(entry => entry.semantic === shown)) {
+        this.applyCurrent();
+        this.changeDetector.markForCheck();
+      }
+    });
+  }
+
   private applyCurrent(): void {
+    this.renderNote = '';
     if (!this.items.length) {
       this.currentSvg = null;
       return;
@@ -647,8 +766,9 @@ export class SemVisComponent implements AfterViewInit {
     const value = (collapsed ? (this.svgSolutions ? collapsed.solution : collapsed.semantic) : semVisDisplay(current).solution) ?? '';
 
     if (this.svgSolutions) {
-      this.svgWidth = Number(SVG_WIDTH.exec(value)?.[1] ?? 0);
-      this.currentSvg = this.sanitizer.bypassSecurityTrustHtml(value);
+      const svg = collapsed || !this.renderOnDemand ? value : this.renderedSvg(current);
+      this.svgWidth = Number(SVG_WIDTH.exec(svg)?.[1] ?? 0);
+      this.currentSvg = this.sanitizer.bypassSecurityTrustHtml(svg);
       return;
     }
 
@@ -711,6 +831,9 @@ export class SemVisComponent implements AfterViewInit {
       this.index = Math.min(Math.max(startIndex, 0), this._items.length - 1);
     }
 
+    this.refreshCollapseState();
+    // The collapsed view is on: the readings the selection now adds are collapsed too.
+    if (this.showCollapsed && this.collapsePendingCount) this.collapseAll(false);
     this.applyCurrent();
     this.rebuildDiscriminantViews();
 
@@ -1115,6 +1238,7 @@ export class SemVisComponent implements AfterViewInit {
       scopeDiscriminants: this.scope_discriminants.map(item => ({ ...item })),
       mcDiscriminants: this.mc_discriminants.map(item => ({ ...item })),
       svgSolutions: this.svgSolutions,
+      renderOnDemand: this.renderOnDemand,
       meaningConstructors: this.meaningConstructors,
     };
   }
@@ -1129,6 +1253,7 @@ export class SemVisComponent implements AfterViewInit {
     this.selectedScopeIds = Array.isArray(state.selectedScopeIds) ? [...state.selectedScopeIds] : [];
     this.selectedMcIds = Array.isArray(state.selectedMcIds) ? [...state.selectedMcIds] : [];
     this.svgSolutions = Boolean(state.svgSolutions);
+    this.renderOnDemand = Boolean(state.renderOnDemand);
     this.meaningConstructors = typeof state.meaningConstructors === 'string' ? state.meaningConstructors : this.meaningConstructors;
 
     if (Array.isArray(state.items)) {
@@ -1146,4 +1271,8 @@ export class SemVisComponent implements AfterViewInit {
 
     return heldBy(d).has(cur.id);
   }
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

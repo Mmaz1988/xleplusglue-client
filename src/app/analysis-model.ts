@@ -10,7 +10,6 @@ import {
   DiscourseAnalysis,
   DiscourseUpdate,
   GswbDiscriminant,
-  GswbRenderPcdrsRequest,
   GswbSolution,
   LmRankAnaphoraRequest,
   NliLabel,
@@ -1038,8 +1037,6 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   rankings: (AnaphoraRankingTable | null)[];
   /** Branches a run sent to Vampire (with or without a verdict yet); undefined before any run. */
   counted?: string[];
-  /** Index-aligned with `solutions`: what GSWB /render_pcdrs needs to render each as SVG. */
-  render: GswbRenderPcdrsRequest['items'];
 } {
   const assignments = (document.reasoningUpdates ?? []).flatMap(update => update.assignments);
   // The branches a run sent to Vampire, verdict or not yet.
@@ -1048,7 +1045,6 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
   const solutions: GswbSolution[] = [];
   const labels: string[] = [];
   const rankings: (AnaphoraRankingTable | null)[] = [];
-  const render: GswbRenderPcdrsRequest['items'] = [];
 
   (document.discourseUpdates ?? []).forEach(update => {
     const origins = [...new Set(update.discourse.map(branch => branch.semanticOrigin))];
@@ -1071,19 +1067,18 @@ export function discourseBranchesForDisplay(document: XlePlusGlueDocument): {
         const note = !own.length && recorded && sentIds.size
           ? `not sent to Vampire: ${describeReadingSelection(recorded)}` : undefined;
 
-        // `semantic` is what the dialog's Collapse sends to GSWB: the PCDRS with its A:/P:.
+        // `semantic` is what the dialog's Collapse and its rendering (GSWB /render_pcdrs, as
+        // the readings are shown) send: the stored PCDRS, A: and P: inline -- its merge chain
+        // keeps the sentence dividers (I3), and P: is shown.
         solutions.push({ id: branch.id, solution: branch.drsString, semantic: branch.drsString } as GswbSolution);
         // Nothing to say about reasoning (no run yet, or no verdict for this branch): left out.
         labels.push([`reading ${readingIndex + 1}/${origins.length}`, ranking, sending].filter(part => !!part).join(' · '));
         const table = anaphoraRankingTable(update, branch.id);
         rankings.push(table ? { ...table, ...(note ? { note } : {}) }
           : note ? { summary: '', columns: [], rows: [], note } : null);
-        // The stored PCDRS itself, A: and P: inline: its merge chain keeps the sentence
-        // dividers (I3), and P: is shown.
-        render.push({ id: branch.id, semantic: branch.drsString });
       });
     });
   });
 
-  return { solutions, labels, rankings, render, counted: sentIds.size ? solutions.map(s => s.id).filter(id => sentIds.has(id)) : undefined };
+  return { solutions, labels, rankings, counted: sentIds.size ? solutions.map(s => s.id).filter(id => sentIds.has(id)) : undefined };
 }
