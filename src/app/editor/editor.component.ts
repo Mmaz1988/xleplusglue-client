@@ -98,6 +98,39 @@ CodeMirror.defineMode("liger", function() {
   };
 });
 
+const TPTP_ROLES = /^,\s*(axiom|conjecture|negated_conjecture|hypothesis|definition|assumption|lemma|theorem|corollary|plain|type)\b/;
+
+/** TPTP problems as Vampire gets them (fof/tff/cnf/thf), with the run summary block
+ *  vampire_call.append_result_summary writes after them. */
+CodeMirror.defineMode('tptp', function() {
+  return {
+    token: function(stream) {
+      if (stream.eatSpace()) return null;
+      if (stream.peek() === '%') {
+        const summary = stream.match(/%\s*(----|command:|time limit:|SZS status:|termination reason:|termination phase:|finite model found:)/, false);
+        stream.skipToEnd();
+        return summary ? 'tptp-summary' : 'comment';
+      }
+      if (stream.sol() && stream.match(/(fof|tff|cnf|thf)(?=\()/)) return 'keyword';
+      if (stream.match(TPTP_ROLES, false)) {
+        stream.next();
+        stream.eatSpace();
+        stream.match(/[a-z_]+/);
+        return 'tptp-role';
+      }
+      if (stream.match(/'(?:[^'\\]|\\.)*'/)) return 'string';
+      if (stream.match(/\$[a-z_]+/)) return 'builtin';
+      if (stream.match(/[!?](?=\s*\[)/)) return 'tptp-quantifier';
+      if (stream.match(/<=>|<~>|=>|<=|~\||~&|!=|[&|~=]/)) return 'operator';
+      if (stream.match(/[A-Z][A-Za-z0-9_]*/)) return 'variable-2';
+      if (stream.match(/[a-z][A-Za-z0-9_]*/)) return 'tptp-symbol';
+      if (stream.match(/[0-9]+/)) return 'number';
+      stream.next();
+      return null;
+    }
+  };
+});
+
 CodeMirror.defineMode("glue", function() {
   return {
     token: function(stream,state) {

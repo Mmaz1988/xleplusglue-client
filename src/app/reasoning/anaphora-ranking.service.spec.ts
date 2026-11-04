@@ -441,9 +441,9 @@ describe('anaphora branch selection for verdicts', () => {
 
   it('reads the selection from Vampire preferences, defaulting to every reading by surface', () => {
     expect(readingSelectionOf(undefined)).toEqual({ criteria: ['surface'], filters: [], k: null });
-    expect(readingSelectionOf({ logic_type: 0, model_building: true, max_duration: 10, layered: false }))
+    expect(readingSelectionOf({ logic_type: 0, model_building: true, max_duration: 10, allow_fallback: true }))
       .toEqual({ criteria: ['surface'], filters: [], k: null });
-    expect(readingSelectionOf({ logic_type: 0, model_building: true, max_duration: 10, layered: false,
+    expect(readingSelectionOf({ logic_type: 0, model_building: true, max_duration: 10, allow_fallback: true,
       reading_selection: { criteria: ['lm'], filters: ['unbound'], k: 2.7 } })).toEqual({ criteria: ['lm'], filters: ['unbound'], k: 2 });
   });
 
@@ -490,7 +490,7 @@ describe('anaphora branch selection for verdicts', () => {
     settings.setTopK('all');
     expect(settings.vampirePreferences.reading_selection!.k).toBeNull();
 
-    settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, layered: false });
+    settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, allow_fallback: true });
     expect(settings.vampirePreferencesForm.value.reading_selection).toEqual({ criteria: ['surface'], filters: [], k: null });
   });
 
@@ -502,7 +502,7 @@ describe('anaphora branch selection for verdicts', () => {
     expect(settings.vampirePreferences.anaphora_rankers).toEqual(['recency', 'mlm-substitution']);
     expect(settings.vampirePreferences.anaphora_averager).toBe('weighted');
 
-    settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, layered: false });
+    settings.updateFormFromPreferences({ logic_type: 0, model_building: true, max_duration: 10, allow_fallback: true });
     expect(settings.vampirePreferencesForm.value.anaphora_rankers).toEqual(['mlm-pronoun-product']);
     expect(settings.vampirePreferencesForm.value.anaphora_averager).toBe('borda');
   });

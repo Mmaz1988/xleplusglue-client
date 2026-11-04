@@ -28,6 +28,7 @@ import {
   XlePlusGlueElement,
   SyntacticAnalysis,
   XlePlusGlueElementRef,
+  ProofReading,
 } from './models/models';
 import {
   ALL_READINGS,
@@ -172,6 +173,26 @@ export function majorityVerdict(assignments: ReasoningAssignment[]): ReasoningIt
     assignmentIds: scored.map(assignment => assignment.id),
     glyphs: scored.map(assignment => assignment.verdict!.glyph).filter((glyph): glyph is string => !!glyph),
   };
+}
+
+/** The TPTP pill's readings for a reasoning update: each assignment with a verdict, in the
+ *  order majorityVerdict takes their glyphs, with the .p files Vampire ran for it. */
+export function proofReadingsOf(update: ReasoningUpdate | undefined): ProofReading[] {
+  return (update?.assignments ?? [])
+    .filter(assignment => !!assignment.verdict)
+    .map(assignment => ({
+      label: `${assignment.discourseId ?? assignment.id} — ${verdictMarks(assignment.verdict!)}`,
+      files: assignment.verdict!.proofFiles ?? [],
+    }));
+}
+
+/** A verdict in words, as the chat's reading captions put it. */
+export function verdictMarks(verdict: { consistent?: boolean; informative?: boolean; relevant?: boolean }): string {
+  return [
+    verdict.consistent ? 'consistent' : 'inconsistent',
+    verdict.informative ? 'informative' : 'uninformative',
+    verdict.relevant ? 'relevant' : 'irrelevant',
+  ].join(', ');
 }
 
 /** A derived or merged reading's `SemanticAnalysis`. GSWB sends such a reading (/deduce,

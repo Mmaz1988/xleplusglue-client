@@ -25,6 +25,7 @@ import {
   mergeGrammarAxioms,
   VampirePreferences,
   PragmaticSelection,
+  ProofReading,
 } from '../../models/models';
 import { GswbSettingsComponent } from '../../gswb-vis/gswb-settings/gswb-settings.component';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -49,7 +50,8 @@ import {
   sentenceReadingsAllowedBy,
   turnSurvivors,
   validateAnalysisDocument,
-  validateReasoningUpdate
+  validateReasoningUpdate,
+  verdictMarks,
 } from '../../analysis-model';
 import { MappingWithStructure, ReadingAssignment, ReasoningPipelineService } from '../../reasoning/reasoning-pipeline.service';
 import { PcdrsReading, discourseUpdateOf } from '../../document-builder/pcdrs-readings';
@@ -245,6 +247,7 @@ export class ChatComponent {
       ['Logic', prefs.logic_type === 0 ? 'fof' : 'tff'],
       ['Max duration', `${prefs.max_duration ?? ''}s`],
       ['Model building', prefs.model_building ? 'on' : 'off'],
+      ['Casc fallback', prefs.allow_fallback === false ? 'off' : 'on'],
       ['Readings', describeReadingSelection(readingSelectionOf(prefs))],
     ];
     if (prefs.anaphora_rankers?.length) {
@@ -414,7 +417,6 @@ export class ChatComponent {
                   let info: boolean | null = null;
                   let relevant: boolean | null = null;
                   let glyphs: string[] = [];
-                  let tptp = '';
 
                   const mappings = Array.isArray(vampData.context_checks_mapping)
                     ? vampData.context_checks_mapping
@@ -430,13 +432,11 @@ export class ChatComponent {
                     relevant = this.majorityVote(mappings.map(m => !!m?.relevant));
                   }
 
-                  if (Array.isArray(vampData.context) && vampData.context.length > 0) {
-                    for (const item of vampData.context) {
-                      if (item.hasOwnProperty('tptp')) {
-                        tptp += item.tptp + '\n';
-                      }
-                    }
-                  }
+                  // One entry per (context, hypothesis) pair Vampire checked.
+                  const proofReadings: ProofReading[] = mappings.map((check, index) => ({
+                    label: `check ${index + 1} — ${verdictMarks(check ?? {})}`,
+                    files: check?.proof_files ?? [],
+                  }));
 
                   const message = this.verdictMessage(consistent, info, relevant);
                   console.info('[Chat] Vampire verdict (prolog-drt)', {
@@ -448,7 +448,7 @@ export class ChatComponent {
                   this.pushChatMessage({
                     text: message,
                     sender: 'Bot',
-                    detailText: tptp,
+                    proofReadings,
                     glyphs,
                     safeGlyphs,
                     glyphGridSize
@@ -1272,7 +1272,7 @@ export class ChatComponent {
       safeGlyphs: glyphs.map(glyph => this.sanitizer.bypassSecurityTrustHtml(glyph)),
       glyphGridSize: Math.max(1, Math.ceil(Math.sqrt(glyphs.length))),
       semanticText: branches.solutions.length ? '' : this.context.map(item => item.semantic || item.prolog_drs).filter(Boolean).join('\n'),
-      detailText: branches.tptp,
+      proofReadings: branches.proofReadings,
       branchSolutions: branches.solutions,
       branchLabels: branches.labels,
     });
@@ -1375,33 +1375,29 @@ export class ChatComponent {
 
   /** The turn's readings sent to Vampire, for the TPTP and DRS pills.
    *
-   *  Every sent reading appears, rejected ones included: they are the ones most worth
-   *  inspecting. A reading that produced no TPTP says so rather than being filtered out --
-   *  an empty translation is exactly the case that must stay visible. */
+   *  Every sent reading appears in the TPTP pill, rejected ones included: they are the ones
+   *  most worth inspecting. A reading without a verdict keeps its place with no files, which
+   *  the viewer says, rather than being filtered out. */
   private branchDetail(
     assignments: TurnAssignment[],
     mappings: Map<string, GswbSolution>,
     verdictFor: (item: TurnAssignment, index: number) => any,
     shownAs: (item: TurnAssignment, index: number) => string | undefined = () => undefined,
     inPill: (item: TurnAssignment) => boolean = () => true,
-  ): { tptp: string; solutions: GswbSolution[]; labels: string[] } {
+  ): { proofReadings: ProofReading[]; solutions: GswbSolution[]; labels: string[] } {
     const solutions: GswbSolution[] = [];
     const labels: string[] = [];
-    const blocks: string[] = [];
+    const proofReadings: ProofReading[] = [];
 
     assignments.forEach((item, index) => {
       const verdict = verdictFor(item, index);
-      const marks = [
-        verdict?.consistent ? 'consistent' : 'inconsistent',
-        verdict?.informative ? 'informative' : 'uninformative',
-        verdict?.relevant ? 'relevant' : 'irrelevant',
-      ].join(', ');
+      const marks = verdictMarks(verdict ?? {});
       const id = item.assignment.mappingId ?? item.assignment.assignmentId ?? `branch-${index + 1}`;
       // The pill's caption is the verdict alone: the reading's id is long and says nothing
-      // there. The TPTP block names it.
+      // there. The TPTP pill names it.
       const label = marks;
 
-      blocks.push(`% ${id} — ${marks}\n${item.assignment.sequenceTptp || '% (no TPTP produced for this branch)'}`);
+      proofReadings.push({ label: `${id} — ${marks}`, files: verdict?.proof_files ?? [] });
 
       const mapping = mappings.get(item.assignment.mappingId);
       if (mapping?.solution && inPill(item)) {
@@ -1411,7 +1407,7 @@ export class ChatComponent {
       }
     });
 
-    return { tptp: blocks.join('\n\n'), solutions, labels };
+    return { proofReadings, solutions, labels };
   }
 
   /** Makes `message` the latest: the one whose discourse can be narrowed, and whose

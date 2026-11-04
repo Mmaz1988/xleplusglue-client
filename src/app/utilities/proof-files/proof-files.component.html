@@ -1,0 +1,27 @@
+<div class="proof-files" *ngIf="readings.length; else noReadings">
+  <div class="proof-files-nav">
+    <button type="button" (click)="step(-1)" [disabled]="readingIndex === 0" aria-label="Previous reading">‹</button>
+    <select [ngModel]="readingIndex" (ngModelChange)="selectReading($event)" aria-label="Reading">
+      <option *ngFor="let reading of readings; let i = index" [ngValue]="i">{{ i + 1 }}. {{ reading.label }}</option>
+    </select>
+    <button type="button" (click)="step(1)" [disabled]="readingIndex >= readings.length - 1" aria-label="Next reading">›</button>
+    <span class="proof-files-count">{{ readingIndex + 1 }} / {{ readings.length }}</span>
+  </div>
+
+  <div class="proof-files-tabs" role="tablist">
+    <button type="button" role="tab" *ngFor="let check of checks; let i = index"
+            [class.active]="i === checkIndex" [attr.aria-selected]="i === checkIndex"
+            [title]="check.name" (click)="selectCheck(i)">
+      {{ check.label }}
+      <span class="proof-files-status" [ngClass]="'tone-' + statuses[i]?.tone">{{ statuses[i]?.status }}</span>
+      <span *ngIf="statuses[i]?.mode" class="proof-files-mode">{{ statuses[i]?.mode }}</span>
+    </button>
+    <button type="button" class="proof-files-download" (click)="download()">Download .p</button>
+  </div>
+
+  <app-editor #editor mode="tptp" [readOnly]="true" [showControls]="false" [initialContent]="currentFile"></app-editor>
+</div>
+
+<ng-template #noReadings>
+  <div class="proof-files-empty">No proof files: nothing was sent to Vampire.</div>
+</ng-template>

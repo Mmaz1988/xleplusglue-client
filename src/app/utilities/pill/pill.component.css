@@ -94,6 +94,16 @@
   box-sizing: border-box;
 }
 
+/* Proof files: a large read-only editor; it scrolls itself, the panel does not. */
+.proof-files-body {
+  width: 1100px;
+  max-width: 92vw;
+  max-height: 92vh;
+  overflow: hidden;
+  padding: 8px 12px 12px;
+  box-sizing: border-box;
+}
+
 .editor-body {
   width: 820px;
   height: 520px;

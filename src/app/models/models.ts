@@ -1748,7 +1748,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
       logic_type: 0,
       model_building: true,
       max_duration: 10,
-      layered: false,
+      allow_fallback: true,
       reading_selection: { criteria: ['surface'], filters: [], k: null },
       anaphora_rankers: ['mlm-pronoun-product'],
       anaphora_averager: 'borda',
@@ -1793,7 +1793,9 @@ export interface VampirePreferences {
   logic_type: number;
   model_building: boolean;
   max_duration: number;
-  layered: boolean; //Processes with and without additional axioms
+  /** Model building: a check finite model building leaves undecided runs again with casc.
+   *  Absent (sessions stored before it existed) means on. */
+  allow_fallback: boolean;
   /** Which readings of a discourse the NEXT Vampire run sends to Vampire, unless the discourse
    *  has its own selection (N4 6d): the global order by the checked criteria, the filtered
    *  readings removed, the first k places (`selectedReadingIds`). Absent: the default, every
@@ -1957,6 +1959,14 @@ export interface context {
 }
 
 
+/** One reading's proof files as Vampire ran them: info_pos, info_neg, cons_pos, cons_neg
+ *  (PROOF_CHECKS in proof-files.component), each the .p file with its run summary block.
+ *  The strings are the verdict's own `proof_files`, not copies. */
+export interface ProofReading {
+  label: string;
+  files: string[];
+}
+
 export interface ChatMessage {
   text: string;
   sender: 'User' | 'Bot';
@@ -1964,7 +1974,8 @@ export interface ChatMessage {
   //optional glyph
   glyph?: string;
    showGlyph?: false
-   detailText?: string;        // for chat analysis
+   /** The .p files Vampire ran for each reading this turn sent (TPTP pill). */
+   proofReadings?: ProofReading[];
    semanticText?: string;
    showDetail?: boolean;
 

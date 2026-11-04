@@ -45,7 +45,7 @@ export class InferenceSettingsComponent {
     logic_type: 0,
     model_building: true,
     max_duration: 10,
-    layered: false,
+    allow_fallback: true,
     reading_selection: { ...DEFAULT_READING_SELECTION },
     anaphora_rankers: [...APP_DEFAULTS.anaphoraRanking.rankers],
     anaphora_averager: APP_DEFAULTS.anaphoraRanking.averager,
@@ -56,7 +56,7 @@ export class InferenceSettingsComponent {
       logic_type: [0, Validators.required], // Default value is 0
       model_building: [true], // Default value is true
       max_duration: [10, Validators.required], // Default value is 10
-      layered: [false], // Default value is false
+      allow_fallback: [true], // casc reruns what fmb leaves undecided
       reading_selection: [{ ...DEFAULT_READING_SELECTION }],
       anaphora_rankers: [[...APP_DEFAULTS.anaphoraRanking.rankers]],
       anaphora_averager: [APP_DEFAULTS.anaphoraRanking.averager],
@@ -75,7 +75,7 @@ export class InferenceSettingsComponent {
       logic_type: Number(this.vampirePreferencesForm.value.logic_type),
       model_building: this.vampirePreferencesForm.value.model_building,
       max_duration: this.vampirePreferencesForm.value.max_duration,
-      layered: this.vampirePreferencesForm.value.layered,
+      allow_fallback: this.vampirePreferencesForm.value.allow_fallback,
       reading_selection: normalizedReadingSelection(this.vampirePreferencesForm.value.reading_selection),
       ...this.rankerPreferences(this.vampirePreferencesForm.value),
     };
@@ -91,7 +91,7 @@ export class InferenceSettingsComponent {
       logic_type: prefs.logic_type,
       model_building: prefs.model_building,
       max_duration: prefs.max_duration,
-      layered: prefs.layered,
+      allow_fallback: prefs.allow_fallback ?? true,
       reading_selection: normalizedReadingSelection(prefs.reading_selection),
       ...this.rankerPreferences(prefs),
     }, { emitEvent: false });

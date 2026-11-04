@@ -350,7 +350,8 @@
                        (change)="setNliItemSelected(row.id, $any($event.target).checked)">
                 <span class="report-row-status" [ngClass]="'status-' + row.status">{{ row.status }}</span>
               </label>
-              <app-inference-result [data]="row.data" [displayIndex]="i + 1" [status]="row.status">
+              <app-inference-result [data]="row.data" [displayIndex]="i + 1" [status]="row.status"
+                                    [proofReadings]="proofReadingsFor(row.id)">
               </app-inference-result>
               <button type="button" class="report-row-discourses" *ngIf="hasDiscourses(row.id)"
                       [disabled]="discourseDialogLoadingItemId !== null"

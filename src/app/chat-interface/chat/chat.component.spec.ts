@@ -585,18 +585,26 @@ describe('ChatComponent', () => {
       expect(component.chatHistory.slice(before).filter(message => message.sender === 'Bot').length).toBe(1);
     });
 
-    it('hands the pills one TPTP block and one DRS per reading sent, labelled with its verdict', () => {
+    it('hands the pills one reading\'s proof files and one DRS per reading sent, labelled with its verdict', () => {
       accepts = id => id.endsWith('-pcdrs-1');
+      dataServiceSpy.callVampire.and.callFake((request: any) => of({
+        context_checks_mapping: Object.fromEntries((request.tptp_checks ?? []).map((bundle: any, index: number) => [index, {
+          assignment_id: bundle.assignmentId, consistent: true, informative: accepts(bundle.mappingId), relevant: false,
+          glyph: '<svg/>', proof_files: ['ip', 'in', 'cp', `cn ${bundle.mappingId}`],
+        }])),
+      }));
 
       startTurn(newSentence('sentence-3', 1));
 
       const message = lastMessage();
-      const blocks = (message.detailText ?? '').split('\n\n').filter(Boolean);
-      expect(blocks.length).toBe(4);
+      const readings = message.proofReadings ?? [];
+      expect(readings.length).toBe(4);
       // The verdict alone: the reading's id overlapped the controls.
       expect(message.branchLabels?.[0]).toBe('consistent, informative, irrelevant');
       expect(message.branchLabels?.[1]).toBe('consistent, uninformative, irrelevant');
-      expect(blocks[0]).toContain('-pcdrs-1 — consistent, informative, irrelevant');
+      expect(readings[0].label).toContain('-pcdrs-1 — consistent, informative, irrelevant');
+      // Each reading's own files, paired by assignment id, not by position.
+      expect(readings[0].files[3]).toBe(`cn ${readings[0].label.split(' — ')[0]}`);
       // The paged viewer replaces the concatenated-text pill on this path.
       expect(message.semanticText).toBe('');
     });

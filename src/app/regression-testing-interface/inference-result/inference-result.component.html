@@ -45,6 +45,14 @@
       [gridSize]="glyphGridSize"
       [minimizedColor]="'#2e7d32'">
     </app-pill>
+    <app-pill
+      *ngIf="proofReadings.length"
+      badge="TPTP"
+      variant="proof-files"
+      [proofReadings]="proofReadings"
+      [minimizedColor]="'#1565c0'"
+      [closeOnly]="true">
+    </app-pill>
   </div>
 
   <!-- Glyph pills bottom-right

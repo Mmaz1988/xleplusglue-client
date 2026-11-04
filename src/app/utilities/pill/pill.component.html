@@ -35,6 +35,12 @@
         <ng-content></ng-content>
       </div>
 
+      <!-- Inside the overlay template, like sem-vis: the TPTP editor exists only while the
+           pill is open, not once per chat message or report row. -->
+      <div *ngSwitchCase="'proof-files'" class="proof-files-body">
+        <app-proof-files [readings]="proofReadings"></app-proof-files>
+      </div>
+
       <div *ngSwitchCase="'text'" class="detail-body">
         <pre> {{ text }} </pre>
       </div>

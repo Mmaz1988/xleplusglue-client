@@ -3,14 +3,14 @@ import { SafeHtml } from '@angular/platform-browser';
 import { OverlayModule } from '@angular/cdk/overlay';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 import {EditorComponent} from "../../editor/editor.component";
-import {GswbDiscriminant, GswbSolution, PragmaticSelection} from "../../models/models";
+import {GswbDiscriminant, GswbSolution, PragmaticSelection, ProofReading} from "../../models/models";
 import { AnaphoraRankingTable } from '../../analysis-model';
 import { ReadingOrderContext, ReadingSelection } from '../../reading-order';
 
 
 
 /** `content`: whatever the host places between the pill's tags. */
-type PillVariant = 'glyph-grid' | 'text' | 'editor' | 'sem-vis' | 'content';
+type PillVariant = 'glyph-grid' | 'text' | 'editor' | 'sem-vis' | 'content' | 'proof-files';
 
 @Component({
   selector: 'app-pill',
@@ -31,6 +31,8 @@ export class PillComponent {
 
   @Input() gridSize = 1;
   @Input() text = '';
+  /** proof-files variant: each reading's .p files, paged by app-proof-files. */
+  @Input() proofReadings: ProofReading[] = [];
 
   /** `sem-vis` variant: paged one at a time by app-sem-vis, so a long list of solutions
    *  costs one render rather than one per item. */

@@ -1,0 +1,80 @@
+.proof-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.proof-files-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 24px; /* the pill's close button */
+}
+
+.proof-files-nav select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.proof-files-count {
+  color: #555;
+  white-space: nowrap;
+}
+
+.proof-files-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.proof-files-tabs button {
+  border: 1px solid #b0bec5;
+  background: #f5f7f8;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.proof-files-tabs button.active {
+  border-color: #1565c0;
+  background: #e3f2fd;
+  font-weight: 600;
+}
+
+.proof-files-download {
+  margin-left: auto;
+}
+
+.proof-files-status {
+  margin-left: 4px;
+  font-weight: 600;
+}
+
+.proof-files-status.tone-model { color: #2e7d32; }
+.proof-files-status.tone-refutation { color: #c62828; }
+.proof-files-status.tone-open { color: #b28704; }
+
+.proof-files-mode {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #555;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.proof-files .editor-container {
+  min-width: 0;
+}
+
+.proof-files .CodeMirror {
+  height: min(65vh, 600px);
+  resize: vertical;
+  font-size: 12px;
+}
+
+.proof-files-empty {
+  color: #555;
+  padding: 8px;
+}

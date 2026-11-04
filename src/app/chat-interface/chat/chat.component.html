@@ -54,11 +54,12 @@
             [closeOnly]="true">
           </app-pill>
 
+          <!-- TPTP pill: the .p files Vampire ran, per reading and check. -->
           <app-pill
-            *ngIf="message.detailText"
+            *ngIf="message.proofReadings?.length"
             badge="TPTP"
-            variant="text"
-            [text]="message.detailText"
+            variant="proof-files"
+            [proofReadings]="message.proofReadings ?? []"
             [minimizedColor]="'#1565c0'"
             [closeOnly]="true">
           </app-pill>

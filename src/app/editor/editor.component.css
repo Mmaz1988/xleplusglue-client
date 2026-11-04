@@ -105,3 +105,10 @@
   background-color: rgba(255, 0, 0, 0.7) !important; /* Strong red background */
   border-radius: 3px;
 }
+
+/* TPTP (mode 'tptp'): roles and quantifiers stand out; the run summary block is not a plain
+   comment, it is the verdict. */
+.cm-tptp-role { color: #6a1b9a; font-weight: 600; }
+.cm-tptp-quantifier { color: #c62828; font-weight: 700; }
+.cm-tptp-symbol { color: #1a237e; }
+.cm-tptp-summary { color: #e65100; font-weight: 600; }

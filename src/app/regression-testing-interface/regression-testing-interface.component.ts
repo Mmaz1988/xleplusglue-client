@@ -50,6 +50,7 @@ import {
   isDefaultSessionKey,
   PragmaticSelection,
   storageJson,
+  ProofReading,
 } from '../models/models';
 import { NO_PRAGMATIC_SELECTION } from '../pragmatic-discriminants';
 import { GswbSettingsComponent } from "../gswb-vis/gswb-settings/gswb-settings.component";
@@ -75,6 +76,8 @@ import {
   reasoningUpdateId,
   sentenceReadingIdsOf,
   validateReasoningUpdate,
+  proofReadingsOf,
+  verdictMarks,
 } from '../analysis-model';
 import { ALL_READINGS, ReadingSelection, describeReadingSelection, normalizedReadingSelection, sameReadingSelection, selectionNeedsRanking } from '../reading-order';
 import {
@@ -145,6 +148,9 @@ function newRunId(): string {
     ? crypto.randomUUID()
     : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
+
+/** Shared, so an item without proof files hands its row the same array every time. */
+const NO_PROOF_READINGS: ProofReading[] = [];
 
 @Component({
   selector: 'app-regression-testing-interface',
@@ -1550,6 +1556,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       ['Logic type', this.session.lastLogicType || (prefs?.logic_type === 0 ? 'fof' : 'tff')],
       ['Max duration (s)', String(prefs?.max_duration ?? '')],
       ['Model building', String(prefs?.model_building ?? '')],
+      ['Casc fallback', String(prefs?.allow_fallback ?? true)],
       ['Reading selection', describeReadingSelection(readingSelectionOf(prefs))],
       ['Anaphora rankers', (prefs?.anaphora_rankers ?? []).join(', ')],
     ];
@@ -2083,6 +2090,30 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *
    *  A VIEW only. `session.inferenceResults` still holds nothing but real verdicts, so the
    *  "N of M" count, the confusion matrix and the saved session are unaffected. */
+  /** An item's TPTP pill: the proof files of each reading its verdict was taken over, read
+   *  from its reasoning update (the legacy Prolog path, which records none, from Vampire's
+   *  checks). Cached per update or checks object: both are replaced, never mutated, when a
+   *  run changes them, and the template asks on every change detection. */
+  proofReadingsFor(itemId: string): ProofReading[] {
+    const update = (this.session.analysisDocuments[itemId]?.reasoningUpdates ?? [])
+      .find(candidate => candidate.id === `ru-${itemId}`);
+    const source: object | undefined = update ?? this.session.lastVampireResults?.[itemId];
+    if (!source) return NO_PROOF_READINGS;
+    let readings = this.proofReadingsCache.get(source);
+    if (!readings) {
+      readings = update
+        ? proofReadingsOf(update)
+        : (this.session.lastVampireResults?.[itemId] ?? []).map((check, index) => ({
+          label: `check ${index + 1} — ${verdictMarks(check ?? {})}`,
+          files: check?.proof_files ?? [],
+        }));
+      this.proofReadingsCache.set(source, readings);
+    }
+    return readings;
+  }
+
+  private readonly proofReadingsCache = new WeakMap<object, ProofReading[]>();
+
   get inferenceReportRows(): InferenceReportRow[] {
     if (!this.hasParsedExamples) return [];
 

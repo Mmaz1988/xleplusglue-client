@@ -1,5 +1,6 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { ProofReading } from '../../models/models';
 
 type Label = '1' | '0' | '-1';
 
@@ -16,6 +17,8 @@ export class InferenceResultComponent implements OnChanges {
    *  empty label differs from the gold one, which would otherwise mark every unrun item as
    *  a mismatch. Anything but `done` means there is no prediction to compare. */
   @Input() status: 'unparsed' | 'pending' | 'running' | 'done' | 'failed' = 'done';
+  /** Each reading's .p files as Vampire ran them, for the TPTP pill. */
+  @Input() proofReadings: ProofReading[] = [];
 
   premises: string[] = [];
   conclusion = '';
