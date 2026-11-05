@@ -308,14 +308,14 @@
             <label class="report-filter" title="Hide the sentences with exactly one selected parse">
               <input type="checkbox" [(ngModel)]="hideUnambiguousSentences"> Hide unambiguous
             </label>
-            <span class="report-selection-hint">
-              Tick the sentences "Parse" should reparse; none ticked parses the whole testsuite.
-            </span>
+            <label class="report-filter" title="Hide the sentences that parsed: only the ones without a parse remain">
+              <input type="checkbox" [(ngModel)]="hideParsedSentences"> Hide correct
+            </label>
           </div>
           <div class="results-list">
             <ng-container *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId">
              <div class="result-container"
-                 *ngIf="!hideUnambiguousSentences || getSelectedSolutionIds(element).length !== 1"
+                 *ngIf="isParseRowShown(element)"
                  [class.in-selected-item]="isSentenceOfSelectedNliItem(element.sentence_id)"
                  [attr.title]="isSentenceOfSelectedNliItem(element.sentence_id) ? 'Part of an inference item selected for the next run' : null">
               <label class="report-row-select" title="Reparse this sentence with the next Parse">
@@ -352,9 +352,6 @@
             <label class="report-filter" title="Hide the items whose verdict matches the gold label">
               <input type="checkbox" [(ngModel)]="hideCorrectItems"> Hide correct
             </label>
-            <span class="report-selection-hint">
-              Tick the items "Run inference" should run.
-            </span>
           </div>
           <div class="results-list">
             <ng-container *ngFor="let row of inferenceReportRows; let i = index; trackBy: trackByInferenceId">

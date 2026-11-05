@@ -1372,6 +1372,15 @@ describe('RegressionTestingInterfaceComponent', () => {
     component.hideItemsWithVerdict = true;
     expect([row('done', 'done', '1'), row('waiting', 'done', ''), row('failed', 'failed')].map(r => component.isInferenceRowShown(r)))
       .toEqual([false, true, true]);
+    const sentence = (id: string, noOfSolutions: number) =>
+      ({ sentence_id: id, noOfSolutions, gswbSolutions: Array.from({ length: noOfSolutions }, (_, n) => ({ id: `${id}-${n}` })) });
+    component.hideParsedSentences = true;
+    expect([sentence('none', 0), sentence('one', 1), sentence('two', 2)].map(e => component.isParseRowShown(e)))
+      .toEqual([true, false, false]);
+    component.hideParsedSentences = false;
+    component.hideUnambiguousSentences = true;
+    expect([sentence('none', 0), sentence('one', 1), sentence('two', 2)].map(e => component.isParseRowShown(e)))
+      .toEqual([true, false, true]);
     component.hideItemsWithVerdict = false;
     component.hideCorrectItems = true;
     const graded = (id: string, predictedLabel: string, goldLabel: string) =>

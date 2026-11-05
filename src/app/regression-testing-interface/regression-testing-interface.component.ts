@@ -2342,6 +2342,14 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
    *  the inference report hides items whose next run would send one reading, and items that
    *  have a verdict. */
   hideUnambiguousSentences = false;
+  /** Hides the sentences that parsed: what is left are the red ones, without a parse. */
+  hideParsedSentences = false;
+
+  isParseRowShown(element: any): boolean {
+    if (this.hideUnambiguousSentences && this.getSelectedSolutionIds(element).length === 1) return false;
+    if (this.hideParsedSentences && (element?.noOfSolutions ?? 0) > 0) return false;
+    return true;
+  }
   hideUnambiguousItems = false;
   hideItemsWithVerdict = false;
   /** Hides the items whose verdict matches the gold label: what is left are the mismatches
