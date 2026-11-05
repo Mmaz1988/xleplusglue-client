@@ -315,4 +315,38 @@ describe('reading order', () => {
       expect(normalizedReadingSelection({ criteria: [], filters: [], k: 0 })).toEqual({ criteria: [], filters: [], k: 1 });
     });
   });
+
+  describe('random sample', () => {
+    const many = Array.from({ length: 12 }, (_, i) => reading(`r${i}`, 'S0-s0'));
+
+    it('alone, gives every reading a place of its own, so the top k are k readings', () => {
+      const places = order(many, ['random']);
+      expect(new Set(places.map(place => place.place)).size).toBe(12);
+      const context = { updates: [update(many)], discriminants: [], averager: 'borda' as any };
+      expect(selectedReadingIds(context, { criteria: ['random'], filters: [], k: 3 }).length).toBe(3);
+      expect(selectedReadingIds(context, { criteria: [], filters: [], k: 3 }).length).toBe(12);
+    });
+
+    it('is a different order than the updates\' and the same in every run', () => {
+      const first = order(many, ['random']).map(place => place.id);
+      expect(first).not.toEqual(many.map(each => each.id));
+      expect(order([...many].reverse(), ['random']).map(place => place.id)).toEqual(first);
+    });
+
+    it('only breaks the ties of the other criteria', () => {
+      const better = [reading('b1', 'S0-s0', profile([1, 0, 0])), reading('b2', 'S0-s0', profile([1, 0, 0]))];
+      const worse = many.map(each => ({ ...each, pragmaticProfile: profile([0, 0, 1]) }));
+      const ids = order([...worse, ...better], ['pronouns', 'random']).map(place => place.id);
+      expect(ids.slice(0, 2).sort()).toEqual(['b1', 'b2']);
+      const context = { updates: [update([...worse, ...better])], discriminants: [], averager: 'borda' as any };
+      const top = selectedReadingIds(context, { criteria: ['pronouns', 'random'], filters: [], k: 1 });
+      expect(top.length).toBe(1);
+      expect(['b1', 'b2']).toContain(top[0]);
+    });
+
+    it('is described and kept by normalization', () => {
+      expect(normalizedReadingSelection({ criteria: ['lm', 'random'], filters: [], k: 1 }).criteria).toEqual(['lm', 'random']);
+      expect(describeReadingSelection({ criteria: ['lm', 'random'], filters: [], k: 1 })).toBe('top 1 by LM + random');
+    });
+  });
 });

@@ -535,7 +535,7 @@ describe('SemVisComponent', () => {
 
     it('offers only the criteria and filters that apply, surface alignment checked', () => {
       component.readingOrder = context();
-      expect(component.orderOptions.criteria).toEqual(['surface', 'pronouns', 'accommodation']);
+      expect(component.orderOptions.criteria).toEqual(['surface', 'pronouns', 'accommodation', 'random']);
       expect(component.orderOptions.filters).toEqual(['unbound', 'accommodated']);
       expect(component.orderCriteria).toEqual(['surface']);
       expect(component.readingFilters).toEqual([]);
@@ -582,7 +582,7 @@ describe('SemVisComponent', () => {
         { id: 'a', type: 'scope', identifier: 'A', associatedSolutions: ['s0'], surfaceAligned: false },
         { id: 'b', type: 'scope', identifier: 'B', associatedSolutions: ['s1'], surfaceAligned: true },
       ]);
-      expect(component.orderOptions).toEqual({ criteria: ['surface'], filters: [] });
+      expect(component.orderOptions).toEqual({ criteria: ['surface', 'random'], filters: [] });
       expect(shown()).toEqual(['s1', 's0']);
     });
 

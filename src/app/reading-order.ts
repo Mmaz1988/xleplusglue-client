@@ -9,8 +9,10 @@ import {
 } from './models/models';
 
 /** The criteria a discourse's readings can be ordered by (N4): surface alignment, the rows of the
- *  pragmatic profile matrix in their fixed priority, and the LM ranking. */
-export const READING_CRITERIA = ['surface', 'pronouns', 'binding', 'accommodation', 'lm'] as const;
+ *  pragmatic profile matrix in their fixed priority, the LM ranking, and a random order. Random
+ *  is not fused with the others: it breaks their ties (alone, it is the whole order), so every
+ *  reading has a place of its own and the top k are k readings. */
+export const READING_CRITERIA = ['surface', 'pronouns', 'binding', 'accommodation', 'lm', 'random'] as const;
 export type ReadingCriterion = typeof READING_CRITERIA[number];
 
 const MATRIX_ROWS = ['pronouns', 'binding', 'accommodation'] as const;
@@ -83,6 +85,7 @@ export function applicableReadingOptions(context: ReadingOrderContext): {
   const criteria = READING_CRITERIA.filter(criterion => {
     if (criterion === 'surface') return context.discriminants.some(discriminant => discriminant.type === 'scope');
     if (criterion === 'lm') return context.updates.some(update => !!update.anaphoraRanking);
+    if (criterion === 'random') return readings.length > 1;
     return rowUsed(criterion);
   });
   const filters = READING_FILTERS.filter(filter => readings.some(reading => hiddenByFilter(reading, filter)));
@@ -95,6 +98,7 @@ export const CRITERION_LABELS: Record<ReadingCriterion, string> = {
   binding: 'presupposition binding',
   accommodation: 'accommodation',
   lm: 'LM ranking',
+  random: 'random sample',
 };
 
 export const CRITERION_HINTS: Record<ReadingCriterion, string> = {
@@ -109,6 +113,9 @@ export const CRITERION_HINTS: Record<ReadingCriterion, string> = {
     + '(global, then intermediate, then local).',
   lm: 'Lexical: how plausible the language-model rankers (the session\'s ranker settings) find '
     + 'the chosen antecedents, compared across all readings.',
+  random: 'Random: breaks the ties of the other checked orderings at random (alone, orders all '
+    + 'readings at random), so the top k are exactly k readings. Seeded by the reading, so a rerun '
+    + 'picks the same sample.',
 };
 
 export const FILTER_HINTS: Record<ReadingFilter, string> = {
@@ -127,7 +134,7 @@ export const ORDER_HINT = 'Each checked ordering ranks the readings; the ranks a
 
 /** What the view's top k keeps, for the k control. */
 export const TOP_K_HINT = 'Keeps the readings on the first k places of the order, after the filters; '
-  + 'tied readings share a place. In regression, what "Run inference" sends to Vampire for this item.';
+  + 'tied readings share a place (with random sample checked, a place is one reading). In regression, what "Run inference" sends to Vampire for this item.';
 
 export const FILTER_LABELS: Record<ReadingFilter, string> = {
   unbound: 'readings with an unbound pronoun',
@@ -264,14 +271,26 @@ function fuse(ranks: (number | null)[], n: number, averager: AnaphoraAverager): 
   return ranks.reduce<number>((sum, rank) => sum + (rank === null ? 0 : n === 1 ? 1 : (n - rank) / (n - 1)), 0) / m;
 }
 
+/** A reading's place in the random order: a 32-bit FNV-1a hash of its id, so the same reading
+ *  draws the same number in every run and view. */
+export function randomKey(id: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 /** One global order over every reading of a discourse, across its semantic readings (N4).
  *  Each checked criterion ranks the readings; the checked matrix rows are one criterion
  *  (`compareProfiles`). The ranks are fused with the session's averager, so a reading better on
  *  every checked criterion comes first and trade-offs go by how far ahead a reading is, not by
  *  a criterion's priority -- which is why `weighted`, a fusion by priority, fuses as Borda here.
  *  A criterion with nothing to tell the readings apart (no LM ranking, no profiles, no scoping
- *  against the surface) ranks them all first and changes nothing. Returns the readings best
- *  first; tied readings keep the updates' order. */
+ *  against the surface) ranks them all first and changes nothing. Random breaks the remaining
+ *  ties (`randomKey`), each reading then on a place of its own. Returns the readings best first;
+ *  without random, tied readings keep the updates' order. */
 export function globalReadingOrder(request: ReadingOrderContext & {
   criteria: readonly ReadingCriterion[];
 }): ReadingPlace[] {
@@ -279,6 +298,7 @@ export function globalReadingOrder(request: ReadingOrderContext & {
   if (!readings.length) return [];
   const checked = READING_CRITERIA.filter(criterion => request.criteria.includes(criterion));
   const rows = MATRIX_ROWS.filter(row => checked.includes(row));
+  const random = checked.includes('random');
   const rankings: number[][] = [];
 
   if (checked.includes('surface')) {
@@ -303,13 +323,15 @@ export function globalReadingOrder(request: ReadingOrderContext & {
     id: reading.id,
     score: rankings.length ? fuse(rankings.map(ranks => ranks[i]), readings.length, averager) : 1,
     index: i,
+    key: random ? randomKey(reading.id) : 0,
   }));
-  // Best first, tied readings in the updates' order; a place per distinct score.
+  // Best first, tied readings in the updates' order (in random order with random); a place per
+  // distinct score, per reading with random.
   const sorted = [...fused].sort((a, b) =>
-    (Math.abs(a.score - b.score) < EPSILON ? 0 : b.score - a.score) || a.index - b.index);
+    (Math.abs(a.score - b.score) < EPSILON ? 0 : b.score - a.score) || a.key - b.key || a.index - b.index);
   let place = 0;
   return sorted.map((entry, position) => {
-    if (position === 0 || sorted[position - 1].score - entry.score > EPSILON) place++;
+    if (position === 0 || random || sorted[position - 1].score - entry.score > EPSILON) place++;
     return { id: entry.id, place, score: entry.score };
   });
 }
@@ -320,7 +342,8 @@ export function globalReadingOrder(request: ReadingOrderContext & {
 export interface ReadingSelection {
   criteria: ReadingCriterion[];
   filters: ReadingFilter[];
-  /** Places, not readings: tied readings stay together. Null: every reading. */
+  /** Places, not readings: tied readings stay together (with random, a place is a reading).
+   *  Null: every reading. */
   k: number | null;
 }
 
@@ -332,6 +355,7 @@ export const ALL_READINGS: ReadingSelection = { criteria: [], filters: [], k: nu
 
 const SHORT_CRITERIA: Record<ReadingCriterion, string> = {
   surface: 'surface', pronouns: 'pronouns', binding: 'binding', accommodation: 'accommodation', lm: 'LM',
+  random: 'random',
 };
 
 /** A selection in a few words: "all readings", "top 2 by surface + LM, without unbound". */
