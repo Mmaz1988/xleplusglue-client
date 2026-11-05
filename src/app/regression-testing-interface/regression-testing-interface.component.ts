@@ -2150,7 +2150,11 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         .find(candidate => candidate.id === `ru-${itemId}`);
       if (update && majorityVerdict(update.assignments ?? [])) continue;
       if (runInFlight && !update?.failure) continue;
-      if (!update && !this.session.hasRunVampire) continue;
+      // NOT RUN IS NOT FAILED. An item a run attempted always has a reasoning update -- one
+      // that could not even be prepared carries its failure on it (reasonOverItem) -- so an
+      // item without one was never run: not ticked for a narrowed run, say. Counting those
+      // reported "inference failed for 145 items" after a run over five (2026-11-04).
+      if (!update) continue;
 
       const sentences = [...(item?.premises ?? []), ...(item?.conclusion ?? [])]
         .map((sid: string) => this.sentenceMap[sid])
@@ -2160,7 +2164,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         || (update && this.resultsBelongToAnotherPreparation(itemId, this.session.lastVampireResults?.[itemId])
           ? 'The stored results belong to an earlier preparation of this item (their assignment ids '
             + 'do not match); run it again.'
-          : update ? 'No reading assignment produced a verdict.' : 'Never attempted.');
+          : 'No reading assignment produced a verdict.');
       failed.push({ id: itemId, sentences, reason });
     }
 
@@ -2316,6 +2320,21 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
 
   isNliItemSelected(id: string): boolean {
     return this.selectedNliItemIds.has(id);
+  }
+
+  /** Report filters (view only): the parsing report hides sentences with one selected parse;
+   *  the inference report hides items whose next run would send one reading, and items that
+   *  have a verdict. */
+  hideUnambiguousSentences = false;
+  hideUnambiguousItems = false;
+  hideItemsWithVerdict = false;
+
+  isInferenceRowShown(row: InferenceReportRow): boolean {
+    if (this.hideItemsWithVerdict && row.status === 'done' && String(row.data?.predictedLabel ?? '').trim() !== '') {
+      return false;
+    }
+    if (this.hideUnambiguousItems && this.nextRunReadingCount(row.id)?.sent === 1) return false;
+    return true;
   }
 
   setNliItemSelected(id: string, selected: boolean): void {
@@ -2601,6 +2620,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       this.session.sortedMCmap = {};
       this.session.selectedScopeIdsBySentence = {};
       this.session.selectedMcIdsBySentence = {};
+      this.session.hiddenSolutionIdsBySentence = {};
 
       this.dataService.resetLastGswbSession(this.redisSessionKey).subscribe({
         next: () => console.log(`Reset GSWB session ${this.redisSessionKey}`),
@@ -2625,6 +2645,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
         delete this.session.selectedSolutionIdsBySentence[id];
         delete this.session.selectedScopeIdsBySentence[id];
         delete this.session.selectedMcIdsBySentence[id];
+        delete this.session.hiddenSolutionIdsBySentence[id];
       }
     } else {
       this.parse_testfile(sentences);
@@ -2839,6 +2860,7 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
           delete this.session.selectedSolutionIdsBySentence[id];
           delete this.session.selectedScopeIdsBySentence[id];
           delete this.session.selectedMcIdsBySentence[id];
+          delete this.session.hiddenSolutionIdsBySentence?.[id];
         }
         console.info('[Regression] discourse sentences derived again on their own', { sentenceIds });
         this.renderGswbResults(outputs);
@@ -5255,7 +5277,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
       collapsible: true,
       selectedScopeIds: this.session.selectedScopeIdsBySentence[sid] ?? [],
       selectedMcIds: this.session.selectedMcIdsBySentence[sid] ?? [],
+      // The view's Hide works through a pragmatic selection; a sentence has no choices, only
+      // its hidden solutions.
+      pragmaticSelection: { choiceIds: [], hiddenReadingIds: [...(this.session.hiddenSolutionIdsBySentence?.[sid] ?? [])] },
     });
+  }
+
+  /** A solution hidden or shown again in a sentence's solutions dialog. The sentence's
+   *  selected solutions follow by themselves: the view's selection leaves hidden ones out. */
+  onSemvisHiddenChange(change: { sentenceId: string; selection: PragmaticSelection }): void {
+    const hidden = [...(change.selection?.hiddenReadingIds ?? [])];
+    const record = { ...(this.session.hiddenSolutionIdsBySentence ?? {}) };
+    if (hidden.length) record[change.sentenceId] = hidden;
+    else delete record[change.sentenceId];
+    this.session.hiddenSolutionIdsBySentence = record;
+    this.semvisDialog?.setPragmaticSelection({ choiceIds: [], hiddenReadingIds: hidden });
+    this.scheduleSessionSave();
   }
 
 

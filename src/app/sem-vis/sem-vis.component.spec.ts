@@ -266,6 +266,23 @@ describe('SemVisComponent', () => {
       expect(component.showCollapsed).toBeTrue();
     });
 
+    it('collapses a large selection as it is shown, not all at once', () => {
+      const many = Array.from({ length: 60 }, (_, index) => reading(`q${index}`));
+      component.items = many;
+      component.collapseAll();
+
+      expect(component.showCollapsed).toBeTrue();
+      expect(component.collapseOnDemand).toBeTrue();
+      // The shown reading, the one before (wrapping round) and eight ahead.
+      expect(collapsedIds()).toEqual(['q59', 'q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8']);
+      expect(String((component.currentSvg as any)?.changingThisBreaksApplicationSecurity)).toBe('<svg>c-q0</svg>');
+
+      component.next();
+      // q9 comes into the window: only it is asked for.
+      expect(collapsedIds().slice(10)).toEqual(['q9']);
+      expect(String((component.currentSvg as any)?.changingThisBreaksApplicationSecurity)).toBe('<svg>c-q1</svg>');
+    });
+
     it('keeps collapsed readings for a reopened discourse', () => {
       component.collapseAll();
       expect(collapsedIds().length).toBe(4);
@@ -446,6 +463,44 @@ describe('SemVisComponent', () => {
       expect(shown()).toBe('<svg>c-b2</svg>');
       // Collapse stays on offer for the item that failed.
       expect(component.canCollapse).toBeTrue();
+    });
+  });
+
+  describe('names resolved automatically', () => {
+    const choice = (point: string, target: string, name?: string) => ({
+      kind: 'PRESUPPOSITION', point, pointLabel: point, resolution: target === 'GLOBAL' ? 'ACCOMMODATED' : 'BOUND',
+      target, targetLabel: target, id: `PRESUPPOSITION@${point}=${target}`, ...(name ? { name } : {}),
+    });
+    const reading = (id: string, choices: any[]) => ({
+      id, semanticOrigin: 'sem', drsString: id, ruleBranch: 1, anaphoraMapping: { relations: [] }, collapsed: false, choices,
+    });
+    // Two mentions of Kim: the second bound to the first (automatic) or accommodated anew;
+    // and "the dog": accommodated or bound.
+    const discourse = [
+      reading('r1', [choice('0-3', 'GLOBAL', 'kim'), choice('10-13', '0-3', 'kim'), choice('20-27', 'GLOBAL')]),
+      reading('r2', [choice('0-3', 'GLOBAL', 'kim'), choice('10-13', 'GLOBAL', 'kim'), choice('20-27', 'GLOBAL')]),
+      reading('r3', [choice('0-3', 'GLOBAL', 'kim'), choice('10-13', '0-3', 'kim'), choice('20-27', '0-3')]),
+    ];
+    const points = () => component.presupposition_points.map(point => point.point);
+
+    beforeEach(() => {
+      component.svgSolutions = true;
+      component.readingOrder = {
+        updates: [{ id: 'du', sourceElementId: 's', sourceElementKind: 'sequence', semDiscourseMapping: {}, discourse } as any],
+        discriminants: [], averager: 'borda',
+      };
+      component.items = discourse.map(r => ({ id: r.id, solution: `<svg>${r.id}</svg>`, semantic: r.id } as any));
+      component.pragmaticSelection = { choiceIds: [], hiddenReadingIds: [] };
+      component.readingSelection = { selection: { criteria: [], filters: [], k: null }, own: true };
+    });
+
+    it('offers a name\'s choice point only while the names filter does not decide it', () => {
+      expect(points()).toContain('10-13');
+      component.toggleFilter('names');
+      expect(points()).not.toContain('10-13');
+      expect(points()).toContain('20-27');
+      component.toggleFilter('names');
+      expect(points()).toContain('10-13');
     });
   });
 

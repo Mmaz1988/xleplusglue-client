@@ -1335,6 +1335,63 @@ describe('RegressionTestingInterfaceComponent', () => {
     expect(component.inferenceFailures).toEqual([]);
   });
 
+  it('does not count an item a run never attempted as failed', () => {
+    component['regressionTestItems'] = [
+      { id: 'n0', premises: ['S0'], conclusion: ['S1'], gold_label: '1' },
+      { id: 'n1', premises: ['S2'], conclusion: ['S3'], gold_label: '1' },
+    ];
+    component['sentenceMap'] = { S0: 'a', S1: 'b', S2: 'c', S3: 'd' };
+    component.session.hasRunVampire = true;
+    // n0 was run and has a verdict; n1 was not ticked for the run and has no reasoning update.
+    component.session.analysisDocuments = {
+      n0: {
+        ...createRegressionAnalysisDocument('n0'),
+        reasoningUpdates: [{
+          id: 'ru-n0', premiseElementIds: ['S0'], hypothesisElementIds: ['S1'], itemId: 'n0',
+          logicType: 'fof', ruleString: '', assignments: [{
+            id: 'a1', premiseSemanticIds: [], hypothesisSemanticIds: [], checks: {} as any,
+            verdict: { consistent: true, informative: false, relevant: false, glyph: '', computedAt: '' },
+          }],
+        } as any],
+      },
+      n1: createRegressionAnalysisDocument('n1'),
+    };
+    expect(component.inferenceFailures).toEqual([]);
+  });
+
+  it('filters the reports: unambiguous sentences, unambiguous items, items with a verdict', () => {
+    const row = (id: string, status: string, predictedLabel = '') => ({ id, status, data: { predictedLabel } } as any);
+    spyOn(component, 'nextRunReadingCount').and.callFake((id: string) =>
+      id === 'one' ? { sent: 1, total: 4 } : id === 'many' ? { sent: 3, total: 4 } : null);
+    expect([row('one', 'pending'), row('many', 'pending'), row('done', 'done', '1')].map(r => component.isInferenceRowShown(r)))
+      .toEqual([true, true, true]);
+    component.hideUnambiguousItems = true;
+    expect([row('one', 'pending'), row('many', 'pending'), row('none', 'pending')].map(r => component.isInferenceRowShown(r)))
+      .toEqual([false, true, true]);
+    component.hideUnambiguousItems = false;
+    component.hideItemsWithVerdict = true;
+    expect([row('done', 'done', '1'), row('waiting', 'done', ''), row('failed', 'failed')].map(r => component.isInferenceRowShown(r)))
+      .toEqual([false, true, true]);
+  });
+
+  it('stores the solutions hidden in a sentence\'s dialog, and hands them back when it opens again', () => {
+    const open = jasmine.createSpy('open');
+    const setPragmaticSelection = jasmine.createSpy('setPragmaticSelection');
+    (component as any).semvisDialog = { open, setPragmaticSelection };
+    const save = spyOn<any>(component, 'scheduleSessionSave');
+
+    component.onSemvisHiddenChange({ sentenceId: 'S0', selection: { choiceIds: [], hiddenReadingIds: ['S0-s1'] } });
+    expect(component.session.hiddenSolutionIdsBySentence).toEqual({ S0: ['S0-s1'] });
+    expect(setPragmaticSelection).toHaveBeenCalledWith({ choiceIds: [], hiddenReadingIds: ['S0-s1'] });
+    expect(save).toHaveBeenCalled();
+
+    component.openSemVisDialog({ sentenceId: 'S0', items: [] });
+    expect(open.calls.mostRecent().args[0].pragmaticSelection).toEqual({ choiceIds: [], hiddenReadingIds: ['S0-s1'] });
+
+    component.onSemvisHiddenChange({ sentenceId: 'S0', selection: { choiceIds: [], hiddenReadingIds: [] } });
+    expect(component.session.hiddenSolutionIdsBySentence).toEqual({});
+  });
+
   it('treats a zero item_count after a non-empty submission as a failed run, keeping prior results', () => {
     const dataServiceSpy = TestBed.inject(DataService) as jasmine.SpyObj<DataService>;
     dataServiceSpy.getLastSession.and.returnValue(of({ results: {} }));

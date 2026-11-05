@@ -337,6 +337,23 @@ div.errorhandling {
   min-width: 0;
 }
 
+/* Each report's list scrolls on its own, inside a box about the window's height, so the
+   parsing and inference reports can be read side by side (as the virtual-scroll viewports of
+   7282e44 did, before e87c895 replaced them with plain lists). */
+.results-panel .results-list {
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.report-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 
 .cm-table {
   border-collapse: collapse;

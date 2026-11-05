@@ -1,6 +1,6 @@
 import {ChangeDetectorRef, Component, ElementRef, ViewChild, AfterViewInit, Output, Input, EventEmitter, Injector} from '@angular/core';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
-import {catchError, concatMap, from, of} from 'rxjs';
+import {catchError, concatMap, from, map, of} from 'rxjs';
 import { EditorComponent } from '../editor/editor.component';
 import { DrsRenderCacheService } from './drs-render-cache.service';
 import {DiscourseAnalysis, GswbDiscriminant, GswbSolution, PragmaticSelection} from "../models/models";
@@ -42,6 +42,10 @@ const SVG_WIDTH = /<svg\b[^>]*?\swidth="([\d.]+)"/;
 const MIN_ZOOM = 0.1;
 /** Readings rendered ahead of the one shown (and one behind), so paging rarely waits. */
 const RENDER_AHEAD = 8;
+/** Up to this many selected readings, Collapse collapses them all at once; beyond it (a long
+ *  discourse with no top k: tens of thousands, ~50 ms each), the collapsed view collapses the
+ *  shown reading and those around it as they are paged to. */
+const COLLAPSE_AT_ONCE = 50;
 const MAX_ZOOM = 8;
 
 type DiscStateBucket = 0 | 1 | 2; // 0=selected, 1=active, 2=inactive
@@ -370,6 +374,17 @@ export class SemVisComponent implements AfterViewInit {
   private refreshPragmaticAlternatives(items: GswbSolution[] = this.inputItems): void {
     const readings = items.map(item => this.readingById.get(item.id)).filter((reading): reading is DiscourseAnalysis => !!reading);
     this.pragmaticAlternativesCache = this.pragmaticEditable && !this.orderOnly ? pragmaticAlternatives(readings) : null;
+    this.namePoints = new Set(readings.flatMap(reading => (reading.choices ?? [])
+      .filter(choice => choice.kind === 'PRESUPPOSITION' && !!choice.name).map(choice => choice.point)));
+  }
+
+  /** The choice points of proper names (GSWB's `name`). */
+  private namePoints = new Set<string>();
+
+  /** Whether "resolve names automatically" is in effect: the names filter keeps only the
+   *  readings with every name resolved automatically, so a name's choice point is decided. */
+  private get namesResolved(): boolean {
+    return this.readingFilters.includes('names') && this.orderOptions.filters.includes('names');
   }
 
   /** Orders the items again, showing the first or keeping the current one. */
@@ -470,9 +485,24 @@ export class SemVisComponent implements AfterViewInit {
   }
 
   private isCollapsibleItem(item: GswbSolution | undefined): boolean {
-    const semantic = this.semanticOf(item);
-    return typeof semantic === 'string' && COLLAPSIBLE_DRS.test(semantic);
+    if (!item) return false;
+    let collapsible = this.collapsibleCache.get(item);
+    if (collapsible === undefined) {
+      const semantic = this.semanticOf(item);
+      collapsible = typeof semantic === 'string' && COLLAPSIBLE_DRS.test(semantic);
+      this.collapsibleCache.set(item, collapsible);
+    }
+    return collapsible;
   }
+
+  /** Whether an item is collapsible, per item: asked for every selected reading whenever the
+   *  selection changes. */
+  private readonly collapsibleCache = new WeakMap<GswbSolution, boolean>();
+  /** The readings being collapsed one by one (the collapsed view, on demand). */
+  private readonly collapsingShown = new Set<string>();
+  /** The collapsed view collapses what is shown, as it is shown (more than COLLAPSE_AT_ONCE
+   *  readings selected). */
+  collapseOnDemand = false;
 
   /** The button: shown while a reading the selection keeps could be collapsed and is not yet. */
   get canCollapse(): boolean {
@@ -537,7 +567,7 @@ export class SemVisComponent implements AfterViewInit {
     const error = this.collapseErrors.get(semantic);
     if (error) return `not collapsed: ${error}`;
     if (this.keptBySelection && !this.keptBySelection.has(current.id)) return 'not collapsed: not selected';
-    return this.collapseLoading ? 'collapsing…' : 'not collapsed';
+    return this.collapseLoading || this.collapsingShown.has(semantic) ? 'collapsing…' : 'not collapsed';
   }
 
   /** While the collapsed view shows a collapsed item: what the collapse did, as rows of the
@@ -562,11 +592,21 @@ export class SemVisComponent implements AfterViewInit {
 
   /** Collapses the readings the selection keeps that are not collapsed yet, one request after
    *  another, then shows the collapsed view. Collapsed readings are cached for the session, so
-   *  a changed selection or a reopened discourse collapses only what is new. */
+   *  a changed selection or a reopened discourse collapses only what is new. More than
+   *  COLLAPSE_AT_ONCE of them: the collapsed view is turned on and collapses the readings as
+   *  they are shown (`collapseShown`). */
   collapseAll(retryFailed = true): void {
     const pending = this.pendingCollapseItems(retryFailed);
     const cache = this.renderCache;
     if (!pending.length || this.collapseLoading || !cache) return;
+    if (pending.length > COLLAPSE_AT_ONCE) {
+      if (retryFailed) pending.forEach(item => this.collapseErrors.delete(this.semanticOf(item)!));
+      this.collapseOnDemand = true;
+      this.showCollapsed = true;
+      this.applyCurrent();
+      return;
+    }
+    this.collapseOnDemand = false;
     pending.forEach(item => this.collapseErrors.delete(this.semanticOf(item)!));
     // The owner's items: reordering them is not a new item set.
     const items = this.inputItems;
@@ -598,6 +638,46 @@ export class SemVisComponent implements AfterViewInit {
     this.applyCurrent();
   }
 
+  /** The collapsed view on demand: collapses the shown reading, the one before and
+   *  RENDER_AHEAD after it, those the selection keeps and not collapsed (or being collapsed)
+   *  yet, one after another; shows the reading again once it is. */
+  private collapseShown(): void {
+    const cache = this.renderCache;
+    const count = this.items.length;
+    if (!cache || !count) return;
+    const kept = this.keptBySelection;
+    const wanted: GswbSolution[] = [];
+    for (let offset = -1; offset <= RENDER_AHEAD && offset < count - 1; offset++) {
+      const item = this.items[(this.index + offset + count) % count];
+      const semantic = this.semanticOf(item);
+      if (!semantic || !this.isCollapsibleItem(item) || (kept && !kept.has(item.id))) continue;
+      if (cache.collapsedFor(semantic) || this.collapseErrors.has(semantic) || this.collapsingShown.has(semantic)) continue;
+      if (wanted.some(entry => this.semanticOf(entry) === semantic)) continue;
+      wanted.push(item);
+    }
+    if (!wanted.length) return;
+    const items = this.inputItems;
+    wanted.forEach(item => this.collapsingShown.add(this.semanticOf(item)!));
+    from(wanted).pipe(
+      concatMap(item => cache.collapse({ id: item.id, semantic: this.semanticOf(item)! }).pipe(
+        catchError(error => {
+          if (items === this.inputItems) {
+            this.collapseErrors.set(this.semanticOf(item)!, error?.error?.message ?? error?.message ?? 'GSWB error');
+          }
+          return of(null);
+        }),
+        map(() => item))),
+    ).subscribe(item => {
+      const semantic = this.semanticOf(item)!;
+      this.collapsingShown.delete(semantic);
+      if (this.showCollapsed && this.semanticOf(this.items[this.index]) === semantic) {
+        this.collapsedAny = true;
+        this.applyCurrent();
+        this.changeDetector.markForCheck();
+      }
+    });
+  }
+
   /** The window's one collapse button: Collapse while kept readings are not collapsed (and
    *  the collapsed view is off), otherwise the toggle. */
   onCollapseButton(): void {
@@ -625,6 +705,7 @@ export class SemVisComponent implements AfterViewInit {
     if (before.size !== after.size || [...after].some(key => !before.has(key))) {
       this.collapseErrors.clear();
       this.showCollapsed = false;
+      this.collapseOnDemand = false;
     }
     this.inputItems = next;
     this.allItems = this.orderItems(next);
@@ -761,6 +842,7 @@ export class SemVisComponent implements AfterViewInit {
     }
 
     const current = this.items[this.index];
+    if (this.showCollapsed && this.collapseOnDemand) this.collapseShown();
     const collapsed = this.showCollapsed ? this.collapsedFor(current) : undefined;
     // GSWB returns a collapsed DRS as SVG (`solution`) and as text (`semantic`).
     const value = (collapsed ? (this.svgSolutions ? collapsed.solution : collapsed.semantic) : semVisDisplay(current).solution) ?? '';
@@ -833,7 +915,10 @@ export class SemVisComponent implements AfterViewInit {
 
     this.refreshCollapseState();
     // The collapsed view is on: the readings the selection now adds are collapsed too.
-    if (this.showCollapsed && this.collapsePendingCount) this.collapseAll(false);
+    if (this.showCollapsed && this.collapsePendingCount) {
+      if (this.collapsePendingCount > COLLAPSE_AT_ONCE) this.collapseOnDemand = true;
+      else this.collapseAll(false);
+    }
     this.applyCurrent();
     this.rebuildDiscriminantViews();
 
@@ -1056,8 +1141,13 @@ export class SemVisComponent implements AfterViewInit {
     this.mc_rows = decorate(this.mc_discriminants);
 
     const survivors = this.getCurrentAllowedIds();
+    // A name's point is not offered while the names filter decides it: its chips would only
+    // pick readings the filter hides (the user's selected chips stay, so they can be cleared).
+    const decidedByNames = (point: { point: string; alternatives: { id: string }[] }) => this.namesResolved
+      && this.namePoints.has(point.point) && !point.alternatives.some(alternative => this.selectedChoiceIds.includes(alternative.id));
     const points = listedChoicePoints(this.pragmaticReadings(), this.pragmaticAlternativesCache,
       [...survivors].map(id => ({ id })), this.selectedChoiceIds)
+      .filter(point => !decidedByNames(point))
       .map(point => ({ kind: point.kind, point: point.point, label: point.label, chips: chipsOf(point, survivors) }));
     this.anaphora_points = points.filter(point => point.kind === 'ANAPHORA');
     this.presupposition_points = points.filter(point => point.kind === 'PRESUPPOSITION');

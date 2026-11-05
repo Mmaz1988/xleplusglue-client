@@ -290,7 +290,8 @@
     </table>
   </ng-template>
 
-  <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"></app-semvis-dialog>
+  <app-semvis-dialog #semvisDialog (selectionChange)="onSemvisSelectionChange($event)"
+                     (pragmaticSelectionChange)="onSemvisHiddenChange($event)"></app-semvis-dialog>
   <!-- Separate instance, no selectionChange: its items are discourse branches, not a
        sentence's readings, so nothing it emits may be stored as a sentence's selection. -->
   <app-semvis-dialog #discourseDialog (readingSelectionChange)="onDiscourseReadingSelectionChange($event)"
@@ -304,13 +305,17 @@
             <button type="button" (click)="toggleAllParseSentences()" [disabled]="runLocked">
               {{ allParseSentencesSelected ? 'Select none' : 'Select all' }}
             </button>
+            <label class="report-filter" title="Hide the sentences with exactly one selected parse">
+              <input type="checkbox" [(ngModel)]="hideUnambiguousSentences"> Hide unambiguous
+            </label>
             <span class="report-selection-hint">
               Tick the sentences "Parse" should reparse; none ticked parses the whole testsuite.
             </span>
           </div>
           <div class="results-list">
+            <ng-container *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId">
              <div class="result-container"
-                 *ngFor="let element of regressionTestResults; let i = index; trackBy: trackBySentenceId"
+                 *ngIf="!hideUnambiguousSentences || getSelectedSolutionIds(element).length !== 1"
                  [class.in-selected-item]="isSentenceOfSelectedNliItem(element.sentence_id)"
                  [attr.title]="isSentenceOfSelectedNliItem(element.sentence_id) ? 'Part of an inference item selected for the next run' : null">
               <label class="report-row-select" title="Reparse this sentence with the next Parse">
@@ -324,6 +329,7 @@
                 (openSemVis)="openSemVisDialog($event)">
               </app-test-result>
             </div>
+            </ng-container>
           </div>
         </div>
       </app-toggle-display>
@@ -337,13 +343,20 @@
             <button type="button" (click)="toggleAllNliItems()">
               {{ allSelectableNliItemsSelected ? 'Select none' : 'Select all' }}
             </button>
+            <label class="report-filter" title="Hide the items whose next run would send one reading">
+              <input type="checkbox" [(ngModel)]="hideUnambiguousItems"> Hide unambiguous
+            </label>
+            <label class="report-filter" title="Hide the items that have a verdict">
+              <input type="checkbox" [(ngModel)]="hideItemsWithVerdict"> Hide items with verdict
+            </label>
             <span class="report-selection-hint">
               Tick the items "Run inference" should run.
             </span>
           </div>
           <div class="results-list">
+            <ng-container *ngFor="let row of inferenceReportRows; let i = index; trackBy: trackByInferenceId">
             <div class="result-container"
-                 *ngFor="let row of inferenceReportRows; let i = index; trackBy: trackByInferenceId"
+                 *ngIf="isInferenceRowShown(row)"
                  [class.highlight]="selectedIds.has(row.id)"
                  [class.unparsed-row]="row.status === 'unparsed'">
               <label class="report-row-select"
@@ -372,6 +385,7 @@
                 <ng-template #unranked>No LM ranking in time: all {{ row.data.readingSelection.total }} readings sent to Vampire</ng-template>
               </div>
             </div>
+            </ng-container>
           </div>
         </div>
       </app-toggle-display>

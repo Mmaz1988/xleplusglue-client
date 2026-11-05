@@ -1094,6 +1094,8 @@ export interface RegressionSessionAnalysisHuman {
   selectedSolutionIdsBySentence: Record<string, string[]>;
   selectedScopeIdsBySentence: Record<string, string[]>;
   selectedMcIdsBySentence: Record<string, string[]>;
+  /** Solutions hidden by hand in a sentence's solutions dialog; absent in older sessions. */
+  hiddenSolutionIdsBySentence?: Record<string, string[]>;
 }
 
 export interface RegressionSessionAnalysis {
@@ -1196,6 +1198,9 @@ export interface RegressionTestingSession {
   selectedSolutionIdsBySentence: Record<string, string[]>;
   selectedScopeIdsBySentence: Record<string, string[]>;
   selectedMcIdsBySentence: Record<string, string[]>;
+  /** Solutions hidden by hand in a sentence's solutions dialog, as a discourse's readings are
+   *  (its pragmatic selection's hidden readings): not shown, not selected, not reasoned over. */
+  hiddenSolutionIdsBySentence: Record<string, string[]>;
   lastGswbOutputs: Record<string, GswbOutput> | null;
   lastAnnotations: Record<string, LigerSolutionAnnotationResponse> | null;
   lastVampireResults: Record<string, check[]> | null;
@@ -1594,6 +1599,7 @@ export function regressionSessionToDocument(session: Partial<RegressionTestingSe
         selectedSolutionIdsBySentence: { ...(session?.selectedSolutionIdsBySentence ?? {}) },
         selectedScopeIdsBySentence: { ...(session?.selectedScopeIdsBySentence ?? {}) },
         selectedMcIdsBySentence: { ...(session?.selectedMcIdsBySentence ?? {}) },
+        hiddenSolutionIdsBySentence: { ...(session?.hiddenSolutionIdsBySentence ?? {}) },
       },
       save_state: {
         lastGswbOutputs: session?.lastGswbOutputs ? Object.fromEntries(Object.entries(session.lastGswbOutputs).map(([key, value]) => [key, cloneGswbOutput(value)])) : null,
@@ -1702,6 +1708,7 @@ export function regressionDocumentToSession(document: any): RegressionTestingSes
     selectedSolutionIdsBySentence: { ...(human?.selectedSolutionIdsBySentence ?? document?.selectedSolutionIdsBySentence ?? {}) },
     selectedScopeIdsBySentence: { ...(human?.selectedScopeIdsBySentence ?? document?.selectedScopeIdsBySentence ?? {}) },
     selectedMcIdsBySentence: { ...(human?.selectedMcIdsBySentence ?? document?.selectedMcIdsBySentence ?? {}) },
+    hiddenSolutionIdsBySentence: { ...(human?.hiddenSolutionIdsBySentence ?? {}) },
     lastGswbOutputs: saveState?.lastGswbOutputs ?? document?.lastGswbOutputs ?? null,
     lastAnnotations: saveState?.lastAnnotations ?? document?.lastAnnotations ?? null,
     lastVampireResults: saveState?.lastVampireResults ?? document?.lastVampireResults ?? null,
@@ -1791,6 +1798,7 @@ export function createRegressionTestingSession(): RegressionTestingSession {
     selectedSolutionIdsBySentence: {},
     selectedScopeIdsBySentence: {},
     selectedMcIdsBySentence: {},
+    hiddenSolutionIdsBySentence: {},
     lastGswbOutputs: null,
     lastAnnotations: null,
     lastVampireResults: null,
