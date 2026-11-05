@@ -71,6 +71,40 @@ describe('DataService', () => {
 
     expect(models.models[0].id).toBe('en');
   });
+  describe('loading a regression session', () => {
+    const base = 'http://localhost:8082/regression_session/lilt%20bank';
+
+    it('reads the skeleton, then each document in turn, and puts them in analysis.documents', () => {
+      let loaded: any;
+      service.loadRegressionSession('lilt bank').subscribe(session => loaded = session);
+      http.expectOne(`${base}/skeleton`).flush({
+        session: { schemaVersion: 6, analysis: { system: { x: 1 }, documents: {} } }, documentIds: ['n0', 'n/1'],
+      });
+      expect(loaded).toBeUndefined();
+      const first = http.expectOne(`${base}/document/n0`);
+      http.expectNone(`${base}/document/n%2F1`);
+      first.flush({ id: 'd0' });
+      expect(loaded).toBeUndefined();
+      http.expectOne(`${base}/document/n%2F1`).flush({ id: 'd1' });
+      expect(loaded.analysis.system).toEqual({ x: 1 });
+      expect(loaded.analysis.documents).toEqual({ n0: { id: 'd0' }, 'n/1': { id: 'd1' } });
+    });
+
+    it('takes a session without documents to read as it comes', () => {
+      let loaded: any;
+      service.loadRegressionSession('lilt bank').subscribe(session => loaded = session);
+      http.expectOne(`${base}/skeleton`).flush({ session: {}, documentIds: [] });
+      expect(loaded).toEqual({});
+    });
+
+    it('fails the load when a document cannot be read', () => {
+      let failed = false;
+      service.loadRegressionSession('lilt bank').subscribe({ error: () => failed = true });
+      http.expectOne(`${base}/skeleton`).flush({ session: { analysis: {} }, documentIds: ['n0'] });
+      http.expectOne(`${base}/document/n0`).flush('gone', { status: 404, statusText: 'Not Found' });
+      expect(failed).toBeTrue();
+    });
+  });
 });
 
 describe('jsonRequestBody', () => {
@@ -94,4 +128,5 @@ describe('jsonRequestBody', () => {
       done();
     });
   });
+
 });

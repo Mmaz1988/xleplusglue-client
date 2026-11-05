@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, from, map, of, switchMap, throwError, timeout } from 'rxjs';
+import { Observable, concatMap, from, map, of, reduce, switchMap, throwError, timeout } from 'rxjs';
 
 /** JSON bodies from this size on are sent gzipped (Content-Encoding: gzip), which the Redis
  *  API and Vampire decompress (xleplusglue Redis/http_compression.py). A stress-test item's
@@ -318,8 +318,27 @@ callVampire(vampireRequest: vampireRequest){
     return this.withSessionTimeout(this.http.get<RegressionSessionSummary[]>(`${this.vampirepage}/regression_sessions`));
   }
 
+  /** A stored session, read as its skeleton and then document by document, one request after
+   *  another: a bank's documents together pass Chrome's string limit (2^29 - 24 characters,
+   *  ~537 MB; lilt-bank-auto is 619 MB), so one body could not be parsed at all, and the
+   *  services building it ran out of memory. Each document is parsed on its own. */
   loadRegressionSession(sessionKey: string): Observable<RegressionSessionDocument> {
-    return this.withLargeReadTimeout(this.http.get<RegressionSessionDocument>(`${this.vampirepage}/regression_session/${sessionKey}`));
+    const base = `${this.vampirepage}/regression_session/${encodeURIComponent(sessionKey)}`;
+    return this.withLargeReadTimeout(
+      this.http.get<{ session: RegressionSessionDocument; documentIds: string[] }>(`${base}/skeleton`),
+    ).pipe(switchMap(({ session, documentIds }) => {
+      if (!documentIds?.length) return of(session);
+      return from(documentIds).pipe(
+        concatMap(id => this.withLargeReadTimeout(
+          this.http.get<any>(`${base}/document/${encodeURIComponent(id)}`)).pipe(map(document => [id, document] as const))),
+        reduce((documents, [id, document]) => ({ ...documents, [id]: document }), {} as Record<string, any>),
+        map(documents => {
+          const analysis = (session as any).analysis ?? ((session as any).analysis = {});
+          analysis.documents = documents;
+          return session;
+        }),
+      );
+    }));
   }
 
   /** `payload` may be a pre-serialized JSON string. Autosave already stringifies the
