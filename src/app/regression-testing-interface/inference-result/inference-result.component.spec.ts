@@ -35,4 +35,19 @@ describe('InferenceResultComponent', () => {
     expect(block().classList).not.toContain('ambiguous-block');
     expect(block().hasAttribute('title')).toBeFalse();
   });
+
+  it('is tinted orange, not yellow, while a sentence has several selected parses', () => {
+    const block = () => fixture.nativeElement.querySelector('.inf-block') as HTMLElement;
+    component.readingCount = { sent: 3, total: 40 };
+    component.ambiguousSentences = ['Every dog barked.'];
+    fixture.detectChanges();
+    expect(block().classList).toContain('sentences-ambiguous-block');
+    expect(block().classList).not.toContain('ambiguous-block');
+    expect(block().title).toContain('Every dog barked.');
+
+    component.ambiguousSentences = [];
+    fixture.detectChanges();
+    expect(block().classList).not.toContain('sentences-ambiguous-block');
+    expect(block().classList).toContain('ambiguous-block');
+  });
 });

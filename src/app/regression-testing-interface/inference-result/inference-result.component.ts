@@ -24,15 +24,29 @@ export class InferenceResultComponent implements OnChanges {
    *  sentence with several selected parses is in the parsing report). */
   @Input() readingCount: { sent: number; total: number } | null = null;
 
+  /** The item's sentences that still have more than one selected parse: tinted orange, ahead
+   *  of the yellow reading tint, since those are disambiguated in the parsing report first. */
+  @Input() ambiguousSentences: string[] = [];
+
+  get sentencesAmbiguous(): boolean {
+    return this.ambiguousSentences.length > 0;
+  }
+
   get ambiguous(): boolean {
-    return (this.readingCount?.sent ?? 0) > 1;
+    return !this.sentencesAmbiguous && (this.readingCount?.sent ?? 0) > 1;
   }
 
   get readingCountTitle(): string | null {
     const count = this.readingCount;
-    if (!count) return null;
-    return `The next run sends ${count.sent} of ${count.total} reading${count.total === 1 ? '' : 's'}`
-      + (count.sent > 1 ? ': not disambiguated yet' : '');
+    const parts: string[] = [];
+    if (this.sentencesAmbiguous) {
+      parts.push(`Sentences with several selected parses: ${this.ambiguousSentences.join(' / ')}`);
+    }
+    if (count) {
+      parts.push(`The next run sends ${count.sent} of ${count.total} reading${count.total === 1 ? '' : 's'}`
+        + (count.sent > 1 ? ': not disambiguated yet' : ''));
+    }
+    return parts.length ? parts.join('\n') : null;
   }
 
   premises: string[] = [];

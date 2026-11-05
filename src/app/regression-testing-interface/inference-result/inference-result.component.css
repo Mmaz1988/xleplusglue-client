@@ -62,6 +62,17 @@
   box-shadow: inset 6px 0 0 rgba(250, 217, 0, 0.9);
 }
 
+/* A sentence of the item still has several selected parses (comes ahead of the yellow tint);
+   with a mismatch: an orange edge. */
+.sentences-ambiguous-block {
+  background-color: rgba(255, 152, 0, 0.25);
+}
+
+.highlight-block.sentences-ambiguous-block {
+  background-color: rgba(255, 0, 0, 0.08);
+  box-shadow: inset 6px 0 0 rgba(255, 152, 0, 0.9);
+}
+
 .labels {
   margin-top: 10px;
 }

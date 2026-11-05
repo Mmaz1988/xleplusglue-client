@@ -2235,6 +2235,22 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
     return count;
   }
 
+  /** The item's sentences (texts) with more than one selected parse: the parsing report tints
+   *  them yellow, the inference report tints the item orange until they are disambiguated. */
+  ambiguousSentencesOf(itemId: string): string[] {
+    const outputs = this.session.lastGswbOutputs;
+    const item = this.regressionTestItems.find(candidate => String(candidate?.id ?? '') === itemId);
+    if (!outputs || !item) return [];
+    return [...(item.premises ?? []), ...(item.conclusion ?? [])]
+      .map((sentenceId: any) => String(sentenceId ?? ''))
+      .filter(sentenceId => {
+        const solutions = outputs[sentenceId]?.solutions ?? [];
+        return solutions.length > 1
+          && this.getSelectedSolutionIds({ sentence_id: sentenceId, gswbSolutions: solutions }).length > 1;
+      })
+      .map(sentenceId => this.sentenceMap[sentenceId] || sentenceId);
+  }
+
   private readonly readingCountCache = new WeakMap<object, { key: string; count: { sent: number; total: number } }>();
 
   get inferenceReportRows(): InferenceReportRow[] {
@@ -2328,9 +2344,17 @@ export class RegressionTestingInterfaceComponent implements AfterViewInit, OnDes
   hideUnambiguousSentences = false;
   hideUnambiguousItems = false;
   hideItemsWithVerdict = false;
+  /** Hides the items whose verdict matches the gold label: what is left are the mismatches
+   *  and the items without a verdict. */
+  hideCorrectItems = false;
 
   isInferenceRowShown(row: InferenceReportRow): boolean {
-    if (this.hideItemsWithVerdict && row.status === 'done' && String(row.data?.predictedLabel ?? '').trim() !== '') {
+    const predicted = String(row.data?.predictedLabel ?? '').trim();
+    if (this.hideItemsWithVerdict && row.status === 'done' && predicted !== '') {
+      return false;
+    }
+    if (this.hideCorrectItems && row.status === 'done' && predicted !== ''
+      && predicted === String(row.data?.goldLabel ?? '').trim()) {
       return false;
     }
     if (this.hideUnambiguousItems && this.nextRunReadingCount(row.id)?.sent === 1) return false;

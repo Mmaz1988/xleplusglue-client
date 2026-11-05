@@ -1,5 +1,5 @@
 <div class="inf-block" [attr.title]="readingCountTitle"
-     [ngClass]="{ 'highlight-block': mismatch, 'awaiting-block': !hasPrediction, 'ambiguous-block': ambiguous }">
+     [ngClass]="{ 'highlight-block': mismatch, 'awaiting-block': !hasPrediction, 'ambiguous-block': ambiguous, 'sentences-ambiguous-block': sentencesAmbiguous }">
   <span *ngIf="displayIndex !== null" class="index-badge">{{ displayIndex }}</span>
   <div class="row">
     <span class="title">Premises:</span>

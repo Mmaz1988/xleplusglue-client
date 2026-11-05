@@ -349,6 +349,9 @@
             <label class="report-filter" title="Hide the items that have a verdict">
               <input type="checkbox" [(ngModel)]="hideItemsWithVerdict"> Hide items with verdict
             </label>
+            <label class="report-filter" title="Hide the items whose verdict matches the gold label">
+              <input type="checkbox" [(ngModel)]="hideCorrectItems"> Hide correct
+            </label>
             <span class="report-selection-hint">
               Tick the items "Run inference" should run.
             </span>
@@ -367,7 +370,8 @@
               </label>
               <app-inference-result [data]="row.data" [displayIndex]="i + 1" [status]="row.status"
                                     [proofReadings]="proofReadingsFor(row.id)"
-                                    [readingCount]="nextRunReadingCount(row.id)">
+                                    [readingCount]="nextRunReadingCount(row.id)"
+                                    [ambiguousSentences]="ambiguousSentencesOf(row.id)">
               </app-inference-result>
               <button type="button" class="report-row-discourses" *ngIf="hasDiscourses(row.id)"
                       (click)="openDiscourseDialog(row.id)">

@@ -1372,6 +1372,13 @@ describe('RegressionTestingInterfaceComponent', () => {
     component.hideItemsWithVerdict = true;
     expect([row('done', 'done', '1'), row('waiting', 'done', ''), row('failed', 'failed')].map(r => component.isInferenceRowShown(r)))
       .toEqual([false, true, true]);
+    component.hideItemsWithVerdict = false;
+    component.hideCorrectItems = true;
+    const graded = (id: string, predictedLabel: string, goldLabel: string) =>
+      ({ id, status: 'done', data: { predictedLabel, goldLabel } } as any);
+    expect([graded('right', '1', '1'), graded('wrong', '0', '1'), graded('waiting', '', '1'), row('failed', 'failed')]
+      .map(r => component.isInferenceRowShown(r)))
+      .toEqual([false, true, true, true]);
   });
 
   it('stores the solutions hidden in a sentence\'s dialog, and hands them back when it opens again', () => {
